@@ -25,6 +25,9 @@ export async function startCombatAction(formData: FormData): Promise<void> {
   const membership = await requireRoomMember(roomId, session.user.id);
   if (membership === null) redirect("/");
   const room = membership.room;
+  if (room.status === "LOBBY") {
+    redirect("/rooms/" + room.id + "/prepare");
+  }
   const effective = await loadEffectivePack({
     id: room.id,
     system: room.system,
@@ -40,7 +43,7 @@ export async function startCombatAction(formData: FormData): Promise<void> {
       redirect(errorUrl(room.id, "/combat/new", result.error ?? "战斗创建失败"));
     }
     revalidatePath("/rooms/" + room.id);
-    redirect("/rooms/" + room.id + "/combat/" + result.combatId);
+    redirect("/rooms/" + room.id);
   }
 
   if (room.allowPlayerCombatRequest === false) {
@@ -107,5 +110,5 @@ export async function reviewCombatRequestAction(formData: FormData): Promise<voi
     data: { status: "APPROVED", reviewedAt: new Date() }
   });
   revalidatePath("/rooms/" + roomId);
-  redirect("/rooms/" + roomId + "/combat/" + result.combatId);
+  redirect("/rooms/" + roomId);
 }

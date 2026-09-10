@@ -1,6 +1,7 @@
 "use server";
 
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { builtinRegistry, resolveRulePack, type CombatMode } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -73,4 +74,20 @@ export async function createRoomAction(formData: FormData): Promise<void> {
   });
 
   redirect("/rooms/" + room.id);
+}
+
+export async function startRoomAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null) redirect("/");
+  if (membership.role !== "KP") redirect("/rooms/" + roomId + "/prepare");
+  await prisma.room.update({ where: { id: roomId }, data: { status: "PLAYING" } });
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId);
 }

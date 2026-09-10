@@ -217,6 +217,22 @@ export default function CombatBoard(props: Props) {
             </p>
           ) : (
             <div className="mt-3 flex flex-col gap-3">
+              {readyControlled.length > 1 ? (
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[11px] text-white/40">当前操作单位</span>
+                  <select
+                    value={selectedActor === null ? "" : selectedActor.id}
+                    onChange={(event) => setActorId(event.target.value)}
+                    className={inputClass}
+                  >
+                    {readyControlled.map((item) => (
+                      <option key={item.id} value={item.id}>
+                        {item.name} · HP {item.hp === null ? item.hpText : item.hp + "/" + item.maxHp}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : null}
               <p className="text-xs text-white/60">
                 当前行动：<span className="text-sakura-400">{selectedActor.name}</span>
               </p>

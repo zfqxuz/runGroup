@@ -63,7 +63,7 @@ function toChatMessage(row: MessageRow): ChatMessage {
 async function loadMembership(roomId: string, userId: string) {
   return prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId, userId } },
-    select: { role: true }
+    select: { role: true, room: { select: { status: true } } }
   });
 }
 
@@ -165,6 +165,10 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         ack({ ok: false, error: "你不在这个房间里" });
         return;
       }
+      if (membership.room.status === "LOBBY") {
+        ack({ ok: false, error: "准备阶段不能发言或掷骰" });
+        return;
+      }
       if (channel === "KP_ONLY" && membership.role !== "KP") {
         ack({ ok: false, error: "只有 KP 能使用 KP 频道" });
         return;
@@ -196,6 +200,10 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
       const membership = await loadMembership(input.roomId, me.userId);
       if (membership === null) {
         ack({ ok: false, error: "你不在这个房间里" });
+        return;
+      }
+      if (membership.room.status === "LOBBY") {
+        ack({ ok: false, error: "准备阶段不能发言或掷骰" });
         return;
       }
 

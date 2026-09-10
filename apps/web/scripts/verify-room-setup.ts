@@ -178,10 +178,33 @@ try {
   expectEqual(grazeRaw.params.gainRatio, "0.5", "编译后 GRAZE params 应保留");
   ensure(Object.keys(effective.compiled.combat.events).length > 1, "其他战斗事件应被保留");
 
-  const roomPage = await call("/rooms/" + createdRoomId);
+  const roomPage = await call("/rooms/" + createdRoomId + "/prepare");
   expectEqual(roomPage.status, 200, "GET 新房间页");
   ensure(roomPage.text.includes(roomName), "房间页应显示房间名");
 
+  const lobbyPage = await call("/rooms/" + createdRoomId);
+  expectEqual(lobbyPage.status, 307, "准备阶段访问房间页应跳转到准备页");
+
+
+  const startLabelIndex = roomPage.text.indexOf("开始跑团");
+  ensure(startLabelIndex > 0, "准备页缺少开始跑团按钮");
+  const startFormIndex = roomPage.text.lastIndexOf("<form", startLabelIndex);
+  const startFormHtml = roomPage.text.slice(startFormIndex, startLabelIndex);
+  const startActionMatch = /name="([^"]*ACTION_ID[^"]*)"/.exec(startFormHtml);
+  const startActionField = startActionMatch === null ? undefined : startActionMatch[1];
+  if (startActionField === undefined) throw new Error("E2E 断言失败：未找到开始跑团 server action");
+  const startForm = new FormData();
+  startForm.set(startActionField, "");
+  startForm.set("roomId", createdRoomId);
+  const started = await call("/rooms/" + createdRoomId + "/prepare", {
+    method: "POST",
+    headers: { origin: BASE, referer: BASE + "/rooms/" + createdRoomId + "/prepare" },
+    body: startForm
+  });
+  expectEqual(started.status, 303, "提交开始跑团后的状态");
+  const playPage = await call("/rooms/" + createdRoomId);
+  expectEqual(playPage.status, 200, "开始跑团后房间页");
+  ensure(playPage.text.includes("跑团日志"), "房间页应显示跑团日志");
   console.log("PASS 开房配置页 E2E：东方房 + ATB + 禁用 GRAZE");
   console.log("  房间 " + createdRoomId + " system=" + room.system + " overrideMode=" + String(combatOverride.mode));
   console.log("  回读 loadEffectivePack：mode=" + effective.compiled.combat.mode + " GRAZE.defaultEnabled=" + String(graze.defaultEnabled) + " label=" + graze.label);

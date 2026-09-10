@@ -23,6 +23,7 @@ export default async function NewCombatPage({
   });
   if (membership === null) notFound();
   const room = membership.room;
+  if (room.status === "LOBBY") redirect("/rooms/" + room.id + "/prepare");
   const effective = await loadEffectivePack({
     id: room.id,
     system: room.system,

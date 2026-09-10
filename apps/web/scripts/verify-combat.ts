@@ -147,6 +147,7 @@ async function main(): Promise<void> {
     });
     roomId = room.id;
 
+    await prisma.room.update({ where: { id: room.id }, data: { status: "PLAYING" } });
     const character = await prisma.character.create({
       data: {
         userId,
@@ -202,7 +203,7 @@ async function main(): Promise<void> {
     assert(created.ok === true && created.combatId !== undefined, created.error ?? "创建战斗失败");
     const combatId = created.combatId as string;
 
-    const combatPage = await call("/rooms/" + room.id + "/combat/" + combatId);
+    const combatPage = await call("/rooms/" + room.id);
     assert(combatPage.status === 200, "战斗页状态 " + combatPage.status);
 
     const ticketResponse = await call("/api/socket-ticket", { method: "POST" });

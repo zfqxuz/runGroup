@@ -50,7 +50,7 @@ export default async function RoomCombatPanel(props: Props) {
             ) : null
           ) : (
             <Link
-              href={"/rooms/" + props.roomId + "/combat/" + active.id}
+              href={"/rooms/" + props.roomId}
               className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-emerald-400"
             >
               进入战斗

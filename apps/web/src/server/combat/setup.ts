@@ -271,6 +271,7 @@ export async function createCombatRecord(
         ruleSnapshotHash: effective.checksum
       }
     });
+    await tx.room.update({ where: { id: roomId }, data: { status: "COMBAT" } });
     await tx.combatSnapshot.create({
       data: { combatId: combat.id, seq: 1, state: state as never }
     });
@@ -312,6 +313,13 @@ export async function saveCombatState(combatId: string, state: CombatState): Pro
     select: { seq: true }
   });
   const seq = (latest?.seq ?? 0) + 1;
+  if (state.phase === "ENDED") {
+    const combat = await prisma.combat.findUnique({ where: { id: combatId }, select: { roomId: true } });
+    if (combat !== null) {
+      await prisma.room.update({ where: { id: combat.roomId }, data: { status: "PLAYING" } });
+    }
+  }
+
   await prisma.$transaction([
     prisma.combat.update({
       where: { id: combatId },
