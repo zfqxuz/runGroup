@@ -4,9 +4,10 @@ import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import { startRoomAction } from "@/server/actions/room";
-import { reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
+import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
 export const dynamic = "force-dynamic";
@@ -263,61 +264,91 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">带入的卡牌（{cardEntries.length}）{pendingCardCount > 0 ? <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">待审 {pendingCardCount}</span> : null}</h2>
-        {cardEntries.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">还没有人带卡牌进来</p>
-        ) : (
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {cardEntries.map((entry) => (
-              <div key={entry.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm text-white/80">{entry.card.name}</p>
-                  <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
-                    {entry.card.type}
-                  </span>
-                </div>
-                <p className="mt-0.5 truncate text-[11px] text-white/35">
-                  {entry.card.owner?.displayName ?? entry.card.owner?.username ?? "未知"}
-                </p>
-                <div className="mt-2 flex items-center justify-between gap-2">
-                  <span
-                    className={
-                      entry.status === "APPROVED"
-                        ? "text-[10px] text-emerald-300"
-                        : entry.status === "REJECTED"
-                          ? "text-[10px] text-red-300"
-                          : "text-[10px] text-amber-300"
-                    }
-                  >
-                    {entry.status}
-                  </span>
-                  {entry.status === "PENDING_REVIEW" && isKP ? (
-                    <div className="flex gap-1">
-                      <form action={reviewEntry}>
-                        <input type="hidden" name="kind" value="CARD" />
-                        <input type="hidden" name="entryId" value={entry.id} />
-                        <input type="hidden" name="approve" value="1" />
-                        <button type="submit" className="rounded border border-emerald-400/40 px-1.5 py-0.5 text-[10px] text-emerald-300">
-                          通过
-                        </button>
-                      </form>
-                      <form action={reviewEntry}>
-                        <input type="hidden" name="kind" value="CARD" />
-                        <input type="hidden" name="entryId" value={entry.id} />
-                        <input type="hidden" name="approve" value="0" />
-                        <input name="comment" placeholder="理由" className="w-20 rounded-md border border-white/15 bg-ink-900 px-1.5 py-1 text-[11px] text-white/70 outline-none focus:border-red-400/50" />
-                        <button type="submit" className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] text-red-300">
-                          驳回
-                        </button>
-                      </form>
-                    </div>
-                  ) : null}
-                </div>
+        <form action={reviewCardEntries}>
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">
+              带入的卡牌（{cardEntries.length}）
+              {pendingCardCount > 0 ? (
+                <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">待审 {pendingCardCount}</span>
+              ) : null}
+            </h2>
+            {isKP && pendingCardCount > 0 ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <input
+                  name="comment"
+                  placeholder="批量驳回理由（可选）"
+                  className="w-40 rounded-md border border-white/15 bg-ink-900 px-2 py-1 text-[11px] text-white/70 outline-none focus:border-sakura-500"
+                />
+                <button
+                  type="submit"
+                  name="decision"
+                  value="APPROVE"
+                  className="rounded-md border border-emerald-400/40 px-3 py-1 text-[11px] text-emerald-300 transition hover:bg-emerald-400/10"
+                >
+                  批量通过
+                </button>
+                <button
+                  type="submit"
+                  name="decision"
+                  value="REJECT"
+                  className="rounded-md border border-red-400/40 px-3 py-1 text-[11px] text-red-300 transition hover:bg-red-400/10"
+                >
+                  批量驳回
+                </button>
               </div>
-            ))}
+            ) : null}
           </div>
-        )}
+          {cardEntries.length === 0 ? (
+            <p className="mt-3 text-xs text-white/35">还没有人带卡牌进来</p>
+          ) : (
+            <div className="mt-4">
+              <p className="text-[11px] text-white/35">KP 可勾选多张待审卡牌后一次性处理</p>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {cardEntries.map((entry) => (
+                  <div key={entry.id} className={"rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(entry.card.rarity)}>
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        {entry.status === "PENDING_REVIEW" && isKP ? (
+                          <input
+                            type="checkbox"
+                            name="entryIds"
+                            value={entry.id}
+                            className="h-4 w-4 shrink-0 accent-sakura-500"
+                          />
+                        ) : null}
+                        <p className="truncate text-sm text-white/80">{entry.card.name}</p>
+                      </div>
+                      <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
+                        {entry.card.type} · {RARITY_LABELS[entry.card.rarity]}
+                      </span>
+                    </div>
+                    <p className="mt-0.5 truncate text-[11px] text-white/35">
+                      {entry.card.owner?.displayName ?? entry.card.owner?.username ?? "未知"}
+                    </p>
+                    <div className="mt-2 flex items-center justify-between gap-2">
+                      <span
+                        className={
+                          entry.status === "APPROVED"
+                            ? "text-[10px] text-emerald-300"
+                            : entry.status === "REJECTED"
+                              ? "text-[10px] text-red-300"
+                              : "text-[10px] text-amber-300"
+                        }
+                      >
+                        {entry.status}
+                      </span>
+                      {entry.status === "PENDING_REVIEW" && isKP ? (
+                        <span className="text-[10px] text-white/25">勾选后批量处理</span>
+                      ) : null}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </form>
       </section>
+
 
       <RoomNpcPanel roomId={room.id} isKP={isKP} />
 

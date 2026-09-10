@@ -16,6 +16,7 @@ interface SeedCard {
   readonly scope?: "COMPENDIUM" | "ROOM";
   readonly owner?: "KP" | "PLAYER";
   readonly equipped?: boolean;
+  readonly isTemplate?: boolean;
 }
 
 async function main(): Promise<void> {
@@ -106,9 +107,10 @@ async function main(): Promise<void> {
   const cards: SeedCard[] = [
     { id: "seed-card-common", type: "WEAPON", name: "演示 · 木剑", subtitle: "普通", description: "用于验证 COMMON 边框", rarity: "COMMON", stats: { damage: "1d6", range: "MELEE", accuracyMod: 0, mpCost: 0 } },
     { id: "seed-card-uncommon", type: "ITEM", name: "演示 · 回复药", subtitle: "罕见", description: "用于验证 UNCOMMON 边框", rarity: "UNCOMMON", stats: { effect: "回复 1d4 点生命", uses: 3, sanCost: null } },
-    { id: "seed-card-rare", type: "SPELLCARD", name: "演示 · 梦想封印", subtitle: "稀有", description: "用于验证 RARE 边框与角色装备", rarity: "RARE", equipped: true, stats: { mode: "DECLARATION", danmaku: "演示用弹幕", mpCost: 10, hpRatio: 2, durationTicks: 720, clearTargets: "ALL", enhanceType: "DANMAKU", enhanceValue: 1.5 } },
+    { id: "seed-card-rare", type: "SPELLCARD", name: "演示 · 梦想封印", subtitle: "稀有", description: "用于验证 RARE 边框与角色装备", rarity: "RARE", equipped: true, isTemplate: true, stats: { mode: "DECLARATION", danmaku: "演示用弹幕", mpCost: 10, hpRatio: 2, durationTicks: 720, clearTargets: "ALL", enhanceType: "DANMAKU", enhanceValue: 1.5 } },
     { id: "seed-card-epic", type: "SPELLCARD", name: "演示 · 梦想天生", subtitle: "史诗", description: "用于验证 EPIC 边框", rarity: "EPIC", stats: { mode: "DECLARATION", danmaku: "演示用弹幕", mpCost: 30, hpRatio: 3, durationTicks: 900, clearTargets: "OTHERS_ONLY", enhanceType: "SPELL", enhanceValue: 2 } },
     { id: "seed-card-legendary", type: "SPELLCARD", name: "演示 · 无想的一刀", subtitle: "传说", description: "用于验证 LEGENDARY 边框", rarity: "LEGENDARY", stats: { mode: "CONSUMPTION", danmaku: "演示用弹幕", mpCost: 40, hpRatio: null, durationTicks: null, clearTargets: null, enhanceType: "AREA", enhanceValue: 3 } },
+    { id: "seed-card-kp-template", type: "WEAPON", name: "演示 · KP 模板长枪", subtitle: "史诗", description: "由 KP 共享，用于验证跨用户模板可见与复制", rarity: "EPIC", scope: "COMPENDIUM", owner: "KP", isTemplate: true, stats: { damage: "2d8+2", range: "FAR", accuracyMod: 5, mpCost: 5 } },
     { id: "seed-card-boss", type: "NPC", name: "演示 Boss · 芙兰", subtitle: "Boss", description: "用于验证 ROOM 卡与传奇边框", rarity: "LEGENDARY", scope: "ROOM", owner: "KP", stats: { tier: "BOSS", race: "VAMPIRE", maxHp: 200, presetId: null } }
   ];
 
@@ -120,6 +122,7 @@ async function main(): Promise<void> {
       roomId: item.scope === "ROOM" ? room.id : null,
       characterId: item.equipped === true ? character.id : null,
       isEquipped: item.equipped === true,
+      isTemplate: item.isTemplate === true,
       type: item.type,
       name: item.name,
       subtitle: item.subtitle,

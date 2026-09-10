@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { deleteCardAction } from "@/server/actions/card";
 import { prisma } from "@/server/db/prisma";
+import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
 interface Props {
   readonly roomId: string;
@@ -42,11 +43,11 @@ export default async function RoomNpcPanel(props: Props) {
           {cards.map((card) => {
             const stats = (card.stats ?? {}) as NpcStatView;
             return (
-              <li key={card.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+              <li key={card.id} className={"rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="truncate text-sm text-white/80">{card.name}</p>
                   <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
-                    {stats.tier ?? "NPC"}
+                    {stats.tier ?? "NPC"} · {RARITY_LABELS[card.rarity]}
                   </span>
                 </div>
                 <p className="mt-0.5 truncate text-[11px] text-white/35">

@@ -60,3 +60,29 @@ export const RANGE_LABELS: Record<WeaponStats["range"], string> = {
   NEAR: "中距",
   FAR: "远距"
 };
+
+export const CARD_RARITIES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] as const;
+export type CardRarity = (typeof CARD_RARITIES)[number];
+
+export const RARITY_LABELS: Record<CardRarity, string> = {
+  COMMON: "普通",
+  UNCOMMON: "罕见",
+  RARE: "稀有",
+  EPIC: "史诗",
+  LEGENDARY: "传说"
+};
+
+export const RARITY_BORDER_CLASSES: Record<CardRarity, string> = {
+  COMMON: "border-white/15",
+  UNCOMMON: "border-emerald-400/50",
+  RARE: "border-sky-400/60",
+  EPIC: "border-violet-400/70",
+  LEGENDARY: "border-amber-400/80"
+};
+
+export function cardRarityBorderClass(rarity: string): string {
+  if (Object.prototype.hasOwnProperty.call(RARITY_BORDER_CLASSES, rarity)) {
+    return RARITY_BORDER_CLASSES[rarity as CardRarity];
+  }
+  return RARITY_BORDER_CLASSES.COMMON;
+}

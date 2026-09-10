@@ -13,6 +13,7 @@ import ImageUpload from "@/components/upload/ImageUpload";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
 export const dynamic = "force-dynamic";
 
@@ -156,10 +157,10 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {equipped.map((card) => (
-              <div key={card.id} className="flex items-center justify-between gap-2 rounded-lg border border-emerald-400/20 bg-emerald-400/5 px-3 py-2.5">
+              <div key={card.id} className={"flex items-center justify-between gap-2 rounded-lg border-2 bg-emerald-400/5 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
                 <div className="min-w-0">
                   <p className="truncate text-sm text-white/80">{card.name}</p>
-                  <p className="text-[11px] text-white/35">{card.type}</p>
+                  <p className="text-[11px] text-white/35">{card.type} · {RARITY_LABELS[card.rarity]}</p>
                 </div>
                 <form action={unequipCardAction}>
                   <input type="hidden" name="cardId" value={card.id} />
@@ -180,12 +181,12 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {library.map((card) => (
-              <form key={card.id} action={equipCardAction} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+              <form key={card.id} action={equipCardAction} className={"flex items-center justify-between gap-2 rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
                 <input type="hidden" name="cardId" value={card.id} />
                 <input type="hidden" name="characterId" value={character.id} />
                 <div className="min-w-0">
                   <p className="truncate text-sm text-white/70">{card.name}</p>
-                  <p className="text-[11px] text-white/30">{card.type}</p>
+                  <p className="text-[11px] text-white/30">{card.type} · {RARITY_LABELS[card.rarity]}</p>
                 </div>
                 <button type="submit" className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10">装备</button>
               </form>

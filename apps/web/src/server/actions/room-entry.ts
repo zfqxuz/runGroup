@@ -141,3 +141,45 @@ export async function reviewEntry(formData: FormData): Promise<void> {
   });
   revalidatePath("/rooms/" + entry.roomId);
 }
+
+/** KP 批量审核卡牌带入申请。 */
+export async function reviewCardEntries(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) return;
+
+  const ids = formData
+    .getAll("entryIds")
+    .map((value) => String(value))
+    .filter((value) => value.length > 0)
+    .slice(0, 200);
+  if (ids.length === 0) return;
+
+  const approved = String(formData.get("decision") ?? "REJECT") === "APPROVE";
+  const comment = String(formData.get("comment") ?? "").trim().slice(0, 200);
+  const status = approved ? "APPROVED" : "REJECTED";
+  const reviewedAt = new Date();
+
+  const entries = await prisma.roomCardEntry.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, roomId: true }
+  });
+  const first = entries[0];
+  if (first === undefined) return;
+  const roomId = first.roomId;
+  const sameRoom = entries.every((entry) => entry.roomId === roomId);
+  if (sameRoom === false) return;
+
+  const membership = await membershipOf(roomId, session.user.id);
+  if (membership === null || membership.role !== "KP") return;
+
+  await prisma.roomCardEntry.updateMany({
+    where: {
+      id: { in: entries.map((entry) => entry.id) },
+      roomId,
+      status: "PENDING_REVIEW"
+    },
+    data: { status, comment: comment.length === 0 ? null : comment, reviewedAt }
+  });
+
+  revalidatePath("/rooms/" + roomId);
+}

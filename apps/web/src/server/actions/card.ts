@@ -175,3 +175,65 @@ export async function deleteCardAction(formData: FormData): Promise<void> {
   await prisma.card.delete({ where: { id: card.id } });
   if (card.roomId !== null) revalidatePath("/rooms/" + card.roomId);
 }
+
+/** 把自己的 COMPENDIUM 卡设置为共享模板，供其他用户复制。 */
+export async function setCardTemplateAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) return;
+
+  const cardId = String(formData.get("cardId") ?? "");
+  if (cardId.length === 0) return;
+  const shared = String(formData.get("shared") ?? "") === "1";
+
+  const card = await prisma.card.findUnique({ where: { id: cardId } });
+  if (card === null || card.ownerId !== session.user.id || card.scope !== "COMPENDIUM") return;
+
+  await prisma.card.update({ where: { id: card.id }, data: { isTemplate: shared } });
+  revalidatePath("/cards");
+}
+
+/** 复制一张共享模板到自己的卡库；同一模板只保留一份副本。 */
+export async function copyCardTemplateAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) return;
+
+  const templateId = String(formData.get("templateId") ?? "");
+  if (templateId.length === 0) return;
+
+  const source = await prisma.card.findUnique({ where: { id: templateId } });
+  if (source === null || source.scope !== "COMPENDIUM" || source.isTemplate === false) return;
+  if (source.ownerId === session.user.id) return;
+
+  const existing = await prisma.card.findFirst({
+    where: { templateId: source.id, ownerId: session.user.id },
+    select: { id: true }
+  });
+  if (existing !== null) {
+    revalidatePath("/cards");
+    return;
+  }
+
+  await prisma.card.create({
+    data: {
+      scope: "COMPENDIUM",
+      templateId: source.id,
+      ownerId: session.user.id,
+      type: source.type,
+      name: source.name,
+      subtitle: source.subtitle,
+      description: source.description,
+      imageUrl: source.imageUrl,
+      thumbnailUrl: source.thumbnailUrl,
+      rarity: source.rarity,
+      frameColor: source.frameColor,
+      stats: source.stats as Prisma.InputJsonValue,
+      system: source.system,
+      isEquipped: false,
+      equipSlot: null,
+      quantity: source.quantity,
+      pointCost: source.pointCost
+    }
+  });
+
+  revalidatePath("/cards");
+}

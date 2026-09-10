@@ -367,6 +367,8 @@ model Card {
   equipSlot  String?
   quantity   Int     @default(1)
   pointCost  Int     @default(0)
+  /// 是否作为跨用户可见的共享模板卡。
+  isTemplate Boolean @default(false)
 
   owner     User?      @relation("CardOwner", fields: [ownerId], references: [id])
   character Character? @relation(fields: [characterId], references: [id], onDelete: Cascade)
@@ -380,6 +382,7 @@ model Card {
 
   @@index([characterId, scope])
   @@index([roomId, type])
+  @@index([scope, isTemplate])
   @@index([templateId])
 }
 

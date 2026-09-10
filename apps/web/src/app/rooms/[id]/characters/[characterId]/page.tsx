@@ -12,6 +12,7 @@ import {
 import { unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
 export const dynamic = "force-dynamic";
 
@@ -171,11 +172,11 @@ export default async function CharacterPage({
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {character.cards.map((card) => (
-              <div key={card.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+              <div key={card.id} className={"rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
                 <div className="flex items-center justify-between gap-2">
                   <p className="truncate text-sm text-white/80">{card.name}</p>
                   <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
-                    {card.type}
+                    {card.type} · {RARITY_LABELS[card.rarity]}
                   </span>
                 </div>
                 {card.subtitle === null ? null : (
