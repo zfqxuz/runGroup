@@ -26,6 +26,14 @@ export async function submitCharacterToRoom(formData: FormData): Promise<void> {
   const character = await prisma.character.findUnique({ where: { id: characterId } });
   if (character === null || character.userId !== session.user.id) return;
 
+  const roomForCharacter = await prisma.room.findUnique({
+    where: { id: roomId },
+    select: { system: true }
+  });
+  if (roomForCharacter === null) return;
+  // 模组不混用：东方角色进不了 COC7 房间，反之亦然
+  if (character.system !== roomForCharacter.system) return;
+
   await prisma.roomCharacterEntry.upsert({
     where: { roomId_characterId: { roomId, characterId } },
     create: { roomId, characterId, status: "PENDING_REVIEW" },
@@ -49,6 +57,14 @@ export async function submitCardToRoom(formData: FormData): Promise<void> {
 
   const card = await prisma.card.findUnique({ where: { id: cardId } });
   if (card === null || card.ownerId !== session.user.id) return;
+
+  const roomForCard = await prisma.room.findUnique({
+    where: { id: roomId },
+    select: { system: true }
+  });
+  if (roomForCard === null) return;
+  // 模组不混用：COC7 的卡带不进东方房
+  if (card.system !== roomForCard.system) return;
 
   await prisma.roomCardEntry.upsert({
     where: { roomId_cardId: { roomId, cardId } },

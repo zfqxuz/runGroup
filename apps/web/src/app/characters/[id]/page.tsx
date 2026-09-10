@@ -46,7 +46,13 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     orderBy: { createdAt: "asc" }
   });
   const library = await prisma.card.findMany({
-    where: { ownerId: session.user.id, scope: "COMPENDIUM", characterId: null },
+    // 可装备的只有同模组的卡
+    where: {
+      ownerId: session.user.id,
+      scope: "COMPENDIUM",
+      characterId: null,
+      system: character.system
+    },
     orderBy: { createdAt: "desc" }
   });
 
