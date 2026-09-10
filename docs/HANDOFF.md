@@ -100,7 +100,7 @@
 - 房间状态：LOBBY 只能准备；PLAYING 才能聊天/掷骰/开战；COMBAT 中房间页内联战斗；战斗结束回 PLAYING。
 - 战斗状态持久化：Combat + CombatSnapshot；Socket 进程内存里有 runtime cache，服务重启后从最新快照恢复。
 - 行动控制关系见 `apps/web/src/server/combat/runtime.ts`：PC 的控制者是 Character.userId，NPC 的控制者是本房所有 KP。
-- 技能 ID 是 RulePack `skills[].id`。战斗界面会从有效规则包取技能列表，并按当前行动单位过滤。COC7 没有 DANMAKU，不要拿东方技能去打 COC7 战斗。
+- 技能 ID 是 RulePack `skills[].id`。攻击技能由 `apps/web/src/server/combat/options.ts` 按房间生效规则包 + 角色已装备 WEAPON 卡推导：COC7 没装备武器时只允许 FIGHTING_BRAWL；装备武器后按 range/skillId 映射到对应射击/格斗技能；非 COMBAT 技能不会进入攻击下拉。东方的 DANMAKU/消弹/规则外施法不会出现在纯 COC 房。Socket 侧由 `validateCombatAction` 再校验一次。
 - 创建战斗时会用规则引擎补全角色所有基础技能值，再叠加角色实际分配值，所以旧角色不会因为没加点就命中 0。已有旧战斗要中止后重新发起才会应用。
 - 战斗反应窗口是 MVP：有 pendingReactions 时等待反应；KP 可以强制结算。
 - E2E 脚本只用于本地，不要提交真实用户数据；脚本在 finally 里清房间和用户。
@@ -131,6 +131,7 @@ cd apps/web
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-room-setup.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-combat.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-library.ts
+npm run verify:combat-options
 ```
 
 最近一次实测：
@@ -138,6 +139,7 @@ E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-l
 - verify-room-setup：PASS，包含东方房 ATB + 禁用 GRAZE + 准备页/跑团页切换。
 - verify-combat：PASS，包含建战斗、Socket 加入、行动、防守反应、结算、快照、KP 中止。
 - verify-card-library：PASS，包含批量审核 2 张、稀有度边框、共享模板复制。
+- verify-combat-options：PASS，覆盖 COC 斗殴/武器限制、非战斗技能过滤、服务端行动校验。
 - npm test：137 tests 通过。
 - npm run typecheck：所有 workspace 通过。
 
@@ -151,6 +153,7 @@ E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-l
 ## 9. 最近提交
 
 ```text
+da26a5b fix(combat): 按规则包与装备过滤战斗技能
 ca85efe feat(card): 完成卡牌批量审核、稀有度边框与共享模板
 4c58cfe chore: 迁移 npm 解析地址并添加演示 seed
 947432d fix(combat): 技能选项按单位过滤并补全基础值，新增战斗中止
