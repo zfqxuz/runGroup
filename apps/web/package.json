@@ -15,7 +15,8 @@
     "db:deploy": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
-    "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script"
+    "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
+    "db:seed": "prisma db seed"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -46,5 +47,8 @@
     "tailwindcss": "^3.4.15",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
   }
 }
