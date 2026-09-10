@@ -1,6 +1,6 @@
 # 东方 TRPG 平台 · 交接文档
 
-给下一个会话的 AI / 开发者。当前基线 commit：`947432d`，分支 `main`，工作区干净。
+给下一个会话的 AI / 开发者。当前基线 commit：`d20735e`，分支 `main`，工作区干净。
 
 ## 0. 环境约束（先读）
 
@@ -21,8 +21,12 @@
 - 房间准备页与跑团页已拆分。
 - 战斗可发起、可审批、可 Socket 操作、可中止，战斗快照持久化。
 - 卡牌批量审核、稀有度边框、COMPENDIUM 共享模板与复制已完成。
+- 职业库：230 个 COC7 职业 + 7 个东方千幻抄职业已落库，含年代标记、信用范围、职业点公式与本职技能文案。
+- 房间新增 `era`（现代 / 1920）；车卡页按房间年代过滤职业；车卡时职业点与兴趣点分开计算。
+- xlsx 人物卡导入：基础信息、属性、职业序号、技能（初始 / 成长 / 职业 / 兴趣）、信用评级与武器可一键导入个人角色库。
 
-测试规模：137 tests 全部通过（formula 48 / rules 57 / combat 32）。
+测试规模：137 unit tests 全部通过（formula 48 / rules 57 / combat 32）；
+E2E 脚本已覆盖 room-setup / combat / card-library / combat-options / character-import。
 
 ## 2. 本轮完成（第 4 节 1 至 6 项）
 
@@ -131,6 +135,7 @@ cd apps/web
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-room-setup.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-combat.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-library.ts
+E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-character-import.ts
 npm run verify:combat-options
 ```
 
@@ -142,6 +147,7 @@ npm run verify:combat-options
 - verify-combat-options：PASS，覆盖 COC 斗殴/武器限制、非战斗技能过滤、服务端行动校验。
 - npm test：137 tests 通过。
 - npm run typecheck：所有 workspace 通过。
+- verify-character-import：PASS，动态构造 xlsx，验证属性 / 职业 / 技能 / 武器落库。
 
 ## 8. 第 7 项：COMPENDIUM 共享库（已完成）
 
@@ -150,9 +156,46 @@ npm run verify:combat-options
 - KP 模板卡 / COMPENDIUM 共享库：`Card.isTemplate`（迁移 `20260910160000_card_shared_template`）标记共享模板；卡牌库新增“共享模板库”，可复制其他用户的模板到自己的个人卡库，副本通过 `templateId` 指回来源。
 - E2E：`apps/web/scripts/verify-card-library.ts`，覆盖批量审核、稀有度边框、共享模板复制。
 
-## 9. 最近提交
+## 9. 第 8 项（本轮）：职业库、年代与 xlsx 人物卡导入
+
+### 数据层
+- 新增 `Occupation` 表与迁移 `20260910170000_occupations_and_room_era`。
+- `apps/web/prisma/data/occupations.json`：230 个 COC7 职业 + 7 个东方千幻抄职业。
+  - 字段：`code / name / era / creditMin / creditMax / pointsText / pointsFormula / skillsText / skillNames / relations / description`。
+  - COC7 职业来自空白人物卡“职业列表”与“本职技能”表；东方职业来自用户提供的《东方千幻抄 ver1.10》第三章。
+  - `era`：`BOTH / CLASSIC / MODERN`；`skillNames` 用于标记本职 / 可选技能与“任意 / 自选”位。
+- `Room.era`：`CLASSIC`（UI 显示 1920 年代）或 `MODERN`；TOUHOU 允许为空。
+- `Character` 新增 `occupationId / era / skillAllocation / sourceData`。
+- `packages/rules/src/schema.ts` 的 `RaceSchema` 增加可选 `interestPoints`，用于千幻抄人类“兴趣技能点 = 智力 ×2.5”。
+
+### 规则包调整
+- `touhou-ext` 按用户提供的《东方千幻抄》正文补充/修正种族：
+  人类、妖精、魔法使、妖兽、河童、付丧神、亡灵、妖怪、天狗、吸血鬼等。
+- 新增/改名技能：`SPIRIT_ARTS` 改为“神术/阴阳术”，并补充 `MAGIC`、`RUNE`、`PUPPETRY`、`DIVINATION`、`NINJUTSU`、`SCIENCE`。
+- 注意：原文中的“新增技能表格”在粘贴文本里是图片，B 站原文档也因风控取不到；完整技能数值仍待用户提供图片或原文档。
+
+### 车卡与导入
+- `CharacterBuilder`：
+  - 选职业（服务端按房间年代过滤后传入）。
+  - 职业点按所选职业 `pointsFormula` 计算；兴趣点可使用种族 `interestPoints`。
+  - 技能卡上分成“职 / 趣”两个加值列；保存时提交 `skillAllocation`，服务端重算每个技能的基础值。
+- `/characters/import` 与 `importCharacterAction`：
+  - 服务端 `parseCharacterWorkbook` 解析“人物卡”工作表。
+  - 支持属性单元格、左右技能栏、职业序号、年代单元格和武器表。
+  - 导入到个人角色库；带入房间仍走原有 `RoomCharacterEntry` KP 审核。
+- E2E：`apps/web/scripts/verify-character-import.ts`，运行时动态构造最小 xlsx，不提交真实用户卡。
+
+### 下一轮待办
+- 按空白卡“附表 B95:K212”补齐 COC7 完整技能表（含格斗 / 射击 / 科学 / 技艺 / 语言 / 驾驶 / 生存等专精），并把导入技能映射到统一 ID。
+- 等用户提供《东方千幻抄》新增技能表格截图 / 原文档，再补全东方技能数值、初始值与职业可选技能限制。
+- 职业点目前允许在“本职 + 可选 + 自选”范围内分配，但尚未严格校验各选择组数量；后续可在 `Occupation.skillNames` 上增加结构化 `choiceRules`。
+- 可再补：房间准备阶段允许 KP 修改年代 / 车卡标准、审核页显示年代匹配提示、xlsx 物品 / 法术 / 背景故事导入。
+
+## 10. 最近提交
 
 ```text
+d20735e feat(character): 职业库、年代属性与 xlsx 人物卡导入
+25067b3 docs: 补充战斗技能过滤说明与验证
 da26a5b fix(combat): 按规则包与装备过滤战斗技能
 ca85efe feat(card): 完成卡牌批量审核、稀有度边框与共享模板
 4c58cfe chore: 迁移 npm 解析地址并添加演示 seed
