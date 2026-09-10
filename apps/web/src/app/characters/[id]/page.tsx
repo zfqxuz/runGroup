@@ -9,6 +9,7 @@ import {
   type AttributeKey,
   type AttributeSet
 } from "@touhou/rules";
+import ImageUpload from "@/components/upload/ImageUpload";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -26,7 +27,11 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
 
   const character = await prisma.character.findUnique({
     where: { id: params.id },
-    include: { roomEntries: { include: { room: { select: { id: true, name: true } } } } }
+    include: {
+      roomEntries: { include: { room: { select: { id: true, name: true } } } },
+      portrait: true,
+      avatar: true
+    }
   });
   if (character === null || character.userId !== session.user.id) notFound();
 
@@ -87,6 +92,26 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
           </p>
         )}
       </header>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">立绘与头像</h2>
+        <div className="mt-4 flex flex-wrap items-start gap-6">
+          <ImageUpload
+            kind="PORTRAIT"
+            targetId={character.id}
+            currentUrl={character.portrait?.url ?? null}
+            label="上传立绘"
+            shape="wide"
+          />
+          <ImageUpload
+            kind="AVATAR"
+            targetId={character.id}
+            currentUrl={character.avatar?.url ?? null}
+            label="上传头像"
+            shape="square"
+          />
+        </div>
+      </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">属性</h2>

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import ImageUpload from "@/components/upload/ImageUpload";
 import { deleteCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -62,6 +63,15 @@ export default async function CardsLibraryPage() {
                   {card.character === null ? "库中" : "已装备给 " + card.character.name}
                   {card.roomEntries.length === 0 ? "" : " · 已带入 " + card.roomEntries.length + " 个房间"}
                 </p>
+                <div className="mt-2">
+                  <ImageUpload
+                    kind="CARD_ART"
+                    targetId={card.id}
+                    currentUrl={card.imageUrl}
+                    label="上传卡面"
+                    shape="wide"
+                  />
+                </div>
                 <form action={deleteCardAction} className="mt-2">
                   <input type="hidden" name="cardId" value={card.id} />
                   <button type="submit" className="w-full rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/40 transition hover:border-red-400/40 hover:text-red-300">
