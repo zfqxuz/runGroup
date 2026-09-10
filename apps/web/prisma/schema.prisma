@@ -41,6 +41,8 @@ enum CardType {
 }
 
 enum CardScope {
+  /// 系统预设的通用角色：任何人可用，按 system 区分模组
+  PRESET
   COMPENDIUM
   ROOM
   CHARACTER
@@ -176,6 +178,7 @@ model User {
   diceRolls   DiceRoll[]
   ownedRooms  Room[]              @relation("RoomOwner")
   ruleAudits  RuleOverrideAudit[]
+  combatRequests CombatRequest[] @relation("CombatRequestInitiator")
 }
 
 model RulePack {
@@ -251,6 +254,7 @@ model Room {
   characterEntries RoomCharacterEntry[]
   cardEntries      RoomCardEntry[]
   ruleAudits RuleOverrideAudit[]
+  combatRequests   CombatRequest[]
   encounters Encounter[]
   Character  Character[]
 
@@ -763,5 +767,23 @@ model RoomCardEntry {
   card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
   @@unique([roomId, cardId])
+  @@index([roomId, status])
+}
+
+/// 玩家发起的战斗申请。KP 发起时直接开战，不经过这张表。
+model CombatRequest {
+  id          String       @id @default(cuid())
+  roomId      String
+  initiatorId String
+  status      ReviewStatus @default(PENDING_REVIEW)
+  /// 参战单位与阵营划分：{ allies: [...], enemies: [...] }
+  setup       Json         @default("{}")
+  comment     String?
+  createdAt   DateTime     @default(now()) @db.Timestamptz(3)
+  reviewedAt  DateTime?    @db.Timestamptz(3)
+
+  room      Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  initiator User @relation("CombatRequestInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
+
   @@index([roomId, status])
 }
