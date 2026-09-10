@@ -279,3 +279,50 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 2. `Game` / `GameState` 与暂停、继续。
 3. 跨局成长与结束流程。
 4. 重连与恢复。
+
+## 12. 第 10 项：当前角色、Game / GameState 与暂停继续结束（已完成基础）
+
+### 数据层
+- 新增 `Game`、`GameState`、`GameCharacter`、`CharacterAdvancement` 表和迁移 `20260910200000_games`。
+- `RoomStatus` 增加 `PAUSED`。
+- `RoomMember.activeCharacterId` 已接入准备页与跑团页。
+
+### 流程
+- 准备页可从已通过审核的角色中选择“当前角色”。
+- KP 开始新局时会：
+  - 创建 `Game` 与 `GameState`。
+  - 为每名 PL 创建 `GameCharacter`，读取当前角色 HP / MP / SAN / DP。
+- KP 可以在跑团页暂停本局：
+  - 暂停后房间状态为 `PAUSED`，自动回到准备页。
+  - 所有非旁观成员 ready 重置。
+- 全员重新准备后，KP 点击“继续跑团”：
+  - 读取已有 `Game` 与 `GameState`。
+  - 恢复为 `PLAYING`，不创建新局。
+- KP 可以结束本局：
+  - `Game.status = ENDED`。
+  - 房间回到 `LOBBY`，可以准备下一局。
+  - 角色、物品和成长记录不会因结束本局而删除。
+
+### E2E
+`npm run verify:room-ready` 已扩展覆盖：
+
+- 未 ready 不能开始。
+- 有 PL 缺少通过审核角色不能开始。
+- 当前角色保存。
+- 开始新局并创建 GameCharacter。
+- 暂停、全员重新准备、继续。
+- 结束本局回到 LOBBY。
+
+当前验证结果：
+
+- `verify:room-ready`：PASS
+- `verify:module-import`：PASS
+- 其他既有 E2E：PASS
+- `npm run typecheck`：PASS
+- `npm run build --workspace @touhou/web`：PASS
+
+### 下一阶段
+- `CharacterAdvancement` 的成长录入与角色页标注。
+- `GameState` 的章节 / 场景 / 遭遇 / 时间 / 旗标编辑 UI。
+- 断线重连时返回完整 GameState 与战斗快照。
+- 团本管理页的删除、复制与资源替换。
