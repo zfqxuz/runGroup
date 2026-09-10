@@ -6,6 +6,7 @@ import {
   type DefenseReaction
 } from "@touhou/combat";
 import { compileRulePack, type CompiledRulePack } from "@touhou/rules";
+import { loadAttackSkillsByParticipant } from "./options";
 import { prisma } from "@/server/db/prisma";
 
 export type RuntimeRole = "KP" | "PLAYER" | "SPECTATOR";
@@ -17,6 +18,7 @@ export interface CombatRuntime {
   readonly state: CombatState;
   readonly controllers: Map<string, string[]>;
   readonly roles: Map<string, RuntimeRole>;
+  readonly attackSkills: ReadonlyMap<string, readonly string[]>;
   pendingReactions: Map<string, string>;
   reactions: Record<string, DefenseReaction>;
 }
@@ -76,6 +78,15 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       controllers.set(participant.id, kpIds);
     }
   }
+  const attackSkills = await loadAttackSkillsByParticipant(
+    pack,
+    state.participants.map((participant) => ({
+      id: participant.id,
+      kind: participant.kind,
+      characterId: participant.characterId,
+      skills: participant.skills
+    }))
+  );
   const runtime: CombatRuntime = {
     combatId,
     roomId: combat.roomId,
@@ -83,6 +94,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     state,
     controllers,
     roles,
+    attackSkills,
     pendingReactions: new Map(),
     reactions: {}
   };

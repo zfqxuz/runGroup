@@ -229,7 +229,7 @@ async function main(): Promise<void> {
     const actionAck = await emitAck<Ack>(socket, "combat:action", {
       combatId,
       actorId: actor?.id,
-      action: { kind: "DANMAKU", targetId: target?.id, skill: "DANMAKU", damage: "2d6+2" }
+      action: { kind: "DANMAKU", targetId: target?.id, skill: "DANMAKU", accuracyMod: 200, damage: "2d6+2" }
     });
     assert(actionAck.ok === true, actionAck.error ?? "提交行动失败");
 

@@ -41,6 +41,7 @@ export const WeaponStatsSchema = z.object({
     .max(30)
     .regex(/^\s*[+-]?\s*\d*d\d+(\s*[+-]\s*\d+)?\s*$/i, "格式如 2d6+3"),
   range: z.enum(["MELEE", "NEAR", "FAR"]),
+  skillId: z.string().max(60).nullable().default(null),
   accuracyMod: z.number().int().min(-50).max(50),
   mpCost: z.number().int().min(0).max(999)
 });

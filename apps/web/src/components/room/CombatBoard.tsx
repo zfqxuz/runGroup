@@ -22,12 +22,18 @@ interface Props {
   readonly combatId: string;
   readonly isKP: boolean;
   readonly skillOptions: readonly SkillOption[];
+  readonly system: "COC7" | "TOUHOU";
+  readonly canCounter: boolean;
+  readonly canOutOfRule: boolean;
+  readonly attackSkillsByParticipant: Readonly<Record<string, readonly string[]>>;
 }
 
-function pickSkill(options: readonly SkillOption[]): string {
-  const preferred = options.find((item) => item.id === "DANMAKU") ?? options.find((item) => item.id === "FIGHTING_BRAWL");
-  return preferred?.id ?? options[0]?.id ?? "";
-}
+const REACTION_LABELS: Record<CombatReactionPayload["type"], string> = {
+  PASS: "不应对",
+  DEFEND: "防御",
+  DODGE: "闪避",
+  COUNTER: "消弹对抗"
+};
 
 type ConnState = "connecting" | "online" | "offline";
 
@@ -41,7 +47,7 @@ export default function CombatBoard(props: Props) {
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState("");
-  const [skill, setSkill] = useState(() => pickSkill(props.skillOptions));
+  const [skill, setSkill] = useState("");
   const [damage, setDamage] = useState("1d6");
   const [outName, setOutName] = useState("规则外法术");
   const [actorId, setActorId] = useState("");
@@ -128,13 +134,34 @@ export default function CombatBoard(props: Props) {
   });
   const selectedActor = readyControlled.find((item) => item.id === actorId) ?? readyControlled[0] ?? null;
   const actorSkills = selectedActor?.skills ?? {};
-  const usableSkills = props.skillOptions.filter((option) => Object.prototype.hasOwnProperty.call(actorSkills, option.id));
-  const attackSkills = usableSkills.length > 0 ? usableSkills : props.skillOptions;
+  const selectedActorId = selectedActor === null ? "" : selectedActor.id;
+  const allowedAttackSkillIds = props.attackSkillsByParticipant[selectedActorId] ?? [];
+  const attackSkills = props.skillOptions.filter((option) => allowedAttackSkillIds.includes(option.id));
   const activeSkill = attackSkills.some((option) => option.id === skill) ? skill : (attackSkills[0]?.id ?? "");
   const targetOptions = alive.filter((item) => item.id !== selectedActor?.id);
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
   const reactionTarget = reaction === null ? null : participants.find((item) => item.id === reaction.targetId) ?? null;
   const showReaction = reaction !== null && ((props.isKP && reactionTarget?.kind === "NPC") || reactionTarget?.isSelf === true);
+  const reactionActorSkills = reactionTarget?.skills ?? {};
+  const reactionSkillIds = new Set<string>();
+  if (reactionType === "DODGE") {
+    reactionSkillIds.add("DODGE");
+    if (props.system === "TOUHOU") reactionSkillIds.add("GRAZE");
+  }
+  const counterTargetId = reactionTarget === null ? "" : reactionTarget.id;
+  if (reactionType === "COUNTER" && counterTargetId.length > 0) {
+    for (const id of props.attackSkillsByParticipant[counterTargetId] ?? []) reactionSkillIds.add(id);
+  }
+  const reactionSkillOptions = props.skillOptions.filter(
+    (option) =>
+      reactionSkillIds.has(option.id) &&
+      Object.prototype.hasOwnProperty.call(reactionActorSkills, option.id)
+  );
+  const activeReactionSkill = reactionSkillOptions.some((option) => option.id === reactionSkill)
+    ? reactionSkill
+    : (reactionSkillOptions[0]?.id ?? "");
+  const reactionTypeOptions: readonly CombatReactionPayload["type"][] =
+    reaction === null ? ["PASS", "DEFEND", "DODGE"] : reaction.options;
 
   function emitAction(action: CombatActionPayload): void {
     const socket = socketRef.current;
@@ -152,7 +179,14 @@ export default function CombatBoard(props: Props) {
     if (socket === null || reaction === null) return;
     socket.emit(
       "combat:reaction",
-      { combatId: props.combatId, targetId: reaction.targetId, reaction: { type: reactionType, skill: reactionSkill } },
+      {
+        combatId: props.combatId,
+        targetId: reaction.targetId,
+        reaction: {
+          type: reactionType,
+          skill: activeReactionSkill.length > 0 ? activeReactionSkill : undefined
+        }
+      },
       (result: Ack) => {
         if (result.ok === false) setError(result.error ?? "反应提交失败");
       }
@@ -292,7 +326,13 @@ export default function CombatBoard(props: Props) {
                 </label>
                 <label className="flex flex-col gap-1.5">
                   <span className="text-[11px] text-white/40">技能</span>
-                  <select value={activeSkill} onChange={(event) => setSkill(event.target.value)} className={inputClass}>
+                  <select
+                    value={activeSkill}
+                    onChange={(event) => setSkill(event.target.value)}
+                    className={inputClass}
+                    disabled={attackSkills.length === 0}
+                  >
+                    {attackSkills.length === 0 ? <option value="">当前无可用攻击技能</option> : null}
                     {attackSkills.map((option) => (
                       <option key={option.id} value={option.id}>
                         {option.id} · {option.name} ({actorSkills[option.id] ?? "-"})
@@ -308,20 +348,25 @@ export default function CombatBoard(props: Props) {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage })}
-                  className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+                  disabled={attackSkills.length === 0}
+                  onClick={() => { if (attackSkills.length > 0) emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage }); }}
+                  className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
                 >
                   攻击
                 </button>
                 <button type="button" onClick={() => emitAction({ kind: "DEFEND" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">防御姿态</button>
                 <button type="button" onClick={() => emitAction({ kind: "DODGE" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">闪避姿态</button>
-                <button type="button" onClick={() => emitAction({ kind: "COUNTER" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">消弹姿态</button>
+                {props.canCounter ? (
+                  <button type="button" onClick={() => emitAction({ kind: "COUNTER" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">消弹姿态</button>
+                ) : null}
                 <button type="button" onClick={() => emitAction({ kind: "PASS" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">跳过</button>
               </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <input value={outName} onChange={(event) => setOutName(event.target.value)} className={inputClass + " flex-1"} />
-                <button type="button" onClick={() => emitAction({ kind: "OUT_OF_RULE", name: outName })} className="rounded-lg border border-purple-400/40 px-3 py-2 text-xs text-purple-300 transition hover:bg-purple-400/10">规则外施法</button>
-              </div>
+              {props.canOutOfRule ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <input value={outName} onChange={(event) => setOutName(event.target.value)} className={inputClass + " flex-1"} />
+                  <button type="button" onClick={() => emitAction({ kind: "OUT_OF_RULE", name: outName })} className="rounded-lg border border-purple-400/40 px-3 py-2 text-xs text-purple-300 transition hover:bg-purple-400/10">规则外施法</button>
+                </div>
+              ) : null}
             </div>
           )}
 
@@ -332,12 +377,21 @@ export default function CombatBoard(props: Props) {
               </p>
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <select value={reactionType} onChange={(event) => setReactionType(event.target.value as CombatReactionPayload["type"])} className={inputClass}>
-                  <option value="PASS">不应对</option>
-                  <option value="DEFEND">防御</option>
-                  <option value="DODGE">闪避 / 擦弹</option>
-                  <option value="COUNTER">消弹对抗</option>
+                  {reactionTypeOptions.map((type) => (
+                    <option key={type} value={type}>
+                      {REACTION_LABELS[type]}{type === "DODGE" && props.system === "TOUHOU" ? " / 擦弹" : ""}
+                    </option>
+                  ))}
                 </select>
-                <input value={reactionSkill} onChange={(event) => setReactionSkill(event.target.value)} className={inputClass} />
+                {reactionSkillOptions.length === 0 ? null : (
+                  <select value={activeReactionSkill} onChange={(event) => setReactionSkill(event.target.value)} className={inputClass}>
+                    {reactionSkillOptions.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.name} ({reactionActorSkills[option.id] ?? "-"})
+                      </option>
+                    ))}
+                  </select>
+                )}
                 <button type="button" onClick={submitReaction} className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-medium text-ink-900 transition hover:bg-amber-300">提交应对</button>
               </div>
             </div>

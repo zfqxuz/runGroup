@@ -17,7 +17,8 @@
     "db:studio": "prisma studio",
     "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
     "db:seed": "prisma db seed",
-    "verify:card-library": "tsx --env-file=.env scripts/verify-card-library.ts"
+    "verify:card-library": "tsx --env-file=.env scripts/verify-card-library.ts",
+    "verify:combat-options": "tsx --env-file=.env scripts/verify-combat-options.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

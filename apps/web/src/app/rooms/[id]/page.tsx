@@ -1,11 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import type { CombatState } from "@touhou/combat";
 import CombatBoard from "@/components/room/CombatBoard";
 import RoomCombatPanel from "@/components/room/RoomCombatPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import { auth } from "@/server/auth";
 import { loadEffectivePack } from "@/server/rules/loader";
+import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
 import { prisma } from "@/server/db/prisma";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
@@ -84,6 +86,35 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     select: { id: true }
   });
 
+  const combatFeatures = combatFeatureFlags(effective.compiled);
+  const attackSkillsByParticipant: Record<string, readonly string[]> = {};
+  if (activeCombat === null) {
+    // 没有进行中的战斗时保持空表。
+  } else {
+    const snapshot = await prisma.combatSnapshot.findFirst({
+      where: { combatId: activeCombat.id },
+      orderBy: { seq: "desc" },
+      select: { state: true }
+    });
+    if (snapshot === null) {
+      // 快照缺失时保持空表。
+    } else {
+      const state = snapshot.state as unknown as CombatState;
+      const attackSkills = await loadAttackSkillsByParticipant(
+        effective.compiled,
+        state.participants.map((participant) => ({
+          id: participant.id,
+          kind: participant.kind,
+          characterId: participant.characterId,
+          skills: participant.skills
+        }))
+      );
+      for (const [participantId, skillIds] of attackSkills) {
+        attackSkillsByParticipant[participantId] = skillIds;
+      }
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
       <header className="flex flex-wrap items-start justify-between gap-4">
@@ -126,7 +157,15 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
               {room.status}
             </span>
           </div>
-          <CombatBoard combatId={activeCombat.id} isKP={isKP} skillOptions={skillOptions} />
+          <CombatBoard
+            combatId={activeCombat.id}
+            isKP={isKP}
+            skillOptions={skillOptions}
+            system={room.system}
+            canCounter={combatFeatures.canCounter}
+            canOutOfRule={combatFeatures.canOutOfRule}
+            attackSkillsByParticipant={attackSkillsByParticipant}
+          />
         </section>
       )}
 

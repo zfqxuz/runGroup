@@ -18,6 +18,7 @@ import {
   viewForUser,
   type CombatRuntime
 } from "@/server/combat/runtime";
+import { allowedReactionTypes, validateCombatAction } from "@/server/combat/options";
 import { saveCombatState } from "@/server/combat/setup";
 import type {
   Ack,
@@ -96,7 +97,7 @@ async function emitReactionRequest(
     actorName: actor.name,
     targetId,
     targetName: target.name,
-    options: ["PASS", "DEFEND", "DODGE", "COUNTER"]
+    options: allowedReactionTypes(runtime.pack)
   };
   io.to(combatChannel(runtime.combatId)).emit("combat:reaction-request", payload);
 }
@@ -201,6 +202,11 @@ async function handleAction(
     declarationHp: asNumber(raw.declarationHp),
     declarationDurationTicks: asNumber(raw.declarationDurationTicks)
   };
+  const actionError = validateCombatAction({ pack: runtime.pack, state: runtime.state, attackSkills: runtime.attackSkills }, action);
+  if (typeof actionError === "string") {
+    ack({ ok: false, error: actionError });
+    return;
+  }
   if (submitAction(runtime.state, action) === false) {
     ack({ ok: false, error: "现在不能行动，或该单位未就绪" });
     return;
@@ -237,12 +243,38 @@ async function handleReaction(
     return;
   }
   const raw = (input.reaction ?? {}) as CombatReactionPayload;
-  if (raw.type !== "PASS" && raw.type !== "DEFEND" && raw.type !== "DODGE" && raw.type !== "COUNTER") {
-    ack({ ok: false, error: "反应类型不合法" });
+  const allowedTypes = allowedReactionTypes(runtime.pack);
+  if (allowedTypes.includes(raw.type) === false) {
+    ack({ ok: false, error: "本规则包不支持该应对" });
     return;
   }
+  const target = runtime.state.participants.find((item) => item.id === input.targetId);
+  if (target === undefined) {
+    ack({ ok: false, error: "应对目标不存在" });
+    return;
+  }
+  let reactionSkill = asString(raw.skill);
+  if (raw.type === "DODGE") {
+    const candidate = reactionSkill ?? "DODGE";
+    const isDodge = candidate === "DODGE";
+    const isGraze = candidate === "GRAZE" && runtime.pack.skills.some((skill) => skill.id === "GRAZE");
+    if (isDodge === false && isGraze === false) {
+      ack({ ok: false, error: "应对技能不合法" });
+      return;
+    }
+    reactionSkill = candidate;
+  }
+  if (raw.type === "COUNTER") {
+    const allowed = runtime.attackSkills.get(input.targetId) ?? [];
+    const candidate = reactionSkill ?? allowed[0];
+    if (candidate === undefined || allowed.includes(candidate) === false) {
+      ack({ ok: false, error: "应对技能不合法" });
+      return;
+    }
+    reactionSkill = candidate;
+  }
   runtime.pendingReactions.delete(input.targetId);
-  runtime.reactions[input.targetId] = { type: raw.type, skill: asString(raw.skill) };
+  runtime.reactions[input.targetId] = { type: raw.type, skill: reactionSkill };
   const resolved = await tryResolveCombat(io, runtime);
   if (resolved === false) await broadcastCombat(io, runtime);
   ack({ ok: true });
