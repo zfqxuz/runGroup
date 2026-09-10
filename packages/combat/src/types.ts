@@ -4,6 +4,7 @@ import type {
   DerivedStats
 } from "@touhou/rules";
 
+export type CombatMode = 'INITIATIVE' | 'ATB';
 export type CombatPhase = "ATB_CHARGING" | "AWAITING_ACTION" | "ENDED";
 export type ParticipantKind = "PLAYER" | "NPC";
 export type ActionKind =
@@ -110,6 +111,10 @@ export interface CombatState {
   readonly id: string;
   readonly seed: string;
   readonly tickMs: number;
+  /** INITIATIVE = COC7；ATB = 东方。 */
+  readonly mode: CombatMode;
+  initiativeOrder: string[];
+  activeIndex: number;
   tick: number;
   round: number;
   phase: CombatPhase;

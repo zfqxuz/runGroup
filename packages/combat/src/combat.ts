@@ -25,6 +25,7 @@ import {
 import { rngFor } from "./rng";
 import type {
   ActionSubmission,
+  CombatMode,
   CombatParticipantState,
   CombatState,
   LogEntry
@@ -57,6 +58,8 @@ export interface CombatInit {
   readonly id: string;
   readonly seed: string;
   readonly tickMs: number;
+  /** 缺省 ATB，COC7 房间应显式传 INITIATIVE。 */
+  readonly mode?: CombatMode;
 }
 
 export function createCombat(init: CombatInit): CombatState {
@@ -64,6 +67,9 @@ export function createCombat(init: CombatInit): CombatState {
     id: init.id,
     seed: init.seed,
     tickMs: init.tickMs,
+    mode: init.mode ?? 'ATB',
+    initiativeOrder: [],
+    activeIndex: 0,
     tick: 0,
     round: 1,
     phase: "ATB_CHARGING",
