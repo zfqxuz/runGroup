@@ -4,7 +4,6 @@ import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import { setActiveCharacterAction, startRoomAction, toggleReadyAction } from "@/server/actions/room";
-import { upsertModuleAction } from "@/server/actions/module";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -64,16 +63,28 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     pack.attributes.methods[0];
   const raceCount = Object.keys(pack.races).length;
 
-  const roomModule = await prisma.module.findFirst({
+  const roomModules = await prisma.module.findMany({
     where: { roomId: room.id },
-    orderBy: { id: "asc" }
+    orderBy: { id: "asc" },
+    select: {
+      id: true,
+      title: true,
+      author: true,
+      synopsis: true,
+      version: true,
+      sourceType: true
+    }
   });
   const activeGame = await prisma.game.findFirst({
     where: { roomId: room.id, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
-    orderBy: { createdAt: "desc" }
+    orderBy: { createdAt: "desc" },
+    select: { id: true, moduleId: true, title: true, status: true }
   });
   const resuming = activeGame?.status === "PAUSED";
-  const moduleContent = (roomModule?.content ?? {}) as { text?: string };
+  const activeModule = activeGame?.moduleId === null || activeGame?.moduleId === undefined
+    ? null
+    : roomModules.find((item) => item.id === activeGame.moduleId) ?? null;
+  const defaultModule = activeModule ?? roomModules[0] ?? null;
   const requiredMembers = room.members.filter((member) => member.role !== "SPECTATOR");
   const readyCount = requiredMembers.filter((member) => member.ready).length;
   const allReady = requiredMembers.length > 0 && readyCount === requiredMembers.length;
@@ -297,102 +308,55 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           <div>
             <h2 className="text-sm font-medium text-white/80">剧本 / 模组</h2>
             <p className="mt-1 text-[11px] text-white/35">
-              同一房间可以持续更新剧本与版本，不会重置房间成员、聊天或战斗进度。
+              团本由独立页面管理。开始新局时可在下方选择本局使用的团本。
             </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/45">
-              {roomModule === null ? "未绑定剧本" : "v" + roomModule.version}
+              {roomModules.length} 个团本
             </span>
             <Link
               href={"/rooms/" + room.id + "/modules"}
               className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
             >
-              团本管理
+              团本管理 / 新建
             </Link>
           </div>
         </div>
-        {searchParams.module === "saved" ? (
-          <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">
-            剧本已保存。再次更新会覆盖同一房间的剧本内容，不会新建房间。
-          </p>
-        ) : null}
-        {isKP ? (
-          <form action={upsertModuleAction} className="mt-4 grid gap-3">
-            <input type="hidden" name="roomId" value={room.id} />
-            <input type="hidden" name="moduleId" value={roomModule?.id ?? ""} />
-            <div className="grid gap-3 sm:grid-cols-3">
-              <label className="flex flex-col gap-1.5 sm:col-span-2">
-                <span className="text-xs text-white/50">标题</span>
-                <input
-                  name="title"
-                  defaultValue={roomModule?.title ?? ""}
-                  placeholder="例：红魔馆异变调查"
-                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-                />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-white/50">版本</span>
-                <input
-                  name="version"
-                  defaultValue={roomModule?.version ?? "1.0.0"}
-                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-                />
-              </label>
-            </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-white/50">作者</span>
-                <input
-                  name="author"
-                  defaultValue={roomModule?.author ?? ""}
-                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-                />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-white/50">简介</span>
-                <input
-                  name="synopsis"
-                  defaultValue={roomModule?.synopsis ?? ""}
-                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-                />
-              </label>
-            </div>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">正文 / 团本内容</span>
-              <textarea
-                name="content"
-                rows={10}
-                defaultValue={moduleContent.text ?? ""}
-                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm leading-relaxed outline-none focus:border-sakura-500"
-              />
-            </label>
-            <div>
-              <button
-                type="submit"
-                className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
-              >
-                保存剧本
-              </button>
-            </div>
-          </form>
-        ) : roomModule === null ? (
-          <p className="mt-4 text-xs text-white/35">KP 还没有绑定剧本。</p>
-        ) : (
-          <div className="mt-4 rounded-lg border border-white/10 bg-ink-900/60 px-4 py-3">
-            <p className="text-sm text-white/80">{roomModule.title}</p>
-            <p className="mt-1 text-[11px] text-white/40">
-              {roomModule.author ?? "未署名"} · v{roomModule.version}
+
+        {roomModules.length === 0 ? (
+          <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3">
+            <p className="text-xs text-amber-200">本房间还没有团本。</p>
+            <p className="mt-1 text-[11px] leading-relaxed text-amber-200/70">
+              请先前往团本管理页导入标准 `.md` / `.zip`，或新建空白团本，再回来开始跑团。
             </p>
-            {roomModule.synopsis === null ? null : (
-              <p className="mt-2 text-xs leading-relaxed text-white/55">{roomModule.synopsis}</p>
-            )}
-            {moduleContent.text === undefined || moduleContent.text.length === 0 ? null : (
-              <pre className="mt-3 whitespace-pre-wrap font-sans text-xs leading-relaxed text-white/45">
-                {moduleContent.text}
-              </pre>
-            )}
           </div>
+        ) : (
+          <ul className="mt-4 flex flex-col divide-y divide-white/5">
+            {roomModules.map((item) => (
+              <li key={item.id} className="flex flex-wrap items-center justify-between gap-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-white/80">{item.title}</p>
+                  <p className="mt-0.5 text-[11px] text-white/35">
+                    v{item.version} · {item.author ?? "未署名"} · {item.sourceType}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-2">
+                  {activeModule?.id === item.id ? (
+                    <span className="rounded-full border border-emerald-400/40 px-2 py-0.5 text-[10px] text-emerald-300">
+                      本局使用
+                    </span>
+                  ) : null}
+                  <Link
+                    href={"/rooms/" + room.id + "/modules/" + item.id}
+                    className="text-[11px] text-spirit-400 hover:underline"
+                  >
+                    查看
+                  </Link>
+                </div>
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
@@ -666,8 +630,32 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             </p>
           </div>
           {isKP ? (
-            <form action={startRoomAction}>
+            <form action={startRoomAction} className="flex flex-wrap items-end gap-3">
               <input type="hidden" name="roomId" value={room.id} />
+              {resuming ? (
+                <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2 text-xs text-white/60">
+                  本局团本：{activeModule?.title ?? "未绑定"}
+                </div>
+              ) : (
+                <label className="flex min-w-[220px] flex-col gap-1.5">
+                  <span className="text-[11px] text-white/45">本局团本</span>
+                  <select
+                    name="moduleId"
+                    defaultValue={defaultModule?.id ?? ""}
+                    className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                  >
+                    {roomModules.length === 0 ? (
+                      <option value="">未创建团本（将使用房间名）</option>
+                    ) : (
+                      roomModules.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.title} · v{item.version}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+              )}
               <button
                 type="submit"
                 disabled={canStart === false}

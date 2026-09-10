@@ -298,7 +298,27 @@ async function main(): Promise<void> {
     ensure((await prisma.module.findUnique({ where: { id: module.id } })) === null, "团本应被删除");
     ensure((await prisma.asset.findUnique({ where: { id: newAssetId } })) === null, "新资源失去唯一引用后应被清理");
 
-    console.log("PASS 团本管理 E2E：zip / 编辑保存 / 复制 / 资源替换 / 占用保护 / 删除清理");
+    const blankListPage = await call(jar, "/rooms/" + room.id + "/modules");
+    const blankActionField = extractActionFieldAround(blankListPage.text, "新建空白团本");
+    const blankForm = new FormData();
+    blankForm.set(blankActionField, "");
+    blankForm.set("roomId", room.id);
+    const blankCreated = await call(jar, "/rooms/" + room.id + "/modules", {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id + "/modules" },
+      body: blankForm
+    });
+    ensure(blankCreated.status < 400, "新建空白团本失败，状态 " + blankCreated.status);
+    const blank = await prisma.module.findFirst({
+      where: { roomId: room.id, sourceType: "NATIVE" },
+      orderBy: { id: "desc" }
+    });
+    ensure(blank !== null, "应创建空白团本");
+    expectEqual(blank?.title, "未命名团本", "空白团本标题");
+    const blankContent = (blank?.content ?? {}) as { sections?: readonly string[] };
+    expectEqual(blankContent.sections?.length, 14, "空白团本应包含标准 14 章节");
+
+    console.log("PASS 团本管理 E2E：zip / 编辑保存 / 复制 / 资源替换 / 占用保护 / 删除清理 / 新建空白团本");
     console.log("  module " + module.id + " asset " + relativePath);
   } finally {
     const assets = userId === null ? [] : await prisma.asset.findMany({ where: { ownerId: userId } });

@@ -83,6 +83,11 @@ export default async function ModuleDetailPage({
           团本已复制，可以继续编辑副本。
         </p>
       ) : null}
+      {searchParams.saved === "new" ? (
+        <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          空白团本已创建，可以开始编辑标题、简介与正文。
+        </p>
+      ) : null}
       {searchParams.error === "active" ? (
         <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
           该团本仍被进行中的局使用，不能删除。请先结束本局。

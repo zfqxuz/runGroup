@@ -217,10 +217,13 @@ export async function startRoomAction(formData: FormData): Promise<void> {
       }
     });
   } else if (activeGame === null) {
-    const roomModule = await prisma.module.findFirst({
-      where: { roomId },
-      orderBy: { id: "asc" }
-    });
+    const requestedModuleId = String(formData.get("moduleId") ?? "");
+    const requestedModule = requestedModuleId.length === 0
+      ? null
+      : await prisma.module.findUnique({ where: { id: requestedModuleId } });
+    const roomModule = requestedModule !== null && requestedModule.roomId === roomId
+      ? requestedModule
+      : await prisma.module.findFirst({ where: { roomId }, orderBy: { id: "asc" } });
     const game = await prisma.game.create({
       data: {
         roomId,

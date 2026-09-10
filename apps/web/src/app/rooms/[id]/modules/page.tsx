@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ModuleImporter from "@/components/module/ModuleImporter";
 import ModuleActions from "@/components/module/ModuleActions";
+import { createBlankModuleAction } from "@/server/actions/module";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -46,10 +47,29 @@ export default async function ModuleListPage({
       </header>
 
       {isKP ? (
-        <ModuleImporter roomId={params.id} />
+        <div className="grid gap-3">
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
+            <div>
+              <h2 className="text-sm font-medium text-white/80">新建团本</h2>
+              <p className="mt-1 text-[11px] text-white/35">
+                可以新建带标准 14 章节的空白团本，也可以直接导入 `.md` / `.zip` 标准包。
+              </p>
+            </div>
+            <form action={createBlankModuleAction}>
+              <input type="hidden" name="roomId" value={params.id} />
+              <button
+                type="submit"
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+              >
+                新建空白团本
+              </button>
+            </form>
+          </div>
+          <ModuleImporter roomId={params.id} />
+        </div>
       ) : (
         <p className="rounded-xl border border-white/10 bg-ink-800/50 px-4 py-3 text-xs text-white/45">
-          只有 KP 可以导入或编辑团本，你可以查看已绑定团本。
+          只有 KP 可以创建、导入或编辑团本，你可以查看已绑定团本。
         </p>
       )}
 

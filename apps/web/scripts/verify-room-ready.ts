@@ -121,12 +121,13 @@ async function toggleReady(jar: Map<string, string>, roomId: string): Promise<vo
   ensure(result.status < 400, "准备请求失败");
 }
 
-async function tryStart(jar: Map<string, string>, roomId: string): Promise<Response> {
+async function tryStart(jar: Map<string, string>, roomId: string, moduleId?: string): Promise<Response> {
   const page = await call(jar, "/rooms/" + roomId + "/prepare");
   const field = extractLastFormActionField(page.text);
   const form = new FormData();
   form.set(field, "");
   form.set("roomId", roomId);
+  if (moduleId !== undefined) form.set("moduleId", moduleId);
   const result = await fetch(BASE + "/rooms/" + roomId + "/prepare", {
     method: "POST",
     headers: {
@@ -218,12 +219,26 @@ async function main(): Promise<void> {
     });
     expectEqual(selectedMember?.activeCharacterId, character.id, "当前角色应保存");
 
-    const started = await tryStart(kpJar, room.id);
+    const module = await prisma.module.create({
+      data: {
+        roomId: room.id,
+        title: "E2E 准备团本",
+        version: "1.0.0",
+        content: { text: "## 元信息\n\nE2E" } as never,
+        metadata: {} as never,
+        importReport: {} as never
+      },
+      select: { id: true }
+    });
+    const started = await tryStart(kpJar, room.id, module.id);
     ensure(started.status === 303, "满足条件时应重定向开始");
     const afterStart = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
     expectEqual(afterStart?.status, "PLAYING", "满足条件后房间应进入 PLAYING");
     const startedGame = await prisma.game.findFirst({ where: { roomId: room.id }, orderBy: { createdAt: "desc" } });
     ensure(startedGame !== null, "开始后应创建 Game");
+    expectEqual(startedGame?.moduleId, module.id, "开始时应绑定所选团本");
+    const startedState = await prisma.gameState.findUnique({ where: { gameId: startedGame?.id ?? "" } });
+    expectEqual(startedState?.moduleId, module.id, "GameState 应记录所选团本");
     const gameCharacters = await prisma.gameCharacter.count({ where: { gameId: startedGame?.id ?? "" } });
     expectEqual(gameCharacters, 1, "开始后应为 PL 创建 GameCharacter");
 

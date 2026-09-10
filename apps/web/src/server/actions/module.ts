@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
+import { REQUIRED_MODULE_SECTIONS } from "@/server/modules/format";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -228,4 +229,70 @@ export async function deleteModuleAction(formData: FormData): Promise<void> {
   revalidatePath("/rooms/" + roomId + "/modules");
   revalidatePath("/rooms/" + roomId + "/prepare");
   redirect("/rooms/" + roomId + "/modules?deleted=1");
+}
+
+
+export async function createBlankModuleAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId + "/prepare?error=module");
+
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    select: { id: true, system: true, era: true }
+  });
+  if (room === null) redirect("/");
+
+  const user = await prisma.user.findUnique({
+    where: { id: session.user.id },
+    select: { username: true, displayName: true }
+  });
+  const author = user?.displayName ?? user?.username ?? "KP";
+  const count = await prisma.module.count({ where: { roomId } });
+  const title = count === 0 ? "未命名团本" : "未命名团本 " + String(count + 1);
+  const text = REQUIRED_MODULE_SECTIONS.map((section) => "## " + section + "\n\n待补充。\n").join("\n");
+  const era = room.system === "TOUHOU" ? "FANTASY" : room.era ?? "MODERN";
+
+  const created = await prisma.module.create({
+    data: {
+      roomId,
+      title,
+      author,
+      system: room.system,
+      era,
+      version: "1.0.0",
+      sourceType: "NATIVE",
+      content: {
+        format: "markdown",
+        text,
+        sections: [...REQUIRED_MODULE_SECTIONS]
+      } as never,
+      metadata: {
+        spec: "touhou-module/v1",
+        title,
+        system: room.system,
+        era,
+        author,
+        version: "1.0.0",
+        summary: "空白团本，请补充简介与正文。"
+      } as never,
+      importReport: {
+        warnings: [],
+        errors: [],
+        assetCount: 0,
+        source: "NATIVE"
+      } as never
+    },
+    select: { id: true }
+  });
+
+  revalidatePath("/rooms/" + roomId + "/modules");
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/modules/" + created.id + "?saved=new");
 }
