@@ -740,11 +740,21 @@ export function currentActorId(state: CombatState): string | null {
   return state.initiativeOrder[state.activeIndex] ?? null;
 }
 
+
+/** 顺序制没有进度条，用 isReady 表示「轮到你了」。 */
+function syncInitiativeReady(state: CombatState): void {
+  const current = currentActorId(state);
+  for (const participant of state.participants) {
+    participant.isReady = participant.id === current && participant.defeated === false;
+  }
+}
+
 /** 开一轮：重排顺序、把指针归零。 */
 export function beginInitiativeRound(pack: CompiledRulePack, state: CombatState): void {
   state.initiativeOrder = buildInitiativeOrder(pack, state);
   state.activeIndex = 0;
   state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
+  syncInitiativeReady(state);
 }
 
 /** KP 手动调序。规则包没开放这个权限时直接拒绝。 */
@@ -779,8 +789,59 @@ export function endTurn(
     state.activeIndex = 0;
     state.round += 1;
     state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
+    syncInitiativeReady(state);
     return { roundAdvanced: true, nextActorId: currentActorId(state) };
   }
   state.phase = 'AWAITING_ACTION';
+  syncInitiativeReady(state);
   return { roundAdvanced: false, nextActorId: currentActorId(state) };
+}
+
+/**
+ * INITIATIVE 模式：只结算当前轮到的那个人的行动，然后交棒。
+ * 与 resolvePending 的区别是不会一次结算所有人。
+ */
+export function resolveInitiativeTurn(
+  pack: CompiledRulePack,
+  state: CombatState,
+  reactions: Readonly<Record<string, DefenseReaction>> = {}
+): ResolveResult {
+  if (state.phase === 'ENDED') return { acted: [], defeated: [], cleared: [] };
+  const actorId = currentActorId(state);
+  if (actorId === null) return { acted: [], defeated: [], cleared: [] };
+  const actor = findParticipant(state, actorId);
+  const submission = state.pending[actorId];
+  const ctx: ResolveContext = {
+    pack,
+    state,
+    reactions,
+    queue: submission === undefined ? [] : [submission],
+    cancelled: new Set<string>()
+  };
+  delete state.pending[actorId];
+  const acted: string[] = [];
+  while (ctx.queue.length > 0) {
+    const next = ctx.queue.shift() as ActionSubmission;
+    const who = findParticipant(state, next.actorId);
+    if (who === undefined || who.defeated) continue;
+    if (ctx.cancelled.has(next.actorId)) {
+      pushLog(state, {
+        kind: 'SYSTEM',
+        actorId: who.id,
+        targetId: null,
+        text: who.name + ' 的弹幕被清除'
+      });
+      continue;
+    }
+    acted.push(who.id);
+    resolveOne(ctx, who, next);
+  }
+  if (actor !== undefined && actor.defeated === false) {
+    actor.isReady = false;
+  }
+  return {
+    acted,
+    defeated: state.participants.filter((item) => item.defeated).map((item) => item.id),
+    cleared: [...ctx.cancelled]
+  };
 }

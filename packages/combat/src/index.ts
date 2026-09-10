@@ -15,6 +15,7 @@ export {
   nextRollRng,
   readyParticipants,
   recomputeSpeed,
+  resolveInitiativeTurn,
   resolvePending,
   submitAction
 } from "./combat";
