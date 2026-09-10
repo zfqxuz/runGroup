@@ -89,6 +89,13 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     orderBy: { submittedAt: "desc" }
   });
 
+  // 待审的排最前，KP 一眼看到该处理什么
+  const priority: Record<string, number> = { PENDING_REVIEW: 0, APPROVED: 1, REJECTED: 2 };
+  characterEntries.sort((a, b) => (priority[a.status] ?? 9) - (priority[b.status] ?? 9));
+  cardEntries.sort((a, b) => (priority[a.status] ?? 9) - (priority[b.status] ?? 9));
+  const pendingCharacterCount = characterEntries.filter((e) => e.status === "PENDING_REVIEW").length;
+  const pendingCardCount = cardEntries.filter((e) => e.status === "PENDING_REVIEW").length;
+
   const initialMembers: RoomMemberView[] = room.members.map((member) => ({
     userId: member.userId,
     username: member.user.username,
@@ -159,7 +166,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       </div>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">角色卡（{characterEntries.length}）</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">角色卡（{characterEntries.length}）{pendingCharacterCount > 0 ? <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">待审 {pendingCharacterCount}</span> : null}</h2>
         {characterEntries.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">还没有人带角色卡进来</p>
         ) : (
@@ -199,6 +206,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
                         <input type="hidden" name="kind" value="CHARACTER" />
                         <input type="hidden" name="entryId" value={entry.id} />
                         <input type="hidden" name="approve" value="0" />
+                        <input name="comment" placeholder="理由" className="w-20 rounded-md border border-white/15 bg-ink-900 px-1.5 py-1 text-[11px] text-white/70 outline-none focus:border-red-400/50" />
                         <button
                           type="submit"
                           className="rounded-md border border-red-400/40 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-400/10"
@@ -239,7 +247,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">带入的卡牌（{cardEntries.length}）</h2>
+        <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">带入的卡牌（{cardEntries.length}）{pendingCardCount > 0 ? <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">待审 {pendingCardCount}</span> : null}</h2>
         {cardEntries.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">还没有人带卡牌进来</p>
         ) : (
@@ -281,6 +289,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
                         <input type="hidden" name="kind" value="CARD" />
                         <input type="hidden" name="entryId" value={entry.id} />
                         <input type="hidden" name="approve" value="0" />
+                        <input name="comment" placeholder="理由" className="w-20 rounded-md border border-white/15 bg-ink-900 px-1.5 py-1 text-[11px] text-white/70 outline-none focus:border-red-400/50" />
                         <button type="submit" className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] text-red-300">
                           驳回
                         </button>

@@ -52,6 +52,23 @@ export default async function HomePage() {
     orderBy: { joinedAt: "desc" }
   });
 
+  // KP 需要在房间列表上就看到有多少待审
+  const roomIds = memberships.map((item) => item.roomId);
+  const pendingByRoom = new Map<string, number>();
+  if (roomIds.length > 0) {
+    const pendingCharacters = await prisma.roomCharacterEntry.findMany({
+      where: { roomId: { in: roomIds }, status: "PENDING_REVIEW" },
+      select: { roomId: true }
+    });
+    const pendingCards = await prisma.roomCardEntry.findMany({
+      where: { roomId: { in: roomIds }, status: "PENDING_REVIEW" },
+      select: { roomId: true }
+    });
+    for (const row of [...pendingCharacters, ...pendingCards]) {
+      pendingByRoom.set(row.roomId, (pendingByRoom.get(row.roomId) ?? 0) + 1);
+    }
+  }
+
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-10 px-6 py-14">
       <header className="flex flex-wrap items-center justify-between gap-4">
@@ -146,6 +163,11 @@ export default async function HomePage() {
                     <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/50">
                       {membership.role}
                     </span>
+                    {membership.role === "KP" && (pendingByRoom.get(membership.roomId) ?? 0) > 0 ? (
+                      <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-amber-300">
+                        待审 {pendingByRoom.get(membership.roomId)}
+                      </span>
+                    ) : null}
                     <span className="text-white/40">
                       {membership.room._count.members} 人
                     </span>
