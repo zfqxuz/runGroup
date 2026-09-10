@@ -1,0 +1,725 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum System {
+  COC7
+  TOUHOU
+}
+
+enum RoomStatus {
+  LOBBY
+  PLAYING
+  COMBAT
+  ENDED
+}
+
+enum MemberRole {
+  KP
+  PLAYER
+  SPECTATOR
+}
+
+enum ReviewStatus {
+  DRAFT
+  PENDING_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum CardType {
+  WEAPON
+  ITEM
+  SPELLCARD
+  ABILITY
+  NPC
+}
+
+enum CardScope {
+  COMPENDIUM
+  ROOM
+  CHARACTER
+}
+
+enum Rarity {
+  COMMON
+  UNCOMMON
+  RARE
+  EPIC
+  LEGENDARY
+}
+
+enum AssetType {
+  PORTRAIT
+  AVATAR
+  TOKEN
+  MAP
+  SCENE_BG
+  CARD_ART
+  HANDOUT
+  MUSIC
+  SOUND
+  OTHER
+}
+
+enum GridType {
+  SQUARE
+  HEX
+  NONE
+}
+
+enum LayerType {
+  BACKGROUND
+  TILE
+  OBJECT
+  EFFECT
+  FOREGROUND
+}
+
+enum WallType {
+  WALL
+  DOOR
+  WINDOW
+  DIFFICULT_TERRAIN
+}
+
+enum Weather {
+  NONE
+  RAIN
+  SNOW
+  FOG
+  STORM
+  SAKURA
+  PETALS
+}
+
+enum TimeOfDay {
+  DAWN
+  DAY
+  DUSK
+  NIGHT
+  MIDNIGHT
+}
+
+enum CombatPhase {
+  ATB_CHARGING
+  ACTION
+  RESOLUTION
+  ENDED
+}
+
+enum MessageType {
+  CHAT
+  DICE
+  SYSTEM
+  COMBAT_LOG
+  IC
+}
+
+enum Channel {
+  OOC
+  IC
+  KP_ONLY
+  WHISPER
+  SPECTATOR
+}
+
+enum ActionType {
+  DANMAKU
+  SPELLCARD
+  DEFEND
+  DODGE
+  COUNTER
+  ITEM
+  FLEE
+  PASS
+}
+
+enum Resolution {
+  PENDING
+  HIT
+  MISS
+  CRITICAL
+  FUMBLE
+  CANCELLED
+}
+
+enum RollVisibility {
+  PUBLIC
+  DARK
+  SECRET
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  email        String?  @unique
+  passwordHash String
+  displayName  String?
+  avatarUrl    String?
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  characters  Character[]
+  memberships RoomMember[]
+  messages    Message[]           @relation("MessageAuthor")
+  whispers    Message[]           @relation("WhisperTarget")
+  assets      Asset[]
+  notes       Note[]
+  ownedCards  Card[]              @relation("CardOwner")
+  clueFinds   ClueDiscovery[]
+  rulePacks   RulePack[]
+  diceRolls   DiceRoll[]
+  ownedRooms  Room[]              @relation("RoomOwner")
+  ruleAudits  RuleOverrideAudit[]
+}
+
+model RulePack {
+  id          String  @id @default(cuid())
+  slug        String  @unique
+  name        String
+  system      System
+  description String?
+  ownerId     String?
+  isBuiltin   Boolean @default(false)
+
+  owner    User?             @relation(fields: [ownerId], references: [id])
+  versions RulePackVersion[]
+}
+
+model RulePackVersion {
+  id            String   @id @default(cuid())
+  packId        String
+  version       String
+  schemaVersion Int      @default(1)
+  config        Json
+  checksum      String
+  isActive      Boolean  @default(false)
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  pack    RulePack @relation(fields: [packId], references: [id], onDelete: Cascade)
+  rooms   Room[]
+  modules Module[]
+
+  @@unique([packId, version])
+  @@index([checksum])
+}
+
+model RuleOverrideAudit {
+  id        String   @id @default(cuid())
+  roomId    String
+  actorId   String
+  patch     Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  room  Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+}
+
+model Room {
+  id                String     @id @default(cuid())
+  name              String
+  system            System     @default(COC7)
+  ownerId           String
+  rulePackVersionId String?
+  ruleOverride      Json       @default("{}")
+  inviteCode        String     @unique
+  status            RoomStatus @default(LOBBY)
+  description       String?
+  createdAt         DateTime   @default(now()) @db.Timestamptz(3)
+
+  owner      User                @relation("RoomOwner", fields: [ownerId], references: [id])
+  rulePack   RulePackVersion?    @relation(fields: [rulePackVersionId], references: [id])
+  members    RoomMember[]
+  messages   Message[]
+  combats    Combat[]
+  notes      Note[]
+  clues      Clue[]
+  scenes     Scene[]
+  cards      Card[]
+  assets     Asset[]
+  modules    Module[]
+  diceRolls  DiceRoll[]
+  ruleAudits RuleOverrideAudit[]
+  encounters Encounter[]
+  Character  Character[]
+
+  @@index([status])
+}
+
+model RoomMember {
+  id                String     @id @default(cuid())
+  roomId            String
+  userId            String
+  role              MemberRole @default(PLAYER)
+  activeCharacterId String?
+  joinedAt          DateTime   @default(now()) @db.Timestamptz(3)
+
+  room            Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user            User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  activeCharacter Character? @relation("ActiveCharacter", fields: [activeCharacterId], references: [id])
+
+  @@unique([roomId, userId])
+  @@index([roomId, role])
+}
+
+model Character {
+  id            String       @id @default(cuid())
+  userId        String
+  roomId        String?
+  system        System       @default(COC7)
+  reviewStatus  ReviewStatus @default(DRAFT)
+  reviewComment String?
+  version       Int          @default(1)
+
+  name       String
+  playerName String?
+  occupation String?
+  age        Int?
+  gender     String?
+  residence  String?
+
+  str  Int @default(0)
+  con  Int @default(0)
+  siz  Int @default(0)
+  dex  Int @default(0)
+  app  Int @default(0)
+  int  Int @default(0)
+  pow  Int @default(0)
+  edu  Int @default(0)
+  luck Int @default(0)
+
+  race     String?
+  raceMods Json?
+
+  skills    Json  @default("{}")
+  backstory Json?
+
+  hp     Int @default(0)
+  maxHp  Int @default(0)
+  mp     Int @default(0)
+  maxMp  Int @default(0)
+  san    Int @default(0)
+  maxSan Int @default(0)
+  dp     Int @default(0)
+  maxDp  Int @default(0)
+
+  portraitId String? @unique
+  avatarId   String? @unique
+  tokenId    String? @unique
+
+  portrait Asset? @relation("CharacterPortrait", fields: [portraitId], references: [id])
+  avatar   Asset? @relation("CharacterAvatar", fields: [avatarId], references: [id])
+  token    Asset? @relation("CharacterToken", fields: [tokenId], references: [id])
+
+  user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+  room         Room?               @relation(fields: [roomId], references: [id])
+  activeIn     RoomMember[]        @relation("ActiveCharacter")
+  cards        Card[]
+  participants CombatParticipant[]
+  tokens       Token[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([roomId, reviewStatus])
+}
+
+model Card {
+  id          String    @id @default(cuid())
+  scope       CardScope
+  templateId  String?
+  ownerId     String?
+  characterId String?
+  roomId      String?
+
+  type        CardType
+  name        String
+  subtitle    String?
+  description String?
+
+  imageUrl     String?
+  thumbnailUrl String?
+  rarity       Rarity  @default(COMMON)
+  frameColor   String?
+
+  stats      Json    @default("{}")
+  system     System  @default(COC7)
+  isEquipped Boolean @default(false)
+  equipSlot  String?
+  quantity   Int     @default(1)
+  pointCost  Int     @default(0)
+
+  owner     User?      @relation("CardOwner", fields: [ownerId], references: [id])
+  character Character? @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  room      Room?      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  template  Card?      @relation("CardTemplate", fields: [templateId], references: [id])
+  instances Card[]     @relation("CardTemplate")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt
+
+  @@index([characterId, scope])
+  @@index([roomId, type])
+  @@index([templateId])
+}
+
+model Asset {
+  id           String    @id @default(cuid())
+  ownerId      String
+  roomId       String?
+  type         AssetType
+  filename     String
+  originalName String
+  mimeType     String
+  size         Int
+  width        Int?
+  height       Int?
+  url          String
+  thumbnailUrl String?
+  checksum     String?
+  metadata     Json      @default("{}")
+  createdAt    DateTime  @default(now()) @db.Timestamptz(3)
+
+  owner             User       @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  room              Room?      @relation(fields: [roomId], references: [id])
+  portraitOf        Character? @relation("CharacterPortrait")
+  avatarOf          Character? @relation("CharacterAvatar")
+  tokenOf           Character? @relation("CharacterToken")
+  mapBackgroundOf   Map[]      @relation("MapBackground")
+  sceneBackgroundOf Scene[]    @relation("SceneBackground")
+  layers            MapLayer[]
+  tokens            Token[]
+  clues             Clue[]
+
+  @@index([ownerId])
+  @@index([roomId, type])
+  @@index([checksum])
+}
+
+model Module {
+  id                String  @id @default(cuid())
+  roomId            String?
+  rulePackVersionId String?
+  title             String
+  synopsis          String?
+  author            String?
+  version           String  @default("1.0.0")
+  isPublished       Boolean @default(false)
+  content           Json    @default("{}")
+
+  room     Room?            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  pack     RulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
+  chapters ModuleChapter[]
+}
+
+model ModuleChapter {
+  id         String  @id @default(cuid())
+  moduleId   String
+  title      String
+  orderIndex Int
+  summary    String?
+
+  module     Module      @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  encounters Encounter[]
+
+  @@index([moduleId, orderIndex])
+}
+
+model Encounter {
+  id         String  @id @default(cuid())
+  chapterId  String
+  roomId     String?
+  sceneId    String?
+  title      String
+  trigger    String?
+  setup      Json    @default("{}")
+  orderIndex Int
+
+  chapter ModuleChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  room    Room?         @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  scene   Scene?        @relation(fields: [sceneId], references: [id])
+
+  @@index([chapterId, orderIndex])
+}
+
+model Scene {
+  id          String  @id @default(cuid())
+  roomId      String
+  name        String
+  description String?
+
+  backgroundId   String?
+  bgMusicId      String?
+  ambientSoundId String?
+
+  weather       Weather   @default(NONE)
+  timeOfDay     TimeOfDay @default(DAY)
+  lighting      String    @default("normal")
+  filterColor   String?
+  filterOpacity Float     @default(0)
+  narration     String?
+  isActive      Boolean   @default(false)
+  orderIndex    Int       @default(0)
+  createdAt     DateTime  @default(now()) @db.Timestamptz(3)
+
+  room       Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  background Asset?      @relation("SceneBackground", fields: [backgroundId], references: [id])
+  map        Map?
+  encounters Encounter[]
+
+  @@index([roomId, orderIndex])
+}
+
+model Map {
+  id           String   @id @default(cuid())
+  sceneId      String   @unique
+  name         String
+  backgroundId String?
+  width        Int
+  height       Int
+  gridSize     Int      @default(70)
+  gridType     GridType @default(SQUARE)
+  bgColor      String   @default("#1a1a2e")
+  showGrid     Boolean  @default(true)
+  showFog      Boolean  @default(true)
+  fogRevealed  Json     @default("[]")
+  initialX     Float    @default(0)
+  initialY     Float    @default(0)
+  initialZoom  Float    @default(1)
+
+  scene      Scene      @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  background Asset?     @relation("MapBackground", fields: [backgroundId], references: [id])
+  layers     MapLayer[]
+  tokens     Token[]
+  walls      Wall[]
+  lights     Light[]
+}
+
+model MapLayer {
+  id      String    @id @default(cuid())
+  mapId   String
+  assetId String?
+  name    String
+  type    LayerType
+  zIndex  Int
+  opacity Float     @default(1)
+  visible Boolean   @default(true)
+  locked  Boolean   @default(false)
+  offsetX Float     @default(0)
+  offsetY Float     @default(0)
+  scale   Float     @default(1)
+
+  map   Map    @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  asset Asset? @relation(fields: [assetId], references: [id])
+}
+
+model Token {
+  id          String  @id @default(cuid())
+  mapId       String
+  assetId     String?
+  characterId String?
+  name        String
+  x           Float
+  y           Float
+  size        Float   @default(1)
+  rotation    Float   @default(0)
+  zIndex      Int     @default(0)
+  borderColor String  @default("#ffffff")
+  showName    Boolean @default(true)
+  showHpBar   Boolean @default(true)
+  isVisible   Boolean @default(true)
+  isLocked    Boolean @default(false)
+
+  map       Map        @relation(fields: [mapId], references: [id], onDelete: Cascade)
+  asset     Asset?     @relation(fields: [assetId], references: [id])
+  character Character? @relation(fields: [characterId], references: [id])
+
+  @@index([mapId])
+}
+
+model Wall {
+  id     String   @id @default(cuid())
+  mapId  String
+  points Json
+  type   WallType @default(WALL)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+}
+
+model Light {
+  id        String @id @default(cuid())
+  mapId     String
+  x         Float
+  y         Float
+  radius    Float
+  color     String @default("#ffaa00")
+  intensity Float  @default(1)
+
+  map Map @relation(fields: [mapId], references: [id], onDelete: Cascade)
+}
+
+model Combat {
+  id               String      @id @default(cuid())
+  roomId           String
+  round            Int         @default(1)
+  phase            CombatPhase @default(ATB_CHARGING)
+  tick             Int         @default(0)
+  seed             String
+  ruleSnapshot     Json
+  ruleSnapshotHash String
+  startedAt        DateTime    @default(now()) @db.Timestamptz(3)
+  endedAt          DateTime?   @db.Timestamptz(3)
+
+  room         Room                @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  participants CombatParticipant[]
+  actions      CombatAction[]
+  snapshots    CombatSnapshot[]
+
+  @@index([roomId, endedAt])
+}
+
+model CombatParticipant {
+  id          String  @id @default(cuid())
+  combatId    String
+  characterId String?
+  isNPC       Boolean @default(false)
+  npcData     Json?
+  name        String
+  atbValue    Float   @default(0)
+  atbMax      Float
+  speed       Float
+
+  isReady       Boolean @default(false)
+  currentHp     Int
+  currentMp     Int
+  currentSan    Int
+  currentDp     Int     @default(0)
+  maxHp         Int
+  maxMp         Int
+  maxSan        Int
+  maxDp         Int     @default(0)
+  statusEffects Json    @default("[]")
+  isIdentified  Boolean @default(false)
+  spellState    Json    @default("{}")
+
+  combat    Combat     @relation(fields: [combatId], references: [id], onDelete: Cascade)
+  character Character? @relation(fields: [characterId], references: [id])
+
+  @@index([combatId])
+}
+
+model CombatAction {
+  id          String     @id @default(cuid())
+  combatId    String
+  seq         Int
+  actorId     String
+  type        ActionType
+  payload     Json
+  resolution  Resolution @default(PENDING)
+  rollValue   Int?
+  rollTarget  Int?
+  damageDealt Int?
+  rollSeed    String?
+  ruleHash    String
+  createdAt   DateTime   @default(now()) @db.Timestamptz(3)
+
+  combat Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+
+  @@unique([combatId, seq])
+  @@index([combatId, createdAt])
+}
+
+model CombatSnapshot {
+  id        String   @id @default(cuid())
+  combatId  String
+  seq       Int
+  state     Json
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  combat Combat @relation(fields: [combatId], references: [id], onDelete: Cascade)
+
+  @@unique([combatId, seq])
+}
+
+model Message {
+  id        String      @id @default(cuid())
+  roomId    String
+  userId    String
+  channel   Channel     @default(OOC)
+  type      MessageType @default(CHAT)
+  content   Json
+  targetId  String?
+  createdAt DateTime    @default(now()) @db.Timestamptz(3)
+
+  room   Room  @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user   User  @relation("MessageAuthor", fields: [userId], references: [id], onDelete: Cascade)
+  target User? @relation("WhisperTarget", fields: [targetId], references: [id])
+
+  @@index([roomId, createdAt])
+}
+
+model DiceRoll {
+  id         String         @id @default(cuid())
+  roomId     String?
+  userId     String
+  expression String
+  results    Json
+  total      Int
+  visibility RollVisibility @default(PUBLIC)
+  seed       String
+  createdAt  DateTime       @default(now()) @db.Timestamptz(3)
+
+  room Room? @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, createdAt])
+}
+
+model Clue {
+  id        String   @id @default(cuid())
+  roomId    String
+  title     String
+  content   String
+  isPublic  Boolean  @default(false)
+  assetId   String?
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  room         Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  asset        Asset?          @relation(fields: [assetId], references: [id])
+  discoveredBy ClueDiscovery[]
+
+  @@index([roomId])
+}
+
+model ClueDiscovery {
+  clueId       String
+  userId       String
+  discoveredAt DateTime @default(now()) @db.Timestamptz(3)
+
+  clue Clue @relation(fields: [clueId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([clueId, userId])
+}
+
+model Note {
+  id       String  @id @default(cuid())
+  roomId   String
+  userId   String
+  title    String
+  content  String
+  isKPOnly Boolean @default(false)
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, userId])
+}

@@ -1,0 +1,19 @@
+**/node_modules
+**/.next
+**/dist
+.git
+.gitignore
+.idea
+.vscode
+
+# 生产密钥绝不进镜像（保留 .env.example 模板）
+**/.env
+**/.env.local
+**/.env.development.local
+**/.env.production
+**/.env.test
+
+*.log
+coverage
+README.md
+docs

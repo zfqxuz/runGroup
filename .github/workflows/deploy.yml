@@ -1,0 +1,116 @@
+name: Deploy Production
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+env:
+  REGION: cn-hangzhou
+  REGISTRY: registry.cn-hangzhou.aliyuncs.com
+  APP_SLUG: touhou-trpg
+
+jobs:
+  # ---------- 1. 质量门禁：类型 + 测试 ----------
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test --workspaces --if-present
+
+  # ---------- 2. 构建镜像并推送到 ACR ----------
+  build-and-push:
+    needs: [verify]
+    runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+      - id: meta
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.APP_SLUG }}"
+          echo "image=${IMAGE}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ env.REGISTRY }}/${{ secrets.ACR_NAMESPACE }}/${{ env.APP_SLUG }}:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  # ---------- 3. 数据库迁移 ----------
+  # 注意：这一步在 GitHub runner 上执行，要求 RDS 已开通【外网地址】
+  # 且把 GitHub Actions 的出网 IP 加进白名单。
+  # 更安全的替代方案见 README（用 SAE 任务模板在 VPC 内跑迁移）。
+  migrate:
+    needs: [build-and-push]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - name: prisma migrate deploy
+        env:
+          DATABASE_URL: ${{ secrets.PROD_DATABASE_URL }}
+        run: npx prisma migrate deploy --schema apps/web/prisma/schema.prisma
+
+  # ---------- 4. 部署到 SAE ----------
+  deploy:
+    needs: [migrate]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: 安装阿里云 CLI
+        run: |
+          curl -fsSL https://aliyuncli.alicdn.com/aliyun-cli-linux-latest-amd64.tgz -o cli.tgz
+          tar -xzf cli.tgz
+          sudo install -m 0755 aliyun /usr/local/bin/aliyun
+          aliyun version
+      - name: 触发 SAE 重新部署
+        env:
+          ALIBABA_CLOUD_ACCESS_KEY_ID: ${{ secrets.ALIYUN_AK_ID }}
+          ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${{ secrets.ALIYUN_AK_SECRET }}
+        run: |
+          aliyun configure set --profile default --mode AK \
+            --access-key-id "$ALIBABA_CLOUD_ACCESS_KEY_ID" \
+            --access-key-secret "$ALIBABA_CLOUD_ACCESS_KEY_SECRET" \
+            --region "${{ env.REGION }}"
+          # TODO(zfqxuz): 按你的 SAE 应用填 AppId；命令参数请以控制台 OpenAPI 为准
+          aliyun sae DeployApplication \
+            --AppId "${{ secrets.SAE_APP_ID }}" \
+            --ImageUrl "${{ needs.build-and-push.outputs.image }}"
+      - name: 部署后健康检查
+        run: |
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" "${{ secrets.PROD_HEALTH_URL }}")
+            if [ "$code" = "200" ]; then
+              echo "健康检查通过"
+              exit 0
+            fi
+            echo "等待中就绪... ($i/30) HTTP $code"
+            sleep 10
+          done
+          echo "健康检查失败，请检查 SAE 日志"
+          exit 1

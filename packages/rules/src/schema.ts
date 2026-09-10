@@ -1,0 +1,173 @@
+import { z } from "zod";
+
+const SEMVER = /^\d+\.\d+\.\d+$/;
+const SLUG = /^[a-z0-9][a-z0-9-]*$/;
+const PACK_REF = /^[a-z0-9][a-z0-9-]*@\d+\.\d+\.\d+$/;
+
+/** 纯函数表达式。禁止出现骰子 —— 骰子必须走 DiceExpr。 */
+export const ExprSchema = z.string().min(1);
+
+/** 骰子表达式，如 "2d6+3"。 */
+export const DiceExprSchema = z.string().min(1);
+
+export const PIPELINE_STEPS = [
+  "BASE_DICE",
+  "SPELLCARD_MULT",
+  "ENHANCE_MOD",
+  "DEFEND_REDUCE",
+  "COUNTER_RESOLVE",
+  "GRAZE_RESOLVE",
+  "SHIELD_REDUCE",
+  "CLAMP_MIN_ZERO"
+] as const;
+
+export const ACTION_COST_KEYS = [
+  "DANMAKU",
+  "SPELLCARD",
+  "DEFEND",
+  "DODGE",
+  "COUNTER",
+  "ITEM",
+  "FLEE",
+  "PASS"
+] as const;
+
+export const RARITIES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] as const;
+
+export const RaceSchema = z.object({
+  attrMods: z.record(z.string(), ExprSchema).default({}),
+  derivedOverrides: z.record(z.string(), ExprSchema).default({}),
+  skillBonuses: z.record(z.string(), ExprSchema).default({}),
+  flags: z.array(z.string()).default([])
+});
+
+export const StatusEffectSchema = z.object({
+  stack: z.enum(["STACK", "REFRESH", "REPLACE"]),
+  maxStacks: z.number().int().min(1).default(1),
+  durationTicks: ExprSchema,
+  speedMultiplier: ExprSchema.optional(),
+  damageMultiplier: ExprSchema.optional()
+});
+
+export const DamageRulesSchema = z.object({
+  pipeline: z.array(z.enum(PIPELINE_STEPS)).nonempty(),
+  defend: z.object({
+    cost: ExprSchema,
+    reduceMultiplier: ExprSchema
+  }),
+  dodge: z.object({
+    cost: ExprSchema,
+    grazeMpGainRatio: ExprSchema
+  }),
+  counter: z.object({
+    cost: ExprSchema,
+    failDamageRatio: ExprSchema
+  })
+});
+
+export const SpellCardRulesSchema = z.object({
+  declaration: z.object({
+    hpRatio: ExprSchema,
+    durationTicks: ExprSchema,
+    onBreakClearDanmaku: z.boolean().default(true),
+    clearTargets: z.enum(["ALL", "OTHERS_ONLY"]).default("ALL")
+  }),
+  consumption: z.object({
+    mpCost: ExprSchema,
+    oncePerCombat: z.boolean().default(true)
+  }),
+  enhance: z.record(z.string(), z.record(z.string(), ExprSchema)).default({}),
+  outOfRule: z.object({
+    mpCost: ExprSchema,
+    sanCost: DiceExprSchema
+  })
+});
+
+export const RulePackSchema = z.object({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(SLUG),
+  system: z.enum(["COC7", "TOUHOU"]),
+  version: z.string().regex(SEMVER),
+  extends: z.array(z.string().regex(PACK_REF)).default([]),
+  const: z.record(z.string(), z.number()).default({}),
+
+  attributes: z.object({
+    min: z.number().int().min(0),
+    max: z.number().int().max(999),
+    rollMethod: z.enum(["POINT_BUY", "ROLL_3D6X5", "MANUAL"]),
+    pointBuy: z
+      .object({ total: z.number().int().positive(), costPerPoint: z.number().positive() })
+      .optional()
+  }),
+
+  derived: z.record(z.string(), ExprSchema),
+
+  check: z.object({
+    criticalAt: ExprSchema,
+    extremeDivisor: ExprSchema,
+    hardDivisor: ExprSchema,
+    fumbleFlat: ExprSchema,
+    fumbleSkillBelow: ExprSchema,
+    fumbleRangeFrom: ExprSchema,
+    allowPush: z.boolean().default(true),
+    pushCost: ExprSchema.optional()
+  }),
+
+  atb: z.object({
+    tickMs: z.number().int().min(50).max(2000),
+    max: ExprSchema,
+    speed: ExprSchema,
+    actionCost: z.record(z.enum(ACTION_COST_KEYS), ExprSchema).default({}),
+    tieBreak: z.enum(["DEX_DESC", "RANDOM"]).default("DEX_DESC")
+  }),
+
+  damage: DamageRulesSchema,
+  races: z.record(z.string(), RaceSchema).default({}),
+  statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
+  spellcard: SpellCardRulesSchema.optional(),
+
+  cardBudget: z
+    .object({
+      maxRarityByRole: z.record(z.string(), z.enum(RARITIES)).default({}),
+      pointBudget: z.record(z.string(), z.number()).default({})
+    })
+    .optional()
+});
+
+export type RulePack = z.output<typeof RulePackSchema>;
+export type RulePackInput = z.input<typeof RulePackSchema>;
+export type Race = z.output<typeof RaceSchema>;
+export type StatusEffectRule = z.output<typeof StatusEffectSchema>;
+export type DamageRules = z.output<typeof DamageRulesSchema>;
+export type SpellCardRules = z.output<typeof SpellCardRulesSchema>;
+export type ActionCostKey = (typeof ACTION_COST_KEYS)[number];
+export type PipelineStep = (typeof PIPELINE_STEPS)[number];
+
+/** 解析并返回强类型 RulePack；失败时抛出 ZodError。 */
+export function parseRulePack(input: unknown): RulePack {
+  return RulePackSchema.parse(input);
+}
+
+/** 所有系统都必须定义的行动消耗。弹幕 / 符卡由东方包补充。 */
+export const CORE_ACTION_COSTS = [
+  "DEFEND",
+  "DODGE",
+  "COUNTER",
+  "ITEM",
+  "PASS",
+  "FLEE"
+] as const;
+
+/**
+ * 叠加包：只写需要覆盖的字段，其余从 extends 继承。
+ * 模组作者分发的平衡包就长这个样子。
+ */
+export const RulePackOverlaySchema = RulePackSchema.partial().extend({
+  schemaVersion: z.literal(1),
+  id: z.string().regex(SLUG),
+  system: z.enum(["COC7", "TOUHOU"]),
+  version: z.string().regex(SEMVER),
+  extends: z.array(z.string().regex(PACK_REF)).min(1)
+});
+
+export type RulePackOverlay = z.input<typeof RulePackOverlaySchema>;
