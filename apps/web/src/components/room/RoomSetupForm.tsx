@@ -30,6 +30,7 @@ export default function RoomSetupForm(props: Props) {
   const [methodId, setMethodId] = useState(active.methods[0]?.id ?? "");
   const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB">(active.defaultMode);
   const [disabled, setDisabled] = useState<readonly string[]>([]);
+  const [allowPlayerCombatRequest, setAllowPlayerCombatRequest] = useState(true);
 
   function switchSystem(next: SystemKey): void {
     const nextOptions = props.options[next];
@@ -161,6 +162,25 @@ export default function RoomSetupForm(props: Props) {
             </label>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">战斗申请</h2>
+            <p className="mt-1 text-[11px] text-white/35">开启后 PL 可发起战斗申请，由 KP 审批；KP 始终可直接发起</p>
+          </div>
+          <label className="flex shrink-0 items-center gap-2 pt-0.5">
+            <input
+              type="checkbox"
+              checked={allowPlayerCombatRequest}
+              onChange={(event) => setAllowPlayerCombatRequest(event.target.checked)}
+              className="accent-sakura-500"
+            />
+            <span className="text-xs text-white/60">{allowPlayerCombatRequest ? "允许" : "禁止"}</span>
+          </label>
+        </div>
+        <input type="hidden" name="allowPlayerCombatRequest" value={allowPlayerCombatRequest ? "1" : "0"} />
       </section>
 
       <button

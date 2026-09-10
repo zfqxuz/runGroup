@@ -237,6 +237,8 @@ model Room {
   description       String?
   /// 本房间采用的车卡方式 id，由房主在建房时二选一。
   chargenMethod     String?
+  /// 玩家是否可以发起战斗申请（KP 仍可直接发起）。
+  allowPlayerCombatRequest Boolean @default(true)
   createdAt         DateTime   @default(now()) @db.Timestamptz(3)
 
   owner      User                @relation("RoomOwner", fields: [ownerId], references: [id])

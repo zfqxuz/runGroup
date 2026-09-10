@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server as SocketServer, type Socket } from "socket.io";
 import { cryptoRng, parseDice, rollDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
+import { registerCombatHandlers } from "./combat";
 import { verifyTicket } from "./ticket";
 import type {
   Ack,
@@ -98,6 +99,8 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
   io.on("connection", (socket) => {
     const me = authOf(socket);
+
+    registerCombatHandlers(io, socket);
 
     socket.on("room:join", async (roomId: unknown, ack: (result: JoinAck) => void) => {
       if (typeof roomId !== "string") {

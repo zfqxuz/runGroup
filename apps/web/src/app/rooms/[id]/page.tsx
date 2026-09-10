@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
+import RoomCombatPanel from "@/components/room/RoomCombatPanel";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import { reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
@@ -303,6 +304,12 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
           </div>
         )}
       </section>
+
+      <RoomCombatPanel
+        roomId={room.id}
+        isKP={isKP}
+        allowPlayerCombatRequest={room.allowPlayerCombatRequest}
+      />
 
       <RoomNpcPanel roomId={room.id} isKP={isKP} />
 

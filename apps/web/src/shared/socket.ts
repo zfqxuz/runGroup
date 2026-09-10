@@ -1,3 +1,5 @@
+import type { ActionKind, CombatView } from "@touhou/combat";
+
 export type ChatChannel = "OOC" | "IC" | "KP_ONLY";
 export type ChatKind = "CHAT" | "DICE" | "SYSTEM";
 
@@ -37,3 +39,42 @@ export interface JoinAck extends Ack {
   readonly messages?: readonly ChatMessage[];
   readonly members?: readonly RoomMemberView[];
 }
+
+export interface CombatActionPayload {
+  readonly kind: ActionKind;
+  readonly targetId?: string | null;
+  readonly skill?: string;
+  readonly damage?: string;
+  readonly accuracyMod?: number;
+  readonly name?: string;
+  readonly mpCost?: number;
+  readonly sanCost?: string;
+  readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";
+  readonly declarationHp?: number;
+  readonly declarationDurationTicks?: number;
+  readonly status?: { readonly key: string; readonly stacks: number };
+}
+
+export interface CombatReactionPayload {
+  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER";
+  readonly skill?: string;
+}
+
+export interface CombatReactionRequest {
+  readonly combatId: string;
+  readonly actorId: string;
+  readonly actorName: string;
+  readonly targetId: string;
+  readonly targetName: string;
+  readonly options: readonly CombatReactionPayload["type"][];
+}
+
+export interface CombatUpdate {
+  readonly combatId: string;
+  readonly view: CombatView;
+}
+
+export interface CombatJoinAck extends Ack {
+  readonly view?: CombatView;
+}
+

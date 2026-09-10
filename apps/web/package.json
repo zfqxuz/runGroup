@@ -8,6 +8,7 @@
     "start": "cross-env NODE_ENV=production tsx server.ts",
     "typecheck": "tsc --noEmit",
     "verify:room-setup": "cross-env DATABASE_URL=postgresql://touhou:touhou@localhost:5432/touhou_trpg?schema=public tsx scripts/verify-room-setup.ts",
+    "verify:combat": "tsx --env-file=.env scripts/verify-combat.ts",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
@@ -19,6 +20,7 @@
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@touhou/formula": "^0.1.0",
+    "@touhou/combat": "^0.1.0",
     "@touhou/rules": "^0.1.0",
     "bcryptjs": "^3.0.3",
     "next": "^14.2.15",

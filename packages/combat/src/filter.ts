@@ -7,6 +7,8 @@ export interface Viewer {
   readonly role: ViewerRole;
   /** 该玩家在本场战斗中操控的角色；旁观者为 null。 */
   readonly characterId: string | null;
+  /** 同一玩家可操控多个角色时使用；与 characterId 取并集。 */
+  readonly characterIds?: readonly string[];
 }
 
 export interface ParticipantView {
@@ -36,6 +38,10 @@ export interface CombatView {
   readonly tick: number;
   readonly round: number;
   readonly phase: CombatState["phase"];
+
+  readonly mode: CombatState["mode"];
+  readonly initiativeOrder: readonly string[];
+  readonly activeActorId: string | null;
   readonly participants: readonly ParticipantView[];
   readonly log: readonly LogEntry[];
   readonly pendingIds: readonly string[];
@@ -62,8 +68,10 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
   const isKP = viewer.role === "KP";
 
   const participants: ParticipantView[] = state.participants.map((participant) => {
-    const isSelf =
-      viewer.characterId !== null && participant.characterId === viewer.characterId;
+    const controlledIds = new Set<string>();
+    if (viewer.characterId !== null) controlledIds.add(viewer.characterId);
+    for (const id of viewer.characterIds ?? []) controlledIds.add(id);
+    const isSelf = participant.characterId !== null && controlledIds.has(participant.characterId);
     const identified = isKP || isSelf || participant.isIdentified;
     const showNumbers = isKP || isSelf;
     const declaration = participant.declaration;
@@ -98,6 +106,10 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
     tick: state.tick,
     round: state.round,
     phase: state.phase,
+
+    mode: state.mode,
+    initiativeOrder: [...state.initiativeOrder],
+    activeActorId: state.mode === "INITIATIVE" ? state.initiativeOrder[state.activeIndex] ?? null : null,
     participants,
     log: state.log,
     pendingIds: Object.keys(state.pending)

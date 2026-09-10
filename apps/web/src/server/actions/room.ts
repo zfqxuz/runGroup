@@ -46,6 +46,8 @@ export async function createRoomAction(formData: FormData): Promise<void> {
     (id) => pack.combat.events[id] !== undefined
   );
 
+  const allowRaw = formData.get("allowPlayerCombatRequest");
+
   const ruleOverride: Record<string, unknown> = {
     attributes: { methods: [method] },
     combat: {
@@ -63,6 +65,7 @@ export async function createRoomAction(formData: FormData): Promise<void> {
       ownerId: session.user.id,
       inviteCode: generateInviteCode(),
       chargenMethod: method.id,
+      allowPlayerCombatRequest: allowRaw === null ? true : String(allowRaw) === "1",
       ruleOverride: ruleOverride as never,
       members: { create: { userId: session.user.id, role: "KP" } }
     },
