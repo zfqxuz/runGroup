@@ -72,6 +72,12 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       };
     });
 
+  const cards = await prisma.card.findMany({
+    where: { roomId: room.id },
+    orderBy: { createdAt: "desc" },
+    take: 30
+  });
+
   const initialMembers: RoomMemberView[] = room.members.map((member) => ({
     userId: member.userId,
     username: member.user.username,
@@ -125,13 +131,44 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
           <p className="text-sm text-white/80">角色卡</p>
           <p className="mt-0.5 text-xs text-white/40">按本房规则创建你的调查员</p>
         </div>
-        <Link
-          href={"/rooms/" + room.id + "/characters/new"}
-          className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
-        >
-          车一张新卡
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href={"/rooms/" + room.id + "/cards/new"}
+            className="rounded-lg border border-sakura-500/40 px-4 py-2 text-sm text-sakura-400 transition hover:bg-sakura-500/10"
+          >
+            新建卡牌
+          </Link>
+          <Link
+            href={"/rooms/" + room.id + "/characters/new"}
+            className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+          >
+            车一张新卡
+          </Link>
+        </div>
       </div>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">卡池（{cards.length}）</h2>
+        {cards.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">还没有卡牌，点右上角「新建卡牌」</p>
+        ) : (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {cards.map((card) => (
+              <div key={card.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm text-white/80">{card.name}</p>
+                  <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
+                    {card.type}
+                  </span>
+                </div>
+                {card.subtitle === null ? null : (
+                  <p className="mt-0.5 truncate text-[11px] text-white/35">{card.subtitle}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <RoomPlay
         roomId={room.id}
