@@ -181,7 +181,17 @@ export default async function RoomPage({
             )}
           </p>
         </div>
-        <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">我的身份：{membership.role}</span>
+        <div className="flex flex-wrap items-center gap-2">
+          <Link
+            href={"/rooms/" + room.id + "/modules"}
+            className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
+          >
+            团本管理
+          </Link>
+          <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
+            我的身份：{membership.role}
+          </span>
+        </div>
       </header>
 
       <RoomConfigPanel
