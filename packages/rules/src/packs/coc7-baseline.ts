@@ -1,4 +1,5 @@
 import type { RulePackInput } from "../schema";
+import { COC7_EXTRA_SKILLS } from "./coc7-extra-skills";
 
 /** COC7 基线包。只包含机制必需的值，东方扩展在其上叠加。 */
 export const COC7_BASELINE: RulePackInput = {
@@ -144,7 +145,8 @@ COC7_BASELINE.skills = [
   { id: "DISGUISE", name: "乔装", category: "OTHER", base: "5" },
   { id: "TRACK", name: "追踪", category: "OTHER", base: "10" },
   { id: "SURVIVAL", name: "生存", category: "OTHER", base: "10" },
-  { id: "ART_CRAFT", name: "艺术与手艺", category: "OTHER", base: "5" }
+  { id: "ART_CRAFT", name: "艺术与手艺", category: "OTHER", base: "5" },
+  ...COC7_EXTRA_SKILLS
 ];
 
 COC7_BASELINE.presets = [

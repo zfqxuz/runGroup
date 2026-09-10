@@ -22,6 +22,7 @@
 - 战斗可发起、可审批、可 Socket 操作、可中止，战斗快照持久化。
 - 卡牌批量审核、稀有度边框、COMPENDIUM 共享模板与复制已完成。
 - 职业库：230 个 COC7 职业 + 7 个东方千幻抄职业已落库，含年代标记、信用范围、职业点公式与本职技能文案。
+- COC7 空白卡「附表 B95:K212」中的完整技能已补入规则包（格斗 / 射击 / 科学 / 技艺 / 语言 / 驾驶 / 生存等专精）。
 - 房间新增 `era`（现代 / 1920）；车卡页按房间年代过滤职业；车卡时职业点与兴趣点分开计算。
 - xlsx 人物卡导入：基础信息、属性、职业序号、技能（初始 / 成长 / 职业 / 兴趣）、信用评级与武器可一键导入个人角色库。
 
@@ -160,6 +161,7 @@ npm run verify:combat-options
 
 ### 数据层
 - 新增 `Occupation` 表与迁移 `20260910170000_occupations_and_room_era`。
+- `packages/rules/src/packs/coc7-extra-skills.ts`：从空白卡「附表」生成的 COC7 额外技能（含专精），拼接到 `coc7-baseline.skills`。
 - `apps/web/prisma/data/occupations.json`：230 个 COC7 职业 + 7 个东方千幻抄职业。
   - 字段：`code / name / era / creditMin / creditMax / pointsText / pointsFormula / skillsText / skillNames / relations / description`。
   - COC7 职业来自空白人物卡“职业列表”与“本职技能”表；东方职业来自用户提供的《东方千幻抄 ver1.10》第三章。
@@ -195,9 +197,9 @@ npm run verify:combat-options
 - E2E：`apps/web/scripts/verify-character-import.ts`，运行时动态构造最小 xlsx，不提交真实用户卡。
 
 ### 下一轮待办
-- 按空白卡“附表 B95:K212”补齐 COC7 完整技能表（含格斗 / 射击 / 科学 / 技艺 / 语言 / 驾驶 / 生存等专精），并把导入技能映射到统一 ID。
 - 东方普通型 / 幻想型技能的完整进阶效果、法术附表与特色物品表仍待补；当前只落了技能名、基础值与简述。
 - 职业点目前允许在“本职 + 可选 + 自选”范围内分配，但尚未严格校验各选择组数量；后续可在 `Occupation.skillNames` 上增加结构化 `choiceRules`。
+- 可继续把 xlsx 导入拓展到物品 / 法术 / 背景故事，并在导入后提供预览校正。
 - 可再补：房间准备阶段允许 KP 修改年代 / 车卡标准、审核页显示年代匹配提示、xlsx 物品 / 法术 / 背景故事导入。
 
 ## 10. 最近提交
