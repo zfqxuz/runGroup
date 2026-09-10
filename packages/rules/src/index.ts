@@ -11,6 +11,9 @@ export {
   ACTION_COST_KEYS,
   CORE_ACTION_COSTS,
   RARITIES,
+  COMBAT_MODES,
+  CombatRulesSchema,
+  CombatEventSchema,
   parseRulePack
 } from "./schema";
 
@@ -23,7 +26,10 @@ export type {
   DamageRules,
   SpellCardRules,
   ActionCostKey,
-  PipelineStep
+  PipelineStep,
+  CombatMode,
+  CombatRules,
+  CombatEventRule
 } from "./schema";
 
 export { RulePackError } from "./errors";

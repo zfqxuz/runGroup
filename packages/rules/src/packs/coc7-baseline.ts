@@ -72,6 +72,25 @@ export const COC7_BASELINE: RulePackInput = {
     defend: { cost: "0", reduceMultiplier: "3" },
     dodge: { cost: "0", grazeMpGainRatio: "0" },
     counter: { cost: "0", failDamageRatio: "0.5" }
+  },
+  // COC7 战斗：KP 每轮排定出手顺序，随后全员依次行动
+  combat: {
+    mode: "INITIATIVE",
+    initiative: { key: "dex", tieBreak: "KP", kpAdjustsOrder: true },
+    events: {
+      DEATH_AT_ZERO_HP: {
+        label: "倒地判定",
+        description: "HP 归零即失去战斗能力"
+      },
+      FUMBLE_CONSEQUENCE: {
+        label: "大失败附加后果",
+        description: "大失败时附带额外惩罚，而不只是失败"
+      },
+      MADNESS: {
+        label: "临时疯狂",
+        description: "单次理智损失过多时进入疯狂状态"
+      }
+    }
   }
 };
 
@@ -127,3 +146,4 @@ COC7_BASELINE.skills = [
   { id: "SURVIVAL", name: "生存", category: "OTHER", base: "10" },
   { id: "ART_CRAFT", name: "艺术与手艺", category: "OTHER", base: "5" }
 ];
+

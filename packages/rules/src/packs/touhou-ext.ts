@@ -187,3 +187,34 @@ TOUHOU_EXT.skills = [
   { id: "STEAL", name: "顺手牵羊", category: "OTHER", base: "10" },
   { id: "GAMBLE", name: "赌博", category: "OTHER", base: "10" }
 ];
+
+/**
+ * 东方战斗：ATB 全局计数器。事件表与 COC7 的三个底座合并
+ * （record 在深合并时是逐键合并，array 才是替换）。
+ */
+TOUHOU_EXT.combat = {
+  mode: "ATB",
+  initiative: { key: "dex", tieBreak: "KEY_DESC", kpAdjustsOrder: false },
+  events: {
+    GRAZE: {
+      label: "擦弹",
+      description: "闪避成功时免伤并回复相当于伤害一半的灵力",
+      params: { gainRatio: "0.5" }
+    },
+    COUNTER: {
+      label: "消弹对抗",
+      description: "消耗灵力进行对抗，成功则双方弹幕抵消，失败吃一半伤害",
+      params: { mpCost: "20", failDamageRatio: "0.5" }
+    },
+    SPELLCARD_BREAK_CLEARS_DANMAKU: {
+      label: "符卡击破清弹",
+      description: "展开型符卡被击破时清除场上弹幕",
+      params: { othersOnly: "0" }
+    },
+    OUT_OF_RULE_SPELL: {
+      label: "规则外施法",
+      description: "相当于施放 COC 法术，同时消耗灵力与理智",
+      params: { mpCost: "20" }
+    }
+  }
+};

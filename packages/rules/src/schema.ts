@@ -141,6 +141,42 @@ export const AttributeMethodSchema = z.discriminatedUnion("kind", [
   })
 ]);
 
+/**
+ * 战斗模式。
+ *
+ * INITIATIVE — COC7：KP 每轮排定出手顺序，随后全员依次行动。
+ * ATB        — 东方：全局计数器推进，谁进度先满谁行动。
+ */
+export const COMBAT_MODES = ["INITIATIVE", "ATB"] as const;
+
+/**
+ * 战斗事件规则表。
+ *
+ * 每个事件都必须有真实实现 —— 只加配置不加分支的开关是假开关。
+ * params 是公式，可用属性与常量，含义由实现层按事件 id 解释。
+ */
+export const CombatEventSchema = z.object({
+  label: z.string(),
+  description: z.string().optional(),
+  defaultEnabled: z.boolean().default(true),
+  params: z.record(z.string(), ExprSchema).default({})
+});
+
+export const CombatRulesSchema = z.object({
+  mode: z.enum(COMBAT_MODES),
+  /** INITIATIVE 模式专用。 */
+  initiative: z
+    .object({
+      /** 排序依据，默认 DEX。 */
+      key: ExprSchema,
+      tieBreak: z.enum(["KEY_DESC", "RANDOM", "KP"]).default("KEY_DESC"),
+      /** COC7 允许 KP 手动调整出手顺序。 */
+      kpAdjustsOrder: z.boolean().default(true)
+    })
+    .optional(),
+  events: z.record(z.string(), CombatEventSchema).default({})
+});
+
 export const RulePackSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().regex(SLUG),
@@ -177,6 +213,7 @@ export const RulePackSchema = z.object({
     tieBreak: z.enum(["DEX_DESC", "RANDOM"]).default("DEX_DESC")
   }),
 
+  combat: CombatRulesSchema,
   damage: DamageRulesSchema,
   races: z.record(z.string(), RaceSchema).default({}),
   skills: z.array(SkillSchema).default([]),
@@ -242,3 +279,7 @@ export type RulePackOverlay = z.input<typeof RulePackOverlaySchema>;
 export type AttributeMethod = z.output<typeof AttributeMethodSchema>;
 
 export type Skill = z.output<typeof SkillSchema>;
+
+export type CombatEventRule = z.output<typeof CombatEventSchema>;
+export type CombatRules = z.output<typeof CombatRulesSchema>;
+export type CombatMode = (typeof COMBAT_MODES)[number];
