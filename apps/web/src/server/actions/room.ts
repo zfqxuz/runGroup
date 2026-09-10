@@ -86,6 +86,32 @@ export async function createRoomAction(formData: FormData): Promise<void> {
   redirect("/rooms/" + room.id);
 }
 
+
+export async function joinRoomAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const inviteCode = String(formData.get("inviteCode") ?? "").trim().toUpperCase();
+  if (inviteCode.length === 0) redirect("/?error=invite");
+
+  const room = await prisma.room.findUnique({ where: { inviteCode } });
+  if (room === null) redirect("/?error=invite");
+
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId: room.id, userId: session.user.id } }
+  });
+  if (membership === null) {
+    await prisma.roomMember.create({
+      data: { roomId: room.id, userId: session.user.id, role: "PLAYER" }
+    });
+  }
+
+  revalidatePath("/");
+  revalidatePath("/rooms/" + room.id + "/prepare");
+  revalidatePath("/rooms/" + room.id);
+  redirect(room.status === "LOBBY" ? "/rooms/" + room.id + "/prepare" : "/rooms/" + room.id);
+}
+
 export async function startRoomAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");

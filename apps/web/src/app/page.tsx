@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { auth, signOut } from "@/server/auth";
+import { joinRoomAction } from "@/server/actions/room";
 import { prisma } from "@/server/db/prisma";
 
 export const dynamic = "force-dynamic";
@@ -45,7 +46,7 @@ async function doSignOut(): Promise<void> {
 const inputClass =
   "rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-sakura-500";
 
-export default async function HomePage() {
+export default async function HomePage(props: { searchParams: { error?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -141,6 +142,35 @@ export default async function HomePage() {
             创建
           </button>
         </form>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-white/80">加入房间</h2>
+          {props.searchParams.error === "invite" ? (
+            <span className="text-[11px] text-red-300">邀请码不存在或已失效</span>
+          ) : null}
+        </div>
+        <form action={joinRoomAction} className="flex flex-wrap items-end gap-3">
+          <label className="flex min-w-[220px] flex-1 flex-col gap-1.5">
+            <span className="text-xs text-white/50">邀请码</span>
+            <input
+              name="inviteCode"
+              placeholder="例如 DEMO01"
+              autoComplete="off"
+              className={inputClass + " font-mono uppercase"}
+            />
+          </label>
+          <button
+            type="submit"
+            className="rounded-lg border border-spirit-400/40 px-4 py-2 text-sm text-spirit-400 transition hover:bg-spirit-400/10"
+          >
+            加入
+          </button>
+        </form>
+        <p className="mt-2 text-[11px] text-white/35">
+          向 KP 索取房间邀请码，输入后即可进入准备页或跑团页。
+        </p>
       </section>
 
       <section className="flex flex-col gap-3">

@@ -24,6 +24,7 @@
 - 职业库：230 个 COC7 职业 + 7 个东方千幻抄职业已落库，含年代标记、信用范围、职业点公式与本职技能文案。
 - COC7 空白卡「附表 B95:K212」中的完整技能已补入规则包（格斗 / 射击 / 科学 / 技艺 / 语言 / 驾驶 / 生存等专精）。
 - 房间新增 `era`（现代 / 1920）；车卡页按房间年代过滤职业；车卡时职业点与兴趣点分开计算。
+- 首页新增“加入房间”；玩家输入 KP 提供的邀请码即可加入房间并进入准备页 / 跑团页。
 - xlsx 人物卡导入：基础信息、属性、职业序号、技能（初始 / 成长 / 职业 / 兴趣）、信用评级与武器可一键导入个人角色库。
 
 测试规模：137 unit tests 全部通过（formula 48 / rules 57 / combat 32）；
@@ -137,6 +138,7 @@ E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-room-s
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-combat.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-library.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-character-import.ts
+E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-join-room.ts
 npm run verify:combat-options
 ```
 
@@ -149,6 +151,7 @@ npm run verify:combat-options
 - npm test：137 tests 通过。
 - npm run typecheck：所有 workspace 通过。
 - verify-character-import：PASS，动态构造 xlsx，验证属性 / 职业 / 技能 / 武器落库。
+- verify-join-room：PASS，注册临时用户后用邀请码加入 DEMO01。
 
 ## 8. 第 7 项：COMPENDIUM 共享库（已完成）
 

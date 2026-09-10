@@ -19,7 +19,8 @@
     "db:seed": "prisma db seed",
     "verify:card-library": "tsx --env-file=.env scripts/verify-card-library.ts",
     "verify:combat-options": "tsx --env-file=.env scripts/verify-combat-options.ts",
-    "verify:character-import": "tsx --env-file=.env scripts/verify-character-import.ts"
+    "verify:character-import": "tsx --env-file=.env scripts/verify-character-import.ts",
+    "verify:join-room": "tsx --env-file=.env scripts/verify-join-room.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
