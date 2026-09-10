@@ -36,7 +36,7 @@ describe("extends 链解析", () => {
     expect(pack.const.MP_PER_POW).toBe(4);
     expect(pack.derived.maxMp).toBe("pow * MP_PER_POW");
     expect(pack.check.criticalAt).toBe("1");
-    expect(pack.attributes.max).toBe(99);
+    expect(pack.attributes.max).toBe(90);
     expect(pack.atb.actionCost.DANMAKU).toBe("40");
     expect(pack.races.FAIRY?.attrMods.dex).toBe("15");
   });

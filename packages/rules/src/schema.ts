@@ -83,6 +83,37 @@ export const SpellCardRulesSchema = z.object({
   })
 });
 
+/**
+ * 车卡方式。规则包可以同时提供多种，玩家任选。
+ *
+ * ROLL_SETS —— 掷 N 组（每组每项 NdM×倍率），选一组。这就是「天命 5」。
+ * POINT_BUY —— 总点数分配，单项有上下限。
+ * MANUAL    —— 手动填写，交给 KP 裁量。
+ */
+export const AttributeMethodSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("ROLL_SETS"),
+    id: z.string(),
+    label: z.string(),
+    sets: z.number().int().min(1).max(20),
+    dice: z.string(),
+    multiplier: z.number().int().min(1)
+  }),
+  z.object({
+    kind: z.literal("POINT_BUY"),
+    id: z.string(),
+    label: z.string(),
+    total: z.number().int().positive(),
+    perAttributeMin: z.number().int().positive(),
+    perAttributeMax: z.number().int().positive()
+  }),
+  z.object({
+    kind: z.literal("MANUAL"),
+    id: z.string(),
+    label: z.string()
+  })
+]);
+
 export const RulePackSchema = z.object({
   schemaVersion: z.literal(1),
   id: z.string().regex(SLUG),
@@ -94,10 +125,8 @@ export const RulePackSchema = z.object({
   attributes: z.object({
     min: z.number().int().min(0),
     max: z.number().int().max(999),
-    rollMethod: z.enum(["POINT_BUY", "ROLL_3D6X5", "MANUAL"]),
-    pointBuy: z
-      .object({ total: z.number().int().positive(), costPerPoint: z.number().positive() })
-      .optional()
+    /** 可选的车卡方式，第一个为默认。 */
+    methods: z.array(AttributeMethodSchema).min(1)
   }),
 
   derived: z.record(z.string(), ExprSchema),
@@ -171,3 +200,5 @@ export const RulePackOverlaySchema = RulePackSchema.partial().extend({
 });
 
 export type RulePackOverlay = z.input<typeof RulePackOverlaySchema>;
+
+export type AttributeMethod = z.output<typeof AttributeMethodSchema>;

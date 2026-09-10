@@ -8,9 +8,27 @@ export const COC7_BASELINE: RulePackInput = {
   version: "1.0.0",
   const: {},
   attributes: {
-    min: 1,
-    max: 99,
-    rollMethod: "ROLL_3D6X5"
+    min: 15,
+    max: 90,
+    methods: [
+      {
+        kind: "ROLL_SETS",
+        id: "destiny5",
+        label: "天命 5 · 掷 5 组选 1 组",
+        sets: 5,
+        dice: "3d6",
+        multiplier: 5
+      },
+      {
+        kind: "POINT_BUY",
+        id: "point480",
+        label: "总点数 480 · 单项 15~90",
+        total: 480,
+        perAttributeMin: 15,
+        perAttributeMax: 90
+      },
+      { kind: "MANUAL", id: "manual", label: "手动填写" }
+    ]
   },
   derived: {
     maxHp: "floor((con + siz) / 10)",

@@ -86,3 +86,5 @@ export { deepMerge, resolveRulePack } from "./merge";
 export type { PackRegistry } from "./merge";
 
 export { builtinRegistry, COC7_BASELINE, TOUHOU_EXT } from "./packs";
+export { attributeTotal, checkPointBuy, rollAttributeSets } from "./attributes";
+export type { AttributeSetOption, PointBuyCheck } from "./attributes";
