@@ -9,7 +9,7 @@ const credentialsSchema = z.object({
   password: z.string().min(1)
 });
 
-export const { handlers, auth, signIn, signOut } = NextAuth({
+const nextAuth = NextAuth({
   trustHost: true,
   session: { strategy: "jwt" },
   pages: { signIn: "/login" },
@@ -49,3 +49,18 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
     }
   }
 });
+export const handlers = nextAuth.handlers;
+export const signIn = nextAuth.signIn;
+export const signOut = nextAuth.signOut;
+
+export async function auth(): Promise<import("next-auth").Session | null> {
+  const session = await nextAuth.auth();
+  if (session === null) return null;
+  const userId = session.user.id;
+  if (typeof userId === "string" && userId.length > 0) {
+    const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
+    if (exists === null) return null;
+    return session;
+  }
+  return null;
+}
