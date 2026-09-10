@@ -193,7 +193,112 @@ async function main(): Promise<void> {
     expectEqual(updated?.title, "E2E 标准团本（已编辑）", "保存后标题");
     expectEqual(updated?.version, "1.0.1", "保存后版本");
 
-    console.log("PASS 团本导入 E2E：zip / 标准章节 / 资源路径规范化 / 编辑保存");
+    const detailPath = "/rooms/" + room.id + "/modules/" + module.id;
+    const detailAfterSave = await call(jar, detailPath);
+    const duplicateField = extractActionFieldAround(detailAfterSave.text, "复制团本");
+    const duplicateForm = new FormData();
+    duplicateForm.set(duplicateField, "");
+    duplicateForm.set("roomId", room.id);
+    duplicateForm.set("moduleId", module.id);
+    const duplicated = await call(jar, detailPath, {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + detailPath },
+      body: duplicateForm
+    });
+    ensure(duplicated.status < 400, "复制团本失败，状态 " + duplicated.status);
+    const copy = await prisma.module.findFirst({
+      where: { roomId: room.id, id: { not: module.id } },
+      include: { assets: true },
+      orderBy: { id: "desc" }
+    });
+    ensure(copy !== null, "应创建团本副本");
+    ensure(copy?.title.includes("副本") === true, "副本标题应带副本标记");
+    expectEqual(copy?.assets.length, 1, "副本应共享资源记录");
+    expectEqual(copy?.assets[0]?.assetId, module.assets[0]?.assetId, "副本应指向同一底层资源");
+
+    const oldAssetId = module.assets[0]?.assetId ?? "";
+    const replacementPng = await sharp({
+      create: { width: 3, height: 3, channels: 4, background: { r: 0, g: 255, b: 0, alpha: 1 } }
+    }).png().toBuffer();
+    const replaceForm = new FormData();
+    replaceForm.set("roomId", room.id);
+    replaceForm.set("moduleAssetId", module.assets[0]?.id ?? "");
+    replaceForm.set("file", new File([Uint8Array.from(replacementPng)], "cover-replaced.png", { type: "image/png" }));
+    const replaced = await call(jar, "/api/modules/" + module.id + "/assets", {
+      method: "POST",
+      body: replaceForm
+    });
+    ensure(replaced.status < 400, "替换团本资源失败，状态 " + replaced.status + " " + replaced.text);
+    const afterReplace = await prisma.moduleAsset.findUnique({
+      where: { id: module.assets[0]?.id ?? "" },
+      include: { asset: true }
+    });
+    ensure(afterReplace !== null && afterReplace.assetId !== oldAssetId, "替换后 ModuleAsset 应指向新资源");
+    const newAssetId = afterReplace?.assetId ?? "";
+    const newAssetResponse = await fetch(BASE + (afterReplace?.asset.url ?? ""));
+    expectEqual(newAssetResponse.status, 200, "替换后资源 URL 可访问");
+    const oldAssetStillUsed = await prisma.asset.findUnique({ where: { id: oldAssetId } });
+    ensure(oldAssetStillUsed !== null, "副本仍在使用旧资源时不应删除旧资源");
+
+    const activeGame = await prisma.game.create({
+      data: {
+        roomId: room.id,
+        moduleId: module.id,
+        status: "PLAYING",
+        title: "E2E 团本占用局",
+        startedAt: new Date(),
+        createdBy: userId
+      },
+      select: { id: true }
+    });
+    const blockedDelete = await call(jar, detailPath, {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + detailPath },
+      body: (() => {
+        const form = new FormData();
+        form.set(extractActionFieldAround(detailAfterSave.text, "删除团本"), "");
+        form.set("roomId", room.id);
+        form.set("moduleId", module.id);
+        return form;
+      })()
+    });
+    ensure(blockedDelete.status < 400, "有进行中的局时删除请求应被拒绝并重定向");
+    const moduleStillThere = await prisma.module.findUnique({ where: { id: module.id } });
+    ensure(moduleStillThere !== null, "有进行中的局时不应删除团本");
+    await prisma.game.update({ where: { id: activeGame.id }, data: { status: "ENDED", endedAt: new Date() } });
+
+    const copyPath = "/rooms/" + room.id + "/modules/" + (copy?.id ?? "");
+    const copyPage = await call(jar, copyPath);
+    const copyDeleteField = extractActionFieldAround(copyPage.text, "删除团本");
+    const copyDeleteForm = new FormData();
+    copyDeleteForm.set(copyDeleteField, "");
+    copyDeleteForm.set("roomId", room.id);
+    copyDeleteForm.set("moduleId", copy?.id ?? "");
+    const copyDeleted = await call(jar, copyPath, {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + copyPath },
+      body: copyDeleteForm
+    });
+    ensure(copyDeleted.status < 400, "删除副本失败，状态 " + copyDeleted.status);
+    ensure((await prisma.module.findUnique({ where: { id: copy?.id ?? "" } })) === null, "副本应被删除");
+    ensure((await prisma.asset.findUnique({ where: { id: oldAssetId } })) === null, "旧资源失去唯一引用后应被清理");
+
+    const deleteDetailPage = await call(jar, detailPath);
+    const deleteField = extractActionFieldAround(deleteDetailPage.text, "删除团本");
+    const deleteForm = new FormData();
+    deleteForm.set(deleteField, "");
+    deleteForm.set("roomId", room.id);
+    deleteForm.set("moduleId", module.id);
+    const deleted = await call(jar, detailPath, {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + detailPath },
+      body: deleteForm
+    });
+    ensure(deleted.status < 400, "删除团本失败，状态 " + deleted.status);
+    ensure((await prisma.module.findUnique({ where: { id: module.id } })) === null, "团本应被删除");
+    ensure((await prisma.asset.findUnique({ where: { id: newAssetId } })) === null, "新资源失去唯一引用后应被清理");
+
+    console.log("PASS 团本管理 E2E：zip / 编辑保存 / 复制 / 资源替换 / 占用保护 / 删除清理");
     console.log("  module " + module.id + " asset " + relativePath);
   } finally {
     const assets = userId === null ? [] : await prisma.asset.findMany({ where: { ownerId: userId } });

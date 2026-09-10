@@ -337,6 +337,14 @@ export async function endGameAction(formData: FormData): Promise<void> {
       where: { gameId: activeGame.id },
       data: { paused: false }
     });
+    await prisma.gameCharacter.updateMany({
+      where: { gameId: activeGame.id, currentHp: { gt: 0 } },
+      data: { status: "ALIVE" }
+    });
+    await prisma.gameCharacter.updateMany({
+      where: { gameId: activeGame.id, currentHp: { lte: 0 } },
+      data: { status: "DEAD" }
+    });
   }
 
   await prisma.room.update({ where: { id: roomId }, data: { status: "LOBBY" } });

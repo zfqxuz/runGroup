@@ -2,6 +2,7 @@ import type { Server as HttpServer } from "node:http";
 import { Server as SocketServer, type Socket } from "socket.io";
 import { cryptoRng, parseDice, rollDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
+import { gameStateView } from "@/server/game/view";
 import { registerCombatHandlers } from "./combat";
 import { verifyTicket } from "./ticket";
 import type {
@@ -131,6 +132,19 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         include: { user: { select: { username: true, displayName: true } } },
         orderBy: { joinedAt: "asc" }
       });
+      const activeGame = await prisma.game.findFirst({
+        where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+        orderBy: { createdAt: "desc" },
+        include: { state: true }
+      });
+      const activeCombat = await prisma.combat.findFirst({
+        where: { roomId, endedAt: null },
+        select: { id: true }
+      });
+      const member = await prisma.roomMember.findUnique({
+        where: { roomId_userId: { roomId, userId: me.userId } },
+        select: { activeCharacter: { select: { id: true, name: true } } }
+      });
 
       ack({
         ok: true,
@@ -140,7 +154,10 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
           username: member.user.username,
           displayName: member.user.displayName ?? member.user.username,
           role: member.role
-        }))
+        })),
+        gameState: activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state),
+        activeCombatId: activeCombat?.id ?? null,
+        activeCharacter: member?.activeCharacter ?? null
       });
     });
 

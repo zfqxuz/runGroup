@@ -2,6 +2,7 @@
 
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
+import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -117,3 +118,114 @@ export async function saveModuleAction(formData: FormData): Promise<void> {
   redirect("/rooms/" + roomId + "/modules/" + moduleId + "?saved=1");
 }
 
+
+
+async function uniqueModuleSlug(roomId: string, base: string): Promise<string> {
+  const normalized = base.length === 0 ? "module" : base;
+  let slug = normalized;
+  let suffix = 2;
+  while ((await prisma.module.findFirst({ where: { roomId, slug }, select: { id: true } })) !== null) {
+    slug = normalized + "-" + suffix;
+    suffix += 1;
+  }
+  return slug;
+}
+
+export async function duplicateModuleAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = String(formData.get("roomId") ?? "");
+  const moduleId = String(formData.get("moduleId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId + "/prepare?error=module");
+
+  const source = await prisma.module.findUnique({
+    where: { id: moduleId },
+    include: { assets: { orderBy: { orderIndex: "asc" } } }
+  });
+  if (source === null || source.roomId !== roomId) redirect("/rooms/" + roomId + "/modules");
+
+  const slug = await uniqueModuleSlug(roomId, (source.slug ?? "module") + "-copy");
+  const copy = await prisma.module.create({
+    data: {
+      roomId,
+      rulePackVersionId: source.rulePackVersionId,
+      slug,
+      title: (source.title + "（副本）").slice(0, 160),
+      synopsis: source.synopsis,
+      author: source.author,
+      system: source.system,
+      era: source.era,
+      version: source.version,
+      isPublished: false,
+      sourceType: source.sourceType,
+      originalFilename: source.originalFilename,
+      packagePath: source.packagePath,
+      metadata: source.metadata as never,
+      importReport: source.importReport as never,
+      content: source.content as never
+    },
+    select: { id: true }
+  });
+
+  if (source.assets.length > 0) {
+    await prisma.moduleAsset.createMany({
+      data: source.assets.map((item) => ({
+        moduleId: copy.id,
+        assetId: item.assetId,
+        relativePath: item.relativePath,
+        originalName: item.originalName,
+        kind: item.kind,
+        orderIndex: item.orderIndex
+      }))
+    });
+  }
+
+  revalidatePath("/rooms/" + roomId + "/modules");
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/modules/" + copy.id + "?saved=copy");
+}
+
+export async function deleteModuleAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = String(formData.get("roomId") ?? "");
+  const moduleId = String(formData.get("moduleId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId + "/prepare?error=module");
+
+  const existing = await prisma.module.findUnique({
+    where: { id: moduleId },
+    include: { assets: { select: { assetId: true } } }
+  });
+  if (existing === null || existing.roomId !== roomId) redirect("/rooms/" + roomId + "/modules");
+
+  const activeGame = await prisma.game.findFirst({
+    where: {
+      moduleId,
+      status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] }
+    },
+    select: { id: true }
+  });
+  if (activeGame !== null) {
+    redirect("/rooms/" + roomId + "/modules/" + moduleId + "?error=active");
+  }
+
+  const assetIds = existing.assets.map((item) => item.assetId);
+  await prisma.module.delete({ where: { id: moduleId } });
+  for (const assetId of assetIds) {
+    await deleteAssetIfOrphan(assetId);
+  }
+
+  revalidatePath("/rooms/" + roomId + "/modules");
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/modules?deleted=1");
+}

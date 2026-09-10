@@ -8,6 +8,7 @@ import { upsertModuleAction } from "@/server/actions/module";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { advancementView } from "@/server/game/view";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
@@ -18,6 +19,15 @@ interface StoredContent {
   kind?: string;
   dice?: ChatMessage["dice"];
 }
+
+const ADVANCEMENT_KIND_LABELS: Record<string, string> = {
+  ATTRIBUTE: "属性",
+  SKILL: "技能",
+  SAN: "SAN",
+  ITEM: "物品",
+  RELATIONSHIP: "关系",
+  OTHER: "其他"
+};
 
 export default async function RoomPage({ params, searchParams }: { params: { id: string }; searchParams: { error?: string; module?: string } }) {
   const session = await auth();
@@ -97,7 +107,16 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   const characterEntries = await prisma.roomCharacterEntry.findMany({
     where: { roomId: room.id },
     include: {
-      character: { include: { user: { select: { username: true, displayName: true } } } }
+      character: {
+        include: {
+          user: { select: { username: true, displayName: true } },
+          advancements: {
+            orderBy: { createdAt: "desc" },
+            take: 5,
+            include: { game: { select: { title: true } } }
+          }
+        }
+      }
     },
     orderBy: { submittedAt: "desc" }
   });
@@ -119,6 +138,11 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   const activeCharacter = myApprovedCharacters.find(
     (entry) => entry.characterId === membership.activeCharacterId
   );
+  const activeAdvancements = activeCharacter === undefined
+    ? []
+    : activeCharacter.character.advancements.map((item) =>
+        advancementView({ ...item, character: { name: activeCharacter.character.name } })
+      );
   const canStart = allReady && allPlayersHaveApprovedCharacter;
 
   const cardEntries = await prisma.roomCardEntry.findMany({
@@ -438,6 +462,29 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             还没有通过审核的角色卡。先车卡并等待 KP 审核。
           </p>
         ) : null}
+        {activeAdvancements.length === 0 ? null : (
+          <div className="mt-4 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+            <p className="text-[11px] font-medium text-white/55">当前角色最近成长</p>
+            <ul className="mt-2 space-y-1.5">
+              {activeAdvancements.map((item) => (
+                <li key={item.id} className="flex flex-wrap items-center gap-2 text-[11px]">
+                  <span className="text-white/65">{ADVANCEMENT_KIND_LABELS[item.kind] ?? item.kind}</span>
+                  {item.target === null ? null : (
+                    <span className="rounded border border-spirit-400/25 px-1.5 py-0.5 font-mono text-[10px] text-spirit-200">
+                      {item.target}
+                    </span>
+                  )}
+                  {item.delta === null ? null : (
+                    <span className="font-mono text-sakura-300">{item.delta > 0 ? "+" + item.delta : item.delta}</span>
+                  )}
+                  {item.note === null || item.note.length === 0 ? null : (
+                    <span className="text-white/40">{item.note}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

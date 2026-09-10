@@ -1,6 +1,6 @@
 # 东方 TRPG 平台 · 交接文档
 
-给下一个会话的 AI / 开发者。当前基线 commit：`d20735e`，分支 `main`，工作区干净。
+给下一个会话的 AI / 开发者。当前基线 commit 见 `git log -1`，分支 `main`，工作区干净。
 
 ## 0. 环境约束（先读）
 
@@ -326,3 +326,56 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - `GameState` 的章节 / 场景 / 遭遇 / 时间 / 旗标编辑 UI。
 - 断线重连时返回完整 GameState 与战斗快照。
 - 团本管理页的删除、复制与资源替换。
+
+## 13. 第 11 项（本轮）：局内状态、成长与团本管理收尾（已完成）
+
+### 局内状态
+- 新增 `updateGameStateAction`：
+  - KP 可编辑当前章节、场景、遭遇、团内时间。
+  - 旗标 / 计数器 / 自定义状态使用 JSON 文本保存，服务端校验必须是对象。
+  - 使用 `GameState.version` 做乐观锁，版本不一致会拒绝保存并提示刷新。
+- 跑团页新增 `RoomGameStatePanel`：
+  - 所有成员可查看当前章节、场景、遭遇、团内时间与状态摘要。
+  - KP 可展开表单更新状态。
+
+### 成长记录
+- 新增 `recordAdvancementAction`：
+  - KP 可为本局角色记录 `ATTRIBUTE / SKILL / SAN / ITEM / RELATIONSHIP / OTHER` 成长。
+  - 属性 / 技能 / SAN 会同步到基础角色卡，同时写入 `CharacterAdvancement` 作为来源标注。
+- 角色详情页显示完整成长记录、来源局与备注。
+- 准备页当前角色下方显示最近 5 条成长标注。
+
+### 重连与状态同步
+- `room:join` 现在返回：
+  - 完整 `GameState`
+  - `activeCombatId`
+  - 当前角色摘要
+- `room:state:update` / `room:advancement:update` 通过 Socket 广播；在线客户端会刷新服务端页面状态。
+- 客户端重连后发现 GameState 版本或战斗 ID 变化，会自动刷新页面，恢复到当前局内位置。
+- 战斗快照仍由 `CombatBoard` 通过 `combat:join` 恢复，Socket 重连后会自动重新加入战斗。
+
+### 团本管理
+- 团本详情页新增：
+  - 复制团本。
+  - 删除团本；被进行中的局使用时拒绝删除。
+  - 资源替换 / 删除；通过 `POST/DELETE /api/modules/[moduleId]/assets` 完成。
+- 团本列表页新增复制 / 删除入口。
+- 删除团本或资源时，只有失去全部引用后才会清理底层 `Asset` 与文件。
+- E2E `verify:module-import` 已扩展到覆盖：复制、资源替换、占用保护、删除清理。
+
+### 本轮验证
+- `npm run typecheck`：PASS
+- `npm test`：137 tests PASS
+- `npm run build --workspace @touhou/web`：PASS
+- E2E：
+  - `verify:room-ready`：PASS
+  - `verify:module-import`：PASS（新增团本管理覆盖）
+  - `verify:game-state`：PASS（新增）
+  - 其余既有 E2E：PASS
+
+### 下一阶段建议
+- 将 `GameState.currentChapterId / currentSceneId / currentEncounterId` 从自由文本升级为基于 `ModuleChapter / Scene / Encounter` 的结构化选择器。
+- 团本版本化：局开始时保存模块内容快照，局进行中更新团本时不覆盖已开局快照。
+- 进行中的局删除资源时保留旧资源直到本局结束。
+- 实时战斗发起 / 战斗结束的 Socket 广播，避免其他在线玩家需要刷新页面。
+- KP 结束本局前的成长确认页 / 批量奖励录入。

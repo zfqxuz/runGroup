@@ -4,12 +4,15 @@ import type { CombatState } from "@touhou/combat";
 import CombatBoard from "@/components/room/CombatBoard";
 import RoomCombatPanel from "@/components/room/RoomCombatPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
+import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
+import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import { endGameAction, pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
 import { prisma } from "@/server/db/prisma";
+import { advancementView, gameStateView } from "@/server/game/view";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +23,13 @@ interface StoredContent {
   dice?: ChatMessage["dice"];
 }
 
-export default async function RoomPage({ params }: { params: { id: string } }) {
+export default async function RoomPage({
+  params,
+  searchParams
+}: {
+  params: { id: string };
+  searchParams: { state?: string; advancement?: string; error?: string };
+}) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -90,8 +99,40 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
   const activeGame = await prisma.game.findFirst({
     where: { roomId: room.id, status: { in: ["PLAYING", "COMBAT"] } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, title: true, status: true }
+    include: {
+      state: true,
+      characters: {
+        include: { character: { select: { id: true, name: true } } },
+        orderBy: { id: "asc" }
+      }
+    }
   });
+  const gameState = activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state);
+  const activeModule =
+    activeGame?.moduleId === null || activeGame?.moduleId === undefined
+      ? await prisma.module.findFirst({ where: { roomId: room.id }, orderBy: { id: "asc" }, select: { content: true } })
+      : await prisma.module.findUnique({ where: { id: activeGame.moduleId }, select: { content: true } });
+  const rawSections = activeModule?.content === null || activeModule?.content === undefined
+    ? []
+    : ((activeModule.content as { sections?: unknown }).sections ?? []);
+  const moduleSections = Array.isArray(rawSections)
+    ? rawSections.filter((section): section is string => typeof section === "string")
+    : [];
+  const advancements = activeGame === null
+    ? []
+    : await prisma.characterAdvancement.findMany({
+        where: { gameId: activeGame.id },
+        include: {
+          character: { select: { name: true } },
+          game: { select: { title: true } }
+        },
+        orderBy: { createdAt: "desc" }
+      });
+  const advancementRows = advancements.map((item) => advancementView(item));
+  const gameCharacterOptions = activeGame?.characters.map((item) => ({
+    id: item.characterId,
+    name: item.character.name
+  })) ?? [];
 
   const combatFeatures = combatFeatureFlags(effective.compiled);
   const attackSkillsByParticipant: Record<string, readonly string[]> = {};
@@ -186,6 +227,32 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
         </section>
       ) : null}
 
+      {gameState === null || activeGame === null ? null : (
+        <RoomGameStatePanel
+          roomId={room.id}
+          gameId={activeGame.id}
+          gameTitle={activeGame.title}
+          status={activeGame.status}
+          state={gameState}
+          moduleSections={moduleSections}
+          isKP={isKP}
+          saved={searchParams.state === "saved"}
+          error={searchParams.error ?? null}
+        />
+      )}
+
+      {activeGame === null ? null : (
+        <RoomAdvancementPanel
+          roomId={room.id}
+          gameId={activeGame.id}
+          isKP={isKP}
+          characters={gameCharacterOptions}
+          advancements={advancementRows}
+          skillOptions={skillOptions}
+          saved={searchParams.advancement === "saved"}
+        />
+      )}
+
       {activeCombat === null ? (
         <RoomCombatPanel
           roomId={room.id}
@@ -217,6 +284,8 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
         isKP={isKP}
         initialMembers={initialMembers}
         initialMessages={initialMessages}
+        initialGameStateVersion={gameState?.version ?? 0}
+        initialCombatId={activeCombat?.id ?? null}
       />
     </main>
   );

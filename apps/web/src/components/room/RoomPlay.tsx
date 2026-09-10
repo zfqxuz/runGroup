@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import type {
   Ack,
   ChatChannel,
   ChatMessage,
   JoinAck,
-  RoomMemberView
+  RoomAdvancementUpdate,
+  RoomMemberView,
+  RoomStateUpdate
 } from "@/shared/socket";
 
 interface Props {
@@ -15,6 +18,8 @@ interface Props {
   isKP: boolean;
   initialMembers: readonly RoomMemberView[];
   initialMessages: readonly ChatMessage[];
+  initialGameStateVersion: number;
+  initialCombatId: string | null;
 }
 
 type ConnState = "connecting" | "online" | "offline";
@@ -29,6 +34,7 @@ export default function RoomPlay(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     let cancelled = false;
@@ -59,11 +65,23 @@ export default function RoomPlay(props: Props) {
         }
         if (result.messages !== undefined) setMessages([...result.messages]);
         if (result.members !== undefined) setMembers([...result.members]);
+        const stateVersion = result.gameState?.version ?? null;
+        if (stateVersion !== props.initialGameStateVersion) router.refresh();
+        if ((result.activeCombatId ?? null) !== props.initialCombatId) router.refresh();
       });
     });
 
     socket.on("chat:message", (message: ChatMessage) => {
       setMessages((prev) => [...prev, message]);
+    });
+
+    socket.on("room:state:update", (payload: RoomStateUpdate) => {
+      if (cancelled) return;
+      if (payload.roomId === props.roomId) router.refresh();
+    });
+    socket.on("room:advancement:update", (payload: RoomAdvancementUpdate) => {
+      if (cancelled) return;
+      if (payload.roomId === props.roomId) router.refresh();
     });
 
     socket.on("disconnect", () => {
@@ -81,7 +99,7 @@ export default function RoomPlay(props: Props) {
       socket.removeAllListeners();
       socket.close();
     };
-  }, [props.roomId]);
+  }, [props.roomId, props.initialGameStateVersion, props.initialCombatId, router]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });

@@ -1,4 +1,5 @@
 import type { ActionKind, CombatView } from "@touhou/combat";
+import type { GameStateView } from "./game";
 
 export type ChatChannel = "OOC" | "IC" | "KP_ONLY";
 export type ChatKind = "CHAT" | "DICE" | "SYSTEM";
@@ -38,6 +39,21 @@ export interface Ack {
 export interface JoinAck extends Ack {
   readonly messages?: readonly ChatMessage[];
   readonly members?: readonly RoomMemberView[];
+  readonly gameState?: GameStateView | null;
+  readonly activeCombatId?: string | null;
+  readonly activeCharacter?: { readonly id: string; readonly name: string } | null;
+}
+
+export interface RoomStateUpdate {
+  readonly roomId: string;
+  readonly gameId: string;
+  readonly state: GameStateView;
+}
+
+export interface RoomAdvancementUpdate {
+  readonly roomId: string;
+  readonly gameId: string;
+  readonly characterId: string;
 }
 
 export interface CombatActionPayload {

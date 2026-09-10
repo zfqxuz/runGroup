@@ -16,6 +16,7 @@ async function main(): Promise<void> {
     process.loadEnvFile(envPath);
   }
   const { createSocketServer } = await import("./src/server/socket");
+  const { setSocketServer } = await import("./src/server/socket/io");
 
   await app.prepare();
 
@@ -23,7 +24,8 @@ async function main(): Promise<void> {
     void handle(req, res);
   });
 
-  createSocketServer(httpServer);
+  const io = createSocketServer(httpServer);
+  setSocketServer(io);
 
   httpServer.listen(port, () => {
     console.log("> ready on http://" + hostname + ":" + port);

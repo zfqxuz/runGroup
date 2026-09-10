@@ -1,9 +1,7 @@
 "use server";
 
-import { unlink } from "node:fs/promises";
-import path from "node:path";
 import { revalidatePath } from "next/cache";
-import { uploadRoot } from "@/server/assets/storage";
+import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -19,41 +17,6 @@ export interface AttachResult {
   readonly ok: boolean;
   readonly error?: string;
   readonly url?: string;
-}
-
-async function deleteAssetFiles(asset: { type: string; filename: string }): Promise<void> {
-  const dir = path.join(uploadRoot(), asset.type.toLowerCase());
-  const thumbName = asset.filename.replace(/[.]png$/, "_thumb.png");
-  await unlink(path.join(dir, asset.filename)).catch(() => undefined);
-  await unlink(path.join(dir, thumbName)).catch(() => undefined);
-}
-
-/** 旧资源如果已经没有任何引用，连文件和记录一起清掉，避免存储无限膨胀。 */
-async function pruneIfOrphan(assetId: string): Promise<void> {
-  const asset = await prisma.asset.findUnique({
-    where: { id: assetId },
-    include: {
-      portraitOf: { select: { id: true } },
-      avatarOf: { select: { id: true } },
-      tokenOf: { select: { id: true } },
-      layers: { select: { id: true } },
-      tokens: { select: { id: true } },
-      clues: { select: { id: true } }
-    }
-  });
-  if (asset === null) return;
-
-  const referenced =
-    asset.portraitOf !== null ||
-    asset.avatarOf !== null ||
-    asset.tokenOf !== null ||
-    asset.layers.length > 0 ||
-    asset.tokens.length > 0 ||
-    asset.clues.length > 0;
-  if (referenced) return;
-
-  await deleteAssetFiles(asset);
-  await prisma.asset.delete({ where: { id: asset.id } });
 }
 
 export async function attachAssetAction(input: AttachInput): Promise<AttachResult> {
@@ -91,7 +54,7 @@ export async function attachAssetAction(input: AttachInput): Promise<AttachResul
   });
 
   if (previousId !== null && previousId !== asset.id) {
-    await pruneIfOrphan(previousId);
+    await deleteAssetIfOrphan(previousId);
   }
 
   revalidatePath("/characters/" + character.id);

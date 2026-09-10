@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import ModuleActions from "@/components/module/ModuleActions";
+import ModuleAssetActions from "@/components/module/ModuleAssetActions";
 import { saveModuleAction } from "@/server/actions/module";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -63,14 +65,27 @@ export default async function ModuleDetailPage({
             <span>{moduleRecord.sourceType}</span>
           </p>
         </div>
-        <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
-          我的身份：{membership.role}
-        </span>
+        <div className="flex flex-col items-end gap-2">
+          <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
+            我的身份：{membership.role}
+          </span>
+          {isKP ? <ModuleActions roomId={params.id} moduleId={moduleRecord.id} /> : null}
+        </div>
       </header>
 
       {searchParams.saved === "1" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
           团本已保存。
+        </p>
+      ) : null}
+      {searchParams.saved === "copy" ? (
+        <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          团本已复制，可以继续编辑副本。
+        </p>
+      ) : null}
+      {searchParams.error === "active" ? (
+        <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          该团本仍被进行中的局使用，不能删除。请先结束本局。
         </p>
       ) : null}
       {searchParams.error === "title" ? (
@@ -163,6 +178,13 @@ export default async function ModuleDetailPage({
                 >
                   打开资源
                 </a>
+                {isKP ? (
+                  <ModuleAssetActions
+                    roomId={params.id}
+                    moduleId={moduleRecord.id}
+                    moduleAssetId={item.id}
+                  />
+                ) : null}
               </div>
             ))}
           </div>

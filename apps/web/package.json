@@ -22,7 +22,8 @@
     "verify:character-import": "tsx --env-file=.env scripts/verify-character-import.ts",
     "verify:join-room": "tsx --env-file=.env scripts/verify-join-room.ts",
     "verify:module-import": "tsx --env-file=.env scripts/verify-module-import.ts",
-    "verify:room-ready": "tsx --env-file=.env scripts/verify-room-ready.ts"
+    "verify:room-ready": "tsx --env-file=.env scripts/verify-room-ready.ts",
+    "verify:game-state": "tsx --env-file=.env scripts/verify-game-state.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

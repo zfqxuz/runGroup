@@ -13,6 +13,7 @@ import ImageUpload from "@/components/upload/ImageUpload";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { advancementView } from "@/server/game/view";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,11 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     include: {
       roomEntries: { include: { room: { select: { id: true, name: true } } } },
       portrait: true,
-      avatar: true
+      avatar: true,
+      advancements: {
+        include: { game: { select: { title: true } } },
+        orderBy: { createdAt: "desc" }
+      }
     }
   });
   if (character === null || character.userId !== session.user.id) notFound();
@@ -72,6 +77,17 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     .map(([id, value]) => ({ id, name: skillNameById.get(id) ?? id, value }))
     .filter((row) => typeof row.value === "number" && row.value > 0)
     .sort((a, b) => b.value - a.value);
+  const advancementRows = character.advancements.map((item) =>
+    advancementView({ ...item, character: { name: character.name } })
+  );
+  const advancementKindLabels: Record<string, string> = {
+    ATTRIBUTE: "属性",
+    SKILL: "技能",
+    SAN: "SAN",
+    ITEM: "物品",
+    RELATIONSHIP: "关系",
+    OTHER: "其他"
+  };
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-6 py-12">
@@ -162,6 +178,42 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
               </div>
             ))}
           </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">成长记录（{advancementRows.length}）</h2>
+        {advancementRows.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">还没有成长记录</p>
+        ) : (
+          <ul className="mt-4 flex flex-col divide-y divide-white/5">
+            {advancementRows.map((item) => (
+              <li key={item.id} className="py-2.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-medium text-white/75">{advancementKindLabels[item.kind] ?? item.kind}</span>
+                  {item.target === null ? null : (
+                    <span className="rounded border border-spirit-400/25 px-1.5 py-0.5 font-mono text-[10px] text-spirit-200">
+                      {item.target}
+                    </span>
+                  )}
+                  {item.delta === null ? null : (
+                    <span className="font-mono text-[11px] text-sakura-300">
+                      {item.delta > 0 ? "+" + item.delta : item.delta}
+                    </span>
+                  )}
+                  <span className="ml-auto text-[10px] text-white/30">
+                    {item.createdAt.slice(0, 10)}
+                  </span>
+                </div>
+                {item.note === null || item.note.length === 0 ? null : (
+                  <p className="mt-1 leading-relaxed text-white/50">{item.note}</p>
+                )}
+                {item.gameTitle === null ? null : (
+                  <p className="mt-0.5 text-[10px] text-white/30">来源：{item.gameTitle}</p>
+                )}
+              </li>
+            ))}
+          </ul>
         )}
       </section>
 
