@@ -69,7 +69,7 @@ export default async function CharacterPage({
   const canManage = isOwner || isKP;
 
   const pool = await prisma.card.findMany({
-    where: { roomId: room.id, scope: "ROOM" },
+    where: { roomId: room.id, scope: "ROOM", type: { not: "NPC" } },
     orderBy: { createdAt: "desc" }
   });
 

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
+import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import { reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
@@ -302,6 +303,8 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
           </div>
         )}
       </section>
+
+      <RoomNpcPanel roomId={room.id} isKP={isKP} />
 
       <RoomPlay
         roomId={room.id}
