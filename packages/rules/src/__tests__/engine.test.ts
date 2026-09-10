@@ -57,7 +57,8 @@ describe("衍生属性", () => {
     expect(result.attributes.dex).toBe(70);
     expect(result.attributes.str).toBe(45);
     expect(result.attributes.int).toBe(55);
-    expect(result.derived.maxHp).toBe(11);
+    // 妖精的 derivedOverrides 是 maxHp -2，所以 11 - 2 = 9
+    expect(result.derived.maxHp).toBe(9);
     expect(result.derived.maxDp).toBe(145);
     expect(result.skillBonuses.ELEMENTAL_MAGIC).toBe(35);
     expect(result.flags).toContain("RESPAWN_MONTHLY");
@@ -69,7 +70,7 @@ describe("衍生属性", () => {
   });
 
   it("未知种族直接报错", () => {
-    expect(() => computeDerived(touhou, { attributes: attrs, race: "TENGU" })).toThrow(/未定义种族/);
+    expect(() => computeDerived(touhou, { attributes: attrs, race: "LUNARIAN" })).toThrow(/未定义种族/);
   });
 });
 

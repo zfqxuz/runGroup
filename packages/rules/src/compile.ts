@@ -42,6 +42,14 @@ export interface CompiledStatusEffect {
   readonly damageMultiplier?: CompiledExpr;
 }
 
+export interface CompiledSkill {
+  readonly id: string;
+  readonly name: string;
+  readonly category: string;
+  readonly base: CompiledExpr;
+  readonly description: string | undefined;
+}
+
 export interface CompiledRulePack {
   readonly pack: RulePack;
   readonly id: string;
@@ -54,6 +62,7 @@ export interface CompiledRulePack {
   readonly atb: CompiledAtb;
   readonly damage: CompiledDamageRules;
   readonly races: Readonly<Record<string, CompiledRace>>;
+  readonly skills: readonly CompiledSkill[];
   readonly statusEffects: Readonly<Record<string, CompiledStatusEffect>>;
 }
 
@@ -236,6 +245,16 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     };
   }
 
+  const skills: CompiledSkill[] = pack.skills.map((skill) => ({
+    id: skill.id,
+    name: skill.name,
+    category: skill.category,
+    base: wrap(`skills.${skill.id}`, () =>
+      compileExpr(skill.base, { vars: attributeVars, consts: constantNames })
+    ),
+    description: skill.description
+  }));
+
   const statusEffects: Record<string, CompiledStatusEffect> = {};
   for (const [effectKey, effect] of Object.entries(pack.statusEffects)) {
     const speedSource = effect.speedMultiplier;
@@ -271,6 +290,7 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     atb,
     damage,
     races,
+    skills,
     statusEffects
   };
 }

@@ -34,7 +34,12 @@ export const ACTION_COST_KEYS = [
 
 export const RARITIES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] as const;
 
+export const RACE_CATEGORIES = ["COC7", "TOUHOU"] as const;
+
 export const RaceSchema = z.object({
+  /** 显示名，例如「妖精」。id 是 key，玩家看到的是这个。 */
+  name: z.string(),
+  description: z.string().optional(),
   attrMods: z.record(z.string(), ExprSchema).default({}),
   derivedOverrides: z.record(z.string(), ExprSchema).default({}),
   skillBonuses: z.record(z.string(), ExprSchema).default({}),
@@ -81,6 +86,28 @@ export const SpellCardRulesSchema = z.object({
     mpCost: ExprSchema,
     sanCost: DiceExprSchema
   })
+});
+
+/**
+ * 技能定义。base 是基础值公式（只能用属性），例如「闪避」= dex/2。
+ * 东方包会整体替换 COC7 的技能表 —— 数组在深合并时是替换语义。
+ */
+export const SKILL_CATEGORIES = [
+  "COMBAT",
+  "MAGIC",
+  "SOCIAL",
+  "KNOWLEDGE",
+  "PHYSICAL",
+  "TECH",
+  "OTHER"
+] as const;
+
+export const SkillSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  category: z.enum(SKILL_CATEGORIES),
+  base: ExprSchema,
+  description: z.string().optional()
 });
 
 /**
@@ -152,6 +179,7 @@ export const RulePackSchema = z.object({
 
   damage: DamageRulesSchema,
   races: z.record(z.string(), RaceSchema).default({}),
+  skills: z.array(SkillSchema).default([]),
   statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
   spellcard: SpellCardRulesSchema.optional(),
 
@@ -202,3 +230,5 @@ export const RulePackOverlaySchema = RulePackSchema.partial().extend({
 export type RulePackOverlay = z.input<typeof RulePackOverlaySchema>;
 
 export type AttributeMethod = z.output<typeof AttributeMethodSchema>;
+
+export type Skill = z.output<typeof SkillSchema>;

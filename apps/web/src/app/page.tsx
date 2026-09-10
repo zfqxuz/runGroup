@@ -17,6 +17,7 @@ async function createRoom(formData: FormData): Promise<void> {
 
   const name = String(formData.get("name") ?? "").trim();
   const system = String(formData.get("system") ?? "COC7");
+  const chargenMethod = String(formData.get("chargenMethod") ?? "destiny5");
   if (name.length === 0) return;
 
   const room = await prisma.room.create({
@@ -25,6 +26,7 @@ async function createRoom(formData: FormData): Promise<void> {
       system: system === "TOUHOU" ? "TOUHOU" : "COC7",
       ownerId: session.user.id,
       inviteCode: generateInviteCode(),
+      chargenMethod,
       members: { create: { userId: session.user.id, role: "KP" } }
     }
   });
@@ -81,6 +83,13 @@ export default async function HomePage() {
             <select name="system" className={inputClass} defaultValue="COC7">
               <option value="COC7">COC7 原版</option>
               <option value="TOUHOU">东方扩展</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">车卡方式（房主决定）</span>
+            <select name="chargenMethod" className={inputClass} defaultValue="destiny5">
+              <option value="destiny5">天命 5 · 掷 5 组选 1 组</option>
+              <option value="point480">总点数 480 · 单项 15~90</option>
             </select>
           </label>
           <button

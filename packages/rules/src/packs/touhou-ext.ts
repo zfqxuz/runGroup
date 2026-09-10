@@ -56,17 +56,71 @@ export const TOUHOU_EXT: RulePackOverlay = {
 };
 
 TOUHOU_EXT.races = {
-  HUMAN: { attrMods: { luck: "15" }, flags: ["NO_YOUJUTSU"] },
+  HUMAN: {
+    name: "人类",
+    description: "最普通也最自由的种族。幸运 +15，但无法修习妖术。",
+    attrMods: { luck: "15" },
+    flags: ["NO_YOUJUTSU"]
+  },
   FAIRY: {
+    name: "妖精",
+    description: "力量与智力偏弱，却极其敏捷。元素魔法天赋极高，濒死后一个月重生。",
     attrMods: { str: "-5", int: "-5", dex: "15" },
+    derivedOverrides: { maxHp: "-2" },
     skillBonuses: { ELEMENTAL_MAGIC: "35" },
     flags: ["RESPAWN_MONTHLY"]
   },
-  MAGICIAN: { flags: ["NO_FOOD_REQUIRED"] },
-  YOUKAI: { flags: ["CAN_YOUJUTSU"] },
-  GHOST: { flags: ["CAN_PHASE"] }
+  MAGICIAN: {
+    name: "魔法使",
+    description: "习得特定魔法后可以不进食、不衰老。",
+    flags: ["NO_FOOD_REQUIRED"]
+  },
+  YOUKAI: {
+    name: "妖怪",
+    description: "漫长的寿命与强大的妖力。可修习妖术。",
+    attrMods: { edu: "-5", pow: "5" },
+    flags: ["CAN_YOUJUTSU"]
+  },
+  GHOST: {
+    name: "幽灵",
+    description: "可幽体化，物理手段难以完全消灭。",
+    attrMods: { con: "-5", pow: "5" },
+    flags: ["CAN_PHASE"]
+  },
+  TENGU: {
+    name: "天狗",
+    description: "高速飞行与风系术法的大师。但高傲，社交上吃亏。",
+    attrMods: { dex: "10", app: "-5" },
+    skillBonuses: { FLIGHT: "25" },
+    flags: ["CAN_FLY"]
+  },
+  VAMPIRE: {
+    name: "吸血鬼",
+    description: "恐怖的力量与妖力。昼伏夜出，惧怕阳光。",
+    attrMods: { str: "10", pow: "10", con: "-5" },
+    skillBonuses: { MELEE: "15" },
+    flags: ["WEAK_TO_SUNLIGHT"]
+  },
+  HOURAI: {
+    name: "蓬莱人",
+    description: "不老不死，无法被彻底杀死。但运气极差。",
+    attrMods: { con: "10", luck: "-10" },
+    flags: ["IMMORTAL"]
+  },
+  HANYOU: {
+    name: "半妖",
+    description: "兼具人与妖的特质，两头都不完全属于。",
+    attrMods: { dex: "5", pow: "5", edu: "-5" },
+    flags: ["CAN_YOUJUTSU"]
+  },
+  TSUKUMOGAMI: {
+    name: "付丧神",
+    description: "器物化成的付丧神，与自身依附之物共鸣。",
+    attrMods: { siz: "-10", dex: "5" },
+    skillBonuses: { CRAFT: "20" },
+    flags: ["OBJECT_BOUND"]
+  }
 };
-
 TOUHOU_EXT.statusEffects = {
   HASTE: { stack: "REFRESH", durationTicks: "240", speedMultiplier: "1.5" },
   SLOW: { stack: "REFRESH", durationTicks: "240", speedMultiplier: "0.5" },
@@ -89,3 +143,47 @@ TOUHOU_EXT.spellcard = {
   },
   outOfRule: { mpCost: "20", sanCost: "1d3" }
 };
+
+/**
+ * 东方模组技能表 —— 整体替换 COC7 标准技能表。
+ * 深合并时数组是替换语义，所以这里写什么，玩家就看到什么。
+ */
+TOUHOU_EXT.skills = [
+  { id: "DANMAKU", name: "弹幕射击", category: "COMBAT", base: "20", description: "以弹幕进行远程攻击" },
+  { id: "MELEE", name: "近战格斗", category: "COMBAT", base: "25" },
+  { id: "DODGE", name: "闪避", category: "COMBAT", base: "dex / 2" },
+  { id: "GRAZE", name: "擦弹", category: "COMBAT", base: "dex / 2", description: "贴身躲过弹幕并回复灵力" },
+  { id: "THROW", name: "投掷", category: "COMBAT", base: "20" },
+  { id: "SPIRIT_ARTS", name: "灵术", category: "MAGIC", base: "5", description: "操纵灵力进行攻防" },
+  { id: "ELEMENTAL_MAGIC", name: "元素魔法", category: "MAGIC", base: "1", description: "火水木金土的术法" },
+  { id: "SPELLCARD_CRAFT", name: "符卡构筑", category: "MAGIC", base: "1", description: "设计并展开符卡" },
+  { id: "BARRIER", name: "结界术", category: "MAGIC", base: "1" },
+  { id: "YOUJUTSU", name: "妖术", category: "MAGIC", base: "1", description: "妖怪专属；人类不可习得" },
+  { id: "RITUAL", name: "神道仪式", category: "MAGIC", base: "1" },
+  { id: "ALCHEMY", name: "炼金", category: "TECH", base: "1" },
+  { id: "GENSOU_LORE", name: "幻想知识", category: "KNOWLEDGE", base: "5", description: "对幻想乡人、地、事的了解" },
+  { id: "YOUKAI_STUDIES", name: "妖怪学", category: "KNOWLEDGE", base: "1" },
+  { id: "HISTORY", name: "历史", category: "KNOWLEDGE", base: "5" },
+  { id: "OCCULT", name: "神秘学", category: "KNOWLEDGE", base: "5" },
+  { id: "NATURAL_WORLD", name: "博物学", category: "KNOWLEDGE", base: "10" },
+  { id: "LIBRARY_USE", name: "图书馆使用", category: "KNOWLEDGE", base: "20" },
+  { id: "MEDICINE", name: "医学", category: "KNOWLEDGE", base: "1" },
+  { id: "LANGUAGE_OWN", name: "母语", category: "KNOWLEDGE", base: "edu" },
+  { id: "LANGUAGE_OTHER", name: "外语", category: "KNOWLEDGE", base: "1" },
+  { id: "FLIGHT", name: "飞行", category: "PHYSICAL", base: "20", description: "幻想乡的常识：大家都会飞" },
+  { id: "CLIMB", name: "攀爬", category: "PHYSICAL", base: "20" },
+  { id: "STEALTH", name: "潜行", category: "PHYSICAL", base: "20" },
+  { id: "LISTEN", name: "聆听", category: "PHYSICAL", base: "20" },
+  { id: "SPOT_HIDDEN", name: "侦查", category: "PHYSICAL", base: "25" },
+  { id: "FIRST_AID", name: "急救", category: "PHYSICAL", base: "30" },
+  { id: "SWIM", name: "游泳", category: "PHYSICAL", base: "20" },
+  { id: "PERFORM", name: "表演", category: "PHYSICAL", base: "5" },
+  { id: "PERSUADE", name: "说服", category: "SOCIAL", base: "10" },
+  { id: "CHARM", name: "魅惑", category: "SOCIAL", base: "15" },
+  { id: "FAST_TALK", name: "话术", category: "SOCIAL", base: "5" },
+  { id: "INTIMIDATE", name: "恐吓", category: "SOCIAL", base: "15" },
+  { id: "CREDIT_RATING", name: "信用评级", category: "SOCIAL", base: "0" },
+  { id: "CRAFT", name: "手工艺", category: "TECH", base: "5" },
+  { id: "STEAL", name: "顺手牵羊", category: "OTHER", base: "10" },
+  { id: "GAMBLE", name: "赌博", category: "OTHER", base: "10" }
+];

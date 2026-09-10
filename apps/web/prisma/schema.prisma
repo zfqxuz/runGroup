@@ -232,6 +232,8 @@ model Room {
   inviteCode        String     @unique
   status            RoomStatus @default(LOBBY)
   description       String?
+  /// 本房间采用的车卡方式 id，由房主在建房时二选一。
+  chargenMethod     String?
   createdAt         DateTime   @default(now()) @db.Timestamptz(3)
 
   owner      User                @relation("RoomOwner", fields: [ownerId], references: [id])

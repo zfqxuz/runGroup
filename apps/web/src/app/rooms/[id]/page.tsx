@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomPlay from "@/components/room/RoomPlay";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -35,6 +36,16 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
 
   const room = membership.room;
   const isKP = membership.role === "KP";
+
+  // 房间绑定的规则包（暂用内置包；未来接 RulePackVersion 表）
+  const pack = resolveRulePack(
+    room.system === "TOUHOU" ? "touhou-ext" : "coc7-baseline",
+    builtinRegistry()
+  );
+  const method =
+    pack.attributes.methods.find((item) => item.id === room.chargenMethod) ??
+    pack.attributes.methods[0];
+  const raceCount = Object.keys(pack.races).length;
 
   const rows = await prisma.message.findMany({
     where: isKP ? { roomId: room.id } : { roomId: room.id, channel: { not: "KP_ONLY" } },
@@ -82,12 +93,32 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
             </span>
             <span className="rounded-full border border-white/15 px-2 py-0.5">{room.status}</span>
             <span className="font-mono">邀请码 {room.inviteCode}</span>
+            <span className="rounded-full border border-white/15 px-2 py-0.5">
+              {method?.label ?? "未指定车卡方式"}
+            </span>
           </p>
         </div>
         <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
           我的身份：{membership.role}
         </span>
       </header>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
+          <p className="text-xs text-white/40">规则包</p>
+          <p className="mt-1 font-mono text-sm text-white/80">{pack.id}@{pack.version}</p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
+          <p className="text-xs text-white/40">可选种族</p>
+          <p className="mt-1 text-sm text-white/80">
+            {raceCount > 0 ? raceCount + " 个" : "无（纯 COC7）"}
+          </p>
+        </div>
+        <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
+          <p className="text-xs text-white/40">技能表</p>
+          <p className="mt-1 text-sm text-white/80">{pack.skills.length} 项</p>
+        </div>
+      </section>
 
       <RoomPlay
         roomId={room.id}
