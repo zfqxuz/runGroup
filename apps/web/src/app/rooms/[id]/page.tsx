@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomPlay from "@/components/room/RoomPlay";
+import { reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
@@ -72,10 +73,20 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       };
     });
 
-  const cards = await prisma.card.findMany({
+  const characterEntries = await prisma.roomCharacterEntry.findMany({
     where: { roomId: room.id },
-    orderBy: { createdAt: "desc" },
-    take: 30
+    include: {
+      character: { include: { user: { select: { username: true, displayName: true } } } }
+    },
+    orderBy: { submittedAt: "desc" }
+  });
+
+  const cardEntries = await prisma.roomCardEntry.findMany({
+    where: { roomId: room.id },
+    include: {
+      card: { include: { owner: { select: { username: true, displayName: true } } } }
+    },
+    orderBy: { submittedAt: "desc" }
   });
 
   const initialMembers: RoomMemberView[] = room.members.map((member) => ({
@@ -148,22 +159,135 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       </div>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">卡池（{cards.length}）</h2>
-        {cards.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">还没有卡牌，点右上角「新建卡牌」</p>
+        <h2 className="text-sm font-medium text-white/80">角色卡（{characterEntries.length}）</h2>
+        {characterEntries.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">还没有人带角色卡进来</p>
         ) : (
-          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-            {cards.map((card) => (
-              <div key={card.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="truncate text-sm text-white/80">{card.name}</p>
-                  <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
-                    {card.type}
+          <ul className="mt-4 flex flex-col divide-y divide-white/5">
+            {characterEntries.map((entry) => (
+              <li key={entry.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <Link
+                  href={"/rooms/" + room.id + "/characters/" + entry.characterId}
+                  className="min-w-0 flex-1"
+                >
+                  <p className="truncate text-sm text-white/80">
+                    {entry.character.name}
+                    {entry.character.race === null ? null : (
+                      <span className="ml-2 text-[11px] text-sakura-400">{entry.character.race}</span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-white/35">
+                    {entry.character.user.displayName ?? entry.character.user.username} · HP{" "}
+                    {entry.character.maxHp} · SAN {entry.character.maxSan}
+                  </p>
+                </Link>
+                <div className="flex shrink-0 items-center gap-2">
+                  {entry.status === "PENDING_REVIEW" && isKP ? (
+                    <>
+                      <form action={reviewEntry}>
+                        <input type="hidden" name="kind" value="CHARACTER" />
+                        <input type="hidden" name="entryId" value={entry.id} />
+                        <input type="hidden" name="approve" value="1" />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-emerald-400/40 px-2 py-1 text-[11px] text-emerald-300 transition hover:bg-emerald-400/10"
+                        >
+                          通过
+                        </button>
+                      </form>
+                      <form action={reviewEntry}>
+                        <input type="hidden" name="kind" value="CHARACTER" />
+                        <input type="hidden" name="entryId" value={entry.id} />
+                        <input type="hidden" name="approve" value="0" />
+                        <button
+                          type="submit"
+                          className="rounded-md border border-red-400/40 px-2 py-1 text-[11px] text-red-300 transition hover:bg-red-400/10"
+                        >
+                          驳回
+                        </button>
+                      </form>
+                    </>
+                  ) : null}
+                  {entry.character.userId === session.user.id ? (
+                    <form action={withdrawEntry}>
+                      <input type="hidden" name="kind" value="CHARACTER" />
+                      <input type="hidden" name="entryId" value={entry.id} />
+                      <button
+                        type="submit"
+                        className="rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/40 transition hover:border-white/35 hover:text-white/70"
+                      >
+                        撤回
+                      </button>
+                    </form>
+                  ) : null}
+                  <span
+                    className={
+                      entry.status === "APPROVED"
+                        ? "rounded-full border border-emerald-400/40 px-2 py-0.5 text-[10px] text-emerald-300"
+                        : entry.status === "REJECTED"
+                          ? "rounded-full border border-red-400/40 px-2 py-0.5 text-[10px] text-red-300"
+                          : "rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300"
+                    }
+                  >
+                    {entry.status}
                   </span>
                 </div>
-                {card.subtitle === null ? null : (
-                  <p className="mt-0.5 truncate text-[11px] text-white/35">{card.subtitle}</p>
-                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">带入的卡牌（{cardEntries.length}）</h2>
+        {cardEntries.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">还没有人带卡牌进来</p>
+        ) : (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+            {cardEntries.map((entry) => (
+              <div key={entry.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm text-white/80">{entry.card.name}</p>
+                  <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
+                    {entry.card.type}
+                  </span>
+                </div>
+                <p className="mt-0.5 truncate text-[11px] text-white/35">
+                  {entry.card.owner?.displayName ?? entry.card.owner?.username ?? "未知"}
+                </p>
+                <div className="mt-2 flex items-center justify-between gap-2">
+                  <span
+                    className={
+                      entry.status === "APPROVED"
+                        ? "text-[10px] text-emerald-300"
+                        : entry.status === "REJECTED"
+                          ? "text-[10px] text-red-300"
+                          : "text-[10px] text-amber-300"
+                    }
+                  >
+                    {entry.status}
+                  </span>
+                  {entry.status === "PENDING_REVIEW" && isKP ? (
+                    <div className="flex gap-1">
+                      <form action={reviewEntry}>
+                        <input type="hidden" name="kind" value="CARD" />
+                        <input type="hidden" name="entryId" value={entry.id} />
+                        <input type="hidden" name="approve" value="1" />
+                        <button type="submit" className="rounded border border-emerald-400/40 px-1.5 py-0.5 text-[10px] text-emerald-300">
+                          通过
+                        </button>
+                      </form>
+                      <form action={reviewEntry}>
+                        <input type="hidden" name="kind" value="CARD" />
+                        <input type="hidden" name="entryId" value={entry.id} />
+                        <input type="hidden" name="approve" value="0" />
+                        <button type="submit" className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] text-red-300">
+                          驳回
+                        </button>
+                      </form>
+                    </div>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>

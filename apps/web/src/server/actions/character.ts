@@ -96,7 +96,7 @@ export async function saveCharacter(
   const character = await prisma.character.create({
     data: {
       userId: session.user.id,
-      roomId: room.id,
+      roomId: null,
       system: room.system,
       reviewStatus: "PENDING_REVIEW",
       name,
@@ -122,6 +122,11 @@ export async function saveCharacter(
       maxDp: outcome.derived.maxDp
     },
     select: { id: true }
+  });
+
+  // 角色卡属于用户库（roomId 为 null）；进入房间是一条待 KP 审核的申请
+  await prisma.roomCharacterEntry.create({
+    data: { roomId: room.id, characterId: character.id, status: "PENDING_REVIEW" }
   });
 
   revalidatePath("/rooms/" + room.id);

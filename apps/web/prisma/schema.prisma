@@ -248,6 +248,8 @@ model Room {
   assets     Asset[]
   modules    Module[]
   diceRolls  DiceRoll[]
+  characterEntries RoomCharacterEntry[]
+  cardEntries      RoomCardEntry[]
   ruleAudits RuleOverrideAudit[]
   encounters Encounter[]
   Character  Character[]
@@ -324,6 +326,7 @@ model Character {
   room         Room?               @relation(fields: [roomId], references: [id])
   activeIn     RoomMember[]        @relation("ActiveCharacter")
   cards        Card[]
+  roomEntries  RoomCharacterEntry[]
   participants CombatParticipant[]
   tokens       Token[]
 
@@ -364,6 +367,7 @@ model Card {
   room      Room?      @relation(fields: [roomId], references: [id], onDelete: Cascade)
   template  Card?      @relation("CardTemplate", fields: [templateId], references: [id])
   instances Card[]     @relation("CardTemplate")
+  roomEntries RoomCardEntry[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt
@@ -724,4 +728,40 @@ model Note {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([roomId, userId])
+}
+
+/// 角色卡「带进某个房间」的申请与 KP 审核状态。
+/// 角色卡本身属于用户库（roomId 为 null），与房间解耦。
+model RoomCharacterEntry {
+  id          String       @id @default(cuid())
+  roomId      String
+  characterId String
+  status      ReviewStatus @default(PENDING_REVIEW)
+  comment     String?
+  submittedAt DateTime     @default(now()) @db.Timestamptz(3)
+  reviewedAt  DateTime?    @db.Timestamptz(3)
+
+  room      Room      @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, characterId])
+  @@index([roomId, status])
+}
+
+/// 卡牌「带进某个房间」的申请与 KP 审核状态。
+/// 卡牌本身属于用户库，同一个房间不能重复带入同一张卡。
+model RoomCardEntry {
+  id          String       @id @default(cuid())
+  roomId      String
+  cardId      String
+  status      ReviewStatus @default(PENDING_REVIEW)
+  comment     String?
+  submittedAt DateTime     @default(now()) @db.Timestamptz(3)
+  reviewedAt  DateTime?    @db.Timestamptz(3)
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, cardId])
+  @@index([roomId, status])
 }

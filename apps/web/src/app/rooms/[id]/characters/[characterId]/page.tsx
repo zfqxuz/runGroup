@@ -1,0 +1,231 @@
+import Link from "next/link";
+import { notFound, redirect } from "next/navigation";
+import {
+  ATTRIBUTE_KEYS,
+  builtinRegistry,
+  compileParsedRulePack,
+  computeDerived,
+  resolveRulePack,
+  type AttributeKey,
+  type AttributeSet
+} from "@touhou/rules";
+import { grantCardAction, toggleEquipAction } from "@/server/actions/card";
+import { auth } from "@/server/auth";
+import { prisma } from "@/server/db/prisma";
+
+export const dynamic = "force-dynamic";
+
+const ATTRIBUTE_LABELS: Record<string, string> = {
+  str: "力量 STR",
+  con: "体质 CON",
+  siz: "体型 SIZ",
+  dex: "敏捷 DEX",
+  app: "外貌 APP",
+  int: "智力 INT",
+  pow: "意志 POW",
+  edu: "教育 EDU",
+  luck: "幸运 LUCK"
+};
+
+export default async function CharacterPage({
+  params
+}: {
+  params: { id: string; characterId: string };
+}) {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId: params.id, userId: session.user.id } },
+    include: { room: true }
+  });
+  if (membership === null) notFound();
+
+  const character = await prisma.character.findUnique({
+    where: { id: params.characterId },
+    include: {
+      user: { select: { username: true, displayName: true } },
+      cards: { orderBy: { createdAt: "asc" } }
+    }
+  });
+  if (character === null || character.roomId !== params.id) notFound();
+
+  const room = membership.room;
+  const pack = resolveRulePack(
+    room.system === "TOUHOU" ? "touhou-ext" : "coc7-baseline",
+    builtinRegistry()
+  );
+  const compiled = compileParsedRulePack(pack);
+
+  const base = {} as AttributeSet;
+  for (const key of ATTRIBUTE_KEYS as readonly AttributeKey[]) {
+    base[key] = character[key];
+  }
+  const outcome = computeDerived(compiled, { attributes: base, race: character.race });
+  const effective = outcome.attributes as unknown as Record<string, number>;
+
+  const isOwner = character.userId === session.user.id;
+  const isKP = membership.role === "KP";
+  const canManage = isOwner || isKP;
+
+  const pool = await prisma.card.findMany({
+    where: { roomId: room.id, scope: "ROOM" },
+    orderBy: { createdAt: "desc" }
+  });
+
+  const ownedTemplateIds = new Set(character.cards.map((card) => card.templateId).filter(Boolean));
+  const grantable = pool.filter((card) => ownedTemplateIds.has(card.id) === false);
+
+  const skillValues = (character.skills ?? {}) as Record<string, number>;
+  const skillRows = pack.skills
+    .map((skill) => {
+      const value = skillValues[skill.id];
+      return { id: skill.id, name: skill.name, category: skill.category, value };
+    })
+    .filter((row) => typeof row.value === "number")
+    .sort((left, right) => (right.value ?? 0) - (left.value ?? 0));
+
+  return (
+    <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-6 py-12">
+      <header>
+        <Link href={"/rooms/" + room.id} className="text-xs text-white/40 transition hover:text-white/70">
+          ← 返回房间
+        </Link>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <h1 className="text-2xl font-semibold">{character.name}</h1>
+          {character.race === null ? null : (
+            <span className="rounded-full border border-sakura-500/40 px-2 py-0.5 text-xs text-sakura-400">
+              {pack.races[character.race]?.name ?? character.race}
+            </span>
+          )}
+          <span className="rounded-full border border-white/15 px-2 py-0.5 text-xs text-white/50">
+            {character.reviewStatus}
+          </span>
+        </div>
+        <p className="mt-1 text-xs text-white/40">
+          {character.user.displayName ?? character.user.username} · {pack.id}@{pack.version}
+        </p>
+      </header>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">属性</h2>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          {ATTRIBUTE_KEYS.map((key) => (
+            <div
+              key={key}
+              className="flex items-center justify-between rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
+            >
+              <span className="text-xs text-white/50">{ATTRIBUTE_LABELS[key]}</span>
+              <span className="font-mono text-sm text-white/80">{effective[key]}</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">衍生属性</h2>
+        <div className="mt-4 grid gap-3 sm:grid-cols-4">
+          {([
+            ["生命 HP", outcome.derived.maxHp],
+            ["灵力 MP", outcome.derived.maxMp],
+            ["理智 SAN", outcome.derived.maxSan],
+            ["骰池 DP", outcome.derived.maxDp]
+          ] as const).map(([label, value]) => (
+            <div
+              key={label}
+              className="rounded-lg border border-spirit-400/20 bg-spirit-400/5 px-3 py-3 text-center"
+            >
+              <p className="text-xs text-white/40">{label}</p>
+              <p className="mt-1 text-2xl font-semibold text-spirit-400">{value}</p>
+            </div>
+          ))}
+        </div>
+        {outcome.flags.length === 0 ? null : (
+          <p className="mt-3 text-[11px] text-white/35">种族特性：{outcome.flags.join(" · ")}</p>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">技能（{skillRows.length}）</h2>
+        {skillRows.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">未分配技能</p>
+        ) : (
+          <div className="mt-4 grid gap-2 sm:grid-cols-3">
+            {skillRows.map((row) => (
+              <div
+                key={row.id}
+                className="flex items-center justify-between rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
+              >
+                <span className="truncate text-xs text-white/60">{row.name}</span>
+                <span className="font-mono text-sm text-white/80">{row.value}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">持有卡牌（{character.cards.length}）</h2>
+        {character.cards.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">还没有卡牌，从下方卡池配发</p>
+        ) : (
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {character.cards.map((card) => (
+              <div key={card.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="truncate text-sm text-white/80">{card.name}</p>
+                  <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
+                    {card.type}
+                  </span>
+                </div>
+                {card.subtitle === null ? null : (
+                  <p className="mt-0.5 truncate text-[11px] text-white/35">{card.subtitle}</p>
+                )}
+                {canManage === false ? null : (
+                  <form action={toggleEquipAction} className="mt-2">
+                    <input type="hidden" name="cardId" value={card.id} />
+                    <button
+                      type="submit"
+                      className={
+                        card.isEquipped
+                          ? "w-full rounded-md border border-emerald-400/40 bg-emerald-400/10 px-2 py-1 text-[11px] text-emerald-300"
+                          : "w-full rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/50 transition hover:border-white/35 hover:text-white"
+                      }
+                    >
+                      {card.isEquipped ? "已装备 · 点击卸下" : "装备"}
+                    </button>
+                  </form>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      {canManage === false || grantable.length === 0 ? null : (
+        <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+          <h2 className="text-sm font-medium text-white/80">从房间卡池配发（{grantable.length}）</h2>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {grantable.map((card) => (
+              <form
+                key={card.id}
+                action={grantCardAction}
+                className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
+              >
+                <input type="hidden" name="cardId" value={card.id} />
+                <input type="hidden" name="characterId" value={character.id} />
+                <span className="min-w-0 flex-1 truncate text-xs text-white/60">{card.name}</span>
+                <button
+                  type="submit"
+                  className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10"
+                >
+                  配发
+                </button>
+              </form>
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
