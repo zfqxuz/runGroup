@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 interface Props {
-  readonly roomId: string;
+  readonly roomId?: string;
 }
 
 interface ImportResult {
@@ -37,7 +37,11 @@ export default function ModuleImporter(props: Props) {
         return;
       }
       setWarnings(payload.warnings ?? []);
-      router.push("/rooms/" + props.roomId + "/modules/" + payload.moduleId);
+      router.push(
+        props.roomId === undefined
+          ? "/modules/" + payload.moduleId
+          : "/rooms/" + props.roomId + "/modules/" + payload.moduleId
+      );
       router.refresh();
     } catch {
       setMessage("导入请求失败");
@@ -54,7 +58,7 @@ export default function ModuleImporter(props: Props) {
       }}
       className="rounded-xl border border-white/10 bg-ink-900/60 p-4"
     >
-      <input type="hidden" name="roomId" value={props.roomId} />
+      {props.roomId === undefined ? null : <input type="hidden" name="roomId" value={props.roomId} />}
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-[260px] flex-1">
           <span className="mb-1.5 block text-xs text-white/50">选择 .md 或 .zip 标准团本包</span>

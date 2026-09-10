@@ -15,8 +15,16 @@ interface PackOptions {
   readonly defaultMode: "INITIATIVE" | "ATB";
 }
 
+interface SelectedModule {
+  readonly id: string;
+  readonly title: string;
+  readonly system: string | null;
+  readonly era: string | null;
+}
+
 interface Props {
   readonly options: Record<SystemKey, PackOptions>;
+  readonly selectedModule?: SelectedModule | null;
 }
 
 const MODE_LABELS: Record<"INITIATIVE" | "ATB", { title: string; hint: string }> = {
@@ -25,11 +33,15 @@ const MODE_LABELS: Record<"INITIATIVE" | "ATB", { title: string; hint: string }>
 };
 
 export default function RoomSetupForm(props: Props) {
-  const [system, setSystem] = useState<SystemKey>("COC7");
+  const initialSystem: SystemKey = props.selectedModule?.system === "TOUHOU" ? "TOUHOU" : "COC7";
+  const initialOptions = props.options[initialSystem];
+  const [system, setSystem] = useState<SystemKey>(initialSystem);
   const active = props.options[system];
-  const [methodId, setMethodId] = useState(active.methods[0]?.id ?? "");
-  const [era, setEra] = useState<"CLASSIC" | "MODERN">("MODERN");
-  const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB">(active.defaultMode);
+  const [methodId, setMethodId] = useState(initialOptions.methods[0]?.id ?? "");
+  const [era, setEra] = useState<"CLASSIC" | "MODERN">(
+    props.selectedModule?.era === "CLASSIC" ? "CLASSIC" : "MODERN"
+  );
+  const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB">(initialOptions.defaultMode);
   const [disabled, setDisabled] = useState<readonly string[]>([]);
   const [allowPlayerCombatRequest, setAllowPlayerCombatRequest] = useState(true);
 
@@ -52,6 +64,9 @@ export default function RoomSetupForm(props: Props) {
 
   return (
     <form action={createRoomAction} className="flex flex-col gap-5">
+      {props.selectedModule === undefined || props.selectedModule === null ? null : (
+        <input type="hidden" name="moduleId" value={props.selectedModule.id} />
+      )}
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">房间</h2>
         <label className="mt-4 flex flex-col gap-1.5">

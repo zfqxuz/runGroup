@@ -382,3 +382,58 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - 进行中的局删除资源时保留旧资源直到本局结束。
 - 实时战斗发起 / 战斗结束的 Socket 广播，避免其他在线玩家需要刷新页面。
 - KP 结束本局前的成长确认页 / 批量奖励录入。
+
+## 14. 第 12 项（本轮）：团本广场、我的团本与游戏历史（已完成）
+
+### 数据模型
+- 迁移 `20260910210000_module_gallery_and_room_selected_module`。
+- `Module` 新增：
+  - `ownerId` / `owner`
+  - `background`
+  - `occupationRecommendation`
+  - `publishedAt`
+  - 已有 `isPublished` 用于发布状态。
+- `Room` 新增 `selectedModuleId` / `selectedModule`，用于持久化准备页当前选择的团本。
+- 迁移会把旧的房间团本 `ownerId` 回填为房间 owner。
+
+### 团本所有权与广场
+- 现有导入 / 空白新建都会写入 `ownerId`。
+- 每个人都可以在“我的团本”创建、导入、编辑、发布自己的团本。
+- 只有 `ownerId === 当前用户` 才能编辑、发布、删除团本。
+- 团本广场 `/modules`：
+  - 只展示 `isPublished = true` 的团本。
+  - 只显示公开字段：背景、年代、规则系统、简介、职业推荐。
+  - 不显示正文、资源、KP 信息。
+  - 支持“用这个团本建房”和“公开预览”。
+- “我的团本” `/modules/mine`：
+  - 与“我的角色”“我的卡牌”“游戏历史”并列在主导航。
+  - 支持新建空白团本、导入标准包、发布 / 取消发布、编辑、删除。
+- 团本详情 `/modules/[moduleId]`：
+  - 作者可完整编辑和替换资源。
+  - 已发布团本对登录用户公开预览，但不会泄露正文。
+  - 非公开正文仅作者与本房 KP 可见。
+
+### 房间团本选择
+- 准备页的公开信息全员可见；完整正文仅 KP / 作者可见。
+- KP 可在准备页保存“本局团本”选择。
+- 开始新局时会使用 `Room.selectedModuleId`；也可在开始请求里临时指定 `moduleId`。
+- 从广场“用这个团本建房”会预选团本并写入新房间的 `selectedModuleId`。
+- 也支持“先建房再选团本”。
+
+### 游戏历史
+- 新增 `/history`：列出自己参与过、`Game.status = ENDED` 的历史局。
+- 新增 `/history/[gameId]`：
+  - 校验房间成员身份。
+  - 只读展示使用团本的公开字段、最终 `GameState`、局内角色、成长记录与最近历史消息。
+  - 非成员访问返回 404。
+
+### 新增 E2E
+- `npm run verify:module-gallery`：发布 / 广场预览 / 非作者不可编辑 / 直接建房 / 先建房再选团本。
+- `npm run verify:game-history`：历史列表 / 只读详情 / 非成员不可见。
+
+### 本轮验证
+- `npm run typecheck`：PASS
+- `npm test`：137 tests PASS
+- `npm run build --workspace @touhou/web`：PASS
+- 全部既有 E2E：PASS
+- 新增 E2E：`verify:module-gallery`、`verify:game-history` PASS

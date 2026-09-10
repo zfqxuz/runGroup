@@ -19,7 +19,7 @@ const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp"]);
 
-async function uniqueSlug(roomId: string, base: string): Promise<string> {
+async function uniqueSlug(roomId: string | null, base: string): Promise<string> {
   let slug = base;
   let suffix = 2;
   while ((await prisma.module.findFirst({ where: { roomId, slug }, select: { id: true } })) !== null) {
@@ -42,13 +42,15 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
   }
 
-  const roomId = String(form.get("roomId") ?? "");
-  const membership = await prisma.roomMember.findUnique({
-    where: { roomId_userId: { roomId, userId: session.user.id } },
-    select: { role: true }
-  });
-  if (membership === null || membership.role !== "KP") {
-    return NextResponse.json({ ok: false, error: "只有 KP 可以导入团本" }, { status: 403 });
+  const roomId = String(form.get("roomId") ?? "").trim();
+  if (roomId.length > 0) {
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId: session.user.id } },
+      select: { role: true }
+    });
+    if (membership === null || membership.role !== "KP") {
+      return NextResponse.json({ ok: false, error: "只有本房 KP 可以导入房间团本" }, { status: 403 });
+    }
   }
 
   const file = form.get("file");
@@ -70,16 +72,19 @@ export async function POST(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "团本格式校验失败", details: parsed.errors }, { status: 400 });
   }
 
-  const slug = await uniqueSlug(roomId, slugifyModuleId(parsed.frontMatter.id || parsed.frontMatter.title));
+  const slug = await uniqueSlug(roomId.length === 0 ? null : roomId, slugifyModuleId(parsed.frontMatter.id || parsed.frontMatter.title));
   const moduleRecord = await prisma.module.create({
     data: {
-      roomId,
+      ownerId: session.user.id,
+      roomId: roomId.length === 0 ? null : roomId,
       slug,
       title: parsed.frontMatter.title,
       synopsis: parsed.frontMatter.summary,
       author: parsed.frontMatter.author,
       system: parsed.frontMatter.system,
       era: parsed.frontMatter.era,
+      background: typeof parsed.frontMatter.background === "string" ? parsed.frontMatter.background : null,
+      occupationRecommendation: typeof parsed.frontMatter.occupationRecommendation === "string" ? parsed.frontMatter.occupationRecommendation : null,
       version: parsed.frontMatter.version,
       sourceType: lower.endsWith(".zip") ? "ZIP" : "MARKDOWN",
       originalFilename: upload.name.slice(0, 200),

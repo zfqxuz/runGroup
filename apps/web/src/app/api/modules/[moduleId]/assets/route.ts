@@ -34,18 +34,21 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
   }
 
-  const roomId = String(form.get("roomId") ?? "");
+  const roomId = String(form.get("roomId") ?? "").trim();
   const moduleAssetId = String(form.get("moduleAssetId") ?? "");
-  if ((await requireKp(roomId, session.user.id)) === false) {
-    return NextResponse.json({ ok: false, error: "只有 KP 可以替换团本资源" }, { status: 403 });
-  }
-
   const existing = await prisma.moduleAsset.findUnique({
     where: { id: moduleAssetId },
     include: { module: true, asset: true }
   });
-  if (existing === null || existing.moduleId !== context.params.moduleId || existing.module.roomId !== roomId) {
+  if (existing === null || existing.moduleId !== context.params.moduleId) {
     return NextResponse.json({ ok: false, error: "资源不存在" }, { status: 404 });
+  }
+  if (roomId.length > 0) {
+    if (existing.module.roomId !== roomId || (await requireKp(roomId, session.user.id)) === false) {
+      return NextResponse.json({ ok: false, error: "只有本房 KP 可以替换团本资源" }, { status: 403 });
+    }
+  } else if (existing.module.ownerId !== session.user.id) {
+    return NextResponse.json({ ok: false, error: "只有团本作者可以替换资源" }, { status: 403 });
   }
 
   const file = form.get("file");
@@ -147,18 +150,21 @@ export async function DELETE(
   } catch {
     return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
   }
-  const roomId = typeof payload.roomId === "string" ? payload.roomId : "";
+  const roomId = typeof payload.roomId === "string" ? payload.roomId.trim() : "";
   const moduleAssetId = typeof payload.moduleAssetId === "string" ? payload.moduleAssetId : "";
-  if ((await requireKp(roomId, session.user.id)) === false) {
-    return NextResponse.json({ ok: false, error: "只有 KP 可以删除团本资源" }, { status: 403 });
-  }
-
   const existing = await prisma.moduleAsset.findUnique({
     where: { id: moduleAssetId },
     include: { module: true }
   });
-  if (existing === null || existing.moduleId !== context.params.moduleId || existing.module.roomId !== roomId) {
+  if (existing === null || existing.moduleId !== context.params.moduleId) {
     return NextResponse.json({ ok: false, error: "资源不存在" }, { status: 404 });
+  }
+  if (roomId.length > 0) {
+    if (existing.module.roomId !== roomId || (await requireKp(roomId, session.user.id)) === false) {
+      return NextResponse.json({ ok: false, error: "只有本房 KP 可以删除团本资源" }, { status: 403 });
+    }
+  } else if (existing.module.ownerId !== session.user.id) {
+    return NextResponse.json({ ok: false, error: "只有团本作者可以删除资源" }, { status: 403 });
   }
 
   await prisma.moduleAsset.delete({ where: { id: existing.id } });

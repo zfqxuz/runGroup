@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 
 interface Props {
-  readonly roomId: string;
+  readonly roomId?: string;
   readonly moduleId: string;
   readonly moduleAssetId: string;
 }
@@ -18,9 +18,10 @@ export default function ModuleAssetActions(props: Props) {
     setBusy(true);
     setMessage(null);
     try {
+      const formData = new FormData(form);
       const response = await fetch("/api/modules/" + props.moduleId + "/assets", {
         method: "POST",
-        body: new FormData(form)
+        body: formData
       });
       const payload = (await response.json()) as { ok?: boolean; error?: string };
       if (payload.ok === false) {
@@ -43,7 +44,7 @@ export default function ModuleAssetActions(props: Props) {
       const response = await fetch("/api/modules/" + props.moduleId + "/assets", {
         method: "DELETE",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ roomId: props.roomId, moduleAssetId: props.moduleAssetId })
+        body: JSON.stringify({ roomId: props.roomId ?? "", moduleAssetId: props.moduleAssetId })
       });
       const payload = (await response.json()) as { ok?: boolean; error?: string };
       if (payload.ok === false) {
@@ -66,7 +67,7 @@ export default function ModuleAssetActions(props: Props) {
       }}
       className="mt-2 flex flex-wrap items-center gap-2"
     >
-      <input type="hidden" name="roomId" value={props.roomId} />
+      {props.roomId === undefined ? null : <input type="hidden" name="roomId" value={props.roomId} />}
       <input type="hidden" name="moduleAssetId" value={props.moduleAssetId} />
       <input
         type="file"

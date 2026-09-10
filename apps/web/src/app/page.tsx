@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import AppTabs from "@/components/layout/AppTabs";
 import { auth, signOut } from "@/server/auth";
 import { joinRoomAction } from "@/server/actions/room";
 import { prisma } from "@/server/db/prisma";
@@ -18,14 +19,27 @@ async function createRoom(formData: FormData): Promise<void> {
 
   const name = String(formData.get("name") ?? "").trim();
   const system = String(formData.get("system") ?? "COC7");
+  const requestedModuleId = String(formData.get("moduleId") ?? "").trim();
   const chargenMethod = String(formData.get("chargenMethod") ?? "destiny5");
   const eraRaw = String(formData.get("era") ?? "MODERN");
   const era = system === "TOUHOU" ? null : eraRaw === "CLASSIC" ? "CLASSIC" : "MODERN";
   if (name.length === 0) return;
 
+  let selectedModuleId: string | null = null;
+  if (requestedModuleId.length > 0) {
+    const moduleRecord = await prisma.module.findUnique({
+      where: { id: requestedModuleId },
+      select: { id: true, ownerId: true, isPublished: true }
+    });
+    if (moduleRecord !== null && (moduleRecord.isPublished || moduleRecord.ownerId === session.user.id)) {
+      selectedModuleId = moduleRecord.id;
+    }
+  }
+
   const room = await prisma.room.create({
     data: {
       name,
+      selectedModuleId,
       system: system === "TOUHOU" ? "TOUHOU" : "COC7",
       ownerId: session.user.id,
       inviteCode: generateInviteCode(),
@@ -46,7 +60,7 @@ async function doSignOut(): Promise<void> {
 const inputClass =
   "rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-sakura-500";
 
-export default async function HomePage(props: { searchParams: { error?: string } }) {
+export default async function HomePage(props: { searchParams: { error?: string; moduleId?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -107,9 +121,14 @@ export default async function HomePage(props: { searchParams: { error?: string }
         </div>
       </header>
 
+      <AppTabs />
+
       <section className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-medium text-white/80">创建房间</h2><Link href="/rooms/new" className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">按配置新建</Link></div>
         <form action={createRoom} className="mt-4 flex flex-wrap items-end gap-3">
+          {props.searchParams.moduleId === undefined ? null : (
+            <input type="hidden" name="moduleId" value={props.searchParams.moduleId} />
+          )}
           <label className="flex flex-1 flex-col gap-1.5">
             <span className="text-xs text-white/50">房间名</span>
             <input name="name" placeholder="例：红魔馆异变调查" className={inputClass} />

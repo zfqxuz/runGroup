@@ -131,6 +131,8 @@ era: FANTASY
 author: 示例作者
 version: 1.0.0
 summary: 幻想乡红雾异变的调查团。
+background: 红雾覆盖幻想乡，人类与妖怪都受到影响的异变背景。
+occupationRecommendation: 巫女、魔法使、人偶师、占卜师。
 difficulty: N
 players:
   min: 2
@@ -158,6 +160,8 @@ license: CC-BY-NC-SA
 | `author` | 是 | 作者 |
 | `version` | 是 | 语义化版本 |
 | `summary` | 是 | 一句话简介 |
+| `background` | 否 | 广场公开的背景 / 时代氛围 |
+| `occupationRecommendation` | 否 | 广场公开的推荐职业 / 角色方向 |
 | `difficulty` | 否 | `E / N / H / L / EX / PH` 或 `LOW / MEDIUM / HIGH` |
 | `players` | 否 | 建议人数 |
 | `duration` | 否 | 预计时长 |

@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomSetupForm from "@/components/room/RoomSetupForm";
 import { auth } from "@/server/auth";
+import { prisma } from "@/server/db/prisma";
 
 export const dynamic = "force-dynamic";
 
@@ -22,9 +23,19 @@ function buildOptions(packId: string) {
   };
 }
 
-export default async function NewRoomPage() {
+export default async function NewRoomPage({ searchParams }: { searchParams: { moduleId?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
+
+  const requestedModule = searchParams.moduleId === undefined
+    ? null
+    : await prisma.module.findUnique({
+        where: { id: searchParams.moduleId },
+        select: { id: true, title: true, system: true, era: true, isPublished: true, ownerId: true }
+      });
+  const selectedModule = requestedModule !== null && (requestedModule.isPublished || requestedModule.ownerId === session.user.id)
+    ? requestedModule
+    : null;
 
   const options = {
     COC7: buildOptions("coc7-baseline"),
@@ -41,8 +52,13 @@ export default async function NewRoomPage() {
         <p className="mt-1 text-sm text-white/50">
           开团前一次性锁定规则；KP 之后仍可覆盖，但会留下审计记录
         </p>
+        {selectedModule === null ? null : (
+          <p className="mt-2 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-xs text-spirit-200">
+            已预选团本：{selectedModule.title}
+          </p>
+        )}
       </header>
-      <RoomSetupForm options={options} />
+      <RoomSetupForm options={options} selectedModule={selectedModule} />
     </main>
   );
 }

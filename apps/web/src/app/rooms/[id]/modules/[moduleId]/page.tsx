@@ -42,6 +42,8 @@ export default async function ModuleDetailPage({
   if (moduleRecord === null || moduleRecord.roomId !== params.id) notFound();
 
   const isKP = membership.role === "KP";
+  const canEdit = moduleRecord.ownerId === session.user.id;
+  const canViewFull = canEdit || isKP;
   const content = (moduleRecord.content ?? {}) as ModuleContent;
   const text = content.text ?? "";
 
@@ -69,7 +71,7 @@ export default async function ModuleDetailPage({
           <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
             我的身份：{membership.role}
           </span>
-          {isKP ? <ModuleActions roomId={params.id} moduleId={moduleRecord.id} /> : null}
+          {canEdit ? <ModuleActions roomId={params.id} moduleId={moduleRecord.id} /> : null}
         </div>
       </header>
 
@@ -98,8 +100,13 @@ export default async function ModuleDetailPage({
           标题不能为空。
         </p>
       ) : null}
+      {searchParams.error === "owner" ? (
+        <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          只有团本作者可以删除此团本。
+        </p>
+      ) : null}
 
-      {isKP ? (
+      {canEdit ? (
         <form action={saveModuleAction} className="flex flex-col gap-5 rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <input type="hidden" name="roomId" value={params.id} />
           <input type="hidden" name="moduleId" value={moduleRecord.id} />
@@ -183,7 +190,7 @@ export default async function ModuleDetailPage({
                 >
                   打开资源
                 </a>
-                {isKP ? (
+                {canEdit ? (
                   <ModuleAssetActions
                     roomId={params.id}
                     moduleId={moduleRecord.id}
@@ -197,8 +204,28 @@ export default async function ModuleDetailPage({
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">公开信息</h2>
+        <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
+          <div>
+            <p className="text-[10px] text-white/35">背景</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-white/60">{moduleRecord.background ?? "未填写"}</p>
+          </div>
+          <div>
+            <p className="text-[10px] text-white/35">职业推荐</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-white/60">{moduleRecord.occupationRecommendation ?? "未填写"}</p>
+          </div>
+          <div className="sm:col-span-2">
+            <p className="text-[10px] text-white/35">简介</p>
+            <p className="mt-0.5 whitespace-pre-wrap text-white/70">{moduleRecord.synopsis ?? "未填写"}</p>
+          </div>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">正文预览</h2>
-        {text.length === 0 ? (
+        {canViewFull === false ? (
+          <p className="mt-3 text-xs text-white/35">非公开正文仅 KP 与团本作者可见。</p>
+        ) : text.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">暂无正文。</p>
         ) : (
           <pre className="mt-4 max-h-[640px] overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-ink-900/60 px-4 py-3 font-sans text-xs leading-relaxed text-white/60">

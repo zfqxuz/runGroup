@@ -180,6 +180,7 @@ model User {
   ownedRooms  Room[]              @relation("RoomOwner")
   ruleAudits  RuleOverrideAudit[]
   combatRequests CombatRequest[] @relation("CombatRequestInitiator")
+  modules     Module[]
 }
 
 model RulePack {
@@ -242,10 +243,13 @@ model Room {
   era               String?
   /// 玩家是否可以发起战斗申请（KP 仍可直接发起）。
   allowPlayerCombatRequest Boolean @default(true)
+  /// 准备页当前选中的团本。可以为房间私有团本或广场公开团本。
+  selectedModuleId  String?
   createdAt         DateTime   @default(now()) @db.Timestamptz(3)
 
   owner      User                @relation("RoomOwner", fields: [ownerId], references: [id])
   rulePack   RulePackVersion?    @relation(fields: [rulePackVersionId], references: [id])
+  selectedModule Module?          @relation("RoomSelectedModule", fields: [selectedModuleId], references: [id], onDelete: SetNull)
   members    RoomMember[]
   messages   Message[]
   combats    Combat[]
@@ -265,6 +269,7 @@ model Room {
   games      Game[]
 
   @@index([status])
+  @@index([selectedModuleId])
 }
 
 model RoomMember {
@@ -540,6 +545,7 @@ model Asset {
 
 model Module {
   id                String  @id @default(cuid())
+  ownerId           String?
   roomId            String?
   rulePackVersionId String?
   slug              String?
@@ -548,8 +554,13 @@ model Module {
   author            String?
   system            String?
   era               String?
+  /// 广场预览字段：背景 / 时代氛围。
+  background        String?
+  /// 广场预览字段：推荐职业 / 角色方向。
+  occupationRecommendation String?
   version           String  @default("1.0.0")
   isPublished       Boolean @default(false)
+  publishedAt       DateTime? @db.Timestamptz(3)
   sourceType        String  @default("NATIVE")
   originalFilename  String?
   packagePath       String?
@@ -557,13 +568,17 @@ model Module {
   importReport      Json    @default("{}")
   content           Json    @default("{}")
 
+  owner    User?            @relation(fields: [ownerId], references: [id], onDelete: SetNull)
   room     Room?            @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  selectedByRooms Room[]    @relation("RoomSelectedModule")
   pack     RulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
   chapters ModuleChapter[]
   assets   ModuleAsset[]
   games    Game[]
 
   @@index([roomId, slug])
+  @@index([ownerId, isPublished])
+  @@index([isPublished, publishedAt])
 }
 
 model ModuleAsset {
