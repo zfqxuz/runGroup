@@ -129,6 +129,37 @@ export async function toggleReadyAction(formData: FormData): Promise<void> {
   redirect("/rooms/" + roomId + "/prepare");
 }
 
+export async function setActiveCharacterAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = String(formData.get("roomId") ?? "");
+  const characterId = String(formData.get("characterId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { id: true, role: true }
+  });
+  if (membership === null) redirect("/");
+  if (membership.role === "SPECTATOR") redirect("/rooms/" + roomId + "/prepare?error=character");
+
+  if (characterId.length === 0) {
+    await prisma.roomMember.update({ where: { id: membership.id }, data: { activeCharacterId: null } });
+  } else {
+    const entry = await prisma.roomCharacterEntry.findUnique({
+      where: { roomId_characterId: { roomId, characterId } },
+      include: { character: { select: { userId: true } } }
+    });
+    if (entry === null || entry.status !== "APPROVED" || entry.character.userId !== session.user.id) {
+      redirect("/rooms/" + roomId + "/prepare?error=character");
+    }
+    await prisma.roomMember.update({ where: { id: membership.id }, data: { activeCharacterId: characterId } });
+  }
+
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/prepare");
+}
+
 export async function startRoomAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -144,7 +175,7 @@ export async function startRoomAction(formData: FormData): Promise<void> {
   });
   if (membership === null) redirect("/");
   if (membership.role !== "KP") redirect("/rooms/" + roomId + "/prepare");
-  if (room.status !== "LOBBY") redirect("/rooms/" + roomId);
+  if (room.status !== "LOBBY" && room.status !== "PAUSED") redirect("/rooms/" + roomId);
 
   const required = room.members.filter((member) => member.role !== "SPECTATOR");
   const notReady = required.filter((member) => member.ready === false);
@@ -152,21 +183,169 @@ export async function startRoomAction(formData: FormData): Promise<void> {
 
   const players = await prisma.roomMember.findMany({
     where: { roomId, role: "PLAYER" },
-    select: { userId: true }
+    select: { id: true, userId: true, activeCharacterId: true }
   });
-  if (players.length > 0) {
-    const approved = await prisma.roomCharacterEntry.findMany({
-      where: { roomId, status: "APPROVED" },
-      include: { character: { select: { userId: true } } }
+  const approvedEntries = await prisma.roomCharacterEntry.findMany({
+    where: { roomId, status: "APPROVED" },
+    include: { character: true },
+    orderBy: { submittedAt: "asc" }
+  });
+  const approvedByUser = new Map<string, typeof approvedEntries>();
+  for (const entry of approvedEntries) {
+    const list = approvedByUser.get(entry.character.userId) ?? [];
+    list.push(entry);
+    approvedByUser.set(entry.character.userId, list);
+  }
+  if (players.some((player) => approvedByUser.has(player.userId) === false)) {
+    redirect("/rooms/" + roomId + "/prepare?error=character");
+  }
+
+  const activeGame = await prisma.game.findFirst({
+    where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+    orderBy: { createdAt: "desc" }
+  });
+
+  if (activeGame !== null && activeGame.status === "PAUSED") {
+    await prisma.game.update({ where: { id: activeGame.id }, data: { status: "PLAYING" } });
+    await prisma.gameState.upsert({
+      where: { gameId: activeGame.id },
+      update: { paused: false },
+      create: {
+        gameId: activeGame.id,
+        moduleId: activeGame.moduleId,
+        paused: false
+      }
     });
-    const approvedUserIds = new Set(approved.map((entry) => entry.character.userId));
-    if (players.some((player) => approvedUserIds.has(player.userId) === false)) {
-      redirect("/rooms/" + roomId + "/prepare?error=character");
+  } else if (activeGame === null) {
+    const roomModule = await prisma.module.findFirst({
+      where: { roomId },
+      orderBy: { id: "asc" }
+    });
+    const game = await prisma.game.create({
+      data: {
+        roomId,
+        moduleId: roomModule?.id ?? null,
+        status: "PLAYING",
+        title: roomModule?.title ?? room.name,
+        startedAt: new Date(),
+        createdBy: session.user.id
+      },
+      select: { id: true }
+    });
+    await prisma.gameState.create({
+      data: {
+        gameId: game.id,
+        moduleId: roomModule?.id ?? null,
+        moduleVersion: roomModule?.version ?? null,
+        paused: false
+      }
+    });
+
+    for (const player of players) {
+      const candidates = approvedByUser.get(player.userId) ?? [];
+      const entry =
+        player.activeCharacterId === null
+          ? candidates[0]
+          : candidates.find((item) => item.characterId === player.activeCharacterId) ?? candidates[0];
+      if (entry === undefined) continue;
+      if (player.activeCharacterId === null) {
+        await prisma.roomMember.update({
+          where: { id: player.id },
+          data: { activeCharacterId: entry.characterId }
+        });
+      }
+      await prisma.gameCharacter.create({
+        data: {
+          gameId: game.id,
+          characterId: entry.characterId,
+          userId: player.userId,
+          currentHp: entry.character.hp,
+          currentMp: entry.character.mp,
+          currentSan: entry.character.san,
+          currentDp: entry.character.dp
+        }
+      });
     }
+  } else {
+    await prisma.game.update({ where: { id: activeGame.id }, data: { status: "PLAYING" } });
+    await prisma.gameState.upsert({
+      where: { gameId: activeGame.id },
+      update: { paused: false },
+      create: { gameId: activeGame.id, moduleId: activeGame.moduleId, paused: false }
+    });
   }
 
   await prisma.room.update({ where: { id: roomId }, data: { status: "PLAYING" } });
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
   redirect("/rooms/" + roomId);
+}
+
+export async function pauseGameAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+
+  const activeGame = await prisma.game.findFirst({
+    where: { roomId, status: { in: ["PREPARING", "PLAYING", "COMBAT"] } },
+    orderBy: { createdAt: "desc" }
+  });
+  if (activeGame === null) redirect("/rooms/" + roomId + "/prepare?error=game");
+
+  await prisma.game.update({ where: { id: activeGame.id }, data: { status: "PAUSED" } });
+  await prisma.gameState.upsert({
+    where: { gameId: activeGame.id },
+    update: { paused: true },
+    create: { gameId: activeGame.id, moduleId: activeGame.moduleId, paused: true }
+  });
+  await prisma.room.update({ where: { id: roomId }, data: { status: "PAUSED" } });
+  await prisma.roomMember.updateMany({
+    where: { roomId, role: { not: "SPECTATOR" } },
+    data: { ready: false }
+  });
+
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/prepare");
+}
+
+export async function endGameAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+
+  const activeGame = await prisma.game.findFirst({
+    where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+    orderBy: { createdAt: "desc" }
+  });
+  if (activeGame !== null) {
+    await prisma.game.update({
+      where: { id: activeGame.id },
+      data: { status: "ENDED", endedAt: new Date() }
+    });
+    await prisma.gameState.updateMany({
+      where: { gameId: activeGame.id },
+      data: { paused: false }
+    });
+  }
+
+  await prisma.room.update({ where: { id: roomId }, data: { status: "LOBBY" } });
+  await prisma.roomMember.updateMany({
+    where: { roomId, role: { not: "SPECTATOR" } },
+    data: { ready: false }
+  });
+
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/prepare");
 }

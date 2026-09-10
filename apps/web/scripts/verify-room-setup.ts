@@ -216,11 +216,10 @@ try {
   ensure(afterReadyPage.text.includes("已准备"), "准备后应显示已准备状态");
   ensure(afterReadyPage.text.includes("开始跑团"), "准备后应显示开始跑团按钮");
 
-  const startLabelIndex = afterReadyPage.text.indexOf("开始跑团（");
-  ensure(startLabelIndex > 0, "准备页缺少开始跑团按钮");
-  const startFormIndex = afterReadyPage.text.lastIndexOf("<form", startLabelIndex);
-  const startFormHtml = afterReadyPage.text.slice(startFormIndex, startLabelIndex);
-  const startActionMatch = /name="([^"]*ACTION_ID[^"]*)"/.exec(startFormHtml);
+  const lastFormIndex = afterReadyPage.text.lastIndexOf("<form");
+  if (lastFormIndex < 0) throw new Error("E2E 断言失败：准备页没有表单");
+  const lastFormHtml = afterReadyPage.text.slice(lastFormIndex, afterReadyPage.text.indexOf("</form>", lastFormIndex));
+  const startActionMatch = /name="([^"]*ACTION_ID[^"]*)"/.exec(lastFormHtml);
   const startActionField = startActionMatch === null ? undefined : startActionMatch[1];
   if (startActionField === undefined) throw new Error("E2E 断言失败：未找到开始跑团 server action");
   const startForm = new FormData();

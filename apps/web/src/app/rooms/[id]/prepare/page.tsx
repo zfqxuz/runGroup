@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
-import { startRoomAction, toggleReadyAction } from "@/server/actions/room";
+import { setActiveCharacterAction, startRoomAction, toggleReadyAction } from "@/server/actions/room";
 import { upsertModuleAction } from "@/server/actions/module";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
@@ -43,7 +43,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   const isKP = membership.role === "KP";
 
 
-  if (room.status !== "LOBBY") redirect("/rooms/" + room.id);
+  if (room.status !== "LOBBY" && room.status !== "PAUSED") redirect("/rooms/" + room.id);
   // 房间绑定的规则包（暂用内置包；未来接 RulePackVersion 表）
   const pack = resolveRulePack(
     room.system === "TOUHOU" ? "touhou-ext" : "coc7-baseline",
@@ -58,6 +58,11 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     where: { roomId: room.id },
     orderBy: { id: "asc" }
   });
+  const activeGame = await prisma.game.findFirst({
+    where: { roomId: room.id, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+    orderBy: { createdAt: "desc" }
+  });
+  const resuming = activeGame?.status === "PAUSED";
   const moduleContent = (roomModule?.content ?? {}) as { text?: string };
   const requiredMembers = room.members.filter((member) => member.role !== "SPECTATOR");
   const readyCount = requiredMembers.filter((member) => member.ready).length;
@@ -107,6 +112,12 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   );
   const allPlayersHaveApprovedCharacter = playerUserIds.every((userId) =>
     approvedCharacterUserIds.has(userId)
+  );
+  const myApprovedCharacters = characterEntries.filter(
+    (entry) => entry.character.userId === session.user.id && entry.status === "APPROVED"
+  );
+  const activeCharacter = myApprovedCharacters.find(
+    (entry) => entry.characterId === membership.activeCharacterId
   );
   const canStart = allReady && allPlayersHaveApprovedCharacter;
 
@@ -245,6 +256,16 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             存在没有通过角色审核的 PL，暂时不能开始。
           </p>
         ) : null}
+        {searchParams.error === "game" ? (
+          <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            当前没有可继续的局。
+          </p>
+        ) : null}
+        {resuming ? (
+          <p className="mt-3 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-[11px] text-spirit-200">
+            当前有一个暂停中的局。全员准备后，KP 点击“继续跑团”读取上次进度。
+          </p>
+        ) : null}
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
@@ -371,6 +392,53 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           </Link>
         </div>
       </div>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">当前角色</h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              选择本局使用的角色。只能选择你已经通过审核的角色卡。
+            </p>
+          </div>
+          {activeCharacter === undefined ? (
+            <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">未选择</span>
+          ) : (
+            <span className="rounded-full border border-emerald-400/40 px-2 py-0.5 text-[10px] text-emerald-300">
+              {activeCharacter.character.name}
+            </span>
+          )}
+        </div>
+        <form action={setActiveCharacterAction} className="mt-4 flex flex-wrap items-end gap-3">
+          <input type="hidden" name="roomId" value={room.id} />
+          <label className="flex min-w-[240px] flex-1 flex-col gap-1.5">
+            <span className="text-xs text-white/50">选择角色</span>
+            <select
+              name="characterId"
+              defaultValue={membership.activeCharacterId ?? ""}
+              className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+            >
+              <option value="">（不选择）</option>
+              {myApprovedCharacters.map((entry) => (
+                <option key={entry.id} value={entry.characterId}>
+                  {entry.character.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="rounded-lg border border-spirit-400/40 px-4 py-2 text-sm text-spirit-400 transition hover:bg-spirit-400/10"
+          >
+            保存当前角色
+          </button>
+        </form>
+        {myApprovedCharacters.length === 0 ? (
+          <p className="mt-3 text-[11px] text-white/35">
+            还没有通过审核的角色卡。先车卡并等待 KP 审核。
+          </p>
+        ) : null}
+      </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">角色卡（{characterEntries.length}）{pendingCharacterCount > 0 ? <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">待审 {pendingCharacterCount}</span> : null}</h2>
@@ -547,7 +615,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           <div>
             <h2 className="text-sm font-medium text-white/80">开始跑团</h2>
             <p className="mt-1 text-[11px] text-white/35">
-              需要所有 KP/PL 已准备，且每名 PL 至少有一张审核通过的角色卡，KP 才能开始。
+              需要所有 KP/PL 已准备，且每名 PL 至少有一张审核通过的角色卡，KP 才能{resuming ? "继续" : "开始"}。
             </p>
           </div>
           {isKP ? (
@@ -558,7 +626,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
                 disabled={canStart === false}
                 className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                开始跑团（{readyCount}/{requiredMembers.length}）
+                {(resuming ? "继续跑团" : "开始跑团")}（{readyCount}/{requiredMembers.length}）
               </button>
             </form>
           ) : (

@@ -15,6 +15,7 @@ enum System {
 enum RoomStatus {
   LOBBY
   PLAYING
+  PAUSED
   COMBAT
   ENDED
 }
@@ -261,6 +262,7 @@ model Room {
   combatRequests   CombatRequest[]
   encounters Encounter[]
   Character  Character[]
+  games      Game[]
 
   @@index([status])
 }
@@ -348,6 +350,8 @@ model Character {
   roomEntries  RoomCharacterEntry[]
   participants CombatParticipant[]
   tokens       Token[]
+  gameCharacters GameCharacter[]
+  advancements   CharacterAdvancement[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt
@@ -378,6 +382,83 @@ model Occupation {
 
   @@unique([system, code])
   @@index([system, era])
+}
+
+model Game {
+  id        String   @id @default(cuid())
+  roomId    String
+  moduleId  String?
+  status    String   @default("PREPARING")
+  title     String
+  startedAt DateTime?
+  endedAt   DateTime?
+  createdBy String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt
+
+  room         Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  module       Module?                @relation(fields: [moduleId], references: [id])
+  state        GameState?
+  characters   GameCharacter[]
+  advancements CharacterAdvancement[]
+
+  @@index([roomId, status])
+}
+
+model GameState {
+  gameId             String   @id
+  moduleId           String?
+  moduleVersion      String?
+  currentChapterId   String?
+  currentSceneId     String?
+  currentEncounterId String?
+  gameTime           String?
+  paused             Boolean  @default(false)
+  flags              Json     @default("{}")
+  counters           Json     @default("{}")
+  custom             Json     @default("{}")
+  version            Int      @default(1)
+  updatedAt          DateTime @updatedAt
+
+  game Game @relation(fields: [gameId], references: [id], onDelete: Cascade)
+}
+
+model GameCharacter {
+  id          String   @id @default(cuid())
+  gameId      String
+  characterId String
+  userId      String
+  status      String   @default("ALIVE")
+  currentHp   Int
+  currentMp   Int
+  currentSan  Int
+  currentDp   Int      @default(0)
+  conditions  Json     @default("[]")
+  state       Json     @default("{}")
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt
+
+  game      Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, characterId])
+  @@index([userId])
+}
+
+model CharacterAdvancement {
+  id          String   @id @default(cuid())
+  characterId String
+  gameId      String?
+  kind        String
+  target      String?
+  delta       Int?
+  note        String?
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  game      Game?     @relation(fields: [gameId], references: [id])
+
+  @@index([characterId, createdAt])
 }
 
 model Card {
@@ -480,6 +561,7 @@ model Module {
   pack     RulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
   chapters ModuleChapter[]
   assets   ModuleAsset[]
+  games    Game[]
 
   @@index([roomId, slug])
 }

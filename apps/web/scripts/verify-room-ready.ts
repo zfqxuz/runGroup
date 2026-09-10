@@ -94,6 +94,18 @@ function extractActionFieldAround(html: string, marker: string): string {
   return field;
 }
 
+function extractLastFormActionField(html: string): string {
+  const formIndex = html.lastIndexOf("<form");
+  if (formIndex < 0) throw new Error("E2E 断言失败：页面没有表单");
+  const formEnd = html.indexOf("</form>", formIndex);
+  if (formEnd < 0) throw new Error("E2E 断言失败：最后一个表单未闭合");
+  const formHtml = html.slice(formIndex, formEnd);
+  const match = /name="([^"]*ACTION_ID[^"]*)"/.exec(formHtml);
+  const field = match === null ? undefined : match[1];
+  if (field === undefined || field.length === 0) throw new Error("E2E 断言失败：最后一个表单缺少 action id");
+  return field;
+}
+
 async function toggleReady(jar: Map<string, string>, roomId: string): Promise<void> {
   const page = await call(jar, "/rooms/" + roomId + "/prepare");
   expectEqual(page.status, 200, "GET 准备页");
@@ -111,7 +123,7 @@ async function toggleReady(jar: Map<string, string>, roomId: string): Promise<vo
 
 async function tryStart(jar: Map<string, string>, roomId: string): Promise<Response> {
   const page = await call(jar, "/rooms/" + roomId + "/prepare");
-  const field = extractActionFieldAround(page.text, "开始跑团（");
+  const field = extractLastFormActionField(page.text);
   const form = new FormData();
   form.set(field, "");
   form.set("roomId", roomId);
@@ -188,12 +200,82 @@ async function main(): Promise<void> {
       data: { roomId: room.id, characterId: character.id, status: "APPROVED" }
     });
 
+    const plPrepare = await call(plJar, "/rooms/" + room.id + "/prepare");
+    const activeField = extractActionFieldAround(plPrepare.text, "保存当前角色");
+    const activeForm = new FormData();
+    activeForm.set(activeField, "");
+    activeForm.set("roomId", room.id);
+    activeForm.set("characterId", character.id);
+    const activeResponse = await call(plJar, "/rooms/" + room.id + "/prepare", {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id + "/prepare" },
+      body: activeForm
+    });
+    ensure(activeResponse.status < 400, "保存当前角色失败");
+    const selectedMember = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId: plId } },
+      select: { activeCharacterId: true }
+    });
+    expectEqual(selectedMember?.activeCharacterId, character.id, "当前角色应保存");
+
     const started = await tryStart(kpJar, room.id);
     ensure(started.status === 303, "满足条件时应重定向开始");
     const afterStart = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
     expectEqual(afterStart?.status, "PLAYING", "满足条件后房间应进入 PLAYING");
+    const startedGame = await prisma.game.findFirst({ where: { roomId: room.id }, orderBy: { createdAt: "desc" } });
+    ensure(startedGame !== null, "开始后应创建 Game");
+    const gameCharacters = await prisma.gameCharacter.count({ where: { gameId: startedGame?.id ?? "" } });
+    expectEqual(gameCharacters, 1, "开始后应为 PL 创建 GameCharacter");
 
-    console.log("PASS 准备闸门 E2E：ready 校验 / 审核角色校验 / 开始成功");
+    const playPage = await call(kpJar, "/rooms/" + room.id);
+    expectEqual(playPage.status, 200, "GET 跑团页");
+    const pauseField = extractActionFieldAround(playPage.text, "暂停本局");
+    const pauseForm = new FormData();
+    pauseForm.set(pauseField, "");
+    pauseForm.set("roomId", room.id);
+    const pausedResponse = await call(kpJar, "/rooms/" + room.id, {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id },
+      body: pauseForm
+    });
+    ensure(pausedResponse.status < 400, "暂停请求失败");
+    const pausedRoom = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
+    expectEqual(pausedRoom?.status, "PAUSED", "暂停后房间状态");
+    const pausedGame = await prisma.game.findUnique({ where: { id: startedGame?.id ?? "" }, select: { status: true } });
+    expectEqual(pausedGame?.status, "PAUSED", "暂停后 Game 状态");
+    const pausedState = await prisma.gameState.findUnique({ where: { gameId: startedGame?.id ?? "" }, select: { paused: true } });
+    expectEqual(pausedState?.paused, true, "暂停后 GameState.paused");
+    const readyAfterPause = await prisma.roomMember.findMany({ where: { roomId: room.id }, select: { ready: true } });
+    ensure(readyAfterPause.every((member) => member.ready === false), "暂停后应重置 ready");
+
+    await toggleReady(kpJar, room.id);
+    await toggleReady(plJar, room.id);
+    const resumed = await tryStart(kpJar, room.id);
+    ensure(resumed.status === 303, "全员准备后应可以继续");
+    const resumedRoom = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
+    expectEqual(resumedRoom?.status, "PLAYING", "继续后房间状态");
+    const resumedGame = await prisma.game.findUnique({ where: { id: startedGame?.id ?? "" }, select: { status: true } });
+    expectEqual(resumedGame?.status, "PLAYING", "继续后 Game 状态");
+    const resumedState = await prisma.gameState.findUnique({ where: { gameId: startedGame?.id ?? "" }, select: { paused: true } });
+    expectEqual(resumedState?.paused, false, "继续后 GameState.paused");
+
+    const playAgain = await call(kpJar, "/rooms/" + room.id);
+    const endField = extractActionFieldAround(playAgain.text, "结束本局");
+    const endForm = new FormData();
+    endForm.set(endField, "");
+    endForm.set("roomId", room.id);
+    const endedResponse = await call(kpJar, "/rooms/" + room.id, {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id },
+      body: endForm
+    });
+    ensure(endedResponse.status < 400, "结束本局请求失败");
+    const endedRoom = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
+    expectEqual(endedRoom?.status, "LOBBY", "结束后房间应回 LOBBY");
+    const endedGame = await prisma.game.findUnique({ where: { id: startedGame?.id ?? "" }, select: { status: true } });
+    expectEqual(endedGame?.status, "ENDED", "结束后 Game 状态");
+
+    console.log("PASS 准备闸门 E2E：ready / 角色审核 / 开始 / 暂停 / 继续 / 结束");
   } finally {
     if (roomId !== null) await prisma.room.deleteMany({ where: { id: roomId } });
     await prisma.user.deleteMany({ where: { username: { in: [kpName, plName] } } });

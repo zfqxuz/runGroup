@@ -5,6 +5,7 @@ import CombatBoard from "@/components/room/CombatBoard";
 import RoomCombatPanel from "@/components/room/RoomCombatPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import RoomPlay from "@/components/room/RoomPlay";
+import { endGameAction, pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
@@ -26,6 +27,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
   const membership = await prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId: params.id, userId: session.user.id } },
     include: {
+      activeCharacter: { select: { id: true, name: true, race: true } },
       room: {
         include: {
           members: {
@@ -39,7 +41,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
   if (membership === null) notFound();
   const room = membership.room;
   const isKP = membership.role === "KP";
-  if (room.status === "LOBBY") redirect("/rooms/" + room.id + "/prepare");
+  if (room.status === "LOBBY" || room.status === "PAUSED") redirect("/rooms/" + room.id + "/prepare");
 
   const rows = await prisma.message.findMany({
     where: isKP ? { roomId: room.id } : { roomId: room.id, channel: { not: "KP_ONLY" } },
@@ -85,6 +87,11 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     where: { roomId: room.id, endedAt: null },
     select: { id: true }
   });
+  const activeGame = await prisma.game.findFirst({
+    where: { roomId: room.id, status: { in: ["PLAYING", "COMBAT"] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, title: true, status: true }
+  });
 
   const combatFeatures = combatFeatureFlags(effective.compiled);
   const attackSkillsByParticipant: Record<string, readonly string[]> = {};
@@ -126,7 +133,11 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
           <p className="mt-1 flex flex-wrap items-center gap-3 text-xs text-white/50">
             <span className="rounded-full border border-spirit-400/30 px-2 py-0.5 text-spirit-400">{room.system}</span>
             <span className="rounded-full border border-white/15 px-2 py-0.5">{room.status}</span>
-            
+            {membership.activeCharacter === null ? null : (
+              <span className="rounded-full border border-sakura-500/40 px-2 py-0.5 text-sakura-400">
+                当前角色：{membership.activeCharacter.name}
+              </span>
+            )}
           </p>
         </div>
         <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">我的身份：{membership.role}</span>
@@ -143,6 +154,37 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
         inviteCode={room.inviteCode}
         allowPlayerCombatRequest={room.allowPlayerCombatRequest}
       />
+
+      {isKP ? (
+        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
+          <div>
+            <p className="text-sm text-white/80">本局：{activeGame?.title ?? room.name}</p>
+            <p className="mt-0.5 text-[11px] text-white/35">
+              暂停会保存当前状态并返回准备页；继续时全员需要重新准备。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <form action={pauseGameAction}>
+              <input type="hidden" name="roomId" value={room.id} />
+              <button
+                type="submit"
+                className="rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-300 transition hover:bg-amber-400/10"
+              >
+                暂停本局
+              </button>
+            </form>
+            <form action={endGameAction}>
+              <input type="hidden" name="roomId" value={room.id} />
+              <button
+                type="submit"
+                className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
+              >
+                结束本局
+              </button>
+            </form>
+          </div>
+        </section>
+      ) : null}
 
       {activeCombat === null ? (
         <RoomCombatPanel
