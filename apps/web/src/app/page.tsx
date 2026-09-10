@@ -104,7 +104,7 @@ export default async function HomePage() {
       </header>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
-        <h2 className="text-sm font-medium text-white/80">创建房间</h2>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-medium text-white/80">创建房间</h2><Link href="/rooms/new" className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">按配置新建</Link></div>
         <form action={createRoom} className="mt-4 flex flex-wrap items-end gap-3">
           <label className="flex flex-1 flex-col gap-1.5">
             <span className="text-xs text-white/50">房间名</span>
