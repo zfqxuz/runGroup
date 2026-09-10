@@ -701,3 +701,86 @@ export function resolvePending(
     cleared: [...ctx.cancelled]
   };
 }
+
+/** INITIATIVE 模式：按配置的排序依据排定出手顺序。 */
+export function buildInitiativeOrder(
+  pack: CompiledRulePack,
+  state: CombatState
+): string[] {
+  const alive = state.participants.filter((item) => item.defeated === false);
+  const keyExpr = pack.combat.initiativeKey;
+  const scored = alive.map((item) => {
+    let score = item.attributes.dex;
+    if (keyExpr !== null) {
+      try {
+        score = evaluate(keyExpr, { vars: item.vars, consts: pack.pack.const });
+      } catch {
+        score = item.attributes.dex;
+      }
+    }
+    return { id: item.id, score };
+  });
+  // RANDOM 的随机键必须预生成，不能塞进排序比较器（比较器会被调用多次且顺序不定）
+  const tieKeys = new Map<string, number>();
+  if (pack.combat.tieBreak === 'RANDOM') {
+    const rng = nextRollRng(state, 'initiative');
+    for (const item of scored) tieKeys.set(item.id, rng.nextUint32());
+  }
+  scored.sort((a, b) => {
+    if (b.score !== a.score) return b.score - a.score;
+    const ra = tieKeys.get(a.id) ?? 0;
+    const rb = tieKeys.get(b.id) ?? 0;
+    if (ra !== rb) return rb - ra;
+    return a.id < b.id ? -1 : 1;
+  });
+  return scored.map((item) => item.id);
+}
+
+export function currentActorId(state: CombatState): string | null {
+  return state.initiativeOrder[state.activeIndex] ?? null;
+}
+
+/** 开一轮：重排顺序、把指针归零。 */
+export function beginInitiativeRound(pack: CompiledRulePack, state: CombatState): void {
+  state.initiativeOrder = buildInitiativeOrder(pack, state);
+  state.activeIndex = 0;
+  state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
+}
+
+/** KP 手动调序。规则包没开放这个权限时直接拒绝。 */
+export function setInitiativeOrder(
+  pack: CompiledRulePack,
+  state: CombatState,
+  order: readonly string[]
+): boolean {
+  if (pack.combat.kpAdjustsOrder === false) return false;
+  const known = new Set(state.initiativeOrder);
+  if (order.length !== known.size) return false;
+  for (const id of order) {
+    if (known.has(id) === false) return false;
+  }
+  state.initiativeOrder = [...order];
+  return true;
+}
+
+/** 结束当前行动。一轮走完则重排并进入下一轮。 */
+export function endTurn(
+  pack: CompiledRulePack,
+  state: CombatState
+): { roundAdvanced: boolean; nextActorId: string | null } {
+  const alive = new Set(
+    state.participants.filter((item) => item.defeated === false).map((item) => item.id)
+  );
+  // 本轮中途倒地的人从顺序里剔除
+  state.initiativeOrder = state.initiativeOrder.filter((id) => alive.has(id));
+  state.activeIndex += 1;
+  if (state.activeIndex >= state.initiativeOrder.length) {
+    state.initiativeOrder = buildInitiativeOrder(pack, state);
+    state.activeIndex = 0;
+    state.round += 1;
+    state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
+    return { roundAdvanced: true, nextActorId: currentActorId(state) };
+  }
+  state.phase = 'AWAITING_ACTION';
+  return { roundAdvanced: false, nextActorId: currentActorId(state) };
+}

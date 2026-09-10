@@ -56,6 +56,15 @@ export interface CompiledSkillPoints {
   readonly maxAtCreation: CompiledExpr;
 }
 
+export interface CompiledCombat {
+  readonly mode: 'INITIATIVE' | 'ATB';
+  /** INITIATIVE 的排序依据公式；ATB 为 null。 */
+  readonly initiativeKey: CompiledExpr | null;
+  readonly tieBreak: 'KEY_DESC' | 'RANDOM' | 'KP';
+  readonly kpAdjustsOrder: boolean;
+  readonly events: Readonly<Record<string, { readonly label: string; readonly defaultEnabled: boolean }>>;
+}
+
 export interface CompiledRulePack {
   readonly pack: RulePack;
   readonly id: string;
@@ -70,6 +79,7 @@ export interface CompiledRulePack {
   readonly races: Readonly<Record<string, CompiledRace>>;
   readonly skills: readonly CompiledSkill[];
   readonly skillPoints: CompiledSkillPoints;
+  readonly combat: CompiledCombat;
   readonly statusEffects: Readonly<Record<string, CompiledStatusEffect>>;
 }
 
@@ -264,6 +274,24 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     )
   };
 
+  const combatEvents: Record<string, { label: string; defaultEnabled: boolean }> = {};
+  for (const [eventId, rule] of Object.entries(pack.combat.events)) {
+    combatEvents[eventId] = { label: rule.label, defaultEnabled: rule.defaultEnabled };
+  }
+  const combatInit = pack.combat.initiative;
+  const combat: CompiledCombat = {
+    mode: pack.combat.mode,
+    initiativeKey:
+      combatInit === undefined
+        ? null
+        : wrap('combat.initiative.key', () =>
+            compileExpr(combatInit.key, { vars: baseVars, consts: constantNames })
+          ),
+    tieBreak: combatInit?.tieBreak ?? 'KEY_DESC',
+    kpAdjustsOrder: combatInit?.kpAdjustsOrder ?? false,
+    events: combatEvents
+  };
+
   const skills: CompiledSkill[] = pack.skills.map((skill) => ({
     id: skill.id,
     name: skill.name,
@@ -311,6 +339,7 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     races,
     skills,
     skillPoints,
+    combat,
     statusEffects
   };
 }
