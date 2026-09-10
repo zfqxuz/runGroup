@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { NextResponse } from "next/server";
-import { uploadRoot } from "@/server/assets/storage";
+import { extensionOf, mimeForExtension, uploadRoot } from "@/server/assets/storage";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -12,7 +12,8 @@ const Q = String.fromCharCode(39);
 const IMAGE_CSP = "default-src " + Q + "none" + Q + "; sandbox";
 
 const SAFE_SEGMENT = /^[a-z0-9_-]+$/i;
-const SAFE_FILENAME = /^[a-z0-9_-]+[.]png$/i;
+const SAFE_FILENAME = /^[a-z0-9_-]+[.][a-z0-9]+$/i;
+const MODULE_CATEGORY = "modules";
 
 export async function GET(
   _request: Request,
@@ -29,6 +30,12 @@ export async function GET(
     return new NextResponse("Not Found", { status: 404 });
   }
 
+  const isModuleAsset = category === MODULE_CATEGORY;
+  const ext = extensionOf(filename);
+  if (isModuleAsset ? ext === null : filename.toLowerCase().endsWith(".png") === false) {
+    return new NextResponse("Not Found", { status: 404 });
+  }
+
   const root = path.resolve(uploadRoot());
   const target = path.resolve(root, category, filename);
   // 目录穿越防护：解析后必须仍在上传根目录内
@@ -42,9 +49,10 @@ export async function GET(
       return new NextResponse("Not Found", { status: 404 });
     }
     const data = await readFile(target);
+    const contentType = isModuleAsset && ext !== null ? mimeForExtension(ext) : "image/png";
     return new NextResponse(new Uint8Array(data), {
       headers: {
-        "Content-Type": "image/png",
+        "Content-Type": contentType,
         "Cache-Control": "public, max-age=31536000, immutable",
         "X-Content-Type-Options": "nosniff",
         "Content-Security-Policy": IMAGE_CSP

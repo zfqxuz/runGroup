@@ -73,6 +73,20 @@ function extractActionField(html: string): string {
   return field;
 }
 
+function extractActionFieldAround(html: string, marker: string): string {
+  const markerIndex = html.indexOf(marker);
+  if (markerIndex <= 0) throw new Error("E2E 断言失败：页面缺少标记 " + marker);
+  const formIndex = html.lastIndexOf("<form", markerIndex);
+  if (formIndex < 0) throw new Error("E2E 断言失败：未找到标记所在表单");
+  const formHtml = html.slice(formIndex, html.indexOf("</form>", markerIndex));
+  const match = /name="([^"]*ACTION_ID[^"]*)"/.exec(formHtml);
+  const field = match === null ? undefined : match[1];
+  if (field === undefined || field.length === 0) {
+    throw new Error("E2E 断言失败：表单缺少 server action id: " + marker);
+  }
+  return field;
+}
+
 async function main(): Promise<void> {
 const username = "e2e_room_" + Date.now().toString(36);
 const password = "test-password-123";
@@ -185,11 +199,27 @@ try {
   const lobbyPage = await call("/rooms/" + createdRoomId);
   expectEqual(lobbyPage.status, 307, "准备阶段访问房间页应跳转到准备页");
 
+  ensure(roomPage.text.includes("我准备好了"), "准备页缺少准备按钮");
+  const readyActionField = extractActionFieldAround(roomPage.text, "我准备好了");
+  const readyForm = new FormData();
+  readyForm.set(readyActionField, "");
+  readyForm.set("roomId", createdRoomId);
+  const ready = await call("/rooms/" + createdRoomId + "/prepare", {
+    method: "POST",
+    headers: { origin: BASE, referer: BASE + "/rooms/" + createdRoomId + "/prepare" },
+    body: readyForm
+  });
+  ensure(ready.status < 400, "提交准备请求失败，状态 " + ready.status);
 
-  const startLabelIndex = roomPage.text.indexOf("开始跑团");
+  const afterReadyPage = await call("/rooms/" + createdRoomId + "/prepare");
+  expectEqual(afterReadyPage.status, 200, "GET 准备后页面");
+  ensure(afterReadyPage.text.includes("已准备"), "准备后应显示已准备状态");
+  ensure(afterReadyPage.text.includes("开始跑团"), "准备后应显示开始跑团按钮");
+
+  const startLabelIndex = afterReadyPage.text.indexOf("开始跑团（");
   ensure(startLabelIndex > 0, "准备页缺少开始跑团按钮");
-  const startFormIndex = roomPage.text.lastIndexOf("<form", startLabelIndex);
-  const startFormHtml = roomPage.text.slice(startFormIndex, startLabelIndex);
+  const startFormIndex = afterReadyPage.text.lastIndexOf("<form", startLabelIndex);
+  const startFormHtml = afterReadyPage.text.slice(startFormIndex, startLabelIndex);
   const startActionMatch = /name="([^"]*ACTION_ID[^"]*)"/.exec(startFormHtml);
   const startActionField = startActionMatch === null ? undefined : startActionMatch[1];
   if (startActionField === undefined) throw new Error("E2E 断言失败：未找到开始跑团 server action");

@@ -20,13 +20,16 @@
     "verify:card-library": "tsx --env-file=.env scripts/verify-card-library.ts",
     "verify:combat-options": "tsx --env-file=.env scripts/verify-combat-options.ts",
     "verify:character-import": "tsx --env-file=.env scripts/verify-character-import.ts",
-    "verify:join-room": "tsx --env-file=.env scripts/verify-join-room.ts"
+    "verify:join-room": "tsx --env-file=.env scripts/verify-join-room.ts",
+    "verify:module-import": "tsx --env-file=.env scripts/verify-module-import.ts",
+    "verify:room-ready": "tsx --env-file=.env scripts/verify-room-ready.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
     "@touhou/combat": "^0.1.0",
     "@touhou/formula": "^0.1.0",
     "@touhou/rules": "^0.1.0",
+    "adm-zip": "^0.6.0",
     "bcryptjs": "^3.0.3",
     "next": "^14.2.15",
     "next-auth": "^5.0.0-beta.32",
@@ -36,10 +39,12 @@
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
     "xlsx": "^0.18.5",
+    "yaml": "^2.9.0",
     "zod": "^3.23.8",
     "zustand": "^4.5.5"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.8",
     "@types/node": "^22.9.0",
     "@types/react": "^18.3.12",
     "@types/react-dom": "^18.3.1",

@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
-import { startRoomAction } from "@/server/actions/room";
+import { startRoomAction, toggleReadyAction } from "@/server/actions/room";
+import { upsertModuleAction } from "@/server/actions/module";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -18,7 +19,7 @@ interface StoredContent {
   dice?: ChatMessage["dice"];
 }
 
-export default async function RoomPage({ params }: { params: { id: string } }) {
+export default async function RoomPage({ params, searchParams }: { params: { id: string }; searchParams: { error?: string; module?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -53,6 +54,15 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     pack.attributes.methods[0];
   const raceCount = Object.keys(pack.races).length;
 
+  const roomModule = await prisma.module.findFirst({
+    where: { roomId: room.id },
+    orderBy: { id: "asc" }
+  });
+  const moduleContent = (roomModule?.content ?? {}) as { text?: string };
+  const requiredMembers = room.members.filter((member) => member.role !== "SPECTATOR");
+  const readyCount = requiredMembers.filter((member) => member.ready).length;
+  const allReady = requiredMembers.length > 0 && readyCount === requiredMembers.length;
+
   const rows = await prisma.message.findMany({
     where: isKP ? { roomId: room.id } : { roomId: room.id, channel: { not: "KP_ONLY" } },
     include: { user: { select: { username: true, displayName: true } } },
@@ -86,6 +96,19 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     },
     orderBy: { submittedAt: "desc" }
   });
+
+  const playerUserIds = room.members
+    .filter((member) => member.role === "PLAYER")
+    .map((member) => member.userId);
+  const approvedCharacterUserIds = new Set(
+    characterEntries
+      .filter((entry) => entry.status === "APPROVED")
+      .map((entry) => entry.character.userId)
+  );
+  const allPlayersHaveApprovedCharacter = playerUserIds.every((userId) =>
+    approvedCharacterUserIds.has(userId)
+  );
+  const canStart = allReady && allPlayersHaveApprovedCharacter;
 
   const cardEntries = await prisma.roomCardEntry.findMany({
     where: { roomId: room.id },
@@ -162,6 +185,172 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
         inviteCode={room.inviteCode}
         allowPlayerCombatRequest={room.allowPlayerCombatRequest}
       />
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">准备状态</h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              {readyCount}/{requiredMembers.length} 名 KP/PL 已准备；全部准备后 KP 才能开始跑团。
+            </p>
+          </div>
+          <form action={toggleReadyAction}>
+            <input type="hidden" name="roomId" value={room.id} />
+            <button
+              type="submit"
+              className={
+                membership.ready
+                  ? "rounded-lg border border-white/15 px-4 py-2 text-sm text-white/60 transition hover:border-white/35"
+                  : "rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+              }
+            >
+              {membership.ready ? "取消准备" : "我准备好了"}
+            </button>
+          </form>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          {room.members.map((member) => (
+            <div key={member.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+              <div className="min-w-0">
+                <p className="truncate text-xs text-white/70">
+                  {member.user.displayName ?? member.user.username}
+                  {member.userId === session.user.id ? "（我）" : ""}
+                </p>
+                <p className="mt-0.5 text-[10px] text-white/35">{member.role}</p>
+              </div>
+              <span
+                className={
+                  member.ready
+                    ? "shrink-0 rounded-full border border-emerald-400/40 px-2 py-0.5 text-[10px] text-emerald-300"
+                    : "shrink-0 rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300"
+                }
+              >
+                {member.ready ? "已准备" : "未准备"}
+              </span>
+            </div>
+          ))}
+        </div>
+        {searchParams.error === "ready" ? (
+          <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            还有成员未准备，确认所有人准备好后再开始。
+          </p>
+        ) : null}
+        {allPlayersHaveApprovedCharacter === false ? (
+          <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            每名 PL 至少需要一张审核通过的角色卡才能开始。
+          </p>
+        ) : null}
+        {searchParams.error === "character" ? (
+          <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            存在没有通过角色审核的 PL，暂时不能开始。
+          </p>
+        ) : null}
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">剧本 / 模组</h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              同一房间可以持续更新剧本与版本，不会重置房间成员、聊天或战斗进度。
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/45">
+              {roomModule === null ? "未绑定剧本" : "v" + roomModule.version}
+            </span>
+            <Link
+              href={"/rooms/" + room.id + "/modules"}
+              className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
+            >
+              团本管理
+            </Link>
+          </div>
+        </div>
+        {searchParams.module === "saved" ? (
+          <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">
+            剧本已保存。再次更新会覆盖同一房间的剧本内容，不会新建房间。
+          </p>
+        ) : null}
+        {isKP ? (
+          <form action={upsertModuleAction} className="mt-4 grid gap-3">
+            <input type="hidden" name="roomId" value={room.id} />
+            <input type="hidden" name="moduleId" value={roomModule?.id ?? ""} />
+            <div className="grid gap-3 sm:grid-cols-3">
+              <label className="flex flex-col gap-1.5 sm:col-span-2">
+                <span className="text-xs text-white/50">标题</span>
+                <input
+                  name="title"
+                  defaultValue={roomModule?.title ?? ""}
+                  placeholder="例：红魔馆异变调查"
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-white/50">版本</span>
+                <input
+                  name="version"
+                  defaultValue={roomModule?.version ?? "1.0.0"}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              </label>
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-white/50">作者</span>
+                <input
+                  name="author"
+                  defaultValue={roomModule?.author ?? ""}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              </label>
+              <label className="flex flex-col gap-1.5">
+                <span className="text-xs text-white/50">简介</span>
+                <input
+                  name="synopsis"
+                  defaultValue={roomModule?.synopsis ?? ""}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              </label>
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">正文 / 团本内容</span>
+              <textarea
+                name="content"
+                rows={10}
+                defaultValue={moduleContent.text ?? ""}
+                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm leading-relaxed outline-none focus:border-sakura-500"
+              />
+            </label>
+            <div>
+              <button
+                type="submit"
+                className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+              >
+                保存剧本
+              </button>
+            </div>
+          </form>
+        ) : roomModule === null ? (
+          <p className="mt-4 text-xs text-white/35">KP 还没有绑定剧本。</p>
+        ) : (
+          <div className="mt-4 rounded-lg border border-white/10 bg-ink-900/60 px-4 py-3">
+            <p className="text-sm text-white/80">{roomModule.title}</p>
+            <p className="mt-1 text-[11px] text-white/40">
+              {roomModule.author ?? "未署名"} · v{roomModule.version}
+            </p>
+            {roomModule.synopsis === null ? null : (
+              <p className="mt-2 text-xs leading-relaxed text-white/55">{roomModule.synopsis}</p>
+            )}
+            {moduleContent.text === undefined || moduleContent.text.length === 0 ? null : (
+              <pre className="mt-3 whitespace-pre-wrap font-sans text-xs leading-relaxed text-white/45">
+                {moduleContent.text}
+              </pre>
+            )}
+          </div>
+        )}
+      </section>
+
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
         <div>
           <p className="text-sm text-white/80">角色卡</p>
@@ -356,21 +545,26 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-medium text-white/80">准备完成</h2>
-            <p className="mt-1 text-[11px] text-white/35">开始后进入房间页，可以发言、掷骰与进入战斗。</p>
+            <h2 className="text-sm font-medium text-white/80">开始跑团</h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              需要所有 KP/PL 已准备，且每名 PL 至少有一张审核通过的角色卡，KP 才能开始。
+            </p>
           </div>
           {isKP ? (
             <form action={startRoomAction}>
               <input type="hidden" name="roomId" value={room.id} />
               <button
                 type="submit"
-                className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+                disabled={canStart === false}
+                className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                开始跑团
+                开始跑团（{readyCount}/{requiredMembers.length}）
               </button>
             </form>
           ) : (
-            <span className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/50">等待 KP 开始跑团</span>
+            <span className="rounded-full border border-white/15 px-3 py-1 text-xs text-white/50">
+              {canStart ? "等待 KP 开始跑团" : "等待全员准备和角色审核"}
+            </span>
           )}
         </div>
       </section>

@@ -271,6 +271,8 @@ model RoomMember {
   userId            String
   role              MemberRole @default(PLAYER)
   activeCharacterId String?
+  /// 准备页中的“已准备”状态；KP 开始跑团前要求所有非旁观成员已准备。
+  ready             Boolean    @default(false)
   joinedAt          DateTime   @default(now()) @db.Timestamptz(3)
 
   room            Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -448,6 +450,7 @@ model Asset {
   layers            MapLayer[]
   tokens            Token[]
   clues             Clue[]
+  moduleAssets      ModuleAsset[]
 
   @@index([ownerId])
   @@index([roomId, type])
@@ -458,16 +461,44 @@ model Module {
   id                String  @id @default(cuid())
   roomId            String?
   rulePackVersionId String?
+  slug              String?
   title             String
   synopsis          String?
   author            String?
+  system            String?
+  era               String?
   version           String  @default("1.0.0")
   isPublished       Boolean @default(false)
+  sourceType        String  @default("NATIVE")
+  originalFilename  String?
+  packagePath       String?
+  metadata          Json    @default("{}")
+  importReport      Json    @default("{}")
   content           Json    @default("{}")
 
   room     Room?            @relation(fields: [roomId], references: [id], onDelete: Cascade)
   pack     RulePackVersion? @relation(fields: [rulePackVersionId], references: [id])
   chapters ModuleChapter[]
+  assets   ModuleAsset[]
+
+  @@index([roomId, slug])
+}
+
+model ModuleAsset {
+  id           String   @id @default(cuid())
+  moduleId     String
+  assetId      String
+  relativePath String
+  originalName String?
+  kind         String
+  orderIndex   Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, relativePath])
+  @@index([moduleId, kind])
 }
 
 model ModuleChapter {

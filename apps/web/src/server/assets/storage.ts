@@ -75,11 +75,13 @@ export interface StoreOptions {
   readonly category: string;
   readonly maxDimension?: number;
   readonly thumbDimension?: number;
+  readonly maxBytes?: number;
 }
 
 export async function storeImage(buffer: Buffer, options: StoreOptions): Promise<StoredImage> {
-  if (buffer.byteLength > MAX_UPLOAD_BYTES) {
-    throw new Error("文件超过 " + Math.floor(MAX_UPLOAD_BYTES / 1024 / 1024) + " MB 上限");
+  const maxBytes = options.maxBytes ?? MAX_UPLOAD_BYTES;
+  if (buffer.byteLength > maxBytes) {
+    throw new Error("文件超过 " + Math.floor(maxBytes / 1024 / 1024) + " MB 上限");
   }
 
   if (detectImage(buffer) === null) {
@@ -124,4 +126,71 @@ export async function storeImage(buffer: Buffer, options: StoreOptions): Promise
 
 export function publicPath(category: string, filename: string): string {
   return "/api/assets/" + category + "/" + filename;
+}
+
+const MODULE_EXT_MIME: Record<string, string> = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  md: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8",
+  json: "application/json; charset=utf-8",
+  yaml: "application/yaml; charset=utf-8",
+  yml: "application/yaml; charset=utf-8",
+  mp3: "audio/mpeg",
+  ogg: "audio/ogg",
+  wav: "audio/wav",
+  mp4: "video/mp4",
+  webm: "video/webm"
+};
+
+export function extensionOf(filename: string): string | null {
+  const match = /[.]([a-z0-9]+)$/i.exec(filename);
+  if (match === null) return null;
+  const ext = match[1]?.toLowerCase();
+  if (ext === undefined || MODULE_EXT_MIME[ext] === undefined) return null;
+  return ext;
+}
+
+export function mimeForExtension(ext: string): string {
+  return MODULE_EXT_MIME[ext] ?? "application/octet-stream";
+}
+
+export interface StoredRawFile {
+  readonly filename: string;
+  readonly ext: string;
+  readonly mime: string;
+  readonly size: number;
+  readonly checksum: string;
+}
+
+/** 保存任意白名单文件；不重编码，只做路径与扩展名校验。 */
+export async function storeRawFile(
+  buffer: Buffer,
+  options: { readonly category: string; readonly extension: string; readonly maxBytes?: number }
+): Promise<StoredRawFile> {
+  const maxBytes = options.maxBytes ?? 20 * 1024 * 1024;
+  if (buffer.byteLength > maxBytes) {
+    throw new Error("文件超过 " + Math.floor(maxBytes / 1024 / 1024) + " MB 上限");
+  }
+  const ext = options.extension.toLowerCase();
+  if (MODULE_EXT_MIME[ext] === undefined) {
+    throw new Error("不支持的文件扩展名：" + ext);
+  }
+  const category = options.category.replace(/[^a-z0-9_-]/gi, "");
+  const dir = path.join(uploadRoot(), category);
+  await mkdir(dir, { recursive: true });
+  const filename = randomUUID() + "." + ext;
+  await writeFile(path.join(dir, filename), buffer);
+  return {
+    filename,
+    ext,
+    mime: MODULE_EXT_MIME[ext],
+    size: buffer.byteLength,
+    checksum: createHash("sha256").update(buffer).digest("hex")
+  };
 }

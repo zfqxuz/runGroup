@@ -67,14 +67,17 @@ packages/
 ## 测试
 
 ```bash
-npm test          # 85 tests / 2 packages
+npm test          # 137 tests / 3 packages
 npm run typecheck # 全量类型检查
 ```
 
-## 下一步
+## 开发路线
 
-- [ ] 战斗编排器（回合循环 + 动作结算 + 快照 + 种子重放）
-- [ ] 权限过滤（服务端构造 DTO，PL 拿不到不该看的字段）
-- [ ] Socket 事件契约与房间服务
-- [ ] NextAuth 认证
-- [ ] 地图 / 场景（Phase 2）
+后续开发按 [`docs/SPEC.md`](docs/SPEC.md) 与 [`docs/MODULE_FORMAT.md`](docs/MODULE_FORMAT.md) 执行：
+
+1. 准备页与开局闸门（已完成）
+2. 团本管理、标准格式与 zip 导入（已完成导入 / 编辑 / 保存）
+3. 当前角色与局内角色
+4. 局内状态与暂停
+5. 跨局成长与结束流程
+6. 重连与恢复

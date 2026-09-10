@@ -584,3 +584,120 @@ model Game {
 8. 需要暂停和继续；继续时读取上次进度。
 9. 团本正文第一版使用纯文本 / Markdown，并按 CoC7 团本要素分节。
 10. 本 Spec 确认后，等待开发指令再进入编码。
+
+---
+
+## 15. 团本管理页面、导入、编辑与保存
+
+### 15.1 页面
+
+新增团本管理页面，仅 KP 可写：
+
+| 路由 | 作用 |
+|---|---|
+| `/rooms/[id]/modules` | 本房团本列表、导入、选择、删除、复制 |
+| `/rooms/[id]/modules/new` | 导入或新建团本 |
+| `/rooms/[id]/modules/[moduleId]` | 查看、编辑、保存团本与资源 |
+
+功能：
+
+- 列出本房团本。
+- 导入 `.md` 单文件。
+- 导入 `.zip` 标准包。
+- 新建空白团本。
+- 预览 Markdown。
+- 编辑正文。
+- 上传、替换、删除资源。
+- 保存新版本。
+- 将团本绑定到新局。
+- 复制已有团本。
+- 删除未被进行的局使用的团本。
+
+### 15.2 标准格式
+
+标准格式单独定义在 [`docs/MODULE_FORMAT.md`](MODULE_FORMAT.md)。
+
+核心要求：
+
+- 主文件固定为 `module.md`。
+- 使用 `touhou-module/v1` Front Matter。
+- 正文必须包含标准 14 章节。
+- 资源必须放在 `assets/` 目录。
+- 人物资源可放在可选 `characters/` 目录。
+- 图片、地图、handout、音频、视频分目录存放。
+- 引用路径必须使用相对路径。
+- 路径字符必须符合 `^[a-z0-9][a-z0-9._-]*$`。
+- 禁止绝对路径、`..`、反斜杠、空格与中文路径。
+- 不合规路径由导入器自动改写，并生成导入报告。
+
+### 15.3 压缩包导入流程
+
+导入 `.zip` 时：
+
+1. 校验 zip 未加密。
+2. 校验没有符号链接、可执行文件或路径穿越。
+3. 找到唯一一个 `module.md`。
+4. 校验 Front Matter。
+5. 校验 14 个标准章节。
+6. 扫描 `assets/` 与 `characters/`。
+7. 对不合规路径生成 slug 并改写 `module.md`。
+8. 保存资源到统一逻辑路径。
+9. 创建 `Module` 与 `ModuleAsset`。
+10. 生成导入报告。
+11. 允许 KP 进入编辑器修正后保存。
+
+### 15.4 编辑与保存
+
+- 编辑器使用 Markdown。
+- 保存前重新执行 Front Matter、章节、路径、资源校验。
+- 保存会生成新版本。
+- 已开始的局继续使用开始时的 `moduleVersion`。
+- 更新团本不重置成员、角色、聊天、战斗或局内状态。
+- 若新版本删除当前局使用的资源，旧资源保留到本局结束。
+- 导入的团本可以继续编辑和保存。
+
+### 15.5 数据模型补充
+
+`Module` 增加：
+
+- `slug`
+- `system`
+- `era`
+- `sourceType`：`NATIVE` / `IMPORTED`
+- `originalFilename`
+- `packagePath`
+- `metadata`
+- `importReport`
+
+新增 `ModuleAsset`：
+
+```prisma
+model ModuleAsset {
+  id           String   @id @default(cuid())
+  moduleId     String
+  assetId      String
+  relativePath String
+  originalName String?
+  kind         String
+  orderIndex   Int      @default(0)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  asset  Asset  @relation(fields: [assetId], references: [id])
+
+  @@unique([moduleId, relativePath])
+  @@index([moduleId, kind])
+}
+```
+
+---
+
+## 16. 新增已确认决策
+
+11. 必须有独立的团本管理页面。
+12. 必须按标准章节和要素导入团本。
+13. 必须提供 AI 可读的标准 Markdown 格式文档。
+14. 必须支持 `.md` 与 `.zip` 导入。
+15. 压缩包必须规范资源路径，并支持自动改写。
+16. 导入后的团本必须可编辑、可保存。
+17. 压缩包可选支持人物资源，但不自动绕过角色审核。

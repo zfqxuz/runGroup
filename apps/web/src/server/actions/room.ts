@@ -112,16 +112,59 @@ export async function joinRoomAction(formData: FormData): Promise<void> {
   redirect(room.status === "LOBBY" ? "/rooms/" + room.id + "/prepare" : "/rooms/" + room.id);
 }
 
+export async function toggleReadyAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { id: true, ready: true }
+  });
+  if (membership === null) redirect("/");
+  await prisma.roomMember.update({
+    where: { id: membership.id },
+    data: { ready: membership.ready === false }
+  });
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/rooms/" + roomId + "/prepare");
+}
+
 export async function startRoomAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");
   const roomId = String(formData.get("roomId") ?? "");
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    include: { members: { select: { role: true, ready: true } } }
+  });
+  if (room === null) redirect("/");
   const membership = await prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId, userId: session.user.id } },
     select: { role: true }
   });
   if (membership === null) redirect("/");
   if (membership.role !== "KP") redirect("/rooms/" + roomId + "/prepare");
+  if (room.status !== "LOBBY") redirect("/rooms/" + roomId);
+
+  const required = room.members.filter((member) => member.role !== "SPECTATOR");
+  const notReady = required.filter((member) => member.ready === false);
+  if (notReady.length > 0) redirect("/rooms/" + roomId + "/prepare?error=ready");
+
+  const players = await prisma.roomMember.findMany({
+    where: { roomId, role: "PLAYER" },
+    select: { userId: true }
+  });
+  if (players.length > 0) {
+    const approved = await prisma.roomCharacterEntry.findMany({
+      where: { roomId, status: "APPROVED" },
+      include: { character: { select: { userId: true } } }
+    });
+    const approvedUserIds = new Set(approved.map((entry) => entry.character.userId));
+    if (players.some((player) => approvedUserIds.has(player.userId) === false)) {
+      redirect("/rooms/" + roomId + "/prepare?error=character");
+    }
+  }
+
   await prisma.room.update({ where: { id: roomId }, data: { status: "PLAYING" } });
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");

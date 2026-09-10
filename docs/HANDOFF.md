@@ -199,11 +199,17 @@ npm run verify:combat-options
   - 导入到个人角色库；带入房间仍走原有 `RoomCharacterEntry` KP 审核。
 - E2E：`apps/web/scripts/verify-character-import.ts`，运行时动态构造最小 xlsx，不提交真实用户卡。
 
-### 下一轮待办
-- 东方普通型 / 幻想型技能的完整进阶效果、法术附表与特色物品表作为后续扩展；当前已落技能名、基础值与简述。
-- 职业点目前允许在“本职 + 可选 + 自选”范围内分配，但尚未严格校验各选择组数量；后续可在 `Occupation.skillNames` 上增加结构化 `choiceRules`。
-- 可继续把 xlsx 导入拓展到物品 / 法术 / 背景故事，并在导入后提供预览校正。
-- 可再补：房间准备阶段允许 KP 修改年代 / 车卡标准、审核页显示年代匹配提示、xlsx 物品 / 法术 / 背景故事导入。
+### 后续开发路线
+完整设计见 `docs/SPEC.md`，团本格式见 `docs/MODULE_FORMAT.md`。
+
+1. 准备页与开局闸门。
+2. 当前角色与局内角色。
+3. 团本管理、标准格式与 zip 导入。
+4. 局内状态与暂停。
+5. 跨局成长与结束流程。
+6. 重连与恢复。
+
+原东方技能的完整进阶效果、法术附表与特色物品表，作为团本管理功能完成后的扩展内容。
 
 ## 10. 最近提交
 
@@ -223,3 +229,53 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 297b7dc feat(rules): 内置预设角色数据（路人 / 巡警 / 妖精 / 强者）
 13949b8 test(room): 开房配置页端到端验证（东方房 ATB + 禁用擦弹）
 ```
+
+## 11. 第 9 项（本轮）：准备闸门与团本导入管理（已完成）
+
+### 准备阶段
+- `RoomMember.ready` 迁移：`20260910180000_room_member_ready`。
+- `toggleReadyAction`：准备页成员可切换自己的 ready。
+- `startRoomAction` 服务端校验：
+  - 所有非旁观成员 `ready = true`。
+  - 每名 PL 至少有一张 `APPROVED` 角色带入记录。
+  - 不满足条件时房间保持在 `LOBBY`。
+- 准备页新增成员准备状态列表、准备按钮和 `readyCount / requiredCount`。
+
+### 团本管理与导入
+- 新增页面：
+  - `/rooms/[id]/modules`
+  - `/rooms/[id]/modules/[moduleId]`
+- 新增接口：
+  - `POST /api/modules/import`
+  - `saveModuleAction`
+- 数据模型：
+  - `Module` 增加 slug / system / era / sourceType / metadata / importReport 等字段。
+  - 新增 `ModuleAsset`，迁移：`20260910190000_module_assets`。
+- 标准格式解析：
+  - 支持 `.md` 与 `.zip`。
+  - 校验 `touhou-module/v1` Front Matter。
+  - 校验 14 个标准章节。
+  - 资源路径自动规范化。
+  - 支持图片、地图、handout、音频、视频、PDF 等白名单资源。
+- 导入后的团本可在管理页继续编辑正文、元信息与版本并保存。
+- 资源通过 `/api/assets/modules/...` 提供访问。
+
+### 新增 E2E
+- `npm run verify:room-ready`
+- `npm run verify:module-import`
+
+最近验证结果：
+
+- 准备闸门 E2E：PASS
+- 团本导入 E2E：PASS
+- 原 room-setup / combat / card-library / character-import / join-room / combat-options：PASS
+- `npm run typecheck`：PASS
+- `npm run build --workspace @touhou/web`：PASS
+
+### 继续按 Spec 推进
+后续按 `docs/SPEC.md`：
+
+1. 当前角色与局内角色。
+2. `Game` / `GameState` 与暂停、继续。
+3. 跨局成长与结束流程。
+4. 重连与恢复。

@@ -1,0 +1,179 @@
+import { NextResponse } from "next/server";
+import { auth } from "@/server/auth";
+import { prisma } from "@/server/db/prisma";
+import {
+  extensionOf,
+  publicPath,
+  storeImage,
+  storeRawFile
+} from "@/server/assets/storage";
+import {
+  parseModulePackage,
+  slugifyModuleId
+} from "@/server/modules/format";
+
+export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
+
+const MAX_ZIP_BYTES = 50 * 1024 * 1024;
+const MAX_ASSET_BYTES = 20 * 1024 * 1024;
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp"]);
+
+async function uniqueSlug(roomId: string, base: string): Promise<string> {
+  let slug = base;
+  let suffix = 2;
+  while ((await prisma.module.findFirst({ where: { roomId, slug }, select: { id: true } })) !== null) {
+    slug = base + "-" + suffix;
+    suffix += 1;
+  }
+  return slug;
+}
+
+export async function POST(request: Request): Promise<NextResponse> {
+  const session = await auth();
+  if (session === null) {
+    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+  }
+
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
+  }
+
+  const roomId = String(form.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") {
+    return NextResponse.json({ ok: false, error: "只有 KP 可以导入团本" }, { status: 403 });
+  }
+
+  const file = form.get("file");
+  if (file === null || typeof file !== "object" || !("arrayBuffer" in file)) {
+    return NextResponse.json({ ok: false, error: "请选择 .md 或 .zip 文件" }, { status: 400 });
+  }
+  const upload = file as File;
+  const lower = upload.name.toLowerCase();
+  if (lower.endsWith(".md") === false && lower.endsWith(".zip") === false) {
+    return NextResponse.json({ ok: false, error: "只支持 .md 或 .zip" }, { status: 400 });
+  }
+  if (lower.endsWith(".zip") && upload.size > MAX_ZIP_BYTES) {
+    return NextResponse.json({ ok: false, error: "zip 超过 50MB 上限" }, { status: 413 });
+  }
+
+  const buffer = Buffer.from(await upload.arrayBuffer());
+  const parsed = parseModulePackage(buffer, upload.name);
+  if (parsed.errors.length > 0) {
+    return NextResponse.json({ ok: false, error: "团本格式校验失败", details: parsed.errors }, { status: 400 });
+  }
+
+  const slug = await uniqueSlug(roomId, slugifyModuleId(parsed.frontMatter.id || parsed.frontMatter.title));
+  const moduleRecord = await prisma.module.create({
+    data: {
+      roomId,
+      slug,
+      title: parsed.frontMatter.title,
+      synopsis: parsed.frontMatter.summary,
+      author: parsed.frontMatter.author,
+      system: parsed.frontMatter.system,
+      era: parsed.frontMatter.era,
+      version: parsed.frontMatter.version,
+      sourceType: lower.endsWith(".zip") ? "ZIP" : "MARKDOWN",
+      originalFilename: upload.name.slice(0, 200),
+      content: {
+        format: "markdown",
+        text: parsed.markdown,
+        sections: parsed.sections
+      } as never,
+      metadata: parsed.frontMatter as never,
+      importReport: {
+        warnings: parsed.warnings,
+        errors: parsed.errors,
+        assetCount: parsed.assets.length,
+        originalFilename: upload.name
+      } as never
+    },
+    select: { id: true }
+  });
+
+  const createdAssets: string[] = [];
+  try {
+    for (const asset of parsed.assets) {
+      const ext = extensionOf(asset.originalName) ?? extensionOf(asset.relativePath);
+      if (ext === null || ext.length === 0) continue;
+      if (asset.buffer.byteLength > MAX_ASSET_BYTES) {
+        throw new Error("资源超过 20MB：" + asset.originalName);
+      }
+
+      let assetData;
+      if (IMAGE_EXTENSIONS.has(ext)) {
+        const stored = await storeImage(asset.buffer, { category: "modules", maxBytes: MAX_ASSET_BYTES });
+        assetData = await prisma.asset.create({
+          data: {
+            ownerId: session.user.id,
+            type: "OTHER",
+            filename: stored.filename,
+            originalName: asset.originalName.slice(0, 200),
+            mimeType: stored.mime,
+            size: stored.size,
+            width: stored.width,
+            height: stored.height,
+            url: publicPath("modules", stored.filename),
+            thumbnailUrl: publicPath("modules", stored.thumbnailName),
+            checksum: stored.checksum,
+            metadata: { moduleId: moduleRecord.id, relativePath: asset.relativePath, kind: asset.kind }
+          },
+          select: { id: true }
+        });
+      } else {
+        const stored = await storeRawFile(asset.buffer, {
+          category: "modules",
+          extension: ext,
+          maxBytes: MAX_ASSET_BYTES
+        });
+        assetData = await prisma.asset.create({
+          data: {
+            ownerId: session.user.id,
+            type: "OTHER",
+            filename: stored.filename,
+            originalName: asset.originalName.slice(0, 200),
+            mimeType: stored.mime,
+            size: stored.size,
+            url: publicPath("modules", stored.filename),
+            checksum: stored.checksum,
+            metadata: { moduleId: moduleRecord.id, relativePath: asset.relativePath, kind: asset.kind }
+          },
+          select: { id: true }
+        });
+      }
+
+      await prisma.moduleAsset.create({
+        data: {
+          moduleId: moduleRecord.id,
+          assetId: assetData.id,
+          relativePath: asset.relativePath,
+          originalName: asset.originalName,
+          kind: asset.kind
+        }
+      });
+      createdAssets.push(asset.relativePath);
+    }
+  } catch (error) {
+    await prisma.module.delete({ where: { id: moduleRecord.id } }).catch(() => undefined);
+    return NextResponse.json(
+      { ok: false, error: error instanceof Error ? error.message : "资源处理失败" },
+      { status: 400 }
+    );
+  }
+
+  return NextResponse.json({
+    ok: true,
+    moduleId: moduleRecord.id,
+    slug,
+    warnings: parsed.warnings,
+    assets: createdAssets
+  });
+}
