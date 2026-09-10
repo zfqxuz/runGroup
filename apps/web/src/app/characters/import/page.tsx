@@ -26,7 +26,7 @@ export default async function ImportCharacterPage(props: { searchParams: { error
         </p>
       )}
 
-      <form action={importCharacterAction} encType="multipart/form-data" className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+      <form action={importCharacterAction} className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <label className="flex flex-col gap-2">
           <span className="text-sm text-white/70">选择 .xlsx 文件</span>
           <input
