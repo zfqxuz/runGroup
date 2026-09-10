@@ -8,7 +8,8 @@ import { prisma } from "@/server/db/prisma";
 import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema } from "@/shared/card";
 
 export interface SaveCardInput {
-  roomId: string;
+  roomId: string | null;
+  system: string;
   kind: "SPELLCARD" | "WEAPON" | "ITEM";
   name: string;
   subtitle: string | null;
@@ -23,7 +24,8 @@ export interface SaveCardResult {
 }
 
 const inputSchema = z.object({
-  roomId: z.string().min(1),
+  roomId: z.string().min(1).nullable(),
+  system: z.enum(["COC7", "TOUHOU"]),
   kind: z.enum(["SPELLCARD", "WEAPON", "ITEM"]),
   name: z.string().min(1).max(40),
   subtitle: z.string().max(40).nullable(),
@@ -43,14 +45,20 @@ export async function saveCard(input: SaveCardInput): Promise<SaveCardResult> {
   const name = data.name.trim();
   if (name.length === 0) return { ok: false, error: "卡名不能为空" };
 
-  const membership = await prisma.roomMember.findUnique({
-    where: { roomId_userId: { roomId: data.roomId, userId: session.user.id } },
-    include: { room: true }
-  });
-  if (membership === null) return { ok: false, error: "你不在这个房间里" };
+  const room =
+    data.roomId === null ? null : await prisma.room.findUnique({ where: { id: data.roomId } });
+  if (data.roomId !== null && room === null) return { ok: false, error: "房间不存在" };
 
-  if (membership.room.system !== "TOUHOU" && data.kind === "SPELLCARD") {
-    return { ok: false, error: "本房是 COC7 规则，不支持符卡" };
+  if (room !== null) {
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId: session.user.id } }
+    });
+    if (membership === null) return { ok: false, error: "你不在这个房间里" };
+  }
+
+  const system = room?.system ?? data.system;
+  if (system !== "TOUHOU" && data.kind === "SPELLCARD") {
+    return { ok: false, error: "COC7 规则下不支持符卡" };
   }
 
   const statsResult =
@@ -74,18 +82,20 @@ export async function saveCard(input: SaveCardInput): Promise<SaveCardResult> {
       name,
       subtitle: data.subtitle,
       description: data.description,
-      system: membership.room.system,
+      system,
       stats: statsResult.data as unknown as Prisma.InputJsonValue
     },
     select: { id: true }
   });
 
   // 带进房间是一条待 KP 审核的申请
-  await prisma.roomCardEntry.create({
-    data: { roomId: data.roomId, cardId: card.id, status: "PENDING_REVIEW" }
-  });
-
-  revalidatePath("/rooms/" + data.roomId);
+  if (room !== null) {
+    await prisma.roomCardEntry.create({
+      data: { roomId: room.id, cardId: card.id, status: "PENDING_REVIEW" }
+    });
+    revalidatePath("/rooms/" + room.id);
+  }
+  revalidatePath("/cards");
   return { ok: true, cardId: card.id };
 }
 
@@ -98,12 +108,8 @@ async function requireRoomMember(roomId: string, userId: string) {
   });
 }
 
-/**
- * 把房间卡池里的一张卡配发给某个角色。
- * 采用「克隆」语义：卡池模板不动，角色拿到的是独立实例，
- * 之后 KP 改模板不会影响已发出去的卡。
- */
-export async function grantCardAction(formData: FormData): Promise<void> {
+/** 把库里的一张卡装备给某个角色（卡从库中移入该角色）。 */
+export async function equipCardAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) return;
 
@@ -111,49 +117,22 @@ export async function grantCardAction(formData: FormData): Promise<void> {
   const characterId = String(formData.get("characterId") ?? "");
   if (cardId.length === 0 || characterId.length === 0) return;
 
-  const source = await prisma.card.findUnique({ where: { id: cardId } });
-  if (source === null || source.roomId === null) return;
-
+  const card = await prisma.card.findUnique({ where: { id: cardId } });
   const character = await prisma.character.findUnique({ where: { id: characterId } });
-  if (character === null || character.roomId !== source.roomId) return;
+  if (card === null || character === null) return;
+  if (card.ownerId !== session.user.id || character.userId !== session.user.id) return;
 
-  const membership = await requireRoomMember(source.roomId, session.user.id);
-  if (membership === null) return;
-
-  const isOwner = character.userId === session.user.id;
-  const isKP = membership.role === "KP";
-  if (isOwner === false && isKP === false) return;
-
-  const already = await prisma.card.findFirst({
-    where: { templateId: source.id, characterId }
-  });
-  if (already !== null) return;
-
-  await prisma.card.create({
-    data: {
-      scope: "CHARACTER",
-      templateId: source.id,
-      roomId: source.roomId,
-      ownerId: character.userId,
-      characterId,
-      type: source.type,
-      name: source.name,
-      subtitle: source.subtitle,
-      description: source.description,
-      rarity: source.rarity,
-      system: source.system,
-      stats: source.stats as Prisma.InputJsonValue,
-      isEquipped: false,
-      quantity: 1
-    }
+  await prisma.card.update({
+    where: { id: card.id },
+    data: { characterId, isEquipped: true, equipSlot: "MAIN" }
   });
 
-  revalidatePath("/rooms/" + source.roomId);
-  revalidatePath("/rooms/" + source.roomId + "/characters/" + characterId);
+  revalidatePath("/cards");
+  revalidatePath("/characters/" + characterId);
 }
 
-/** 装备/卸下。装备槽位暂时只有一个，后续可扩展到多槽。 */
-export async function toggleEquipAction(formData: FormData): Promise<void> {
+/** 卸下，卡回到用户库里。 */
+export async function unequipCardAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) return;
 
@@ -161,23 +140,17 @@ export async function toggleEquipAction(formData: FormData): Promise<void> {
   if (cardId.length === 0) return;
 
   const card = await prisma.card.findUnique({ where: { id: cardId } });
-  if (card === null || card.characterId === null || card.roomId === null) return;
+  if (card === null || card.ownerId !== session.user.id) return;
 
-  const character = await prisma.character.findUnique({ where: { id: card.characterId } });
-  if (character === null) return;
-
-  const membership = await requireRoomMember(card.roomId, session.user.id);
-  if (membership === null) return;
-
-  const allowed = character.userId === session.user.id || membership.role === "KP";
-  if (allowed === false) return;
+  const characterId = card.characterId;
 
   await prisma.card.update({
     where: { id: card.id },
-    data: { isEquipped: card.isEquipped === false, equipSlot: card.isEquipped ? null : "MAIN" }
+    data: { characterId: null, isEquipped: false, equipSlot: null }
   });
 
-  revalidatePath("/rooms/" + card.roomId + "/characters/" + character.id);
+  revalidatePath("/cards");
+  if (characterId !== null) revalidatePath("/characters/" + characterId);
 }
 
 /** 删除一张卡（仅本人的角色卡或 KP）。 */

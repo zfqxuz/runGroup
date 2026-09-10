@@ -21,7 +21,8 @@ interface SpellDefaults {
 }
 
 interface Props {
-  roomId: string;
+  roomId: string | null;
+  system: string;
   isTouhou: boolean;
   spellDefaults: SpellDefaults | null;
 }
@@ -88,6 +89,7 @@ export default function CardBuilder(props: Props) {
     setMessage(null);
     const result: SaveCardResult = await saveCard({
       roomId: props.roomId,
+      system: props.system,
       kind,
       name,
       subtitle: subtitle.trim().length === 0 ? null : subtitle.trim(),
@@ -99,7 +101,7 @@ export default function CardBuilder(props: Props) {
       setMessage(result.error ?? "保存失败");
       return;
     }
-    router.push("/rooms/" + props.roomId);
+    router.push(props.roomId === null ? "/cards" : "/rooms/" + props.roomId);
     router.refresh();
   }
 

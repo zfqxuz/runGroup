@@ -17,7 +17,8 @@ import {
 import { saveCharacter, type SaveCharacterResult } from "@/server/actions/character";
 
 interface Props {
-  roomId: string;
+  roomId: string | null;
+  system: "COC7" | "TOUHOU";
   pack: RulePack;
   chargenMethod: string;
 }
@@ -158,6 +159,7 @@ export default function CharacterBuilder(props: Props) {
 
     const result: SaveCharacterResult = await saveCharacter({
       roomId: props.roomId,
+      system: props.system,
       name,
       race,
       attributes: attributes as unknown as Record<string, number>,

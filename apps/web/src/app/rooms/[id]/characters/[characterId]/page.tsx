@@ -9,7 +9,7 @@ import {
   type AttributeKey,
   type AttributeSet
 } from "@touhou/rules";
-import { grantCardAction, toggleEquipAction } from "@/server/actions/card";
+import { unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -73,8 +73,8 @@ export default async function CharacterPage({
     orderBy: { createdAt: "desc" }
   });
 
-  const ownedTemplateIds = new Set(character.cards.map((card) => card.templateId).filter(Boolean));
-  const grantable = pool.filter((card) => ownedTemplateIds.has(card.id) === false);
+
+
 
   const skillValues = (character.skills ?? {}) as Record<string, number>;
   const skillRows = pack.skills
@@ -182,7 +182,7 @@ export default async function CharacterPage({
                   <p className="mt-0.5 truncate text-[11px] text-white/35">{card.subtitle}</p>
                 )}
                 {canManage === false ? null : (
-                  <form action={toggleEquipAction} className="mt-2">
+                  <form action={unequipCardAction} className="mt-2">
                     <input type="hidden" name="cardId" value={card.id} />
                     <button
                       type="submit"
@@ -192,7 +192,7 @@ export default async function CharacterPage({
                           : "w-full rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/50 transition hover:border-white/35 hover:text-white"
                       }
                     >
-                      {card.isEquipped ? "已装备 · 点击卸下" : "装备"}
+                      卸下
                     </button>
                   </form>
                 )}
@@ -202,30 +202,6 @@ export default async function CharacterPage({
         )}
       </section>
 
-      {canManage === false || grantable.length === 0 ? null : (
-        <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-          <h2 className="text-sm font-medium text-white/80">从房间卡池配发（{grantable.length}）</h2>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {grantable.map((card) => (
-              <form
-                key={card.id}
-                action={grantCardAction}
-                className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
-              >
-                <input type="hidden" name="cardId" value={card.id} />
-                <input type="hidden" name="characterId" value={character.id} />
-                <span className="min-w-0 flex-1 truncate text-xs text-white/60">{card.name}</span>
-                <button
-                  type="submit"
-                  className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10"
-                >
-                  配发
-                </button>
-              </form>
-            ))}
-          </div>
-        </section>
-      )}
     </main>
   );
 }

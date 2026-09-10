@@ -15,9 +15,10 @@ import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
 export interface SaveCharacterInput {
-  roomId: string;
+  roomId: string | null;
   name: string;
   race: string | null;
+  system: "COC7" | "TOUHOU";
   attributes: Record<string, number>;
   skills: Record<string, number>;
   chargenMethod: string;
@@ -38,19 +39,24 @@ export async function saveCharacter(
   const session = await auth();
   if (session === null) return { ok: false, error: "未登录" };
 
-  const membership = await prisma.roomMember.findUnique({
-    where: { roomId_userId: { roomId: input.roomId, userId: session.user.id } }
-  });
-  if (membership === null) return { ok: false, error: "你不在这个房间里" };
+  const room =
+    input.roomId === null
+      ? null
+      : await prisma.room.findUnique({ where: { id: input.roomId } });
+  if (input.roomId !== null && room === null) return { ok: false, error: "房间不存在" };
 
-  const room = await prisma.room.findUnique({ where: { id: input.roomId } });
-  if (room === null) return { ok: false, error: "房间不存在" };
+  if (room !== null) {
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: room.id, userId: session.user.id } }
+    });
+    if (membership === null) return { ok: false, error: "你不在这个房间里" };
+  }
 
   const name = input.name.trim();
   if (name.length === 0) return { ok: false, error: "角色名不能为空" };
   if (name.length > 50) return { ok: false, error: "角色名最多 50 个字符" };
 
-  const pack = resolveRulePack(packIdFor(room.system), builtinRegistry());
+  const pack = resolveRulePack(packIdFor(room?.system ?? input.system), builtinRegistry());
   const compiled = compileParsedRulePack(pack);
 
   const attributes = {} as AttributeSet;
@@ -97,7 +103,7 @@ export async function saveCharacter(
     data: {
       userId: session.user.id,
       roomId: null,
-      system: room.system,
+      system: room?.system ?? input.system,
       reviewStatus: "PENDING_REVIEW",
       name,
       race: input.race,
@@ -124,11 +130,13 @@ export async function saveCharacter(
     select: { id: true }
   });
 
-  // 角色卡属于用户库（roomId 为 null）；进入房间是一条待 KP 审核的申请
-  await prisma.roomCharacterEntry.create({
-    data: { roomId: room.id, characterId: character.id, status: "PENDING_REVIEW" }
-  });
-
-  revalidatePath("/rooms/" + room.id);
+  // 角色卡属于用户库（roomId 为 null）；带进房间是一条待 KP 审核的申请
+  if (room !== null) {
+    await prisma.roomCharacterEntry.create({
+      data: { roomId: room.id, characterId: character.id, status: "PENDING_REVIEW" }
+    });
+    revalidatePath("/rooms/" + room.id);
+  }
+  revalidatePath("/characters");
   return { ok: true, characterId: character.id };
 }

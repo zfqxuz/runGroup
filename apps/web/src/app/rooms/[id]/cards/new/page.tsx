@@ -38,6 +38,7 @@ export default async function NewCardPage({ params }: { params: { id: string } }
 
       <CardBuilder
         roomId={room.id}
+        system={room.system}
         isTouhou={room.system === "TOUHOU"}
         spellDefaults={
           spell === undefined

@@ -40,6 +40,7 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
 
       <CharacterBuilder
         roomId={room.id}
+        system={room.system}
         pack={pack}
         chargenMethod={room.chargenMethod ?? "destiny5"}
       />
