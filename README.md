@@ -3,7 +3,7 @@
 COC7 兼容的东方 Project 线上跑团平台。规则数值全部由 `RulePack` 配置驱动，
 战斗过程可快照、可回放。
 
-规格文档见对话中的 **Spec v1.1**（待补 `docs/SPEC.md`）。
+规格文档见 [`docs/SPEC.md`](docs/SPEC.md)，当前版本 **Spec v1.3**。
 
 ## 技术栈
 
