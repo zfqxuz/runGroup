@@ -82,3 +82,66 @@ describe("编译期 fail-fast", () => {
     expect(codeOf(() => compileRulePack({ id: "x" }))).toBe("SCHEMA_INVALID");
   });
 });
+
+describe("预设角色数据", () => {
+  const coc7 = resolveRulePack("coc7-baseline", registry);
+  const touhou = resolveRulePack("touhou-ext", registry);
+
+  it("两个内置包各自发布四类预设角色", () => {
+    for (const pack of [coc7, touhou]) {
+      expect(pack.presets.map((preset) => preset.name)).toEqual(["路人", "巡警", "妖精", "强者"]);
+      expect(new Set(pack.presets.map((preset) => preset.id)).size).toBe(4);
+    }
+  });
+
+  it("预设技能只能引用本包技能表", () => {
+    for (const pack of [coc7, touhou]) {
+      const skillIds = new Set(pack.skills.map((skill) => skill.id));
+      for (const preset of pack.presets) {
+        for (const skillId of Object.keys(preset.skills)) {
+          expect(skillIds.has(skillId)).toBe(true);
+        }
+      }
+    }
+  });
+
+  it("预设属性与生存数值齐全", () => {
+    for (const pack of [coc7, touhou]) {
+      for (const preset of pack.presets) {
+        expect(Object.keys(preset.attributes).sort()).toEqual([
+          "app",
+          "con",
+          "dex",
+          "edu",
+          "int",
+          "luck",
+          "pow",
+          "siz",
+          "str"
+        ]);
+        expect(preset.maxHp).toBeGreaterThan(0);
+        expect(preset.maxMp).toBeGreaterThanOrEqual(0);
+        expect(preset.maxSan).toBeGreaterThan(0);
+        expect(preset.maxDp).toBeGreaterThanOrEqual(0);
+        expect(preset.tier.length).toBeGreaterThan(0);
+        expect(preset.rarity.length).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  it("extends 数组替换：东方包不会串入 COC7 预设", () => {
+    const coc7Fairy = coc7.presets.find((preset) => preset.id === "FAIRY");
+    const touhouFairy = touhou.presets.find((preset) => preset.id === "FAIRY");
+    expect(coc7Fairy).toBeDefined();
+    expect(touhouFairy).toBeDefined();
+    expect(coc7Fairy?.race).toBeNull();
+    expect(touhouFairy?.race).toBe("FAIRY");
+    expect(touhou.version).toBe("1.1.0");
+  });
+
+  it("编译产物保留预设角色", () => {
+    const compiled = compileRulePack(coc7);
+    expect(compiled.presets.length).toBe(4);
+    expect(compiled.presets[0]?.name).toBe("路人");
+  });
+});

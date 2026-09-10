@@ -81,6 +81,7 @@ export interface CompiledRulePack {
   readonly skillPoints: CompiledSkillPoints;
   readonly combat: CompiledCombat;
   readonly statusEffects: Readonly<Record<string, CompiledStatusEffect>>;
+  readonly presets: RulePack["presets"];
 }
 
 export type { CheckResult, DefenseType };
@@ -340,6 +341,7 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     skills,
     skillPoints,
     combat,
-    statusEffects
+    statusEffects,
+    presets: pack.presets
   };
 }

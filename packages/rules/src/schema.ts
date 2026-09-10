@@ -36,6 +36,44 @@ export const RARITIES = ["COMMON", "UNCOMMON", "RARE", "EPIC", "LEGENDARY"] as c
 
 export const RACE_CATEGORIES = ["COC7", "TOUHOU"] as const;
 
+/** 预设 NPC 强度等级。用于 KP 快速筛选。 */
+export const PRESET_TIERS = ["MINION", "STANDARD", "ELITE", "BOSS"] as const;
+
+/** 预设 NPC 的最终属性值（已计入种族修正，不再走车卡流程）。 */
+export const PresetAttributesSchema = z.object({
+  str: z.number().int().min(0).max(999),
+  con: z.number().int().min(0).max(999),
+  siz: z.number().int().min(0).max(999),
+  dex: z.number().int().min(0).max(999),
+  app: z.number().int().min(0).max(999),
+  int: z.number().int().min(0).max(999),
+  pow: z.number().int().min(0).max(999),
+  edu: z.number().int().min(0).max(999),
+  luck: z.number().int().min(0).max(999)
+});
+
+/**
+ * 预设角色。随规则包版本发布，KP 可直接选用生成 ROOM 作用域的 NPC 卡。
+ * attributes / skills / max* 均为最终值，物化时不要再次套用种族修正。
+ * race 仅用于展示、特性 flag 与技能表联动。
+ */
+export const PresetCharacterSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  subtitle: z.string().optional(),
+  description: z.string().optional(),
+  tier: z.enum(PRESET_TIERS).default("STANDARD"),
+  rarity: z.enum(RARITIES).default("COMMON"),
+  race: z.string().nullable().default(null),
+  attributes: PresetAttributesSchema,
+  skills: z.record(z.string(), z.number().int().min(0).max(999)).default({}),
+  maxHp: z.number().int().min(0).optional(),
+  maxMp: z.number().int().min(0).optional(),
+  maxSan: z.number().int().min(0).optional(),
+  maxDp: z.number().int().min(0).optional(),
+  tags: z.array(z.string()).default([])
+});
+
 export const RaceSchema = z.object({
   /** 显示名，例如「妖精」。id 是 key，玩家看到的是这个。 */
   name: z.string(),
@@ -216,6 +254,8 @@ export const RulePackSchema = z.object({
   combat: CombatRulesSchema,
   damage: DamageRulesSchema,
   races: z.record(z.string(), RaceSchema).default({}),
+
+  presets: z.array(PresetCharacterSchema).default([]),
   skills: z.array(SkillSchema).default([]),
   skillPoints: z
     .object({
@@ -279,6 +319,11 @@ export type RulePackOverlay = z.input<typeof RulePackOverlaySchema>;
 export type AttributeMethod = z.output<typeof AttributeMethodSchema>;
 
 export type Skill = z.output<typeof SkillSchema>;
+
+export type PresetTier = (typeof PRESET_TIERS)[number];
+export type PresetAttributes = z.output<typeof PresetAttributesSchema>;
+export type PresetCharacter = z.output<typeof PresetCharacterSchema>;
+export type PresetCharacterInput = z.input<typeof PresetCharacterSchema>;
 
 export type CombatEventRule = z.output<typeof CombatEventSchema>;
 export type CombatRules = z.output<typeof CombatRulesSchema>;

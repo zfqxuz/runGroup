@@ -8,8 +8,8 @@ export const TOUHOU_EXT: RulePackOverlay = {
   schemaVersion: 1,
   id: "touhou-ext",
   system: "TOUHOU",
-  version: "1.0.0",
-  extends: ["coc7-baseline@1.0.0"],
+  version: "1.1.0",
+  extends: ["coc7-baseline@1.1.0"],
   const: {
     MP_PER_POW: 4,
     DP_BASE: 10,
@@ -218,3 +218,160 @@ TOUHOU_EXT.combat = {
     }
   }
 };
+
+TOUHOU_EXT.presets = [
+  {
+    "id": "BYSTANDER",
+    "name": "路人",
+    "subtitle": "人里居民",
+    "description": "幻想乡的普通居民，对异变见怪不怪。",
+    "tier": "MINION",
+    "rarity": "COMMON",
+    "race": "HUMAN",
+    "attributes": {
+      "str": 50,
+      "con": 50,
+      "siz": 55,
+      "dex": 50,
+      "app": 50,
+      "int": 55,
+      "pow": 50,
+      "edu": 55,
+      "luck": 50
+    },
+    "skills": {
+      "LISTEN": 30,
+      "SPOT_HIDDEN": 30,
+      "LIBRARY_USE": 25,
+      "FIRST_AID": 25,
+      "PERSUADE": 20,
+      "DODGE": 25,
+      "FLIGHT": 30,
+      "GENSOU_LORE": 20
+    },
+    "maxHp": 10,
+    "maxMp": 200,
+    "maxSan": 50,
+    "maxDp": 160,
+    "tags": [
+      "HUMAN",
+      "CIVILIAN"
+    ]
+  },
+  {
+    "id": "POLICE",
+    "name": "巡警",
+    "subtitle": "人里警备",
+    "description": "人里的巡警，负责维持村落秩序。",
+    "tier": "STANDARD",
+    "rarity": "UNCOMMON",
+    "race": "HUMAN",
+    "attributes": {
+      "str": 60,
+      "con": 60,
+      "siz": 65,
+      "dex": 55,
+      "app": 50,
+      "int": 55,
+      "pow": 55,
+      "edu": 60,
+      "luck": 50
+    },
+    "skills": {
+      "MELEE": 60,
+      "DANMAKU": 45,
+      "DODGE": 30,
+      "GRAZE": 35,
+      "SPOT_HIDDEN": 55,
+      "LISTEN": 50,
+      "INTIMIDATE": 50,
+      "PERSUADE": 40,
+      "FLIGHT": 50,
+      "GENSOU_LORE": 30
+    },
+    "maxHp": 12,
+    "maxMp": 220,
+    "maxSan": 55,
+    "maxDp": 185,
+    "tags": [
+      "HUMAN",
+      "LAW"
+    ]
+  },
+  {
+    "id": "FAIRY",
+    "name": "妖精",
+    "subtitle": "自然的化身",
+    "description": "自然之力凝聚的小妖精，活泼而难缠。",
+    "tier": "MINION",
+    "rarity": "UNCOMMON",
+    "race": "FAIRY",
+    "attributes": {
+      "str": 15,
+      "con": 25,
+      "siz": 15,
+      "dex": 70,
+      "app": 45,
+      "int": 20,
+      "pow": 55,
+      "edu": 5,
+      "luck": 60
+    },
+    "skills": {
+      "FLIGHT": 60,
+      "DANMAKU": 55,
+      "DODGE": 40,
+      "GRAZE": 45,
+      "ELEMENTAL_MAGIC": 50,
+      "STEALTH": 50,
+      "SPOT_HIDDEN": 45
+    },
+    "maxHp": 4,
+    "maxMp": 220,
+    "maxSan": 55,
+    "maxDp": 105,
+    "tags": [
+      "FAIRY",
+      "SUPERNATURAL"
+    ]
+  },
+  {
+    "id": "ELITE",
+    "name": "强者",
+    "subtitle": "妖怪中的强者",
+    "description": "妖怪中的强者，拥有压倒性的身体与妖力。",
+    "tier": "ELITE",
+    "rarity": "RARE",
+    "race": "YOUKAI",
+    "attributes": {
+      "str": 75,
+      "con": 70,
+      "siz": 65,
+      "dex": 70,
+      "app": 55,
+      "int": 70,
+      "pow": 75,
+      "edu": 65,
+      "luck": 50
+    },
+    "skills": {
+      "MELEE": 80,
+      "DANMAKU": 75,
+      "DODGE": 45,
+      "GRAZE": 50,
+      "SPIRIT_ARTS": 60,
+      "BARRIER": 50,
+      "SPELLCARD_CRAFT": 60,
+      "FLIGHT": 70,
+      "GENSOU_LORE": 50
+    },
+    "maxHp": 13,
+    "maxMp": 300,
+    "maxSan": 75,
+    "maxDp": 230,
+    "tags": [
+      "YOUKAI",
+      "ELITE"
+    ]
+  }
+];

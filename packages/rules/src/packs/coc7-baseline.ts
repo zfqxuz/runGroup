@@ -5,7 +5,7 @@ export const COC7_BASELINE: RulePackInput = {
   schemaVersion: 1,
   id: "coc7-baseline",
   system: "COC7",
-  version: "1.0.0",
+  version: "1.1.0",
   const: {},
   attributes: {
     min: 15,
@@ -147,3 +147,155 @@ COC7_BASELINE.skills = [
   { id: "ART_CRAFT", name: "艺术与手艺", category: "OTHER", base: "5" }
 ];
 
+COC7_BASELINE.presets = [
+  {
+    "id": "BYSTANDER",
+    "name": "路人",
+    "subtitle": "平民",
+    "description": "街头巷尾的普通人，没有受过战斗训练。",
+    "tier": "MINION",
+    "rarity": "COMMON",
+    "race": null,
+    "attributes": {
+      "str": 50,
+      "con": 50,
+      "siz": 55,
+      "dex": 50,
+      "app": 50,
+      "int": 55,
+      "pow": 50,
+      "edu": 55,
+      "luck": 50
+    },
+    "skills": {
+      "LISTEN": 30,
+      "SPOT_HIDDEN": 30,
+      "LIBRARY_USE": 25,
+      "FIRST_AID": 25,
+      "PSYCHOLOGY": 20,
+      "DODGE": 25,
+      "PERSUADE": 20
+    },
+    "maxHp": 10,
+    "maxMp": 10,
+    "maxSan": 50,
+    "maxDp": 10,
+    "tags": [
+      "HUMAN",
+      "CIVILIAN"
+    ]
+  },
+  {
+    "id": "POLICE",
+    "name": "巡警",
+    "subtitle": "执法者",
+    "description": "受过基本武器训练的执法者，能控制局面。",
+    "tier": "STANDARD",
+    "rarity": "UNCOMMON",
+    "race": null,
+    "attributes": {
+      "str": 60,
+      "con": 60,
+      "siz": 65,
+      "dex": 55,
+      "app": 50,
+      "int": 55,
+      "pow": 55,
+      "edu": 60,
+      "luck": 50
+    },
+    "skills": {
+      "FIGHTING_BRAWL": 60,
+      "FIREARMS_HANDGUN": 60,
+      "DODGE": 30,
+      "INTIMIDATE": 50,
+      "LAW": 40,
+      "LISTEN": 50,
+      "SPOT_HIDDEN": 55,
+      "FIRST_AID": 40,
+      "DRIVE_AUTO": 50
+    },
+    "maxHp": 12,
+    "maxMp": 11,
+    "maxSan": 55,
+    "maxDp": 11,
+    "tags": [
+      "HUMAN",
+      "LAW"
+    ]
+  },
+  {
+    "id": "FAIRY",
+    "name": "妖精",
+    "subtitle": "超自然生物",
+    "description": "小型的超自然生物，脆弱但擅于躲藏与恶作剧。",
+    "tier": "MINION",
+    "rarity": "UNCOMMON",
+    "race": null,
+    "attributes": {
+      "str": 15,
+      "con": 25,
+      "siz": 15,
+      "dex": 75,
+      "app": 55,
+      "int": 30,
+      "pow": 60,
+      "edu": 5,
+      "luck": 60
+    },
+    "skills": {
+      "DODGE": 50,
+      "STEALTH": 60,
+      "SPOT_HIDDEN": 50,
+      "LISTEN": 45,
+      "THROW": 30,
+      "JUMP": 30,
+      "CLIMB": 25
+    },
+    "maxHp": 4,
+    "maxMp": 12,
+    "maxSan": 60,
+    "maxDp": 12,
+    "tags": [
+      "FAIRY",
+      "SUPERNATURAL"
+    ]
+  },
+  {
+    "id": "ELITE",
+    "name": "强者",
+    "subtitle": "精英",
+    "description": "经验丰富、身体与意志都处于巅峰的对手。",
+    "tier": "ELITE",
+    "rarity": "RARE",
+    "race": null,
+    "attributes": {
+      "str": 75,
+      "con": 70,
+      "siz": 65,
+      "dex": 70,
+      "app": 55,
+      "int": 70,
+      "pow": 75,
+      "edu": 65,
+      "luck": 50
+    },
+    "skills": {
+      "FIGHTING_BRAWL": 80,
+      "FIREARMS_HANDGUN": 75,
+      "DODGE": 45,
+      "SPOT_HIDDEN": 70,
+      "PSYCHOLOGY": 55,
+      "INTIMIDATE": 60,
+      "STEALTH": 55,
+      "FIRST_AID": 50
+    },
+    "maxHp": 13,
+    "maxMp": 15,
+    "maxSan": 75,
+    "maxDp": 15,
+    "tags": [
+      "ELITE"
+    ]
+  }
+];

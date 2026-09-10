@@ -14,6 +14,9 @@ export {
   COMBAT_MODES,
   CombatRulesSchema,
   CombatEventSchema,
+  PresetCharacterSchema,
+  PresetAttributesSchema,
+  PRESET_TIERS,
   parseRulePack
 } from "./schema";
 
@@ -29,7 +32,11 @@ export type {
   PipelineStep,
   CombatMode,
   CombatRules,
-  CombatEventRule
+  CombatEventRule,
+  PresetTier,
+  PresetAttributes,
+  PresetCharacter,
+  PresetCharacterInput
 } from "./schema";
 
 export { RulePackError } from "./errors";
