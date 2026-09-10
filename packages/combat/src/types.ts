@@ -10,6 +10,7 @@ export type ParticipantKind = "PLAYER" | "NPC";
 export type ActionKind =
   | "DANMAKU"
   | "SPELLCARD"
+  | "OUT_OF_RULE"
   | "DEFEND"
   | "DODGE"
   | "COUNTER"

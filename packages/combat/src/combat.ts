@@ -1,5 +1,6 @@
 import {
   evaluate,
+  compile as compileExpr,
   parseDice,
   rollDice,
   rollDie,
@@ -307,6 +308,23 @@ function reactionFor(ctx: ResolveContext, defenderId: string): DefenseReaction {
   return ctx.reactions[defenderId] ?? { type: "PASS" };
 }
 
+function disabledReactionFor(pack: CompiledRulePack, defense: DefenseType): string | null {
+  if (defense === "DODGE") {
+    const event = pack.pack.combat.events.GRAZE;
+    if (event && event.defaultEnabled === false) return "擦弹";
+  }
+  if (defense === "COUNTER") {
+    const event = pack.pack.combat.events.COUNTER;
+    if (event && event.defaultEnabled === false) return "消弹";
+  }
+  return null;
+}
+
+function evaluateSource(pack: CompiledRulePack, source: string, vars: Record<string, number>): number {
+  const expression = compileExpr(source, { vars: Object.keys(vars), consts: pack.constantNames });
+  return evaluate(expression, { vars, consts: pack.pack.const });
+}
+
 function breakDeclaration(ctx: ResolveContext, owner: CombatParticipantState): void {
   const declaration = owner.declaration;
   if (declaration === null) return;
@@ -321,6 +339,8 @@ function breakDeclaration(ctx: ResolveContext, owner: CombatParticipantState): v
 
   const rules = ctx.pack.pack.spellcard;
   if (rules === undefined) return;
+  const clearEvent = ctx.pack.pack.combat.events.SPELLCARD_BREAK_CLEARS_DANMAKU;
+  if (clearEvent && clearEvent.defaultEnabled === false) return;
   if (rules.declaration.onBreakClearDanmaku === false) return;
 
   const mode = rules.declaration.clearTargets;
@@ -408,7 +428,17 @@ function resolveAttack(
     return;
   }
 
-  const reaction = reactionFor(ctx, defender.id);
+  let reaction = reactionFor(ctx, defender.id);
+  const blockedEvent = disabledReactionFor(ctx.pack, reaction.type);
+  if (blockedEvent) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: defender.name + " 的 " + blockedEvent + " 已被本房禁用，按普通应对结算"
+    });
+    reaction = { type: "PASS" };
+  }
   let defenseSuccess = false;
 
   if (reaction.type === "DODGE") {
@@ -572,6 +602,36 @@ function resolveSpellcard(
   });
 }
 
+function resolveOutOfRule(ctx: ResolveContext, actor: CombatParticipantState, submission: ActionSubmission): void {
+  const rules = ctx.pack.pack.spellcard;
+  if (rules === undefined) {
+    pushLog(ctx.state, { kind: "SYSTEM", actorId: actor.id, targetId: null, text: "本规则包未定义规则外施法" });
+    return;
+  }
+  const event = ctx.pack.pack.combat.events.OUT_OF_RULE_SPELL;
+  if (event === undefined || event.defaultEnabled === false) {
+    pushLog(ctx.state, { kind: "SYSTEM", actorId: actor.id, targetId: null, text: "本房已禁用规则外施法" });
+    return;
+  }
+  const name = submission.name ?? "规则外施法";
+  let sanCost = 0;
+  try {
+    sanCost = Math.max(0, rollDice(parseDice(rules.outOfRule.sanCost), nextRollRng(ctx.state, "out-of-rule:" + actor.id)).total);
+  } catch {
+    sanCost = 0;
+  }
+  const mpCost = Math.max(0, Math.floor(evaluateSource(ctx.pack, rules.outOfRule.mpCost, actor.vars)));
+  actor.mp = Math.max(0, actor.mp - mpCost);
+  actor.san = Math.max(0, actor.san - sanCost);
+  pushLog(ctx.state, {
+    kind: "SPELLCARD",
+    actorId: actor.id,
+    targetId: submission.targetId ?? null,
+    text: actor.name + " 施放规则外法术「" + name + "」，消耗 MP " + mpCost + " / SAN " + sanCost,
+    data: { name, mpCost, sanCost }
+  });
+}
+
 function resolveOne(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -581,6 +641,9 @@ function resolveOne(
   const targetId = submission.targetId ?? null;
 
   switch (submission.kind) {
+    case "OUT_OF_RULE":
+      resolveOutOfRule(ctx, actor, submission);
+      return;
     case "PASS":
       pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: `${actor.name} 跳过本回合` });
       return;
@@ -688,7 +751,9 @@ export function resolvePending(
   for (const participant of order) {
     if (participant.defeated) continue;
     const submission = submissions[participant.id];
-    const cost = submission?.atbCost ?? resolveActionCost(pack, submission?.kind ?? "PASS", participant.vars);
+    const kind = submission?.kind ?? "PASS";
+    const costKind = kind === "OUT_OF_RULE" ? "SPELLCARD" : kind;
+    const cost = submission?.atbCost ?? resolveActionCost(pack, costKind, participant.vars);
     consumeAction(participant, cost);
   }
 
