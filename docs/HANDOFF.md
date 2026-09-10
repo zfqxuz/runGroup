@@ -20,6 +20,7 @@
 - 规则包驱动：coc7-baseline / touhou-ext，均带预设角色数据。
 - 房间准备页与跑团页已拆分。
 - 战斗可发起、可审批、可 Socket 操作、可中止，战斗快照持久化。
+- 卡牌批量审核、稀有度边框、COMPENDIUM 共享模板与复制已完成。
 
 测试规模：137 tests 全部通过（formula 48 / rules 57 / combat 32）。
 
@@ -109,6 +110,10 @@
 ```bash
 cd ~/WebstormProjects/runGroup
 docker compose up -d db
+cd apps/web
+DATABASE_URL=postgresql://touhou:touhou@localhost:5432/touhou_trpg?schema=public npx prisma migrate deploy
+DATABASE_URL=postgresql://touhou:touhou@localhost:5432/touhou_trpg?schema=public npm run db:seed
+cd ../..
 npm run typecheck
 npm test
 ```
@@ -125,24 +130,29 @@ E2E 脚本需要服务已在运行：
 cd apps/web
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-room-setup.ts
 E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-combat.ts
+E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-library.ts
 ```
 
 最近一次实测：
 
 - verify-room-setup：PASS，包含东方房 ATB + 禁用 GRAZE + 准备页/跑团页切换。
 - verify-combat：PASS，包含建战斗、Socket 加入、行动、防守反应、结算、快照、KP 中止。
+- verify-card-library：PASS，包含批量审核 2 张、稀有度边框、共享模板复制。
 - npm test：137 tests 通过。
 - npm run typecheck：所有 workspace 通过。
 
-## 8. 仍未完成（第 7 项）
+## 8. 第 7 项：COMPENDIUM 共享库（已完成）
 
-1. 卡牌批量通过：房间带入卡牌目前只能逐张通过，需要一次审核多个 entry。
-2. 稀有度边框：卡牌库、房间卡池、角色装备卡需要按 Card.rarity 显示边框。
-3. KP 模板卡 / COMPENDIUM 共享库：目前 COMPENDIUM 只展示 ownerId 自己的卡，没有给 KP 跨用户模板卡做可见与复制流程。
+- 卡牌批量通过：新增 `reviewCardEntries` server action，准备页可勾选多张待审 `RoomCardEntry` 后一次通过或驳回。
+- 稀有度边框：`Card.rarity` 映射到边框色，覆盖卡牌库、房间带入卡牌、房间 NPC/Boss 卡、角色装备卡与角色页持有卡。
+- KP 模板卡 / COMPENDIUM 共享库：`Card.isTemplate`（迁移 `20260910160000_card_shared_template`）标记共享模板；卡牌库新增“共享模板库”，可复制其他用户的模板到自己的个人卡库，副本通过 `templateId` 指回来源。
+- E2E：`apps/web/scripts/verify-card-library.ts`，覆盖批量审核、稀有度边框、共享模板复制。
 
 ## 9. 最近提交
 
 ```text
+ca85efe feat(card): 完成卡牌批量审核、稀有度边框与共享模板
+4c58cfe chore: 迁移 npm 解析地址并添加演示 seed
 947432d fix(combat): 技能选项按单位过滤并补全基础值，新增战斗中止
 0947ca0 feat(room): 准备页与跑团页拆分，战斗界面内联到房间页
 022da62 fix(socket): 服务启动时加载 .env，票据签名与校验使用同一密钥
