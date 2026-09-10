@@ -237,6 +237,8 @@ model Room {
   description       String?
   /// 本房间采用的车卡方式 id，由房主在建房时二选一。
   chargenMethod     String?
+  /// 角色创建年代。COC7 为 CLASSIC / MODERN，TOUHOU 允许留空。
+  era               String?
   /// 玩家是否可以发起战斗申请（KP 仍可直接发起）。
   allowPlayerCombatRequest Boolean @default(true)
   createdAt         DateTime   @default(now()) @db.Timestamptz(3)
@@ -291,6 +293,10 @@ model Character {
   name       String
   playerName String?
   occupation String?
+  /// 结构化职业数据；旧角色可能为空，显示时回退到 occupation 文本。
+  occupationId String?
+  /// 该角色使用的年代；旧角色可能为空，房间审核时由 KP 判断。
+  era        String?
   age        Int?
   gender     String?
   residence  String?
@@ -309,6 +315,10 @@ model Character {
   raceMods Json?
 
   skills    Json  @default("{}")
+  /// 车卡时职业点 / 兴趣点 / 导入来源的分项记录。
+  skillAllocation Json?
+  /// 从外部人物卡文件导入时的原始数据（仅作回显与排错）。
+  sourceData Json?
   backstory Json?
 
   hp     Int @default(0)
@@ -330,6 +340,7 @@ model Character {
 
   user         User                @relation(fields: [userId], references: [id], onDelete: Cascade)
   room         Room?               @relation(fields: [roomId], references: [id])
+  occupationRef Occupation?        @relation(fields: [occupationId], references: [id])
   activeIn     RoomMember[]        @relation("ActiveCharacter")
   cards        Card[]
   roomEntries  RoomCharacterEntry[]
@@ -341,6 +352,30 @@ model Character {
 
   @@index([userId])
   @@index([roomId, reviewStatus])
+}
+
+model Occupation {
+  id            String   @id @default(cuid())
+  system        System
+  code          Int
+  name          String
+  era           String   @default("BOTH")
+  creditMin     Int?
+  creditMax     Int?
+  creditText    String?
+  pointsText    String?
+  pointsFormula String
+  skillsText    String
+  skillNames    Json     @default("[]")
+  relations     String?
+  description   String?
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt
+
+  characters Character[]
+
+  @@unique([system, code])
+  @@index([system, era])
 }
 
 model Card {

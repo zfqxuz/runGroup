@@ -19,6 +19,7 @@ export interface RoomSetupOptions {
   readonly name: string;
   readonly system: "COC7" | "TOUHOU";
   readonly chargenMethod: string;
+  readonly era: string | null;
   readonly combatMode: CombatMode;
   readonly disabledEvents: readonly string[];
 }
@@ -32,6 +33,14 @@ export async function createRoomAction(formData: FormData): Promise<void> {
 
   const system = formData.get("system") === "TOUHOU" ? "TOUHOU" : "COC7";
   const pack = resolveRulePack(BUILTIN_BY_SYSTEM[system] ?? "coc7-baseline", builtinRegistry());
+
+  const requestedEra = String(formData.get("era") ?? "");
+  const era =
+    system === "TOUHOU"
+      ? null
+      : requestedEra === "CLASSIC"
+        ? "CLASSIC"
+        : "MODERN";
 
   // 服务端查包拿真实的方法定义，不接受前端传 JSON —— 否则等于让客户端改规则
   const methodId = String(formData.get("chargenMethod") ?? "");
@@ -66,6 +75,7 @@ export async function createRoomAction(formData: FormData): Promise<void> {
       ownerId: session.user.id,
       inviteCode: generateInviteCode(),
       chargenMethod: method.id,
+      era,
       allowPlayerCombatRequest: allowRaw === null ? true : String(allowRaw) === "1",
       ruleOverride: ruleOverride as never,
       members: { create: { userId: session.user.id, role: "KP" } }

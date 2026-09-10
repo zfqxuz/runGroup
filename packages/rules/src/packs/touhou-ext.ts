@@ -58,52 +58,76 @@ export const TOUHOU_EXT: RulePackOverlay = {
 TOUHOU_EXT.races = {
   HUMAN: {
     name: "人类",
-    description: "最普通也最自由的种族。幸运 +15，但无法修习妖术。",
+    description: "最普通也最自由的种族。幸运 +15，兴趣技能点为智力×2.5，初始财产（信用）更高，但通常不可修习【妖术】。",
     attrMods: { luck: "15" },
-    flags: ["NO_YOUJUTSU"]
+    interestPoints: "int * 2.5",
+    flags: ["NO_YOUJUTSU", "CREDIT_20"]
   },
   FAIRY: {
     name: "妖精",
-    description: "力量与智力偏弱，却极其敏捷。元素魔法天赋极高，濒死后一个月重生。",
+    description: "自然现象的正体，力量与智力偏弱，却极为敏捷。元素法天赋极高，肉体死亡后一个月会自然再生。",
     attrMods: { str: "-5", int: "-5", dex: "15" },
-    derivedOverrides: { maxHp: "-2" },
     skillBonuses: { ELEMENTAL_MAGIC: "35" },
-    flags: ["RESPAWN_MONTHLY"]
+    flags: ["RESPAWN_MONTHLY", "NO_FOOD_REQUIRED"]
   },
   MAGICIAN: {
     name: "魔法使",
-    description: "习得特定魔法后可以不进食、不衰老。",
-    flags: ["NO_FOOD_REQUIRED"]
+    description: "以魔法为原动力的妖怪。力量与体质偏弱，智力与意志极高，精于【魔法】与【符文】。",
+    attrMods: { str: "-5", con: "-5", int: "15", pow: "15" },
+    skillBonuses: { MAGIC: "25", RUNE: "20" },
+    flags: ["NO_FOOD_REQUIRED", "CAN_USE_MAGIC"]
+  },
+  BEAST: {
+    name: "妖兽",
+    description: "动物化成的妖怪，身体能力较强，擅长【妖术】与野兽相关的行动。",
+    attrMods: { str: "10", dex: "10", pow: "-5" },
+    skillBonuses: { YOUJUTSU: "25" },
+    flags: ["CAN_YOUJUTSU", "BEAST_TRAIT"]
+  },
+  KAPPA: {
+    name: "河童",
+    description: "住在水里的妖怪，掌握外界科技，擅长水系元素法。",
+    attrMods: { con: "-5", int: "15", pow: "10" },
+    skillBonuses: { ELEMENTAL_MAGIC: "30" },
+    flags: ["KAPPA_WATER", "HIGH_TECH"]
+  },
+  TSUKUMOGAMI: {
+    name: "付丧神",
+    description: "物品变化的妖怪。元素法天赋优秀，并具有与本体相关的特长。",
+    skillBonuses: { ELEMENTAL_MAGIC: "25" },
+    flags: ["OBJECT_BOUND", "NO_FOOD_REQUIRED"]
+  },
+  GHOST: {
+    name: "亡灵",
+    description: "死者的亡灵，可以幽体化。体质偏低，意志极高，擅长【妖术】。",
+    attrMods: { con: "-5", pow: "20" },
+    skillBonuses: { YOUJUTSU: "25" },
+    flags: ["CAN_PHASE", "NO_FOOD_REQUIRED", "UNDEAD"]
   },
   YOUKAI: {
     name: "妖怪",
-    description: "漫长的寿命与强大的妖力。可修习妖术。",
-    attrMods: { edu: "-5", pow: "5" },
-    flags: ["CAN_YOUJUTSU"]
-  },
-  GHOST: {
-    name: "幽灵",
-    description: "可幽体化，物理手段难以完全消灭。",
-    attrMods: { con: "-5", pow: "5" },
-    flags: ["CAN_PHASE"]
+    description: "身体能力与妖力强悍的种族。擅长【妖术】，但面对精神攻击与神术/阴阳术时较为脆弱。",
+    attrMods: { str: "10", con: "10", pow: "10" },
+    skillBonuses: { YOUJUTSU: "40" },
+    flags: ["CAN_YOUJUTSU", "WEAK_TO_SPIRIT"]
   },
   TENGU: {
     name: "天狗",
-    description: "高速飞行与风系术法的大师。但高傲，社交上吃亏。",
-    attrMods: { dex: "10", app: "-5" },
-    skillBonuses: { FLIGHT: "25" },
-    flags: ["CAN_FLY"]
+    description: "妖怪山上势力最大的种族之一，高速飞行与风系元素法的大师。",
+    attrMods: { str: "5", con: "5", dex: "20" },
+    skillBonuses: { ELEMENTAL_MAGIC: "25" },
+    flags: ["CAN_FLY", "TENGU_TRAIT"]
   },
   VAMPIRE: {
     name: "吸血鬼",
-    description: "恐怖的力量与妖力。昼伏夜出，惧怕阳光。",
-    attrMods: { str: "10", pow: "10", con: "-5" },
-    skillBonuses: { MELEE: "15" },
-    flags: ["WEAK_TO_SUNLIGHT"]
+    description: "能力很强但弱点也多的妖怪。力量、体质与意志优秀，擅长【妖术·吸血】。",
+    attrMods: { str: "15", con: "10", pow: "10" },
+    skillBonuses: { YOUJUTSU: "30" },
+    flags: ["VAMPIRE_WEAKNESS", "CAN_YOUJUTSU"]
   },
   HOURAI: {
     name: "蓬莱人",
-    description: "不老不死，无法被彻底杀死。但运气极差。",
+    description: "不老不死，无法被彻底杀死，但运气较差。",
     attrMods: { con: "10", luck: "-10" },
     flags: ["IMMORTAL"]
   },
@@ -112,13 +136,6 @@ TOUHOU_EXT.races = {
     description: "兼具人与妖的特质，两头都不完全属于。",
     attrMods: { dex: "5", pow: "5", edu: "-5" },
     flags: ["CAN_YOUJUTSU"]
-  },
-  TSUKUMOGAMI: {
-    name: "付丧神",
-    description: "器物化成的付丧神，与自身依附之物共鸣。",
-    attrMods: { siz: "-10", dex: "5" },
-    skillBonuses: { CRAFT: "20" },
-    flags: ["OBJECT_BOUND"]
   }
 };
 TOUHOU_EXT.statusEffects = {
@@ -154,7 +171,13 @@ TOUHOU_EXT.skills = [
   { id: "DODGE", name: "闪避", category: "COMBAT", base: "dex / 2" },
   { id: "GRAZE", name: "擦弹", category: "COMBAT", base: "dex / 2", description: "贴身躲过弹幕并回复灵力" },
   { id: "THROW", name: "投掷", category: "COMBAT", base: "20" },
-  { id: "SPIRIT_ARTS", name: "灵术", category: "MAGIC", base: "5", description: "操纵灵力进行攻防" },
+  { id: "SPIRIT_ARTS", name: "神术/阴阳术", category: "MAGIC", base: "5", description: "创建结界、降灵驱魔；幻想乡的巫女与道士所修之术" },
+  { id: "MAGIC", name: "魔法", category: "MAGIC", base: "1", description: "按【魔法】体系学习与施放法术；需通过符文检定阅读魔导书" },
+  { id: "RUNE", name: "符文", category: "KNOWLEDGE", base: "1", description: "阅读、理解魔导书与法术符文的检定基础" },
+  { id: "PUPPETRY", name: "人偶", category: "TECH", base: "1", description: "制作与操纵人偶；人偶师的核心技能" },
+  { id: "DIVINATION", name: "占卜", category: "KNOWLEDGE", base: "1", description: "通过命盘、塔罗、易卦等方式解读事物" },
+  { id: "NINJUTSU", name: "忍术", category: "PHYSICAL", base: "1", description: "侦查、潜入、暗杀等谍报技术" },
+  { id: "SCIENCE", name: "科学", category: "KNOWLEDGE", base: "1", description: "幻想乡内笼统合并的自然科学知识" },
   { id: "ELEMENTAL_MAGIC", name: "元素魔法", category: "MAGIC", base: "1", description: "火水木金土的术法" },
   { id: "SPELLCARD_CRAFT", name: "符卡构筑", category: "MAGIC", base: "1", description: "设计并展开符卡" },
   { id: "BARRIER", name: "结界术", category: "MAGIC", base: "1" },

@@ -135,6 +135,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
       <RoomConfigPanel
         roomId={room.id}
         system={room.system}
+        era={room.era}
         chargenMethod={room.chargenMethod}
         rulePackVersionId={room.rulePackVersionId}
         ruleOverride={room.ruleOverride}

@@ -3,6 +3,7 @@ import { loadEffectivePack } from "@/server/rules/loader";
 interface Props {
   readonly roomId: string;
   readonly system: string;
+  readonly era: string | null;
   readonly chargenMethod: string | null;
   readonly rulePackVersionId: string | null;
   readonly ruleOverride: unknown;
@@ -44,6 +45,16 @@ export default async function RoomConfigPanel(props: Props) {
         <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
           <p className="text-[11px] text-white/40">模组</p>
           <p className="mt-1 text-sm text-white/80">{props.system}</p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+          <p className="text-[11px] text-white/40">背景年代</p>
+          <p className="mt-1 text-sm text-white/80">
+            {props.system === "TOUHOU"
+              ? "幻想乡年代"
+              : props.era === "CLASSIC"
+                ? "1920 年代"
+                : "现代"}
+          </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
           <p className="text-[11px] text-white/40">车卡方式</p>

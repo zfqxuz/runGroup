@@ -57,8 +57,8 @@ describe("衍生属性", () => {
     expect(result.attributes.dex).toBe(70);
     expect(result.attributes.str).toBe(45);
     expect(result.attributes.int).toBe(55);
-    // 妖精的 derivedOverrides 是 maxHp -2，所以 11 - 2 = 9
-    expect(result.derived.maxHp).toBe(9);
+    // 千幻抄妖精没有额外 HP 惩罚，按修正后 con + siz 计算：50 + 60 => 11
+    expect(result.derived.maxHp).toBe(11);
     expect(result.derived.maxDp).toBe(145);
     expect(result.skillBonuses.ELEMENTAL_MAGIC).toBe(35);
     expect(result.flags).toContain("RESPAWN_MONTHLY");

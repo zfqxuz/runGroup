@@ -18,6 +18,8 @@ async function createRoom(formData: FormData): Promise<void> {
   const name = String(formData.get("name") ?? "").trim();
   const system = String(formData.get("system") ?? "COC7");
   const chargenMethod = String(formData.get("chargenMethod") ?? "destiny5");
+  const eraRaw = String(formData.get("era") ?? "MODERN");
+  const era = system === "TOUHOU" ? null : eraRaw === "CLASSIC" ? "CLASSIC" : "MODERN";
   if (name.length === 0) return;
 
   const room = await prisma.room.create({
@@ -27,6 +29,7 @@ async function createRoom(formData: FormData): Promise<void> {
       ownerId: session.user.id,
       inviteCode: generateInviteCode(),
       chargenMethod,
+      era,
       members: { create: { userId: session.user.id, role: "KP" } }
     }
   });
@@ -115,6 +118,13 @@ export default async function HomePage() {
             <select name="system" className={inputClass} defaultValue="COC7">
               <option value="COC7">COC7 原版</option>
               <option value="TOUHOU">东方扩展</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">背景年代</span>
+            <select name="era" className={inputClass} defaultValue="MODERN">
+              <option value="MODERN">现代</option>
+              <option value="CLASSIC">1920 年代</option>
             </select>
           </label>
           <label className="flex flex-col gap-1.5">

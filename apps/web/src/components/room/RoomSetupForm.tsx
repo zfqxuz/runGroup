@@ -28,6 +28,7 @@ export default function RoomSetupForm(props: Props) {
   const [system, setSystem] = useState<SystemKey>("COC7");
   const active = props.options[system];
   const [methodId, setMethodId] = useState(active.methods[0]?.id ?? "");
+  const [era, setEra] = useState<"CLASSIC" | "MODERN">("MODERN");
   const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB">(active.defaultMode);
   const [disabled, setDisabled] = useState<readonly string[]>([]);
   const [allowPlayerCombatRequest, setAllowPlayerCombatRequest] = useState(true);
@@ -81,6 +82,38 @@ export default function RoomSetupForm(props: Props) {
             </button>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">背景年代</h2>
+        <p className="mt-1 text-[11px] text-white/35">
+          仅 COC7 生效。年代会过滤职业与本职业技能，并写入房间内创建的角色。
+        </p>
+        {system === "COC7" ? (
+          <div className="mt-3 flex flex-col gap-2">
+            {([
+              ["MODERN", "现代", "默认规则书现代职业可用"],
+              ["CLASSIC", "1920 年代", "古典职业可用，现代专用技能不提供"]
+            ] as const).map(([key, title, hint]) => (
+              <label key={key} className="flex items-start gap-3 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+                <input
+                  type="radio"
+                  name="era"
+                  value={key}
+                  checked={era === key}
+                  onChange={() => setEra(key)}
+                  className="mt-1 accent-sakura-500"
+                />
+                <span>
+                  <span className="block text-sm text-white/75">{title}</span>
+                  <span className="mt-0.5 block text-[11px] text-white/35">{hint}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+        ) : (
+          <p className="mt-3 text-xs text-white/35">东方模组使用幻想乡年代规则，不设置现代 / 1920 年代。</p>
+        )}
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

@@ -1,9 +1,26 @@
 import { PrismaClient } from "@prisma/client";
 import type { Prisma } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import occupations from "./data/occupations.json";
 
 const prisma = new PrismaClient();
 const DEMO_PASSWORD = "demo1234";
+
+interface SeedOccupation {
+  readonly code: number;
+  readonly name: string;
+  readonly system: "COC7" | "TOUHOU";
+  readonly era: string;
+  readonly creditMin: number | null;
+  readonly creditMax: number | null;
+  readonly creditText: string | null;
+  readonly pointsText: string | null;
+  readonly pointsFormula: string;
+  readonly skillsText: string;
+  readonly skillNames: readonly string[];
+  readonly relations: string | null;
+  readonly description: string | null;
+}
 
 interface SeedCard {
   readonly id: string;
@@ -19,8 +36,35 @@ interface SeedCard {
   readonly isTemplate?: boolean;
 }
 
+async function seedOccupations(): Promise<void> {
+  const rows = occupations as readonly SeedOccupation[];
+  for (const item of rows) {
+    const data = {
+      system: item.system,
+      code: item.code,
+      name: item.name,
+      era: item.era,
+      creditMin: item.creditMin,
+      creditMax: item.creditMax,
+      creditText: item.creditText,
+      pointsText: item.pointsText,
+      pointsFormula: item.pointsFormula,
+      skillsText: item.skillsText,
+      skillNames: item.skillNames as Prisma.InputJsonValue,
+      relations: item.relations,
+      description: item.description
+    };
+    await prisma.occupation.upsert({
+      where: { system_code: { system: item.system, code: item.code } },
+      update: data,
+      create: data
+    });
+  }
+}
+
 async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
+  await seedOccupations();
 
   const kp = await prisma.user.upsert({
     where: { username: "demo_kp" },

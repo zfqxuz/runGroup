@@ -81,6 +81,8 @@ export const RaceSchema = z.object({
   attrMods: z.record(z.string(), ExprSchema).default({}),
   derivedOverrides: z.record(z.string(), ExprSchema).default({}),
   skillBonuses: z.record(z.string(), ExprSchema).default({}),
+  /** 种族专属兴趣点公式；缺省时使用规则包全局 skillPoints.interest。 */
+  interestPoints: ExprSchema.optional(),
   flags: z.array(z.string()).default([])
 });
 

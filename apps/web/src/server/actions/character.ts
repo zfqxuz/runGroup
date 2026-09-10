@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { compile, evaluate } from "@touhou/formula";
 import {
   ATTRIBUTE_KEYS,
   builtinRegistry,
@@ -13,6 +14,12 @@ import {
 } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { hasFreeSkillChoice, isOccupationSkill, toOccupationView } from "@/shared/occupation";
+
+export interface SkillAllocationInput {
+  readonly occupation: Record<string, number>;
+  readonly interest: Record<string, number>;
+}
 
 export interface SaveCharacterInput {
   roomId: string | null;
@@ -22,6 +29,9 @@ export interface SaveCharacterInput {
   attributes: Record<string, number>;
   skills: Record<string, number>;
   chargenMethod: string;
+  occupationId?: string | null;
+  skillAllocation?: SkillAllocationInput | null;
+  era?: string | null;
 }
 
 export interface SaveCharacterResult {
@@ -32,6 +42,17 @@ export interface SaveCharacterResult {
 
 const packIdFor = (system: string): string =>
   system === "TOUHOU" ? "touhou-ext" : "coc7-baseline";
+
+function readPointMap(value: unknown): Record<string, number> | null {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value)) {
+    const number = Math.floor(Number(raw));
+    if (Number.isFinite(number) === false || number < 0) return null;
+    if (number > 0) out[key] = number;
+  }
+  return out;
+}
 
 export async function saveCharacter(
   input: SaveCharacterInput
@@ -56,7 +77,8 @@ export async function saveCharacter(
   if (name.length === 0) return { ok: false, error: "角色名不能为空" };
   if (name.length > 50) return { ok: false, error: "角色名最多 50 个字符" };
 
-  const pack = resolveRulePack(packIdFor(room?.system ?? input.system), builtinRegistry());
+  const system = room?.system ?? input.system;
+  const pack = resolveRulePack(packIdFor(system), builtinRegistry());
   const compiled = compileParsedRulePack(pack);
 
   const attributes = {} as AttributeSet;
@@ -96,16 +118,111 @@ export async function saveCharacter(
     return { ok: false, error: "本规则包没有这个种族" };
   }
 
-  // 服务端重算衍生属性 —— 客户端传来的一律不信
+  const era =
+    room?.era ??
+    (input.era === "CLASSIC" || input.era === "MODERN" ? input.era : null);
+
+  const occupation = input.occupationId
+    ? await prisma.occupation.findUnique({ where: { id: input.occupationId } })
+    : null;
+  if (input.occupationId && occupation === null) {
+    return { ok: false, error: "所选职业不存在" };
+  }
+  if (occupation !== null) {
+    if (occupation.system !== system) {
+      return { ok: false, error: "所选职业不属于当前模组" };
+    }
+    if (era !== null && occupation.era !== "BOTH" && occupation.era !== era) {
+      return { ok: false, error: "所选职业与当前房间年代不匹配" };
+    }
+  }
+
+  // 服务端重算衍生属性与技能基础值 —— 客户端传来的数值一律只作为分配参考
   const outcome = computeDerived(compiled, { attributes, race: input.race });
+  const vars = outcome.attributes as unknown as Record<string, number>;
+  const context = { vars, consts: pack.const };
+
+  const skillBases: Record<string, number> = {};
+  for (const skill of compiled.skills) {
+    skillBases[skill.id] = Math.floor(evaluate(skill.base, context));
+  }
+
+  const maxAtCreation = Math.floor(evaluate(compiled.skillPoints.maxAtCreation, context));
+  const raceRule = input.race === null ? undefined : pack.races[input.race];
+  const interestExpression =
+    raceRule?.interestPoints === undefined
+      ? compiled.skillPoints.interest
+      : compile(raceRule.interestPoints, { vars: [...ATTRIBUTE_KEYS] });
+  const interestPool = Math.floor(evaluate(interestExpression, context));
+  const occupationPool =
+    occupation === null
+      ? 0
+      : Math.floor(evaluate(compile(occupation.pointsFormula, { vars: [...ATTRIBUTE_KEYS] }), context));
+
+  let skills: Record<string, number>;
+  let skillAllocation: SkillAllocationInput | null = null;
+
+  if (input.skillAllocation === undefined || input.skillAllocation === null) {
+    skills = {};
+    for (const [skillId, raw] of Object.entries(input.skills)) {
+      const value = Math.floor(Number(raw));
+      if (Number.isFinite(value) === false || value < 0) {
+        return { ok: false, error: "技能值不合法" };
+      }
+      skills[skillId] = value;
+    }
+  } else {
+    if (occupation === null && Object.keys(input.skillAllocation.occupation).length > 0) {
+      return { ok: false, error: "尚未选择职业，不能分配职业点" };
+    }
+    const occupationAdded = readPointMap(input.skillAllocation.occupation);
+    const interestAdded = readPointMap(input.skillAllocation.interest);
+    if (occupationAdded === null || interestAdded === null) {
+      return { ok: false, error: "技能点分配数据不合法" };
+    }
+    const occupationTotal = Object.values(occupationAdded).reduce((sum, value) => sum + value, 0);
+    const interestTotal = Object.values(interestAdded).reduce((sum, value) => sum + value, 0);
+    if (occupationTotal > occupationPool) {
+      return { ok: false, error: "职业点已超出上限（" + occupationPool + "）" };
+    }
+    if (interestTotal > interestPool) {
+      return { ok: false, error: "兴趣点已超出上限（" + interestPool + "）" };
+    }
+
+    const occupationView = occupation === null ? null : toOccupationView(occupation);
+    const freeChoice = occupationView === null ? false : hasFreeSkillChoice(occupationView);
+    skills = {};
+    for (const skill of compiled.skills) {
+      const base = skillBases[skill.id] ?? 0;
+      const occ = occupationAdded[skill.id] ?? 0;
+      if (occ > 0 && occupationView !== null && !freeChoice && !isOccupationSkill(occupationView, skill.name)) {
+        return { ok: false, error: skill.name + " 不是本职业的本职或可选技能" };
+      }
+      const interest = interestAdded[skill.id] ?? 0;
+      const total = base + occ + interest;
+      if (total > maxAtCreation) {
+        return { ok: false, error: skill.name + " 超过车卡上限 " + maxAtCreation };
+      }
+      if (total > 0) skills[skill.id] = total;
+    }
+    for (const skillId of [...Object.keys(occupationAdded), ...Object.keys(interestAdded)]) {
+      if (skillBases[skillId] === undefined) {
+        return { ok: false, error: "存在不属于当前规则包的技能：" + skillId };
+      }
+    }
+    skillAllocation = { occupation: occupationAdded, interest: interestAdded };
+  }
 
   const character = await prisma.character.create({
     data: {
       userId: session.user.id,
       roomId: null,
-      system: room?.system ?? input.system,
+      system,
       reviewStatus: "PENDING_REVIEW",
       name,
+      occupation: occupation?.name ?? null,
+      occupationId: occupation?.id ?? null,
+      era,
       race: input.race,
       str: attributes.str,
       con: attributes.con,
@@ -117,7 +234,8 @@ export async function saveCharacter(
       edu: attributes.edu,
       luck: attributes.luck,
       raceMods: { method: input.chargenMethod, flags: [...outcome.flags] },
-      skills: input.skills,
+      skills,
+      skillAllocation: skillAllocation as never,
       hp: outcome.derived.maxHp,
       maxHp: outcome.derived.maxHp,
       mp: outcome.derived.maxMp,

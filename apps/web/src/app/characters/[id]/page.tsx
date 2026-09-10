@@ -63,10 +63,15 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
   });
 
   const skillValues = (character.skills ?? {}) as Record<string, number>;
-  const skillRows = pack.skills
-    .map((skill) => ({ id: skill.id, name: skill.name, value: skillValues[skill.id] }))
-    .filter((row) => typeof row.value === "number")
-    .sort((a, b) => (b.value ?? 0) - (a.value ?? 0));
+  const allocation = (character.skillAllocation ?? {}) as { labels?: Record<string, string> };
+  const labels = allocation.labels ?? {};
+  const skillNameById = new Map<string, string>();
+  for (const skill of pack.skills) skillNameById.set(skill.id, skill.name);
+  for (const [id, name] of Object.entries(labels)) skillNameById.set(id, name);
+  const skillRows = Object.entries(skillValues)
+    .map(([id, value]) => ({ id, name: skillNameById.get(id) ?? id, value }))
+    .filter((row) => typeof row.value === "number" && row.value > 0)
+    .sort((a, b) => b.value - a.value);
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-6 py-12">
@@ -82,6 +87,16 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
           <span className="rounded-full border border-white/15 px-2 py-0.5 text-xs text-white/50">
             {character.system}
           </span>
+          {character.era === null ? null : (
+            <span className="rounded-full border border-white/15 px-2 py-0.5 text-xs text-white/50">
+              {character.era === "CLASSIC" ? "1920 年代" : "现代"}
+            </span>
+          )}
+          {character.occupation === null ? null : (
+            <span className="rounded-full border border-sakura-500/40 px-2 py-0.5 text-xs text-sakura-400">
+              {character.occupation}
+            </span>
+          )}
         </div>
         {character.roomEntries.length === 0 ? null : (
           <p className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/40">

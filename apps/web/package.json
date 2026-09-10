@@ -18,12 +18,13 @@
     "db:diff": "prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script",
     "db:seed": "prisma db seed",
     "verify:card-library": "tsx --env-file=.env scripts/verify-card-library.ts",
-    "verify:combat-options": "tsx --env-file=.env scripts/verify-combat-options.ts"
+    "verify:combat-options": "tsx --env-file=.env scripts/verify-combat-options.ts",
+    "verify:character-import": "tsx --env-file=.env scripts/verify-character-import.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
-    "@touhou/formula": "^0.1.0",
     "@touhou/combat": "^0.1.0",
+    "@touhou/formula": "^0.1.0",
     "@touhou/rules": "^0.1.0",
     "bcryptjs": "^3.0.3",
     "next": "^14.2.15",
@@ -33,6 +34,7 @@
     "sharp": "^0.35.4",
     "socket.io": "^4.7.5",
     "socket.io-client": "^4.7.5",
+    "xlsx": "^0.18.5",
     "zod": "^3.23.8",
     "zustand": "^4.5.5"
   },

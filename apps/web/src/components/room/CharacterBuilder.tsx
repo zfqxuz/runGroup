@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
-import { cryptoRng, evaluate } from "@touhou/formula";
+import { compile, cryptoRng, evaluate } from "@touhou/formula";
 import {
   ATTRIBUTE_KEYS,
   checkPointBuy,
@@ -15,12 +15,20 @@ import {
   type RulePack
 } from "@touhou/rules";
 import { saveCharacter, type SaveCharacterResult } from "@/server/actions/character";
+import {
+  ERA_LABELS,
+  hasFreeSkillChoice,
+  isOccupationSkill,
+  type OccupationView
+} from "@/shared/occupation";
 
 interface Props {
   roomId: string | null;
   system: "COC7" | "TOUHOU";
   pack: RulePack;
   chargenMethod: string;
+  era: string | null;
+  occupations: readonly OccupationView[];
 }
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -58,7 +66,9 @@ export default function CharacterBuilder(props: Props) {
   const [attributes, setAttributes] = useState<AttributeSet>(emptyAttributes);
   const [sets, setSets] = useState<AttributeSetOption[]>([]);
   const [selectedSet, setSelectedSet] = useState<number | null>(null);
-  const [skillAdded, setSkillAdded] = useState<Record<string, number>>({});
+  const [occupationId, setOccupationId] = useState<string>("");
+  const [occupationAdded, setOccupationAdded] = useState<Record<string, number>>({});
+  const [interestAdded, setInterestAdded] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -93,26 +103,47 @@ export default function CharacterBuilder(props: Props) {
     return map;
   }, [compiled, effectiveVars, props.pack.const]);
 
+  const selectedOccupation = useMemo(
+    () => props.occupations.find((item) => item.id === occupationId) ?? null,
+    [props.occupations, occupationId]
+  );
+
+  const raceInterest = useMemo(() => {
+    if (race === null) return compiled.skillPoints.interest;
+    const source = props.pack.races[race]?.interestPoints;
+    if (source === undefined) return compiled.skillPoints.interest;
+    return compile(source, { vars: [...ATTRIBUTE_KEYS] });
+  }, [compiled.skillPoints.interest, props.pack.races, race]);
+
   const skillPool = useMemo(
     () => ({
-      occupation: Math.floor(
-        evaluate(compiled.skillPoints.occupation, { vars: effectiveVars, consts: props.pack.const })
-      ),
+      occupation: selectedOccupation === null
+        ? 0
+        : Math.floor(
+          evaluate(
+            compile(selectedOccupation.pointsFormula, { vars: [...ATTRIBUTE_KEYS] }),
+            { vars: effectiveVars, consts: props.pack.const }
+          )
+        ),
       interest: Math.floor(
-        evaluate(compiled.skillPoints.interest, { vars: effectiveVars, consts: props.pack.const })
+        evaluate(raceInterest, { vars: effectiveVars, consts: props.pack.const })
       ),
       maxAtCreation: Math.floor(
         evaluate(compiled.skillPoints.maxAtCreation, { vars: effectiveVars, consts: props.pack.const })
       )
     }),
-    [compiled, effectiveVars, props.pack.const]
+    [compiled.skillPoints.maxAtCreation, effectiveVars, props.pack.const, raceInterest, selectedOccupation]
   );
 
-  const usedSkillPoints = useMemo(
-    () => Object.values(skillAdded).reduce((sum, value) => sum + value, 0),
-    [skillAdded]
+  const usedOccupationPoints = useMemo(
+    () => Object.values(occupationAdded).reduce((sum, value) => sum + value, 0),
+    [occupationAdded]
   );
-  const skillPoolTotal = skillPool.occupation + skillPool.interest;
+  const usedInterestPoints = useMemo(
+    () => Object.values(interestAdded).reduce((sum, value) => sum + value, 0),
+    [interestAdded]
+  );
+  const occupationFreeChoice = selectedOccupation === null ? false : hasFreeSkillChoice(selectedOccupation);
 
   const raceOptions = Object.entries(props.pack.races);
   const raceInfo = race === null ? null : props.pack.races[race];
@@ -138,14 +169,30 @@ export default function CharacterBuilder(props: Props) {
     setSelectedSet(index);
   }
 
-  function adjustSkill(skillId: string, delta: number): void {
+  function canUseOccupation(skillId: string): boolean {
+    if (selectedOccupation === null) return false;
+    if (occupationFreeChoice) return true;
+    const skill = compiled.skills.find((item) => item.id === skillId);
+    if (skill === undefined) return false;
+    return isOccupationSkill(selectedOccupation, skill.name);
+  }
+
+  function adjustSkill(skillId: string, field: "occupation" | "interest", delta: number): void {
     const base = skillBases[skillId] ?? 0;
-    const current = skillAdded[skillId] ?? 0;
-    const next = current + delta;
-    if (next < 0) return;
-    if (base + next > skillPool.maxAtCreation) return;
-    if (delta > 0 && usedSkillPoints + delta > skillPoolTotal) return;
-    setSkillAdded((prev) => ({ ...prev, [skillId]: next }));
+    const currentOccupation = occupationAdded[skillId] ?? 0;
+    const currentInterest = interestAdded[skillId] ?? 0;
+    const nextOccupation = field === "occupation" ? currentOccupation + delta : currentOccupation;
+    const nextInterest = field === "interest" ? currentInterest + delta : currentInterest;
+    if (nextOccupation < 0 || nextInterest < 0) return;
+    if (base + nextOccupation + nextInterest > skillPool.maxAtCreation) return;
+    if (field === "occupation") {
+      if (delta > 0 && canUseOccupation(skillId) === false) return;
+      if (delta > 0 && usedOccupationPoints + delta > skillPool.occupation) return;
+      setOccupationAdded((prev) => ({ ...prev, [skillId]: nextOccupation }));
+      return;
+    }
+    if (delta > 0 && usedInterestPoints + delta > skillPool.interest) return;
+    setInterestAdded((prev) => ({ ...prev, [skillId]: nextInterest }));
   }
 
   async function submit(): Promise<void> {
@@ -153,8 +200,9 @@ export default function CharacterBuilder(props: Props) {
     setMessage(null);
 
     const skills: Record<string, number> = {};
-    for (const [id, added] of Object.entries(skillAdded)) {
-      skills[id] = (skillBases[id] ?? 0) + added;
+    for (const skill of compiled.skills) {
+      const total = (skillBases[skill.id] ?? 0) + (occupationAdded[skill.id] ?? 0) + (interestAdded[skill.id] ?? 0);
+      if (total > 0) skills[skill.id] = total;
     }
 
     const result: SaveCharacterResult = await saveCharacter({
@@ -164,7 +212,13 @@ export default function CharacterBuilder(props: Props) {
       race,
       attributes: attributes as unknown as Record<string, number>,
       skills,
-      chargenMethod: method?.id ?? ""
+      chargenMethod: method?.id ?? "",
+      occupationId: selectedOccupation?.id ?? null,
+      skillAllocation: {
+        occupation: occupationAdded,
+        interest: interestAdded
+      },
+      era: props.era
     });
 
     setBusy(false);
@@ -172,7 +226,7 @@ export default function CharacterBuilder(props: Props) {
       setMessage(result.error ?? "保存失败");
       return;
     }
-    router.push("/rooms/" + props.roomId);
+    router.push(props.roomId === null ? "/characters" : "/rooms/" + props.roomId);
     router.refresh();
   }
 
@@ -206,6 +260,45 @@ export default function CharacterBuilder(props: Props) {
         </div>
         {raceInfo === null || raceInfo === undefined ? null : (
           <p className="mt-3 text-xs leading-relaxed text-white/40">{raceInfo.description}</p>
+        )}
+        {props.occupations.length === 0 ? null : (
+          <div className="mt-5 border-t border-white/10 pt-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">职业</span>
+              <select
+                value={occupationId}
+                onChange={(event) => {
+                  setOccupationId(event.target.value);
+                  setOccupationAdded({});
+                }}
+                className={inputClass}
+              >
+                <option value="">（未选择职业）</option>
+                {props.occupations.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name} · {ERA_LABELS[item.era] ?? item.era}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {selectedOccupation === null ? (
+              <p className="mt-2 text-[11px] text-white/35">
+                选择职业后才能使用职业点。兴趣点不受职业限制。
+              </p>
+            ) : (
+              <div className="mt-3 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+                <p className="text-xs text-white/60">
+                  {selectedOccupation.name} · 职业点 {skillPool.occupation} · 信用范围 {selectedOccupation.creditText ?? "—"}
+                </p>
+                <p className="mt-1 text-[11px] leading-relaxed text-white/40">
+                  本职与可选：{selectedOccupation.skillsText}
+                </p>
+                {occupationFreeChoice ? (
+                  <p className="mt-1 text-[10px] text-amber-300/80">含自选技能位，自选部分请按 KP 审核意见分配。</p>
+                ) : null}
+              </div>
+            )}
+          </div>
         )}
       </section>
 
@@ -354,23 +447,41 @@ export default function CharacterBuilder(props: Props) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-white/80">技能 · {compiled.skills.length} 项</h2>
           <span className="rounded-full border border-white/15 px-3 py-1 font-mono text-xs text-white/60">
-            技能点 {usedSkillPoints} / {skillPoolTotal} · 职业 {skillPool.occupation} + 兴趣 {skillPool.interest}
+            职业 {usedOccupationPoints}/{skillPool.occupation} · 兴趣 {usedInterestPoints}/{skillPool.interest} · 单项上限 {skillPool.maxAtCreation}
           </span>
         </div>
 
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {compiled.skills.map((skill) => {
             const base = skillBases[skill.id] ?? 0;
-            const added = skillAdded[skill.id] ?? 0;
+            const occupation = occupationAdded[skill.id] ?? 0;
+            const interest = interestAdded[skill.id] ?? 0;
+            const total = base + occupation + interest;
+            const occupationEnabled = selectedOccupation === null ? false : canUseOccupation(skill.id);
             return (
               <div key={skill.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                 <div className="min-w-0">
-                  <p className="truncate text-xs text-white/70">{skill.name}</p>
-                  <p className="font-mono text-[10px] text-white/30">{base} + {added} = {base + added}</p>
+                  <p className="flex items-center gap-1 truncate text-xs text-white/70">
+                    <span className="truncate">{skill.name}</span>
+                    {occupationEnabled ? (
+                      <span className="shrink-0 rounded border border-sakura-500/40 px-1 text-[9px] text-sakura-400">本职</span>
+                    ) : null}
+                  </p>
+                  <p className="font-mono text-[10px] text-white/30">
+                    {base} + 职{occupation} + 趣{interest} = {total}
+                  </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  <button type="button" className="h-6 w-6 rounded border border-white/15 text-white/50 transition hover:border-white/35 hover:text-white" onClick={() => adjustSkill(skill.id, -5)}>−</button>
-                  <button type="button" className="h-6 w-6 rounded border border-white/15 text-white/50 transition hover:border-white/35 hover:text-white" onClick={() => adjustSkill(skill.id, 5)}>+</button>
+                <div className="flex shrink-0 items-center gap-2">
+                  <div className="flex items-center gap-0.5">
+                    <span className="text-[9px] text-white/35">职</span>
+                    <button type="button" disabled={occupationEnabled === false || occupation <= 0} className="h-5 w-5 rounded border border-white/15 text-white/50 transition enabled:hover:border-white/35 enabled:hover:text-white disabled:opacity-20" onClick={() => adjustSkill(skill.id, "occupation", -5)}>−</button>
+                    <button type="button" disabled={occupationEnabled === false} className="h-5 w-5 rounded border border-white/15 text-white/50 transition enabled:hover:border-white/35 enabled:hover:text-white disabled:opacity-20" onClick={() => adjustSkill(skill.id, "occupation", 5)}>+</button>
+                  </div>
+                  <div className="flex items-center gap-0.5">
+                    <span className="text-[9px] text-white/35">趣</span>
+                    <button type="button" disabled={interest <= 0} className="h-5 w-5 rounded border border-white/15 text-white/50 transition enabled:hover:border-white/35 enabled:hover:text-white disabled:opacity-20" onClick={() => adjustSkill(skill.id, "interest", -5)}>−</button>
+                    <button type="button" className="h-5 w-5 rounded border border-white/15 text-white/50 transition hover:border-white/35 hover:text-white" onClick={() => adjustSkill(skill.id, "interest", 5)}>+</button>
+                  </div>
                 </div>
               </div>
             );
@@ -380,7 +491,9 @@ export default function CharacterBuilder(props: Props) {
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div>
-          <p className="text-sm text-white/70">保存后进入 KP 审核队列</p>
+          <p className="text-sm text-white/70">
+            {props.roomId === null ? "保存到我的角色库" : "保存后将提交给本房 KP 审核"}
+          </p>
           {message === null ? null : (
             <p className="mt-1 text-xs text-red-300">{message}</p>
           )}
