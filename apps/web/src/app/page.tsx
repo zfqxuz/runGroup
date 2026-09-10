@@ -1,91 +1,136 @@
-type Phase = {
-  id: string;
-  title: string;
-  subtitle: string;
-  items: string[];
-};
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { auth, signOut } from "@/server/auth";
+import { prisma } from "@/server/db/prisma";
 
-const phases: Phase[] = [
-  {
-    id: "P0",
-    title: "MVP",
-    subtitle: "能完整打完一场",
-    items: ["车卡与审核", "房间 / 聊天 / 掷骰", "ATB 战斗引擎", "符卡 / 弹幕结算", "KP 与 PL 权限分离"]
-  },
-  {
-    id: "P1",
-    title: "VTT",
-    subtitle: "可视化跑团",
-    items: ["地图导入与图层", "棋子实时同步", "场景切换 / 天气", "立绘与卡面", "背景音乐"]
-  },
-  {
-    id: "P2",
-    title: "生态",
-    subtitle: "可复用内容",
-    items: ["模组导入导出", "符卡 / 武器内容库", "战斗回放", "模组编辑器"]
-  }
-];
+export const dynamic = "force-dynamic";
 
-const stack: ReadonlyArray<readonly [string, string]> = [
-  ["运行时", "Next.js 14 App Router + 自定义 server.ts"],
-  ["实时", "Socket.IO（服务端权威）"],
-  ["数据", "PostgreSQL 16 + Prisma 5"],
-  ["规则", "RulePack 配置驱动 + 表达式引擎"],
-  ["校验", "Zod（配置与 API 双向）"],
-  ["前端", "TailwindCSS + Zustand + Konva"]
-];
+function generateInviteCode(): string {
+  return Math.random().toString(36).slice(2, 8).toUpperCase();
+}
 
-export default function Home() {
+async function createRoom(formData: FormData): Promise<void> {
+  "use server";
+
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const name = String(formData.get("name") ?? "").trim();
+  const system = String(formData.get("system") ?? "COC7");
+  if (name.length === 0) return;
+
+  const room = await prisma.room.create({
+    data: {
+      name,
+      system: system === "TOUHOU" ? "TOUHOU" : "COC7",
+      ownerId: session.user.id,
+      inviteCode: generateInviteCode(),
+      members: { create: { userId: session.user.id, role: "KP" } }
+    }
+  });
+
+  redirect("/rooms/" + room.id);
+}
+
+async function doSignOut(): Promise<void> {
+  "use server";
+  await signOut({ redirectTo: "/login" });
+}
+
+const inputClass =
+  "rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-sakura-500";
+
+export default async function HomePage() {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const memberships = await prisma.roomMember.findMany({
+    where: { userId: session.user.id },
+    include: { room: { include: { _count: { select: { members: true } } } } },
+    orderBy: { joinedAt: "desc" }
+  });
+
   return (
-    <main className="mx-auto max-w-5xl px-6 py-20">
-      <header className="flex flex-col gap-4">
-        <p className="font-mono text-xs uppercase tracking-[0.3em] text-sakura-400">
-          Touhou TRPG Platform
-        </p>
-        <h1 className="text-4xl font-semibold leading-tight sm:text-5xl">
-          东方 TRPG 线上跑团平台
-        </h1>
-        <p className="max-w-2xl text-sm leading-relaxed text-white/60">
-          COC7 兼容的规则内核，叠加东方扩展：种族、符卡、弹幕对抗、灵力与 DP。
-          数值全部由 RulePack 配置驱动，战斗过程可快照、可回放。
-        </p>
-        <div className="flex flex-wrap gap-2 font-mono text-xs text-white/50">
-          <span className="rounded-full border border-white/10 px-3 py-1">Spec v1.1</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">Phase 0 · 地基</span>
-          <span className="rounded-full border border-white/10 px-3 py-1">PostgreSQL</span>
+    <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-10 px-6 py-14">
+      <header className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl font-semibold">东方 TRPG 跑团平台</h1>
+          <p className="mt-1 text-sm text-white/50">
+            当前账号：{session.user.name ?? session.user.id}
+          </p>
         </div>
+        <form action={doSignOut}>
+          <button
+            type="submit"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/30 hover:text-white"
+          >
+            退出登录
+          </button>
+        </form>
       </header>
 
-      <section className="mt-16 grid gap-4 sm:grid-cols-3">
-        {phases.map((phase) => (
-          <div key={phase.id} className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-xs text-spirit-400">{phase.id}</span>
-              <h2 className="text-lg font-medium">{phase.title}</h2>
-            </div>
-            <p className="mt-1 text-xs text-white/50">{phase.subtitle}</p>
-            <ul className="mt-4 space-y-2 text-sm text-white/70">
-              {phase.items.map((item) => (
-                <li key={item} className="flex gap-2">
-                  <span className="text-sakura-500">·</span>
-                  <span>{item}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ))}
+      <section className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
+        <h2 className="text-sm font-medium text-white/80">创建房间</h2>
+        <form action={createRoom} className="mt-4 flex flex-wrap items-end gap-3">
+          <label className="flex flex-1 flex-col gap-1.5">
+            <span className="text-xs text-white/50">房间名</span>
+            <input name="name" placeholder="例：红魔馆异变调查" className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">规则系统</span>
+            <select name="system" className={inputClass} defaultValue="COC7">
+              <option value="COC7">COC7 原版</option>
+              <option value="TOUHOU">东方扩展</option>
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+          >
+            创建
+          </button>
+        </form>
       </section>
 
-      <section className="mt-16">
-        <h2 className="text-sm font-medium uppercase tracking-widest text-white/40">技术栈</h2>
-        <dl className="mt-6 divide-y divide-white/10 border-y border-white/10">
-          {stack.map(([label, value]) => (
-            <div key={label} className="grid grid-cols-3 gap-4 py-3 text-sm">
-              <dt className="text-white/40">{label}</dt>
-              <dd className="col-span-2 text-white/80">{value}</dd>
-            </div>
-          ))}
-        </dl>
+      <section className="flex flex-col gap-3">
+        <h2 className="text-sm font-medium text-white/80">
+          我的房间（{memberships.length}）
+        </h2>
+
+        {memberships.length === 0 ? (
+          <p className="rounded-xl border border-dashed border-white/15 px-5 py-10 text-center text-sm text-white/40">
+            还没有房间，用上面的表单创建一个
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-3">
+            {memberships.map((membership) => (
+              <li key={membership.id}>
+                <Link
+                  href={"/rooms/" + membership.roomId}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/40 px-5 py-4 transition hover:border-sakura-500/40"
+                >
+                  <div>
+                    <p className="font-medium">{membership.room.name}</p>
+                    <p className="mt-1 font-mono text-xs text-white/40">
+                      邀请码 {membership.room.inviteCode}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 text-xs">
+                    <span className="rounded-full border border-spirit-400/30 px-2 py-0.5 text-spirit-400">
+                      {membership.room.system}
+                    </span>
+                    <span className="rounded-full border border-white/15 px-2 py-0.5 text-white/50">
+                      {membership.role}
+                    </span>
+                    <span className="text-white/40">
+                      {membership.room._count.members} 人
+                    </span>
+                  </div>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        )}
       </section>
     </main>
   );
