@@ -50,6 +50,12 @@ export interface CompiledSkill {
   readonly description: string | undefined;
 }
 
+export interface CompiledSkillPoints {
+  readonly occupation: CompiledExpr;
+  readonly interest: CompiledExpr;
+  readonly maxAtCreation: CompiledExpr;
+}
+
 export interface CompiledRulePack {
   readonly pack: RulePack;
   readonly id: string;
@@ -63,6 +69,7 @@ export interface CompiledRulePack {
   readonly damage: CompiledDamageRules;
   readonly races: Readonly<Record<string, CompiledRace>>;
   readonly skills: readonly CompiledSkill[];
+  readonly skillPoints: CompiledSkillPoints;
   readonly statusEffects: Readonly<Record<string, CompiledStatusEffect>>;
 }
 
@@ -245,6 +252,18 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     };
   }
 
+  const skillPoints: CompiledSkillPoints = {
+    occupation: wrap("skillPoints.occupation", () =>
+      compileExpr(pack.skillPoints.occupation, { vars: attributeVars, consts: constantNames })
+    ),
+    interest: wrap("skillPoints.interest", () =>
+      compileExpr(pack.skillPoints.interest, { vars: attributeVars, consts: constantNames })
+    ),
+    maxAtCreation: wrap("skillPoints.maxAtCreation", () =>
+      compileExpr(pack.skillPoints.maxAtCreation, { vars: attributeVars, consts: constantNames })
+    )
+  };
+
   const skills: CompiledSkill[] = pack.skills.map((skill) => ({
     id: skill.id,
     name: skill.name,
@@ -291,6 +310,7 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     damage,
     races,
     skills,
+    skillPoints,
     statusEffects
   };
 }

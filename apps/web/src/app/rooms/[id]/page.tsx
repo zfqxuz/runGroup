@@ -120,6 +120,19 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
         </div>
       </section>
 
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
+        <div>
+          <p className="text-sm text-white/80">角色卡</p>
+          <p className="mt-0.5 text-xs text-white/40">按本房规则创建你的调查员</p>
+        </div>
+        <Link
+          href={"/rooms/" + room.id + "/characters/new"}
+          className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+        >
+          车一张新卡
+        </Link>
+      </div>
+
       <RoomPlay
         roomId={room.id}
         isKP={isKP}

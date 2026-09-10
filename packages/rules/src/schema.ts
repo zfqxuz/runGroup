@@ -180,6 +180,16 @@ export const RulePackSchema = z.object({
   damage: DamageRulesSchema,
   races: z.record(z.string(), RaceSchema).default({}),
   skills: z.array(SkillSchema).default([]),
+  skillPoints: z
+    .object({
+      /** 职业技能点，公式只能用属性，例如 "edu * 4"。 */
+      occupation: ExprSchema,
+      /** 兴趣技能点，例如 "int * 2"。 */
+      interest: ExprSchema,
+      /** 车卡时的单项上限。 */
+      maxAtCreation: ExprSchema
+    })
+    .default({ occupation: "edu * 4", interest: "int * 2", maxAtCreation: "70" }),
   statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
   spellcard: SpellCardRulesSchema.optional(),
 
