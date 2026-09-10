@@ -61,14 +61,29 @@ export default async function HomePage() {
             当前账号：{session.user.name ?? session.user.id}
           </p>
         </div>
-        <form action={doSignOut}>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/characters"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/35 hover:text-white"
+          >
+            我的角色
+          </Link>
+          <Link
+            href="/cards"
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/35 hover:text-white"
+          >
+            我的卡牌
+          </Link>
+          <form action={doSignOut}>
+
           <button
             type="submit"
             className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/30 hover:text-white"
           >
             退出登录
           </button>
-        </form>
+          </form>
+        </div>
       </header>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
