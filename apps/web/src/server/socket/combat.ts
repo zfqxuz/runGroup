@@ -1,6 +1,7 @@
 import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
+  endCombat,
   currentActorId,
   endTurn,
   readyParticipants,
@@ -247,6 +248,40 @@ async function handleReaction(
   ack({ ok: true });
 }
 
+async function handleAbort(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as { combatId?: unknown };
+  if (userId === null || typeof input.combatId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.roles.get(userId) !== "KP") {
+    ack({ ok: false, error: "只有 KP 能中止战斗" });
+    return;
+  }
+  if (isEnded(runtime.state)) {
+    ack({ ok: true });
+    return;
+  }
+  runtime.pendingReactions.clear();
+  runtime.reactions = {};
+  endCombat(runtime.state, "KP 中止了战斗");
+  await saveCombatState(runtime.combatId, runtime.state);
+  await broadcastCombat(io, runtime);
+  io.to(roomChannel(runtime.roomId)).emit("combat:aborted", { combatId: runtime.combatId });
+  ack({ ok: true });
+}
+
 async function handleForceResolve(
   io: SocketServer,
   socket: Socket,
@@ -301,5 +336,8 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:force-resolve", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleForceResolve(io, socket, payload, ack);
+  });
+  socket.on("combat:abort", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleAbort(io, socket, payload, ack);
   });
 }

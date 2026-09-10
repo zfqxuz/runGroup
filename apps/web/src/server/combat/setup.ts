@@ -1,3 +1,4 @@
+import { evaluate } from "@touhou/formula";
 import { randomUUID } from "node:crypto";
 import {
   addParticipant,
@@ -120,7 +121,15 @@ function buildCharacterInit(pack: CompiledRulePack, character: Character, factio
     luck: character.luck
   };
   const outcome = computeDerived(pack, { attributes, race: character.race ?? null });
-  const skills: Record<string, number> = { ...(character.skills as Record<string, number>) };
+  const skills: Record<string, number> = {};
+  for (const skill of pack.skills) {
+    skills[skill.id] = Math.floor(
+      evaluate(skill.base, { vars: outcome.attributes, consts: pack.pack.const })
+    );
+  }
+  for (const [skillId, value] of Object.entries(character.skills as Record<string, number>)) {
+    skills[skillId] = value;
+  }
   for (const [skillId, bonus] of Object.entries(outcome.skillBonuses)) {
     skills[skillId] = (skills[skillId] ?? 0) + bonus;
   }

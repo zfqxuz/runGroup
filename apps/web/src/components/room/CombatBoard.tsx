@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import type { CombatView } from "@touhou/combat";
 import type {
@@ -12,9 +13,20 @@ import type {
   CombatUpdate
 } from "@/shared/socket";
 
+interface SkillOption {
+  readonly id: string;
+  readonly name: string;
+}
+
 interface Props {
   readonly combatId: string;
   readonly isKP: boolean;
+  readonly skillOptions: readonly SkillOption[];
+}
+
+function pickSkill(options: readonly SkillOption[]): string {
+  const preferred = options.find((item) => item.id === "DANMAKU") ?? options.find((item) => item.id === "FIGHTING_BRAWL");
+  return preferred?.id ?? options[0]?.id ?? "";
 }
 
 type ConnState = "connecting" | "online" | "offline";
@@ -29,13 +41,14 @@ export default function CombatBoard(props: Props) {
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState("");
-  const [skill, setSkill] = useState("DANMAKU");
+  const [skill, setSkill] = useState(() => pickSkill(props.skillOptions));
   const [damage, setDamage] = useState("1d6");
   const [outName, setOutName] = useState("规则外法术");
   const [actorId, setActorId] = useState("");
   const [reaction, setReaction] = useState<CombatReactionRequest | null>(null);
   const [reactionType, setReactionType] = useState<CombatReactionPayload["type"]>("PASS");
   const [reactionSkill, setReactionSkill] = useState("DODGE");
+  const router = useRouter();
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -81,6 +94,9 @@ export default function CombatBoard(props: Props) {
       setReaction(request);
       setReactionType("PASS");
     });
+    socket.on("combat:aborted", () => {
+      if (cancelled === false) router.refresh();
+    });
     socket.on("disconnect", () => {
       if (cancelled === false) setConn("offline");
     });
@@ -96,6 +112,14 @@ export default function CombatBoard(props: Props) {
     };
   }, [props.combatId]);
 
+  useEffect(() => {
+    if (view?.phase === "ENDED") {
+      const timer = setTimeout(() => router.refresh(), 1200);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [view?.phase, router]);
+
   const participants = view?.participants ?? [];
   const alive = participants.filter((item) => item.defeated === false);
   const readyControlled = alive.filter((item) => {
@@ -103,6 +127,10 @@ export default function CombatBoard(props: Props) {
     return props.isKP ? item.kind === "NPC" || item.isSelf : item.isSelf;
   });
   const selectedActor = readyControlled.find((item) => item.id === actorId) ?? readyControlled[0] ?? null;
+  const actorSkills = selectedActor?.skills ?? {};
+  const usableSkills = props.skillOptions.filter((option) => Object.prototype.hasOwnProperty.call(actorSkills, option.id));
+  const attackSkills = usableSkills.length > 0 ? usableSkills : props.skillOptions;
+  const activeSkill = attackSkills.some((option) => option.id === skill) ? skill : (attackSkills[0]?.id ?? "");
   const targetOptions = alive.filter((item) => item.id !== selectedActor?.id);
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
   const reactionTarget = reaction === null ? null : participants.find((item) => item.id === reaction.targetId) ?? null;
@@ -130,6 +158,19 @@ export default function CombatBoard(props: Props) {
       }
     );
     setReaction(null);
+  }
+
+  function abortCombat(): void {
+    const socket = socketRef.current;
+    if (socket === null) return;
+    if (window.confirm("确定中止当前战斗吗？") === false) return;
+    socket.emit("combat:abort", { combatId: props.combatId }, (result: Ack) => {
+      if (result.ok === false) {
+        setError(result.error ?? "中止失败");
+        return;
+      }
+      router.refresh();
+    });
   }
 
   function forceResolve(): void {
@@ -250,8 +291,14 @@ export default function CombatBoard(props: Props) {
                   </select>
                 </label>
                 <label className="flex flex-col gap-1.5">
-                  <span className="text-[11px] text-white/40">技能 ID</span>
-                  <input value={skill} onChange={(event) => setSkill(event.target.value)} className={inputClass} />
+                  <span className="text-[11px] text-white/40">技能</span>
+                  <select value={activeSkill} onChange={(event) => setSkill(event.target.value)} className={inputClass}>
+                    {attackSkills.map((option) => (
+                      <option key={option.id} value={option.id}>
+                        {option.id} · {option.name} ({actorSkills[option.id] ?? "-"})
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="flex flex-col gap-1.5 sm:col-span-2">
                   <span className="text-[11px] text-white/40">伤害表达式</span>
@@ -261,7 +308,7 @@ export default function CombatBoard(props: Props) {
               <div className="flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill, damage })}
+                  onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage })}
                   className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
                 >
                   攻击
@@ -297,6 +344,7 @@ export default function CombatBoard(props: Props) {
           ) : null}
 
           {props.isKP ? (
+            <>
             <button
               type="button"
               onClick={forceResolve}
@@ -304,6 +352,14 @@ export default function CombatBoard(props: Props) {
             >
               KP 强制结算（未行动按跳过）
             </button>
+            <button
+              type="button"
+              onClick={abortCombat}
+              className="mt-2 rounded-lg border border-red-400/30 px-3 py-2 text-xs text-red-300 transition hover:bg-red-400/10"
+            >
+              中止战斗
+            </button>
+            </>
           ) : null}
         </section>
       </section>

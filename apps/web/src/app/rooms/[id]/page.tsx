@@ -5,6 +5,7 @@ import RoomCombatPanel from "@/components/room/RoomCombatPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import { auth } from "@/server/auth";
+import { loadEffectivePack } from "@/server/rules/loader";
 import { prisma } from "@/server/db/prisma";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
@@ -70,6 +71,14 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
     role: member.role
   }));
 
+  const effective = await loadEffectivePack({
+    id: room.id,
+    system: room.system,
+    rulePackVersionId: room.rulePackVersionId,
+    ruleOverride: room.ruleOverride
+  });
+  const skillOptions = effective.compiled.skills.map((skill) => ({ id: skill.id, name: skill.name }));
+
   const activeCombat = await prisma.combat.findFirst({
     where: { roomId: room.id, endedAt: null },
     select: { id: true }
@@ -117,7 +126,7 @@ export default async function RoomPage({ params }: { params: { id: string } }) {
               {room.status}
             </span>
           </div>
-          <CombatBoard combatId={activeCombat.id} isKP={isKP} />
+          <CombatBoard combatId={activeCombat.id} isKP={isKP} skillOptions={skillOptions} />
         </section>
       )}
 

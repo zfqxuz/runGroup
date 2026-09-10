@@ -169,7 +169,7 @@ async function main(): Promise<void> {
       race: "FAIRY",
       attributes: { str: 20, con: 25, siz: 20, dex: 65, app: 45, int: 25, pow: 55, edu: 5, luck: 60 },
       skills: { DANMAKU: 60, DODGE: 45, ELEMENTAL_MAGIC: 50, FLIGHT: 60 },
-      maxHp: 4,
+      maxHp: 50,
       maxMp: 220,
       maxSan: 55,
       maxDp: 100,
@@ -252,7 +252,14 @@ async function main(): Promise<void> {
     }
     const update = await damageUpdate;
     const damageEntry = update.view.log.find((entry) => entry.kind === "DAMAGE");
+
     assert(damageEntry !== undefined, "日志中没有伤害记录");
+    const endedUpdate = waitForView(socket, combatId, (next) => next.view.phase === "ENDED");
+    const abortAck = await emitAck<Ack>(socket, "combat:abort", { combatId });
+    assert(abortAck.ok === true, abortAck.error ?? "中止战斗失败");
+    await endedUpdate;
+    const roomAfterAbort = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
+    assert(roomAfterAbort?.status === "PLAYING", "中止后房间状态应回到 PLAYING");
 
     const combatRow = await prisma.combat.findUnique({ where: { id: combatId } });
     assert(combatRow !== null, "数据库中没有战斗记录");

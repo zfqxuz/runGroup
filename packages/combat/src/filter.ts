@@ -31,6 +31,7 @@ export interface ParticipantView {
   readonly atbValue: number;
   readonly atbMax: number;
   readonly speed: number;
+  readonly skills: Readonly<Record<string, number>> | null;
 }
 
 export interface CombatView {
@@ -97,7 +98,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       declarationHp: showNumbers ? (declaration?.hp ?? null) : null,
       atbValue: participant.atbValue,
       atbMax: participant.atbMax,
-      speed: participant.speed
+      speed: participant.speed,
+      skills: showNumbers ? participant.skills : null
     };
   });
 
