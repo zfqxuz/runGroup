@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import next from "next";
-import { Server as SocketServer } from "socket.io";
+import { createSocketServer } from "./src/server/socket";
 
 const dev = process.env.NODE_ENV !== "production";
 const hostname = process.env.HOST ?? "localhost";
@@ -16,19 +16,10 @@ async function main(): Promise<void> {
     void handle(req, res);
   });
 
-  const io = new SocketServer(httpServer, {
-    path: "/api/socket",
-    serveClient: false
-  });
-
-  io.on("connection", (socket) => {
-    socket.on("system:ping", (ack?: (payload: { ok: true; at: number }) => void) => {
-      ack?.({ ok: true, at: Date.now() });
-    });
-  });
+  createSocketServer(httpServer);
 
   httpServer.listen(port, () => {
-    console.log(`> ready on http://${hostname}:${port}`);
+    console.log("> ready on http://" + hostname + ":" + port);
   });
 }
 
