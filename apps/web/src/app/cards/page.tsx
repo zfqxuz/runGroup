@@ -51,6 +51,9 @@ export default async function CardsLibraryPage() {
               <div key={card.id} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
                 <div className="flex items-center justify-between gap-2">
                   <p className="truncate text-sm text-white/80">{card.name}</p>
+                  <span className="shrink-0 rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/45">
+                    {card.system}
+                  </span>
                   <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-400">
                     {card.type}
                   </span>
