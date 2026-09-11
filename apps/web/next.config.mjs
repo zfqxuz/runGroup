@@ -1,5 +1,7 @@
 /** @type {import("next").NextConfig} */
 const nextConfig = {
+  // dev / E2E / production 使用独立目录，避免 .next chunk 缓存互相污染
+  distDir: process.env.NEXT_DIST_DIR ?? ".next",
   reactStrictMode: true,
   poweredByHeader: false,
   // 车卡界面要在浏览器里实时算衍生属性，需要把 workspace 的 TS 包一起打包

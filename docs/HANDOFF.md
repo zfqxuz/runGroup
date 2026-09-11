@@ -850,3 +850,30 @@ DEEPSEEK_MODEL="deepseek-flash"
   - `ModuleChapter / Scene / Encounter` 结构化选项写入 `GameState` 的真实数据库 id；
   - `activateScene` 切换后目标场景 `isActive = true`，旧场景取消激活。
 - 回归：`verify:game-state`、`verify:room-ready`、`verify:visibility-magic`、`npm run typecheck`、`npm test`（144 tests）全部 PASS。
+
+## 24. 构建缓存隔离（本轮修复）
+
+### 问题
+- production `next build` 与 `npm run dev` 共用 `apps/web/.next` 时，会出现
+  `Cannot find module './vendor-chunks/@auth.js'` / `missing required error components`。
+- 原因是 dev 的 chunk manifest 与生产构建产物混在同一目录。
+
+### 方案
+- `apps/web/next.config.mjs`：
+  ```js
+  distDir: process.env.NEXT_DIST_DIR ?? ".next"
+  ```
+- `apps/web/package.json` 的 `dev` 固定使用独立目录：
+  ```json
+  "dev": "cross-env NEXT_DIST_DIR=.next-dev tsx watch server.ts"
+  ```
+- 目录约定：
+  - `npm run dev` → `.next-dev`
+  - `npm run build` / `npm start` → `.next`
+  - E2E 独立构建可显式传 `NEXT_DIST_DIR=.next-e2e`
+- `.gitignore` 增加 `.next-dev/`、`.next-e2e/`；`tsconfig.json` include 同步加入两个目录的 `types`。
+
+### 验证
+- 清理 `.next / .next-dev` 后重启 `npm run dev`，`/login` 200，模块列表 / 详情页正常编译。
+- 跑 `verify:module-import`、`verify:module-gallery` PASS，日志无 `vendor-chunks` / `Cannot find module`。
+- dev 运行中执行 `npm run build` 成功（写 `.next`），不再互相污染。
