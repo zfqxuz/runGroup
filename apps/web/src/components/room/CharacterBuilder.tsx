@@ -5,13 +5,22 @@ import { useMemo, useState } from "react";
 import { compile, cryptoRng, evaluate } from "@touhou/formula";
 import {
   ATTRIBUTE_KEYS,
+  applyCoc7AgeAdjustment,
+  checkCoc7AgeAllocation,
   checkPointBuy,
+  coc7AgeAdjustment,
+  coc7Build,
+  coc7DamageBonusFromBuild,
+  coc7MajorWound,
+  coc7Movement,
   compileParsedRulePack,
   computeDerived,
   rollAttributeSets,
   type AttributeKey,
   type AttributeSet,
   type AttributeSetOption,
+  type Coc7AgeAllocation,
+  type Coc7PhysicalAttribute,
   type RulePack
 } from "@touhou/rules";
 import { saveCharacter, type SaveCharacterResult } from "@/server/actions/character";
@@ -21,6 +30,8 @@ import {
   isActualOccupationSkill,
   occupationChoiceLimits,
   occupationSkillAccess,
+  occupationSlotCandidates,
+  profileOccupationalSkillIds,
   type OccupationSkillAccess,
   type OccupationView
 } from "@/shared/occupation";
@@ -99,10 +110,14 @@ export default function CharacterBuilder(props: Props) {
     props.pack.attributes.methods.find((item) => item.id === props.chargenMethod) ??
     props.pack.attributes.methods[0];
   const [attributes, setAttributes] = useState<AttributeSet>(() => defaultAttributesForMethod(initialMethod));
+  const [age, setAge] = useState<number>(30);
+  const [ageAllocation, setAgeAllocation] = useState<Coc7AgeAllocation>({});
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [sets, setSets] = useState<AttributeSetOption[]>([]);
   const [selectedSet, setSelectedSet] = useState<number | null>(null);
   const [occupationId, setOccupationId] = useState<string>("");
   const [occupationAdded, setOccupationAdded] = useState<Record<string, number>>({});
+  const [slotAssignments, setSlotAssignments] = useState<Record<string, string[]>>({});
   const [interestAdded, setInterestAdded] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -112,6 +127,18 @@ export default function CharacterBuilder(props: Props) {
   const [skillUsageFilters, setSkillUsageFilters] = useState<("POTENTIAL" | "ALLOCATED")[]>([]);
 
   const compiled = useMemo(() => compileParsedRulePack(props.pack), [props.pack]);
+  const isCoc7 = props.system === "COC7";
+  const ageAdjustment = useMemo(() => coc7AgeAdjustment(age), [age]);
+  const ageCheck = useMemo(() => checkCoc7AgeAllocation(age, ageAllocation), [age, ageAllocation]);
+  // 年龄补正只有在玩家一次性确认后才应用到后续计算；未确认前始终保留基础属性。
+  const ageAppliedAttributes = useMemo(() => {
+    if (isCoc7 === false || ageConfirmed === false) return attributes;
+    return applyCoc7AgeAdjustment(attributes, age, ageAllocation);
+  }, [attributes, age, ageAllocation, ageConfirmed, isCoc7]);
+  const agePreviewAttributes = useMemo(
+    () => (isCoc7 ? applyCoc7AgeAdjustment(attributes, age, ageAllocation) : attributes),
+    [attributes, age, ageAllocation, isCoc7]
+  );
 
   const method = useMemo(
     () =>
@@ -121,8 +148,8 @@ export default function CharacterBuilder(props: Props) {
   );
 
   const baseOutcome = useMemo(
-    () => computeDerived(compiled, { attributes, race, skills: { CTHULHU_MYTHOS: 0 } }),
-    [compiled, attributes, race]
+    () => computeDerived(compiled, { attributes: ageAppliedAttributes, race, skills: { CTHULHU_MYTHOS: 0 } }),
+    [compiled, ageAppliedAttributes, race]
   );
 
   const pointCheck = useMemo(
@@ -151,25 +178,54 @@ export default function CharacterBuilder(props: Props) {
 
   // 重新计算一次，让 maxSan 读取到当前的 CTHULHU_MYTHOS。
   const outcome = useMemo(
-    () => computeDerived(compiled, { attributes, race, skills: { CTHULHU_MYTHOS: mythosTotal } }),
-    [compiled, attributes, mythosTotal, race]
+    () => computeDerived(compiled, { attributes: ageAppliedAttributes, race, skills: { CTHULHU_MYTHOS: mythosTotal } }),
+    [compiled, ageAppliedAttributes, mythosTotal, race]
   );
+
+  const coc7Extras = useMemo(() => {
+    if (isCoc7 === false) return null;
+    const attrs = outcome.attributes;
+    const build = coc7Build(attrs.str + attrs.siz);
+    return {
+      build,
+      damageBonus: coc7DamageBonusFromBuild(build),
+      mov: coc7Movement({ str: attrs.str, siz: attrs.siz, dex: attrs.dex, age }),
+      majorWound: coc7MajorWound(outcome.derived.maxHp)
+    };
+  }, [age, isCoc7, outcome]);
 
   const selectedOccupation = useMemo(
     () => props.occupations.find((item) => item.id === occupationId) ?? null,
     [props.occupations, occupationId]
   );
+  const selectedProfile = selectedOccupation?.skillProfile ?? null;
+  const skillNameById = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const skill of compiled.skills) map.set(skill.id, skill.name);
+    return map;
+  }, [compiled.skills]);
 
   const accessBySkillId = useMemo(() => {
     const map = new Map<string, OccupationSkillAccess>();
+    if (selectedOccupation === null) {
+      for (const skill of compiled.skills) map.set(skill.id, { kind: "NONE", group: null });
+      return map;
+    }
+    if (selectedProfile !== null) {
+      const occupational = profileOccupationalSkillIds(selectedProfile, slotAssignments);
+      for (const skill of compiled.skills) {
+        map.set(
+          skill.id,
+          occupational.has(skill.id) ? { kind: "FIXED", group: null } : { kind: "NONE", group: null }
+        );
+      }
+      return map;
+    }
     for (const skill of compiled.skills) {
-      map.set(
-        skill.id,
-        selectedOccupation === null ? { kind: "NONE", group: null } : occupationSkillAccess(selectedOccupation, skill.name)
-      );
+      map.set(skill.id, occupationSkillAccess(selectedOccupation, skill.name));
     }
     return map;
-  }, [compiled.skills, selectedOccupation]);
+  }, [compiled.skills, selectedOccupation, selectedProfile, slotAssignments]);
 
   const raceInterest = useMemo(() => {
     if (race === null) return compiled.skillPoints.interest;
@@ -279,7 +335,7 @@ export default function CharacterBuilder(props: Props) {
   const raceInfo = race === null ? null : props.pack.races[race];
   const canRoll = method?.kind === "ROLL_SETS";
   const rolled = sets.length > 0;
-  const attributesValid = canRoll ? selectedSet !== null : pointCheck === null || pointCheck.valid;
+  const attributesValid = (canRoll ? selectedSet !== null : pointCheck === null || pointCheck.valid) && (isCoc7 === false || ageConfirmed);
   const derivedReady = canRoll ? selectedSet !== null : true;
 
   function updateAttribute(key: AttributeKey, value: number): void {
@@ -289,6 +345,26 @@ export default function CharacterBuilder(props: Props) {
       ...prev,
       [key]: Math.max(props.pack.attributes.min, Math.min(props.pack.attributes.max, numeric))
     }) as AttributeSet);
+  }
+
+  function changeAge(value: number): void {
+    const numeric = Math.floor(Number(value));
+    if (Number.isFinite(numeric) === false) return;
+    setAge(Math.max(15, Math.min(90, numeric)));
+    setAgeAllocation({});
+    setAgeConfirmed(false);
+    setMessage(null);
+  }
+
+  function setAgeDeduction(key: Coc7PhysicalAttribute, value: number): void {
+    const numeric = Math.max(0, Math.floor(Number(value) || 0));
+    setAgeAllocation((prev) => {
+      const copy = { ...prev };
+      if (numeric > 0) copy[key] = numeric;
+      else delete copy[key];
+      return copy;
+    });
+    setAgeConfirmed(false);
   }
 
   function rollDestiny(): void {
@@ -342,6 +418,8 @@ export default function CharacterBuilder(props: Props) {
     if (access.kind === "NONE") return false;
     if ((allocation[skillId] ?? 0) > 0) return true;
     if (access.kind === "FIXED") return true;
+    // 有结构化空位的职业：只有固定本职和已放入空位的技能才可加职业点。
+    if (selectedProfile !== null) return false;
     const limits = selectedOccupation === null
       ? { free: 0, social: 0, categories: {} as Record<string, number> }
       : occupationChoiceLimits(selectedOccupation);
@@ -411,23 +489,65 @@ export default function CharacterBuilder(props: Props) {
   function changeOccupation(nextId: string): void {
     setOccupationId(nextId);
     setOccupationAdded({});
+    setSlotAssignments({});
     setMessage(null);
     const nextOccupation = props.occupations.find((item) => item.id === nextId) ?? null;
     if (nextOccupation === null) return;
     // 新职业固定为本职的技能不能再保留兴趣点；其余“可选本职”保持“先填哪边算哪类”。
     setInterestAdded((prev) => {
       const copy = { ...prev };
-      for (const skill of compiled.skills) {
-        const access = occupationSkillAccess(nextOccupation, skill.name);
-        if (access.kind === "FIXED") delete copy[skill.id];
+      const profile = nextOccupation.skillProfile;
+      if (profile !== null) {
+        for (const item of profile.fixed) delete copy[item.skillId];
+      } else {
+        for (const skill of compiled.skills) {
+          const access = occupationSkillAccess(nextOccupation, skill.name);
+          if (access.kind === "FIXED") delete copy[skill.id];
+        }
       }
       return copy;
     });
   }
 
+  function applySlotAssignment(slotId: string, pickIndex: number, skillId: string): void {
+    const profile = selectedProfile;
+    if (profile === null) return;
+    const slot = profile.slots.find((item) => item.id === slotId);
+    if (slot === undefined) return;
+    const current = [...(slotAssignments[slotId] ?? [])];
+    while (current.length < slot.pick) current.push("");
+    current[pickIndex] = skillId;
+    const next = { ...slotAssignments, [slotId]: current.slice(0, slot.pick) };
+    setSlotAssignments(next);
+
+    // 取消空位后，该技能不能再吃职业点；放入空位后，该技能不能再吃兴趣点。
+    const occupational = profileOccupationalSkillIds(profile, next);
+    setOccupationAdded((prev) => {
+      const copy = { ...prev };
+      for (const id of Object.keys(copy)) {
+        if (occupational.has(id) === false) delete copy[id];
+      }
+      return copy;
+    });
+    setInterestAdded((prev) => {
+      const copy = { ...prev };
+      for (const id of occupational) delete copy[id];
+      return copy;
+    });
+    setMessage(null);
+  }
+
   async function submit(): Promise<void> {
-    if (attributesValid === false) {
-      setMessage(canRoll ? "请先掷 5 组属性并选择其中一组。" : "属性点尚未分配完毕。");
+    if (canRoll && selectedSet === null) {
+      setMessage("请先掷 5 组属性并选择其中一组。");
+      return;
+    }
+    if (canRoll === false && pointCheck !== null && pointCheck.valid === false) {
+      setMessage("属性点尚未分配完毕。");
+      return;
+    }
+    if (isCoc7 && ageConfirmed === false) {
+      setMessage("请先完成并确认年龄补正。");
       return;
     }
     setBusy(true);
@@ -450,9 +570,13 @@ export default function CharacterBuilder(props: Props) {
       occupationId: selectedOccupation?.id ?? null,
       skillAllocation: {
         occupation: occupationAdded,
-        interest: interestAdded
+        interest: interestAdded,
+        slots: selectedProfile === null ? undefined : slotAssignments
       },
-      era: props.era
+      slotAssignments: selectedProfile === null ? null : slotAssignments,
+      era: props.era,
+      age: isCoc7 ? age : null,
+      ageAllocation: isCoc7 ? ageAllocation : null
     });
 
     setBusy(false);
@@ -524,22 +648,82 @@ export default function CharacterBuilder(props: Props) {
                 <p className="mt-1 text-[11px] leading-relaxed text-white/40">
                   本职与可选：{selectedOccupation.skillsText}
                 </p>
-                {choiceLimits === null ? null : (
-                  <div className="mt-1.5 flex flex-wrap gap-2 font-mono text-[10px] text-white/45">
-                    {choiceLimits.free > 0 ? (
-                      <span>任意可选 {choiceCounts.free.size}/{choiceLimits.free}</span>
+                {selectedProfile === null ? (
+                  <>
+                    {choiceLimits === null ? null : (
+                      <div className="mt-1.5 flex flex-wrap gap-2 font-mono text-[10px] text-white/45">
+                        {choiceLimits.free > 0 ? (
+                          <span>任意可选 {choiceCounts.free.size}/{choiceLimits.free}</span>
+                        ) : null}
+                        {choiceLimits.social > 0 ? (
+                          <span>社交可选 {choiceCounts.social.size}/{choiceLimits.social}</span>
+                        ) : null}
+                        {Object.entries(choiceLimits.categories).map(([group, limit]) => (
+                          <span key={group}>{group}可选 {choiceCounts.categories.get(group)?.size ?? 0}/{limit}</span>
+                        ))}
+                      </div>
+                    )}
+                    {occupationFreeChoice ? (
+                      <p className="mt-1 text-[10px] text-amber-300/80">含自选技能位，自选部分请按 KP 审核意见分配。</p>
                     ) : null}
-                    {choiceLimits.social > 0 ? (
-                      <span>社交可选 {choiceCounts.social.size}/{choiceLimits.social}</span>
-                    ) : null}
-                    {Object.entries(choiceLimits.categories).map(([group, limit]) => (
-                      <span key={group}>{group}可选 {choiceCounts.categories.get(group)?.size ?? 0}/{limit}</span>
-                    ))}
+                  </>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-sakura-500/25 bg-sakura-500/5 p-3">
+                    <p className="text-[11px] font-medium text-sakura-200">
+                      本职空位：先选择技能，选中后才会变为「本职」并可用职业点；不选则按兴趣技能处理。
+                    </p>
+                    {selectedProfile.fixed.length === 0 ? null : (
+                      <p className="mt-1 text-[10px] leading-relaxed text-white/45">
+                        固定本职：{selectedProfile.fixed.map((item) => skillNameById.get(item.skillId) ?? item.label).join("、")}
+                      </p>
+                    )}
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {selectedProfile.slots.map((slot) => {
+                        const picks = slotAssignments[slot.id] ?? [];
+                        const candidates = occupationSlotCandidates(slot, compiled.skills.map((skill) => skill.id));
+                        const pickedCount = picks.filter((id) => typeof id === "string" && id.length > 0).length;
+                        const slotLabel =
+                          slot.kind === "FREE"
+                            ? "任意特长"
+                            : slot.kind === "SOCIAL"
+                              ? slot.symbol + " 社交技能"
+                              : slot.kind === "MULTI"
+                                ? slot.symbol + " 多选"
+                                : slot.symbol + " 二选一";
+                        return (
+                          <div
+                            key={slot.id}
+                            className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-xs text-white/70">{slotLabel}</p>
+                              <span className="font-mono text-[10px] text-white/40">
+                                {pickedCount}/{slot.pick}
+                              </span>
+                            </div>
+                            <div className="mt-2 space-y-1.5">
+                              {Array.from({ length: slot.pick }).map((_, pickIndex) => (
+                                <select
+                                  key={pickIndex}
+                                  value={picks[pickIndex] ?? ""}
+                                  onChange={(event) => applySlotAssignment(slot.id, pickIndex, event.target.value)}
+                                  className="h-9 w-full rounded-lg border border-white/15 bg-ink-900 px-2 text-xs text-white/80 outline-none focus:border-sakura-500"
+                                >
+                                  <option value="">（未选择）</option>
+                                  {candidates.map((candidate) => (
+                                    <option key={candidate.skillId} value={candidate.skillId}>
+                                      {skillNameById.get(candidate.skillId) ?? candidate.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 )}
-                {occupationFreeChoice ? (
-                  <p className="mt-1 text-[10px] text-amber-300/80">含自选技能位，自选部分请按 KP 审核意见分配。</p>
-                ) : null}
               </div>
             )}
           </div>
@@ -616,7 +800,7 @@ export default function CharacterBuilder(props: Props) {
                   )}
                 </div>
                 {canRoll && rolled === false ? null : effective === raw ? null : (
-                  <p className="mt-1 text-[11px] text-sakura-300">种族修正后 {effective}</p>
+                  <p className="mt-1 text-[11px] text-sakura-300">年龄 / 种族修正后 {effective}</p>
                 )}
               </div>
             );
@@ -692,6 +876,121 @@ export default function CharacterBuilder(props: Props) {
         )}
       </section>
 
+      {isCoc7 ? (
+        <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+          <div className="flex flex-wrap items-end justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-medium text-white/80">年龄补正</h2>
+              <p className="mt-1 text-[11px] leading-relaxed text-white/40">
+                官方规则只规定扣减总额与可扣属性，由玩家一次性分配；确认后最终属性只读，修改年龄可重新分配。
+              </p>
+            </div>
+            <label className="flex items-center gap-2">
+              <span className="text-xs text-white/50">年龄</span>
+              <input
+                type="number"
+                min={15}
+                max={90}
+                value={age}
+                disabled={ageConfirmed}
+                onChange={(event) => changeAge(Number(event.target.value))}
+                className="h-10 w-24 rounded-lg border border-white/20 bg-ink-900 px-2 text-center font-mono text-sm text-white outline-none focus:border-sakura-500 disabled:opacity-60"
+              />
+            </label>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+              <p className="text-[11px] text-white/40">玩家分配扣减</p>
+              <p className="mt-1 font-mono text-lg text-white/85">
+                {ageCheck.total} / {ageCheck.expected}
+              </p>
+              <p className="mt-0.5 text-[10px] text-white/35">
+                {ageAdjustment.deductionAttributes.length === 0
+                  ? "本年龄段无属性扣减"
+                  : "可扣：" + ageAdjustment.deductionAttributes.map((key) => ATTRIBUTE_LABELS[key]).join(" / ")}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+              <p className="text-[11px] text-white/40">系统自动执行</p>
+              <p className="mt-1 text-xs leading-relaxed text-white/75">
+                APP {ageAdjustment.appPenalty > 0 ? "-" + ageAdjustment.appPenalty : "不变"} · EDU{" "}
+                {ageAdjustment.eduPenalty > 0 ? "-" + ageAdjustment.eduPenalty : ageAdjustment.eduChecks + " 次成长判定"} · MOV{" "}
+                {ageAdjustment.movePenalty > 0 ? "-" + ageAdjustment.movePenalty : "不变"}
+                {ageAdjustment.luckRolls > 1 ? " · 幸运掷两次取高" : ""}
+              </p>
+            </div>
+            <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+              <p className="text-[11px] text-white/40">年龄修正后预览</p>
+              <p className="mt-1 text-xs leading-relaxed text-white/60">
+                {(["str", "con", "siz", "dex", "app", "edu"] as AttributeKey[]).map((key) => {
+                  const before = attributes[key];
+                  const after = agePreviewAttributes[key];
+                  return (
+                    <span key={key} className="mr-2 font-mono">
+                      {key.toUpperCase()} {before}
+                      {after === before ? "" : "→" + after}
+                    </span>
+                  );
+                })}
+              </p>
+            </div>
+          </div>
+
+          {ageAdjustment.deductionTotal > 0 ? (
+            <div className="mt-3 grid gap-2 sm:grid-cols-3">
+              {ageAdjustment.deductionAttributes.map((key) => (
+                <label
+                  key={key}
+                  className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
+                >
+                  <span className="text-xs text-white/60">{ATTRIBUTE_LABELS[key]}</span>
+                  <input
+                    type="number"
+                    min={0}
+                    max={99}
+                    value={ageAllocation[key] ?? 0}
+                    disabled={ageConfirmed}
+                    onChange={(event) => setAgeDeduction(key, Number(event.target.value))}
+                    className="h-9 w-20 rounded-lg border border-white/20 bg-ink-900 px-2 text-center font-mono text-sm text-white outline-none focus:border-sakura-500 disabled:opacity-60"
+                  />
+                </label>
+              ))}
+            </div>
+          ) : null}
+
+          {ageCheck.ok === false && ageAdjustment.deductionTotal > 0 ? (
+            <p className="mt-2 text-[11px] text-amber-300">{ageCheck.errors.join("；")}</p>
+          ) : null}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {ageConfirmed ? (
+              <>
+                <span className="rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300">
+                  年龄补正已确认并锁定；最终属性按上方结果只读展示
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setAgeConfirmed(false)}
+                  className="rounded-lg border border-white/20 px-3 py-1.5 text-xs text-white/60 transition hover:text-white"
+                >
+                  重新分配
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                disabled={ageCheck.ok === false}
+                onClick={() => setAgeConfirmed(true)}
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
+              >
+                {ageAdjustment.deductionTotal > 0 ? "确认年龄扣减分配" : "确认年龄补正（无属性扣减）"}
+              </button>
+            )}
+          </div>
+        </section>
+      ) : null}
+
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">衍生属性（实时计算）</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
@@ -707,6 +1006,24 @@ export default function CharacterBuilder(props: Props) {
             </div>
           ))}
         </div>
+        {coc7Extras === null ? null : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+            {[
+              ["伤害加值 DB", coc7Extras.damageBonus],
+              ["体格 Build", (coc7Extras.build > 0 ? "+" : "") + coc7Extras.build],
+              ["移动力 MOV", String(coc7Extras.mov)],
+              ["重伤值", String(coc7Extras.majorWound)]
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-3 text-center"
+              >
+                <p className="text-xs text-white/40">{label}</p>
+                <p className="mt-1 text-xl font-semibold text-amber-300">{derivedReady ? value : "—"}</p>
+              </div>
+            ))}
+          </div>
+        )}
         {outcome.flags.length === 0 ? null : (
           <p className="mt-3 text-[11px] text-white/35">
             种族特性：{outcome.flags.join(" · ")}
@@ -882,6 +1199,9 @@ export default function CharacterBuilder(props: Props) {
                           </div>
                           <p className="mt-0.5 text-[11px] text-white/40">
                             基础 <span className="font-mono text-white/70">{base}</span>
+                            <span className="ml-2 text-white/30">
+                              困难 {Math.floor(total / 2)} · 极限 {Math.floor(total / 5)}
+                            </span>
                           </p>
                         </div>
                         <div className="shrink-0 text-right">

@@ -3,6 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import {
   ATTRIBUTE_KEYS,
   builtinRegistry,
+  coc7Build,
+  coc7DamageBonusFromBuild,
+  coc7MajorWound,
+  coc7Movement,
   compileParsedRulePack,
   computeDerived,
   resolveRulePack,
@@ -60,6 +64,23 @@ export default async function CharacterDetailPage({
   for (const key of ATTRIBUTE_KEYS as readonly AttributeKey[]) base[key] = character[key];
   const outcome = computeDerived(compiled, { attributes: base, race: character.race });
   const effective = outcome.attributes as unknown as Record<string, number>;
+  const finalAttributes = outcome.attributes;
+  const coc7BuildValue =
+    character.system === "COC7" ? coc7Build(finalAttributes.str + finalAttributes.siz) : null;
+  const coc7Extras =
+    character.system === "COC7" && coc7BuildValue !== null
+      ? {
+          build: coc7BuildValue,
+          damageBonus: coc7DamageBonusFromBuild(coc7BuildValue),
+          mov: coc7Movement({
+            str: finalAttributes.str,
+            siz: finalAttributes.siz,
+            dex: finalAttributes.dex,
+            age: character.age
+          }),
+          majorWound: coc7MajorWound(outcome.derived.maxHp)
+        }
+      : null;
 
   const equipped = await prisma.card.findMany({
     where: { characterId: character.id },
@@ -225,6 +246,26 @@ export default async function CharacterDetailPage({
             </div>
           ))}
         </div>
+        {coc7Extras === null ? null : (
+          <div className="mt-3 grid gap-2 sm:grid-cols-4">
+            {[
+              ["伤害加值 DB", coc7Extras.damageBonus],
+              ["体格 Build", (coc7Extras.build > 0 ? "+" : "") + coc7Extras.build],
+              ["移动力 MOV", String(coc7Extras.mov)],
+              ["重伤值", String(coc7Extras.majorWound)]
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-2 text-center">
+                <p className="text-[11px] text-white/40">{label}</p>
+                <p className="text-lg font-semibold text-amber-300">{value}</p>
+              </div>
+            ))}
+            {character.age === null ? null : (
+              <p className="col-span-full text-[10px] text-white/30">
+                年龄 {character.age}；MOV 已包含年龄减值，DB / Build 按最终 STR+SIZ 计算。
+              </p>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
@@ -237,8 +278,13 @@ export default async function CharacterDetailPage({
               const bonus = growth.skill[row.id] ?? 0;
               return (
                 <div key={row.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-                  <span className="truncate text-xs text-white/60">{row.name}</span>
-                  <span className="flex items-center gap-2">
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs text-white/60">{row.name}</span>
+                    <span className="block font-mono text-[10px] text-white/30">
+                      困难 {Math.floor(row.value / 2)} · 极限 {Math.floor(row.value / 5)}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 items-center gap-2">
                     {bonus === 0 ? null : (
                       <span className="rounded border border-sakura-500/30 px-1.5 py-0.5 font-mono text-[10px] text-sakura-300">
                         成长 {bonus > 0 ? "+" + bonus : bonus}

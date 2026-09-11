@@ -3,6 +3,10 @@ import { notFound, redirect } from "next/navigation";
 import {
   ATTRIBUTE_KEYS,
   builtinRegistry,
+  coc7Build,
+  coc7DamageBonusFromBuild,
+  coc7MajorWound,
+  coc7Movement,
   compileParsedRulePack,
   computeDerived,
   resolveRulePack,
@@ -74,6 +78,23 @@ export default async function CharacterPage({
   }
   const outcome = computeDerived(compiled, { attributes: base, race: character.race });
   const effective = outcome.attributes as unknown as Record<string, number>;
+  const finalAttributes = outcome.attributes;
+  const coc7BuildValue =
+    character.system === "COC7" ? coc7Build(finalAttributes.str + finalAttributes.siz) : null;
+  const coc7Extras =
+    character.system === "COC7" && coc7BuildValue !== null
+      ? {
+          build: coc7BuildValue,
+          damageBonus: coc7DamageBonusFromBuild(coc7BuildValue),
+          mov: coc7Movement({
+            str: finalAttributes.str,
+            siz: finalAttributes.siz,
+            dex: finalAttributes.dex,
+            age: character.age
+          }),
+          majorWound: coc7MajorWound(outcome.derived.maxHp)
+        }
+      : null;
 
   const pool = canManage
     ? await prisma.card.findMany({
@@ -149,6 +170,24 @@ export default async function CharacterPage({
             </div>
           ))}
         </div>
+        {coc7Extras === null ? null : (
+          <div className="mt-3 grid gap-3 sm:grid-cols-4">
+            {[
+              ["伤害加值 DB", coc7Extras.damageBonus],
+              ["体格 Build", (coc7Extras.build > 0 ? "+" : "") + coc7Extras.build],
+              ["移动力 MOV", String(coc7Extras.mov)],
+              ["重伤值", String(coc7Extras.majorWound)]
+            ].map(([label, value]) => (
+              <div
+                key={label}
+                className="rounded-lg border border-amber-400/20 bg-amber-400/5 px-3 py-3 text-center"
+              >
+                <p className="text-xs text-white/40">{label}</p>
+                <p className="mt-1 text-2xl font-semibold text-amber-300">{value}</p>
+              </div>
+            ))}
+          </div>
+        )}
         {outcome.flags.length === 0 ? null : (
           <p className="mt-3 text-[11px] text-white/35">种族特性：{outcome.flags.join(" · ")}</p>
         )}
@@ -165,7 +204,12 @@ export default async function CharacterPage({
                 key={row.id}
                 className="flex items-center justify-between rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
               >
-                <span className="truncate text-xs text-white/60">{row.name}</span>
+                <span className="min-w-0">
+                  <span className="block truncate text-xs text-white/60">{row.name}</span>
+                  <span className="block font-mono text-[10px] text-white/30">
+                    困难 {Math.floor((row.value ?? 0) / 2)} · 极限 {Math.floor((row.value ?? 0) / 5)}
+                  </span>
+                </span>
                 <span className="font-mono text-sm text-white/80">{row.value}</span>
               </div>
             ))}

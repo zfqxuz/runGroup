@@ -113,4 +113,20 @@ export type { GrowthCheckInput, GrowthCheckResult } from "./growth";
 export { spellEffectsOf, spellTargeting, isHostileSpell } from "./magic";
 export { MAGIC_TARGETINGS, MAGIC_EFFECT_TYPES } from "./schema";
 export type { MagicEffect, MagicTargeting } from "./schema";
-export { coc7DamageBonus } from "./coc7";
+export {
+  applyCoc7AgeAdjustment,
+  checkCoc7AgeAllocation,
+  coc7AgeAdjustment,
+  coc7Build,
+  coc7DamageBonus,
+  coc7DamageBonusFromBuild,
+  coc7MajorWound,
+  coc7Movement
+} from "./coc7";
+export type {
+  Coc7AgeAdjustment,
+  Coc7AgeAllocation,
+  Coc7AgeAllocationCheck,
+  Coc7MovementInput,
+  Coc7PhysicalAttribute
+} from "./coc7";

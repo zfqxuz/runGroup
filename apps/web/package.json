@@ -42,6 +42,7 @@
     "verify:visibility-magic": "tsx --env-file=.env scripts/verify-visibility-magic.ts",
     "verify:module-preset": "tsx --env-file=.env scripts/verify-module-preset.ts",
     "verify:chargen-rules": "tsx --env-file=.env scripts/verify-chargen-rules.ts",
+    "verify:occupation-slots": "tsx scripts/verify-occupation-slots.ts",
     "verify:magic-effects": "tsx --env-file=.env scripts/verify-magic-effects.ts"
   },
   "dependencies": {

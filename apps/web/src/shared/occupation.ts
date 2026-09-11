@@ -1,3 +1,5 @@
+import coc7OccupationSlots from "./data/coc7-occupation-slots.json";
+
 export interface OccupationView {
   readonly id: string;
   readonly system: string;
@@ -11,6 +13,114 @@ export interface OccupationView {
   readonly skillNames: readonly string[];
   readonly relations: string | null;
   readonly description: string | null;
+  /** COC7 从「本职技能」矩阵解析出的结构化空位；TOUHOU / 未覆盖职业为 null。 */
+  readonly skillProfile: OccupationSkillProfile | null;
+}
+
+export interface OccupationSlotCandidate {
+  readonly skillId: string;
+  readonly label: string;
+}
+
+export type OccupationSlotKind = "CHOICE" | "SOCIAL" | "MULTI" | "FREE";
+
+export interface OccupationSlot {
+  readonly id: string;
+  readonly kind: OccupationSlotKind;
+  readonly symbol: "☆" | "⊙" | "☯" | "※" | "ANY";
+  readonly pick: number;
+  readonly candidates: readonly OccupationSlotCandidate[];
+}
+
+export interface OccupationSkillProfile {
+  readonly fixed: readonly OccupationSlotCandidate[];
+  readonly slots: readonly OccupationSlot[];
+}
+
+export type OccupationSlotAssignments = Readonly<Record<string, readonly string[]>>;
+
+const COC7_PROFILES = coc7OccupationSlots as unknown as Readonly<Record<string, OccupationSkillProfile>>;
+
+export function occupationSkillProfile(occupation: {
+  readonly system: string;
+  readonly code: number;
+}): OccupationSkillProfile | null {
+  if (occupation.system !== "COC7") return null;
+  return COC7_PROFILES[String(occupation.code)] ?? null;
+}
+
+/**
+ * 某个职业在给定空位选择下，所有「实际本职」技能 id。
+ * 包括：Excel 固定本职 + 玩家已放入空位的技能。
+ */
+export function profileOccupationalSkillIds(
+  profile: OccupationSkillProfile,
+  assignments: OccupationSlotAssignments
+): Set<string> {
+  const ids = new Set<string>();
+  for (const item of profile.fixed) ids.add(item.skillId);
+  for (const slot of profile.slots) {
+    for (const skillId of assignments[slot.id] ?? []) {
+      if (typeof skillId === "string" && skillId.length > 0) ids.add(skillId);
+    }
+  }
+  return ids;
+}
+
+/** FREE 空位的候选池；其余空位直接使用 Excel 列出的候选。 */
+export function occupationSlotCandidates(
+  slot: OccupationSlot,
+  allSkillIds: readonly string[]
+): readonly OccupationSlotCandidate[] {
+  if (slot.kind !== "FREE") return slot.candidates;
+  return allSkillIds
+    .filter((id) => id !== "CTHULHU_MYTHOS")
+    .map((id) => ({ skillId: id, label: id }));
+}
+
+export interface OccupationSlotValidation {
+  readonly ok: boolean;
+  readonly errors: readonly string[];
+  readonly assignedSkillIds: ReadonlySet<string>;
+}
+
+/**
+ * 校验 Excel 空位分配：
+ * - 空位可以不选（0 个）；一旦开始选，数量必须刚好等于 pick；
+ * - 候选必须在 Excel 候选列表中；FREE 空位可选择除克苏鲁神话外的任意技能；
+ * - 同一个技能不能占两个空位。
+ */
+export function validateOccupationSlotAssignments(
+  profile: OccupationSkillProfile,
+  assignments: OccupationSlotAssignments,
+  allSkillIds: readonly string[]
+): OccupationSlotValidation {
+  const errors: string[] = [];
+  const assigned = new Set<string>();
+  const slotById = new Map(profile.slots.map((slot) => [slot.id, slot]));
+  for (const key of Object.keys(assignments)) {
+    if (slotById.has(key) === false) errors.push("未知职业空位：" + key);
+  }
+  for (const slot of profile.slots) {
+    const raw = assignments[slot.id] ?? [];
+    const picked = raw.filter((id) => typeof id === "string" && id.length > 0);
+    if (picked.length === 0) continue;
+    if (picked.length !== slot.pick) {
+      errors.push(slot.symbol + " 空位需要选择 " + slot.pick + " 项，当前 " + picked.length + " 项");
+      continue;
+    }
+    const allowed = new Set(occupationSlotCandidates(slot, allSkillIds).map((item) => item.skillId));
+    for (const id of picked) {
+      if (allowed.has(id) === false) {
+        errors.push(slot.symbol + " 空位的候选不包含技能：" + id);
+      }
+      if (assigned.has(id)) {
+        errors.push("同一个技能不能占用两个空位：" + id);
+      }
+      assigned.add(id);
+    }
+  }
+  return { ok: errors.length === 0, errors, assignedSkillIds: assigned };
 }
 
 export const ERA_LABELS: Record<string, string> = {
@@ -234,7 +344,7 @@ export function toOccupationView(row: {
   const skillNames = Array.isArray(row.skillNames)
     ? row.skillNames.filter((item): item is string => typeof item === "string")
     : [];
-  return { ...row, skillNames };
+  return { ...row, skillNames, skillProfile: occupationSkillProfile(row) };
 }
 
 export function availableEra(era: string | null): readonly string[] {
