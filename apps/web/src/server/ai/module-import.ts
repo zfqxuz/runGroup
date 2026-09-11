@@ -465,6 +465,7 @@ async function generateDraft(input: {
   readonly images: readonly PreparedImage[];
   readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly author: string; readonly model: string };
   readonly title: string;
+  readonly onProgress?: (message: string) => void;
 }): Promise<{ state: AiGenerateState; attempts: number; rawModels: string[] }> {
   const userParts: DeepSeekContentPart[] = [{ type: "text", text: input.materialText + "\n\n" + jsonInstruction() }];
   for (const image of input.images) {
@@ -478,6 +479,7 @@ async function generateDraft(input: {
   let previousRaw = "";
   let lastErrors: readonly string[] = [];
   for (let attempt = 1; attempt <= 3; attempt += 1) {
+    input.onProgress?.("正在调用 DeepSeek（第 " + attempt + "/3 次）…");
     const raw = attempt === 1
       ? await chatDeepSeek(messages, { model: input.hints.model, jsonMode: true, maxTokens: 8192, temperature: 0.2 })
       : await chatDeepSeek(
@@ -489,6 +491,7 @@ async function generateDraft(input: {
           { model: input.hints.model, jsonMode: true, maxTokens: 8192, temperature: 0.1 }
         );
     previousRaw = raw;
+    input.onProgress?.("已收到 DeepSeek 回复，正在校验结构…");
     let parsed: unknown;
     try {
       parsed = extractJsonObject(raw);
@@ -540,6 +543,7 @@ export async function importModuleWithDeepSeek(input: {
   readonly requestedEra: string;
   readonly instructions: string;
   readonly requestedModel: string;
+  readonly onProgress?: (message: string) => void;
 }): Promise<AiImportResult> {
   if (input.files.length === 0) throw new Error("请至少上传一个素材文件");
   if (input.files.length > MAX_FILES) throw new Error("单次最多上传 " + MAX_FILES + " 个文件");
@@ -548,6 +552,7 @@ export async function importModuleWithDeepSeek(input: {
   if (prepared.sources.length === 0 && prepared.images.length === 0) {
     throw new Error("没有提取到可用素材，请检查文件格式或大小");
   }
+  input.onProgress?.("已解析 " + prepared.sources.length + " 个文本素材 / " + prepared.images.length + " 张图片");
 
   const model = input.requestedModel.length > 0
     ? input.requestedModel
@@ -571,9 +576,11 @@ export async function importModuleWithDeepSeek(input: {
     }),
     images: prepared.images,
     hints: { system, era: input.requestedEra, author: input.author, model },
-    title
+    title,
+    onProgress: input.onProgress
   });
 
+  input.onProgress?.("AI 结构校验通过，正在写入团本…");
   const slug = await uniqueSlug(input.roomId.length === 0 ? null : input.roomId, generated.state.draft.frontMatter.id || title);
   const moduleRecord = await prisma.module.create({
     data: {
@@ -615,6 +622,7 @@ export async function importModuleWithDeepSeek(input: {
   try {
     let orderIndex = 0;
     for (const image of prepared.images) {
+      input.onProgress?.("正在保存图片 " + (orderIndex + 1) + "/" + prepared.images.length + "…");
       const stored = await storeImage(image.buffer, { category: "modules", maxBytes: MAX_FILE_BYTES });
       const asset = await prisma.asset.create({
         data: {
@@ -651,6 +659,7 @@ export async function importModuleWithDeepSeek(input: {
   }
 
   try {
+    input.onProgress?.("正在同步团本只读模板…");
     const templateCounts = await syncModuleTemplatesFromModule(moduleRecord.id);
     for (const warning of templateCounts.warnings) {
       warnings.push({ filename: "模板解析", message: warning });

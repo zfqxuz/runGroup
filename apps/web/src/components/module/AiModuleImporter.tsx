@@ -9,6 +9,9 @@ interface Props {
 
 interface ImportResult {
   readonly ok: boolean;
+  readonly jobId?: string;
+  readonly status?: "RUNNING" | "DONE" | "FAILED";
+  readonly progress?: readonly string[];
   readonly moduleId?: string;
   readonly error?: string;
   readonly title?: string;
@@ -16,6 +19,13 @@ interface ImportResult {
   readonly attempts?: number;
   readonly imagesUsed?: number;
   readonly warnings?: readonly { readonly filename: string; readonly message: string }[];
+}
+
+const POLL_INTERVAL_MS = 2500;
+const POLL_TIMEOUT_MS = 30 * 60 * 1000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 export default function AiModuleImporter(props: Props) {
@@ -34,21 +44,51 @@ export default function AiModuleImporter(props: Props) {
         body: new FormData(form)
       });
       const payload = (await response.json()) as ImportResult;
-      if (payload.ok === false || payload.moduleId === undefined) {
+      if (payload.ok === false || payload.jobId === undefined) {
         setMessage(payload.error ?? "AI 整合失败");
         setResult(payload);
         return;
       }
-      setResult(payload);
-      setMessage("AI 整合完成，正在跳转到团本详情…");
-      router.push(
-        props.roomId === undefined
-          ? "/modules/" + payload.moduleId
-          : "/rooms/" + props.roomId + "/modules/" + payload.moduleId
-      );
-      router.refresh();
+
+      const jobId = payload.jobId;
+      setMessage("任务已创建，正在解析素材…");
+      const startedAt = Date.now();
+      while (Date.now() - startedAt < POLL_TIMEOUT_MS) {
+        await sleep(POLL_INTERVAL_MS);
+        let statusResponse: Response;
+        try {
+          statusResponse = await fetch("/api/modules/ai-import?jobId=" + encodeURIComponent(jobId), {
+            cache: "no-store"
+          });
+        } catch {
+          // 单次轮询网络抖动时继续等待，不中断整个任务。
+          continue;
+        }
+        const statusPayload = (await statusResponse.json()) as ImportResult;
+        const progress = statusPayload.progress ?? [];
+        const latest = progress[progress.length - 1];
+        if (latest !== undefined) setMessage(latest);
+
+        if (statusPayload.status === "DONE" && statusPayload.moduleId !== undefined) {
+          setResult(statusPayload);
+          setMessage("AI 整合完成，正在跳转到团本详情…");
+          router.push(
+            props.roomId === undefined
+              ? "/modules/" + statusPayload.moduleId
+              : "/rooms/" + props.roomId + "/modules/" + statusPayload.moduleId
+          );
+          router.refresh();
+          return;
+        }
+        if (statusPayload.status === "FAILED" || statusPayload.ok === false) {
+          setMessage(statusPayload.error ?? "AI 整合失败");
+          setResult(statusPayload);
+          return;
+        }
+      }
+      setMessage("任务仍在进行，但等待时间过长；请稍后重新发起或到「我的团本」查看。");
     } catch {
-      setMessage("请求失败：DeepSeek 调用时间可能过长，或网络中断；请稍后用同样素材重试。");
+      setMessage("请求失败：网络中断或服务已重启，请稍后用同样素材重试。");
     } finally {
       setBusy(false);
     }
@@ -122,7 +162,7 @@ export default function AiModuleImporter(props: Props) {
           {busy ? "DeepSeek 整合中…" : "AI 智能整合团本"}
         </button>
         {busy ? (
-          <span className="text-[11px] text-white/35">正在阅读全部素材并生成 14 章标准团本，可能需要 1-3 分钟，请不要关闭页面。</span>
+          <span className="text-[11px] text-white/35">任务在后台运行，页面每 2-3 秒刷新进度；公网穿透断开或关闭页面也不会中断，生成完成后会出现在「我的团本」。</span>
         ) : null}
       </div>
 

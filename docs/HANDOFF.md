@@ -11,7 +11,7 @@
   - P2-1 增量已完成：Token 图片与属性、六边形网格与吸附、战争迷雾绘制、墙体 / 灯光 / 视线遮挡、地图图层、团本结构化场景自动绑定。
   - P2-2 规则包后台已完成：DB 规则包、版本、发布 / 归档、绑房、JSON 导入导出、内置同步、审计；管理后台入口在管理员用户下拉菜单。
   - P2-3 角色成长闭环已完成：基础、跨局继承、CoC 幕间成长检定、成长记录编辑 / 撤销 / 来源标注、筛选与 CSV 导出、结束确认页。
-  - DeepSeek 智能团本导入已完成：任意数量 md/txt/json/docx/pptx/xlsx/pdf（元信息）/图片多文件上传，DeepSeek 整合为 `touhou-module/v1` 标准团本；默认 `deepseek-flash`（支持图片视觉）；素材涉及魔法时会生成 structured.magic。
+  - DeepSeek 智能团本导入已完成：任意数量 md/txt/json/docx/pptx/xlsx/pdf（元信息）/图片多文件上传，DeepSeek 整合为 `touhou-module/v1` 标准团本；默认 `deepseek-flash`（支持图片视觉）；素材涉及魔法时会生成 structured.magic。导入已异步化（后台任务 + 轮询进度），避免公网穿透 30-60 秒断流。
   - 隐藏信息规则已完成：NPC/Boss 默认隐藏、KP 可公开；玩家互见角色属性是房间配置（默认公开）；隐藏 Boss 战斗只展示伤害；模组魔法可在准备阶段启用并在战斗施放。
   - 团本模板/物化已完成：module-* 结构化块与 characters/npcs.yaml 解析为只读模板；KP 在准备页点「应用团本预设」时克隆出房间 NPC/Boss 卡、武器/物品/证物卡、场景地图、线索、遭遇与魔法；换预设整批替换。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
@@ -744,7 +744,7 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - DeepSeek 输出严格 JSON，服务端组装为 14 章标准 Markdown + 结构化 `module-chapter / module-scene / module-npc / module-clue / module-item / module-ending / module-reward` YAML 块；校验失败会自动带错误重试，最多 3 次。
 - API Key 只从环境变量 `DEEPSEEK_API_KEY` 读取（已配置在本机 `apps/web/.env`，该文件不提交）；`DEEPSEEK_BASE_URL` 默认 `https://api.deepseek.com`；默认模型 `deepseek-flash`（支持图片视觉，推荐），可在 `/admin/system` 修改。
 - E2E：`npm run verify:ai-import`（无 key 时 SKIP；调用真实 DeepSeek，验证标准章节 / 结构化块 / 图片资源）。
-- 尚未做：流式进度、失败后断点重试、PDF 正文抽取（需额外依赖）。
+- 尚未做：失败后断点重试、PDF 正文抽取（需额外依赖）；进度已通过后台任务轮询提供。
 
 ### P2-1 战术棋盘增量
 - 几何库：`apps/web/src/shared/scene-geometry.ts`
@@ -926,3 +926,27 @@ DEEPSEEK_MODEL="deepseek-flash"
 - 验证脚本：`npm run verify:module-preset`（NPC / 武器 / 证物 / 场景地图 / 线索 / 遭遇 / 魔法；换预设整批替换）。
 - 开局闸门新增：如果房间已选择团本，必须先应用该团本预设且当前 ACTIVE 应用与所选团本一致，才允许开始 / 继续本局。
 - 删除保护：已存在 ACTIVE `RoomPresetApplication` 的团本不可删除（房间端与管理后台都会拒绝），避免房间实例变成孤儿。
+
+## 26. DeepSeek 智能导入异步化（本轮修复）
+
+### 问题
+- 通过 frpc / 公网 HTTPS 访问时，AI 导入请求会在约 36 秒被代理切断（实测 HTTP 000）。
+- DeepSeek 整理长素材时经常需要 1-3 分钟，同步请求必然失败，前端只能提示“网络中断”。
+
+### 方案
+- 新增 `apps/web/src/server/ai/jobs.ts`：
+  - 内存任务表（1 小时 TTL，最多 200 条），保存 `RUNNING / DONE / FAILED`、进度行与结果。
+  - `startAiImportJob` 立即返回 jobId，后台继续调用 `importModuleWithDeepSeek`。
+- `importModuleWithDeepSeek` / `generateDraft` 新增可选 `onProgress` 回调，上报：
+  - 素材解析数量、DeepSeek 第 N/3 次调用、结构校验、写入团本、图片保存、模板同步。
+- `POST /api/modules/ai-import` 只做鉴权 / 校验 / 启动任务，返回 202 `{ ok, jobId, status }`。
+- `GET /api/modules/ai-import?jobId=...` 返回任务状态、进度与结果；任务按 userId 隔离。
+- `AiModuleImporter` 改为每 2.5 秒轮询，实时显示进度，完成后自动跳转团本详情。
+
+### 验证
+- `npm run typecheck` PASS；`npm run build --workspace @touhou/web` PASS。
+- 实测：通过公网 `https://103.91.208.133:64120` 发起导入：
+  - POST 立即返回 202 + jobId；
+  - 轮询状态依次经过“解析素材 → DeepSeek 第 1/3 次 → … → 团本生成完成”；
+  - 约 100 秒后拿到 `DONE` 与 moduleId，模块与只读模板均正确落库。
+- 直连 localhost 同步服务调用（`verify:ai-import` 与脚本直调）仍正常，不受影响。

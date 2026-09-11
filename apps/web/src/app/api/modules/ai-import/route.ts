@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { DEEPSEEK_MODELS, isDeepSeekConfigured } from "@/server/ai/deepseek";
-import { importModuleWithDeepSeek } from "@/server/ai/module-import";
+import { getAiImportJob, startAiImportJob } from "@/server/ai/jobs";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -60,25 +60,78 @@ export async function POST(request: Request): Promise<NextResponse> {
   const modelRaw = String(form.get("model") ?? "").trim();
   const model = DEEPSEEK_MODELS.some((item) => item.id === modelRaw) ? modelRaw : "";
 
-  try {
-    const result = await importModuleWithDeepSeek({
-      files,
-      roomId,
-      userId: session.user.id,
-      author: session.user.name ?? session.user.username,
-      requestedSystem: system,
-      requestedEra: era,
-      instructions,
-      requestedModel: model
-    });
-    return NextResponse.json({ ok: true, ...result });
-  } catch (error) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: error instanceof Error ? error.message : "AI 整合失败"
-      },
-      { status: 400 }
-    );
+  // 公网穿透 / 反向代理通常会切断 30-60 秒以上的长请求，AI 导入改为后台任务 + 轮询。
+  const jobId = startAiImportJob({
+    files,
+    roomId,
+    userId: session.user.id,
+    author: session.user.name ?? session.user.username,
+    requestedSystem: system,
+    requestedEra: era,
+    instructions,
+    requestedModel: model
+  });
+
+  return NextResponse.json(
+    {
+      ok: true,
+      jobId,
+      status: "RUNNING",
+      progress: ["任务已创建，正在解析素材…"],
+      model: model.length > 0 ? model : "deepseek-flash"
+    },
+    { status: 202 }
+  );
+}
+
+export async function GET(request: Request): Promise<NextResponse> {
+  const session = await auth();
+  if (session === null) {
+    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
   }
+
+  const jobId = new URL(request.url).searchParams.get("jobId")?.trim() ?? "";
+  if (jobId.length === 0) {
+    return NextResponse.json({ ok: false, error: "缺少 jobId" }, { status: 400 });
+  }
+
+  const job = getAiImportJob(jobId, session.user.id);
+  if (job === null) {
+    return NextResponse.json({ ok: false, error: "任务不存在或已过期，请重新发起" }, { status: 404 });
+  }
+
+  if (job.status === "RUNNING") {
+    return NextResponse.json({
+      ok: true,
+      jobId: job.id,
+      status: job.status,
+      progress: job.progress,
+      error: null
+    });
+  }
+
+  if (job.status === "FAILED") {
+    return NextResponse.json({
+      ok: false,
+      jobId: job.id,
+      status: job.status,
+      progress: job.progress,
+      error: job.error ?? "AI 整合失败"
+    });
+  }
+
+  const result = job.result;
+  return NextResponse.json({
+    ok: true,
+    jobId: job.id,
+    status: job.status,
+    progress: job.progress,
+    error: null,
+    moduleId: result?.moduleId,
+    title: result?.title,
+    model: result?.model,
+    attempts: result?.attempts,
+    imagesUsed: result?.imagesUsed,
+    warnings: result?.warnings ?? []
+  });
 }
