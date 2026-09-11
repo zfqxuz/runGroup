@@ -69,6 +69,9 @@ export interface CombatParticipantState {
   isIdentified: boolean;
   /** 对玩家公开属性；默认隐藏，公开后战斗视图展示 HP 等数值。 */
   isPublic: boolean;
+  /** 需要强制跳过行动的剩余次数（眩晕 / 控制）。 */
+  stunActions?: number;
+  controlActions?: number;
 }
 export interface ActionSubmission {
   readonly actorId: string;

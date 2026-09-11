@@ -111,6 +111,72 @@ export const DamageRulesSchema = z.object({
 });
 
 /** 模组携带的魔法规则。由 DeepSeek 在团本准备阶段整理，KP 在房间里启用。 */
+export const MAGIC_TARGETINGS = ["SELF", "ALLY", "ENEMY", "ANY"] as const;
+export const MAGIC_EFFECT_TYPES = [
+  "DAMAGE",
+  "HEAL",
+  "MP_RESTORE",
+  "MP_DRAIN",
+  "SAN_LOSS",
+  "SAN_RESTORE",
+  "STATUS",
+  "DOT",
+  "STUN",
+  "CONTROL",
+  "CLEANSE"
+] as const;
+
+/** 通用法术效果指令。规则包只描述「做什么」，战斗引擎负责结算。 */
+export const MagicEffectSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("DAMAGE"),
+    amount: DiceExprSchema
+  }),
+  z.object({
+    type: z.literal("HEAL"),
+    amount: DiceExprSchema
+  }),
+  z.object({
+    type: z.literal("MP_RESTORE"),
+    amount: ExprSchema
+  }),
+  z.object({
+    type: z.literal("MP_DRAIN"),
+    amount: ExprSchema
+  }),
+  z.object({
+    type: z.literal("SAN_LOSS"),
+    amount: DiceExprSchema
+  }),
+  z.object({
+    type: z.literal("SAN_RESTORE"),
+    amount: ExprSchema
+  }),
+  z.object({
+    type: z.literal("STATUS"),
+    key: z.string(),
+    stacks: ExprSchema.default("1")
+  }),
+  z.object({
+    type: z.literal("DOT"),
+    amount: DiceExprSchema,
+    durationTicks: ExprSchema.default("3"),
+    key: z.string().optional()
+  }),
+  z.object({
+    type: z.literal("STUN"),
+    durationActions: ExprSchema.default("1")
+  }),
+  z.object({
+    type: z.literal("CONTROL"),
+    durationActions: ExprSchema.default("1")
+  }),
+  z.object({
+    type: z.literal("CLEANSE"),
+    keys: z.array(z.string()).default([])
+  })
+]);
+
 export const MagicSpellSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -119,9 +185,13 @@ export const MagicSpellSchema = z.object({
   description: z.string().optional(),
   mpCost: ExprSchema.default("0"),
   sanCost: DiceExprSchema.default("0"),
-  /** 命中后的伤害骰；没有则视为纯叙事 / 支援法术。 */
+  /** 兼容旧数据：等价于一个 DAMAGE 效果。 */
   damage: DiceExprSchema.optional(),
-  target: z.enum(["SELF", "ONE", "ALL"]).default("ONE")
+  target: z.enum(["SELF", "ONE", "ALL"]).default("ONE"),
+  /** 目标阵营；不填时根据效果自动推断。 */
+  targeting: z.enum(MAGIC_TARGETINGS).optional(),
+  /** 通用效果指令集，按数组顺序结算。 */
+  effects: z.array(MagicEffectSchema).default([])
 });
 
 export const MagicRulesSchema = z.object({
@@ -313,6 +383,8 @@ export type DamageRules = z.output<typeof DamageRulesSchema>;
 export type SpellCardRules = z.output<typeof SpellCardRulesSchema>;
 export type MagicSpell = z.output<typeof MagicSpellSchema>;
 export type MagicRules = z.output<typeof MagicRulesSchema>;
+export type MagicEffect = z.output<typeof MagicEffectSchema>;
+export type MagicTargeting = (typeof MAGIC_TARGETINGS)[number];
 export type ActionCostKey = (typeof ACTION_COST_KEYS)[number];
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 

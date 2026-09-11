@@ -1,4 +1,4 @@
-import { deepMerge, type MagicSpell } from "@touhou/rules";
+import { deepMerge, MagicEffectSchema, type MagicEffect, type MagicSpell } from "@touhou/rules";
 import { compile, parseDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
 import { structuredOfContent, type StructuredModuleEntry } from "@/server/modules/structure";
@@ -54,7 +54,19 @@ function spellFromEntry(entry: StructuredModuleEntry, system: "COC7" | "TOUHOU")
   const skillDefault = system === "COC7" ? "OCCULT" : "MAGIC";
   const targetRaw = textOf(data, ["target", "range"], "ONE").toUpperCase();
   const target = targetRaw === "SELF" || targetRaw === "ALL" ? targetRaw : "ONE";
+  const targetingRaw = textOf(data, ["targeting", "targetSide", "side"], "").toUpperCase();
+  const targeting =
+    targetingRaw === "SELF" || targetingRaw === "ALLY" || targetingRaw === "ENEMY" || targetingRaw === "ANY"
+      ? targetingRaw
+      : undefined;
   const damage = safeDice(data.damage ?? data.damageExpr);
+  const effects: MagicEffect[] = [];
+  if (Array.isArray(data.effects)) {
+    for (const raw of data.effects) {
+      const parsed = MagicEffectSchema.safeParse(raw);
+      if (parsed.success) effects.push(parsed.data);
+    }
+  }
   return {
     id,
     name,
@@ -63,7 +75,9 @@ function spellFromEntry(entry: StructuredModuleEntry, system: "COC7" | "TOUHOU")
     mpCost: safeExpression(data.mpCost ?? data.cost, "0"),
     sanCost: safeDice(data.sanCost ?? data.sanityCost) ?? "0",
     damage,
-    target
+    target,
+    targeting,
+    effects
   };
 }
 

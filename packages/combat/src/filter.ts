@@ -28,6 +28,8 @@ export interface ParticipantView {
   readonly san: number | null;
   readonly dp: number | null;
   readonly statusEffects: readonly string[];
+  readonly stunActions: number;
+  readonly controlActions: number;
   readonly hasDeclaration: boolean;
   readonly declarationHp: number | null;
   readonly atbValue: number;
@@ -48,6 +50,8 @@ export interface CombatView {
   readonly participants: readonly ParticipantView[];
   readonly log: readonly LogEntry[];
   readonly pendingIds: readonly string[];
+  /** 正在等待应对窗口的行动：actor 对 target 出手。 */
+  readonly pendingReactions: readonly { readonly actorId: string; readonly targetId: string }[];
 }
 
 /** 把精确 HP 转成文字描述，供 PL 视角使用。 */
@@ -106,6 +110,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
             effect.stacks > 1 ? `${effect.key} x${effect.stacks}` : effect.key
           )
         : [],
+      stunActions: isKP || isSelf ? participant.stunActions ?? 0 : 0,
+      controlActions: isKP || isSelf ? participant.controlActions ?? 0 : 0,
       hasDeclaration: declaration !== null,
       declarationHp: showNumbers ? (declaration?.hp ?? null) : null,
       atbValue: participant.atbValue,
@@ -136,6 +142,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
     activeActorId: state.mode === "INITIATIVE" ? state.initiativeOrder[state.activeIndex] ?? null : null,
     participants,
     log,
-    pendingIds: Object.keys(state.pending)
+    pendingIds: Object.keys(state.pending),
+    pendingReactions: []
   };
 }

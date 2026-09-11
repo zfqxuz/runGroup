@@ -12,6 +12,7 @@ import {
 import {
   addParticipant,
   advanceToNextEvent,
+  applyForcedSkips,
   applyStatus,
   createCombat,
   filterCombatForViewer,
@@ -301,7 +302,35 @@ describe("魔法施放", () => {
           mpCost: "3",
           sanCost: "0",
           damage: "1d6",
-          target: "ONE"
+          target: "ONE",
+          effects: []
+        },
+        {
+          id: "selfheal",
+          name: "自愈",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "SELF",
+          effects: [{ type: "HEAL", amount: "5" }]
+        },
+        {
+          id: "doom",
+          name: "蚀血",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "ONE",
+          effects: [{ type: "DOT", amount: "3", durationTicks: "2" }]
+        },
+        {
+          id: "paralyze",
+          name: "麻痹",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "ONE",
+          effects: [{ type: "STUN", durationActions: "1" }]
         }
       ]
     }
@@ -328,6 +357,78 @@ describe("魔法施放", () => {
     expect(caster.mp).toBe(mpBefore - 3);
     expect(target.hp).toBeLessThan(target.maxHp);
     expect(state.log.some((entry) => entry.text.includes("火球"))).toBe(true);
+  });
+
+  it("SELF 目标法术会自动作用到自己", () => {
+    const state = createCombat({ id: "magic-self", seed: "magic-self", tickMs: 250 });
+    const derived = computeDerived(magicPack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(magicPack, { dex: 55 }), speed: computeBaseSpeed(magicPack, { dex: 55 })
+    });
+    const other = addParticipant(state, {
+      id: "other", name: "队友", kind: "PLAYER", characterId: "char-q", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 60 },
+      atbMax: computeAtbMax(magicPack, { dex: 50 }), speed: computeBaseSpeed(magicPack, { dex: 50 })
+    });
+    caster.hp = 3;
+    other.hp = 3;
+    caster.isReady = true;
+    expect(submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "selfheal" })).toBe(true);
+    resolvePending(magicPack, state, {});
+    expect(caster.hp).toBe(8);
+    expect(other.hp).toBe(3);
+  });
+
+  it("DOT 会在目标下一回合开始时结算伤害", () => {
+    const state = createCombat({ id: "magic-dot", seed: "magic-dot", tickMs: 250 });
+    const derived = computeDerived(magicPack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(magicPack, { dex: 55 }), speed: computeBaseSpeed(magicPack, { dex: 55 })
+    });
+    const target = addParticipant(state, {
+      id: "target", name: "妖精", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(magicPack, { dex: 50 }), speed: computeBaseSpeed(magicPack, { dex: 50 })
+    });
+    caster.isReady = true;
+    submitAction(state, { actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "doom" });
+    resolvePending(magicPack, state, {});
+    const hpAfterCast = target.hp;
+    expect(target.statusEffects.some((effect) => effect.key.startsWith("DOT:"))).toBe(true);
+
+    advanceToNextEvent(magicPack, state);
+    target.isReady = true;
+    submitAction(state, { actorId: "target", kind: "PASS" });
+    resolvePending(magicPack, state, {});
+    expect(target.hp).toBe(hpAfterCast - 3);
+  });
+
+  it("STUN 会让目标下一次行动被强制跳过", () => {
+    const state = createCombat({ id: "magic-stun", seed: "magic-stun", tickMs: 250 });
+    const derived = computeDerived(magicPack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(magicPack, { dex: 55 }), speed: computeBaseSpeed(magicPack, { dex: 55 })
+    });
+    const target = addParticipant(state, {
+      id: "target", name: "妖精", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(magicPack, { dex: 50 }), speed: computeBaseSpeed(magicPack, { dex: 50 })
+    });
+    caster.isReady = true;
+    submitAction(state, { actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "paralyze" });
+    resolvePending(magicPack, state, {});
+    expect(target.stunActions).toBe(1);
+
+    target.isReady = true;
+    applyForcedSkips(state);
+    expect(target.stunActions).toBe(0);
+    expect(state.pending.target?.kind).toBe("PASS");
   });
 });
 

@@ -1,6 +1,7 @@
 import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
+  applyForcedSkips,
   endCombat,
   currentActorId,
   endTurn,
@@ -11,6 +12,7 @@ import {
   type ActionSubmission,
   type DefenseReaction
 } from "@touhou/combat";
+import { isHostileSpell, spellTargeting } from "@touhou/rules";
 import {
   canControl,
   controlledReadyParticipantId,
@@ -77,17 +79,26 @@ async function persistAndBroadcast(io: SocketServer, runtime: CombatRuntime): Pr
   await broadcastCombat(io, runtime);
 }
 
-function needsReaction(action: ActionSubmission): boolean {
-  if (action.kind !== "DANMAKU") return false;
+function needsReaction(pack: CombatRuntime["pack"], action: ActionSubmission): boolean {
   const target = action.targetId ?? null;
-  return target !== null && target !== action.actorId;
+  if (target === null || target === action.actorId) return false;
+  if (action.kind === "DANMAKU") return true;
+  if (action.kind === "MAGIC") {
+    const spell = pack.pack.magic?.spells.find((item) => item.id === action.spellId || item.name === action.name);
+    if (spell === undefined) return false;
+    // 群体法术不做单个反应窗口；单体攻击性法术（ENEMY / ANY）需要目标应对。
+    const targeting = spellTargeting(spell);
+    return spell.target === "ONE" && isHostileSpell(spell) && targeting !== "ALLY" && targeting !== "SELF";
+  }
+  return false;
 }
 
 async function emitReactionRequest(
   io: SocketServer,
   runtime: CombatRuntime,
   actorId: string,
-  targetId: string
+  targetId: string,
+  options?: CombatReactionRequest["options"]
 ): Promise<void> {
   const actor = runtime.state.participants.find((item) => item.id === actorId);
   const target = runtime.state.participants.find((item) => item.id === targetId);
@@ -98,7 +109,7 @@ async function emitReactionRequest(
     actorName: actor.name,
     targetId,
     targetName: target.name,
-    options: allowedReactionTypes(runtime.pack)
+    options: options ?? allowedReactionTypes(runtime.pack)
   };
   io.to(combatChannel(runtime.combatId)).emit("combat:reaction-request", payload);
 }
@@ -113,6 +124,7 @@ export async function tryResolveCombat(
 ): Promise<boolean> {
   if (isEnded(runtime.state)) return false;
   if (runtime.pendingReactions.size > 0) return false;
+  applyForcedSkips(runtime.state);
 
   if (runtime.pack.combat.mode === "INITIATIVE") {
     const actorId = currentActorId(runtime.state);
@@ -214,9 +226,11 @@ async function handleAction(
     return;
   }
   const targetId = action.targetId ?? null;
-  if (needsReaction(action) && targetId !== null) {
+  if (needsReaction(runtime.pack, action) && targetId !== null) {
     runtime.pendingReactions.set(targetId, action.actorId);
-    await emitReactionRequest(io, runtime, action.actorId, targetId);
+    const magicOptions: CombatReactionRequest["options"] | undefined =
+      action.kind === "MAGIC" ? ["PASS", "DODGE"] : undefined;
+    await emitReactionRequest(io, runtime, action.actorId, targetId, magicOptions);
   }
   const resolved = await tryResolveCombat(io, runtime);
   if (resolved === false) await broadcastCombat(io, runtime);

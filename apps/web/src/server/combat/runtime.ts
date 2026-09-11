@@ -132,13 +132,17 @@ export function controlledCharacterIds(runtime: CombatRuntime, userId: string): 
 
 export function viewForUser(runtime: CombatRuntime, userId: string): CombatView {
   const role = runtime.roles.get(userId) ?? "SPECTATOR";
-  return filterCombatForViewer(runtime.state, {
+  const view = filterCombatForViewer(runtime.state, {
     userId,
     role,
     characterId: null,
     characterIds: controlledCharacterIds(runtime, userId),
     canSeePartyStats: runtime.partyStatsVisible
   });
+  return {
+    ...view,
+    pendingReactions: [...runtime.pendingReactions.entries()].map(([targetId, actorId]) => ({ actorId, targetId }))
+  };
 }
 
 export function controlledReadyParticipantId(runtime: CombatRuntime, userId: string): string | null {

@@ -1,6 +1,7 @@
 export {
   RulePackSchema,
   RulePackOverlaySchema,
+  MagicEffectSchema,
   MagicRulesSchema,
   MagicSpellSchema,
   RaceSchema,
@@ -108,3 +109,7 @@ export type { AttributeSetOption, PointBuyCheck } from "./attributes";
 
 export { isGrowthCheckPassed, resolveGrowthChecks } from "./growth";
 export type { GrowthCheckInput, GrowthCheckResult } from "./growth";
+
+export { spellEffectsOf, spellTargeting, isHostileSpell } from "./magic";
+export { MAGIC_TARGETINGS, MAGIC_EFFECT_TYPES } from "./schema";
+export type { MagicEffect, MagicTargeting } from "./schema";

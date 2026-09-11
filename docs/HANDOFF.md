@@ -1181,3 +1181,80 @@ DEEPSEEK_MODEL="deepseek-flash"
   - 规则包默认本职上限 80、兴趣上限 70。
 - 回归：`verify-character-import`、`verify-admin-console`、`verify-room-ready` PASS。
 - `npm run typecheck` PASS；`npm test` PASS（146 tests）；生产构建与 3100 部署已更新。
+
+## 33. 通用法术系统：效果指令、目标选择与应对窗口（本轮）
+
+### 设计目标
+- 法术不再只是一条 `damage`，而是规则包可自由组合的「效果指令集」。
+- 目标支持自己 / 友方 / 敌方 / 任意、单体 / 全体。
+- 敌对单体法术与物理攻击一样进入应对窗口；行动方能看到「等待对方应对」。
+- 支持 DOT、眩晕、控制、增益 / 减益、治疗、吸蓝、SAN 增减、净化等可扩展效果。
+- 旧规则包只写 `damage` 时保持兼容。
+
+### RulePack 数据结构
+```ts
+MagicSpellSchema = {
+  id, name, skill, description?,
+  mpCost, sanCost,
+  target: "SELF" | "ONE" | "ALL",
+  targeting?: "SELF" | "ALLY" | "ENEMY" | "ANY", // 不填按 effects 自动推断
+  damage?: string,                               // 旧字段，等价于一条 DAMAGE
+  effects: MagicEffect[]
+}
+MagicEffect =
+  | { type:"DAMAGE"; amount }
+  | { type:"HEAL"; amount }
+  | { type:"MP_RESTORE"; amount }
+  | { type:"MP_DRAIN"; amount }
+  | { type:"SAN_LOSS"; amount }
+  | { type:"SAN_RESTORE"; amount }
+  | { type:"STATUS"; key; stacks? }
+  | { type:"DOT"; amount; durationTicks?; key? }
+  | { type:"STUN"; durationActions? }
+  | { type:"CONTROL"; durationActions? }
+  | { type:"CLEANSE"; keys? }
+```
+- `spellTargeting()` 自动推断：有攻击性效果 → `ENEMY`；有支援效果 → `ALLY`；混合 → `ANY`；target=SELF → `SELF`。
+- `spellEffectsOf()` 负责旧 `damage` 到 DAMAGE 指令的兼容转换。
+- `isHostileSpell()` 供应对窗口判断。
+
+### 战斗引擎语义（packages/combat）
+- 单体 / 全体目标按 `targeting` 与 actor 阵营解析；SELF 自动作用自己。
+- 结算顺序按 `effects` 数组顺序执行；每个效果独立写战斗日志。
+- 伤害类效果复用现成伤害管线（含防御 / 闪避 / 符卡吸收）。
+- `DOT` 以「目标回合数」计时（dotTurns），目标每次进入行动时结算一次固定伤害，不随全局 tick 提前过期。
+- `STUN` / `CONTROL` 写入 participant 的跳过行动次数；`applyForcedSkips` 在其进入行动位时自动提交 PASS。
+- `CLEANSE` 可清除 DOT / STUN / CONTROL 或指定 status key。
+- 旧快照缺少新字段时使用默认值，不影响恢复。
+
+### 应对窗口
+- `needsReaction` 扩展：单体攻击性法术（DAMAGE / DOT / STUN / CONTROL / MP_DRAIN / SAN_LOSS）会进入应对流程。
+- 法术应对选项为 `PASS / DODGE`；DODGE 成功则免疫该次敌对效果。
+- `CombatView.pendingReactions` 暴露当前等待中的 `{ actorId, targetId }`。
+- CombatBoard：
+  - 行动方看到「XX 已对 YY 行动，等待对方应对…」，KP 可强制结算。
+  - 被指定方继续收到应对面板。
+- 旧物理攻击流程不变，且同样受益于统一的等待提示。
+
+### UI 目标选择
+- SELF 法术不需要选目标，自动对自己施放。
+- ONE + ALLY / ANY 的目标下拉包含自己，解决了「不能选自己」。
+- ENEMY 目标排除自己；ALL 法术不需要选目标，按阵营全体结算。
+- 法术下拉会展示效果摘要（伤害 / DOT / 眩晕等）。
+- 参战单位列表显示 DOT / 眩晕 / 控制等状态层数。
+
+### 模组 / AI 导入
+- `server/modules/magic.ts` 支持解析 structured.magic 里的 `targeting` 与 `effects`，无效指令会被过滤。
+- DeepSeek JSON 提示词已加入 effects 指令集与示例，要求伤害写 DAMAGE/DOT、控制写 STUN/CONTROL。
+
+### 测试
+- `packages/rules` 新增 `magic.test.ts`：旧 damage 兼容、组合指令、目标推断、敌对判定。
+- `packages/combat` 新增 3 个用例：SELF 治疗自动作用自己、DOT 在目标回合触发、STUN 强制跳过行动。
+- 新增 `npm run verify:magic-effects`：
+  - SELF 法术可施放且作用自己；
+  - ONE+ALLY 法术选择自己被允许；
+  - 敌对法术触发 reaction-request，actor 侧看到 pendingReactions 等待提示；
+  - DAMAGE + DOT + STUN 组合生效。
+- `npm test`：153 tests PASS（formula 48 / rules 65 / combat 40）。
+- 回归：`verify-visibility-magic`、`verify-combat`、`verify-combat-options`、`verify-chargen-rules` PASS。
+- 生产构建与 3100 部署已更新。

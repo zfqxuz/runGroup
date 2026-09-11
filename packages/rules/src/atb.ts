@@ -32,6 +32,14 @@ export interface ActiveStatusEffect {
   readonly stacks: number;
   /** 剩余多少个全局计数。模拟层只认计数，不认毫秒。 */
   readonly remainingTicks: number;
+  /** DOT：每次受影响者进入行动时造成的固定伤害（施加时已掷出）。 */
+  readonly dotDamage?: number;
+  /** DOT 来源名称，用于战斗日志。 */
+  readonly dotSource?: string;
+  /** DOT 上次触发时的 tick，防止同一 tick 重复触发。 */
+  readonly dotLastTick?: number;
+  /** DOT 剩余触发次数（按目标回合数计，而不是全局 tick）。 */
+  readonly dotTurns?: number;
 }
 
 function contextOf(

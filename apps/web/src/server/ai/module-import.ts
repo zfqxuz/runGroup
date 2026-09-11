@@ -428,7 +428,7 @@ function jsonInstruction(): string {
     '    "items": [{ "id": "item1", "name": "道具名", "itemType": "WEAPON 或 ITEM 或 TOME 或 ARTIFACT 或 EVIDENCE", "description": "...", "rarity": "COMMON", "image": "assets/images/xxx.png 或留空", "quantity": 1, "damage": "1d6 或留空", "range": "MELEE/NEAR/FAR 或留空", "skillId": "FIGHTING_BRAWL 等或留空", "accuracyMod": 0 }],',
     '    "endings": [{ "id": "end1", "name": "结局名", "condition": "...", "description": "..." }],',
     '    "rewards": [{ "id": "reward1", "name": "奖励名", "description": "..." }],',
-    '    "magic": [{ "id": "spell1", "name": "法术名", "skill": "MAGIC 或 OCCULT", "mpCost": "3", "sanCost": "1d3", "damage": "1d6", "target": "ONE", "description": "..." }]',
+    '    "magic": [{ "id": "spell1", "name": "法术名", "skill": "MAGIC 或 OCCULT", "mpCost": "3", "sanCost": "1d3", "damage": "1d6", "target": "ONE", "targeting": "ENEMY", "effects": [{ "type": "DAMAGE", "amount": "1d6" }, { "type": "DOT", "amount": "1d3", "durationTicks": "3" }, { "type": "STUN", "durationActions": "1" }], "description": "..." }]',
     "  }",
     "}",
     "写作要求：",
@@ -440,6 +440,7 @@ function jsonInstruction(): string {
     "- 素材中出现的线索、手书、照片、文件都要整理成 clues；没有图片则 image 留空，不要编造资源路径。",
     "- clues 数组中每条线索必须包含 content 正文（可以是提炼后的调查信息），禁止只输出标题。",
     "- 如果素材涉及魔法 / 法术 / 咒文 / 仪式 / 超自然能力，必须整理成 structured.magic 数组并尽量给出可结算数值（技能、消耗、伤害、目标）；没有魔法则给空数组 []。",
+    "- 法术的 effects 是通用指令数组，可组合使用：DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN_LOSS / SAN_RESTORE / STATUS / DOT（持续伤害）/ STUN（眩晕）/ CONTROL（控制）/ CLEANSE（净化）。target 为 SELF / ONE / ALL；targeting 为 SELF / ALLY / ENEMY / ANY。伤害类法术必须给出 DAMAGE 或 DOT；控制类给出 STUN / CONTROL。",
     "- 若素材提供了图片，请在相关章节使用 markdown 图片语法，路径必须严格使用上面给出的引用路径。",
     "- JSON 必须一次性完整闭合，严禁被截断；若素材很多，请优先保留全部 14 个章节标题和所有结构化字段，压缩描述性文字。",
     "- 总篇幅尽量控制在约 9000 个中文字符以内，单章描述 2-4 段即可。"

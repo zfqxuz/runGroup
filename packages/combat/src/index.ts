@@ -2,6 +2,7 @@ export * from "./types";
 export {
   addParticipant,
   advanceToNextEvent,
+  applyForcedSkips,
   applyStatus,
   beginInitiativeRound,
   buildInitiativeOrder,

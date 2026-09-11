@@ -26,6 +26,8 @@ interface MagicSpellOption {
   readonly sanCost: string;
   readonly damage?: string;
   readonly target: "SELF" | "ONE" | "ALL";
+  readonly targeting: "SELF" | "ALLY" | "ENEMY" | "ANY";
+  readonly effects: readonly string[];
 }
 
 interface Props {
@@ -63,6 +65,7 @@ export default function CombatBoard(props: Props) {
   const [damage, setDamage] = useState("1d6");
   const [outName, setOutName] = useState("规则外法术");
   const [spellId, setSpellId] = useState("");
+  const [spellTargetId, setSpellTargetId] = useState("");
   const [actorId, setActorId] = useState("");
   const [reaction, setReaction] = useState<CombatReactionRequest | null>(null);
   const [reactionType, setReactionType] = useState<CombatReactionPayload["type"]>("PASS");
@@ -158,6 +161,24 @@ export default function CombatBoard(props: Props) {
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
   const activeSpell = props.magicSpells.some((item) => item.id === spellId) ? spellId : (props.magicSpells[0]?.id ?? "");
   const selectedSpell = props.magicSpells.find((item) => item.id === activeSpell) ?? null;
+  const spellTargetOptions = selectedSpell === null || selectedActor === null
+    ? []
+    : selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
+      ? [selectedActor]
+      : selectedSpell.target === "ALL"
+        ? []
+        : alive.filter((participant) => {
+            if (selectedSpell.targeting === "ENEMY") {
+              return participant.id !== selectedActor.id && participant.kind !== selectedActor.kind;
+            }
+            if (selectedSpell.targeting === "ALLY") {
+              return participant.id === selectedActor.id || participant.kind === selectedActor.kind;
+            }
+            return true;
+          });
+  const activeSpellTargetId = spellTargetOptions.some((participant) => participant.id === spellTargetId)
+    ? spellTargetId
+    : (spellTargetOptions[0]?.id ?? "");
   const reactionTarget = reaction === null ? null : participants.find((item) => item.id === reaction.targetId) ?? null;
   const showReaction = reaction !== null && ((props.isKP && reactionTarget?.kind === "NPC") || reactionTarget?.isSelf === true);
   const reactionActorSkills = reactionTarget?.skills ?? {};
@@ -254,6 +275,20 @@ export default function CombatBoard(props: Props) {
           </span>
         </div>
 
+        {view !== null && view.pendingReactions.length > 0 ? (
+          <div className="rounded-xl border border-amber-400/40 bg-amber-400/10 px-4 py-3 text-xs text-amber-100">
+            {view.pendingReactions.map((pending) => {
+              const actorName = participants.find((item) => item.id === pending.actorId)?.name ?? "???";
+              const targetName = participants.find((item) => item.id === pending.targetId)?.name ?? "???";
+              return (
+                <p key={pending.actorId + ":" + pending.targetId}>
+                  {actorName} 已对 {targetName} 行动，等待对方应对…{props.isKP ? "（KP 可强制结算）" : ""}
+                </p>
+              );
+            })}
+          </div>
+        ) : null}
+
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
           <h3 className="text-sm font-medium text-white/80">参战单位</h3>
           <ul className="mt-3 flex flex-col gap-2">
@@ -274,6 +309,21 @@ export default function CombatBoard(props: Props) {
                     {item.defeated ? (
                       <span className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] text-red-300">已退场</span>
                     ) : null}
+                    {(item.stunActions ?? 0) > 0 ? (
+                      <span className="rounded border border-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-300">
+                        眩晕×{item.stunActions}
+                      </span>
+                    ) : null}
+                    {(item.controlActions ?? 0) > 0 ? (
+                      <span className="rounded border border-purple-400/40 px-1.5 py-0.5 text-[10px] text-purple-300">
+                        控制×{item.controlActions}
+                      </span>
+                    ) : null}
+                    {item.statusEffects.map((effect) => (
+                      <span key={effect} className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/45">
+                        {effect}
+                      </span>
+                    ))}
                   </div>
                   <span className="shrink-0 text-[11px] text-white/45">
                     {item.hp === null ? (item.hpText ?? "情报未知") : "HP " + item.hp + "/" + item.maxHp}
@@ -386,29 +436,53 @@ export default function CombatBoard(props: Props) {
                 </div>
               ) : null}
               {props.canCastMagic && selectedActor !== null ? (
-                <div className="flex flex-wrap items-center gap-2 rounded-lg border border-purple-400/30 bg-purple-400/5 p-2">
-                  <select value={activeSpell} onChange={(event) => setSpellId(event.target.value)} className={inputClass + " flex-1"}>
-                    {props.magicSpells.map((spell) => (
-                      <option key={spell.id} value={spell.id}>
-                        {spell.name}（MP {spell.mpCost} / SAN {spell.sanCost}{spell.damage === undefined ? "" : " / " + spell.damage}）
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={selectedSpell === null}
-                    onClick={() =>
-                      emitAction({
-                        kind: "MAGIC",
-                        targetId: selectedSpell?.target === "SELF" ? selectedActor.id : activeTargetId,
-                        spellId: activeSpell,
-                        name: selectedSpell?.name
-                      })
-                    }
-                    className="rounded-lg bg-purple-400 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-purple-300 disabled:opacity-40"
-                  >
-                    施法
-                  </button>
+                <div className="flex flex-col gap-2 rounded-lg border border-purple-400/30 bg-purple-400/5 p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={activeSpell} onChange={(event) => setSpellId(event.target.value)} className={inputClass + " flex-1"}>
+                      {props.magicSpells.map((spell) => (
+                        <option key={spell.id} value={spell.id}>
+                          {spell.name}（MP {spell.mpCost} / SAN {spell.sanCost}{spell.effects.length === 0 ? "" : " / " + spell.effects.join(" + ")}）
+                        </option>
+                      ))}
+                    </select>
+                    {selectedSpell !== null && selectedSpell.target === "ONE" && selectedSpell.targeting !== "SELF" ? (
+                      <select value={activeSpellTargetId} onChange={(event) => setSpellTargetId(event.target.value)} className={inputClass}>
+                        {spellTargetOptions.map((participant) => (
+                          <option key={participant.id} value={participant.id}>
+                            {participant.name}
+                            {participant.isSelf ? "（自己）" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={selectedSpell === null || (selectedSpell.target === "ONE" && selectedSpell.targeting !== "SELF" && activeSpellTargetId.length === 0)}
+                      onClick={() => {
+                        if (selectedSpell === null) return;
+                        const castTargetId =
+                          selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
+                            ? selectedActor.id
+                            : selectedSpell.target === "ALL"
+                              ? null
+                              : activeSpellTargetId;
+                        emitAction({ kind: "MAGIC", targetId: castTargetId, spellId: activeSpell, name: selectedSpell.name });
+                      }}
+                      className="rounded-lg bg-purple-400 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-purple-300 disabled:opacity-40"
+                    >
+                      施法
+                    </button>
+                  </div>
+                  {selectedSpell === null ? null : (
+                    <p className="text-[10px] text-purple-200/70">
+                      目标：{selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
+                        ? "自己"
+                        : selectedSpell.target === "ALL"
+                          ? selectedSpell.targeting === "ENEMY" ? "全体敌方" : selectedSpell.targeting === "ALLY" ? "全体友方" : "场上全体"
+                          : selectedSpell.targeting === "ENEMY" ? "单体敌方" : selectedSpell.targeting === "ALLY" ? "单体友方" : "任意单体"}
+                      {selectedSpell.effects.length === 0 ? "" : " · 效果：" + selectedSpell.effects.join(" + ")}
+                    </p>
+                  )}
                 </div>
               ) : null}
             </div>

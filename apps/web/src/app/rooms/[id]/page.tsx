@@ -18,6 +18,8 @@ import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/comb
 import { prisma } from "@/server/db/prisma";
 import { advancementView, gameStateView, growthCheckView } from "@/server/game/view";
 import { buildEffectiveSkills } from "@/server/character/skills";
+import { spellTargeting } from "@touhou/rules";
+import { magicSpellEffectLabels } from "@/shared/magic";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
 export const dynamic = "force-dynamic";
@@ -536,7 +538,9 @@ export default async function RoomPage({
               mpCost: spell.mpCost,
               sanCost: spell.sanCost,
               damage: spell.damage,
-              target: spell.target
+              target: spell.target,
+              targeting: spellTargeting(spell),
+              effects: magicSpellEffectLabels(spell)
             }))}
             attackSkillsByParticipant={attackSkillsByParticipant}
           />

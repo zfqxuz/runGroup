@@ -40,7 +40,8 @@
     "verify:ai-import": "tsx --env-file=.env scripts/verify-ai-import.ts",
     "verify:visibility-magic": "tsx --env-file=.env scripts/verify-visibility-magic.ts",
     "verify:module-preset": "tsx --env-file=.env scripts/verify-module-preset.ts",
-    "verify:chargen-rules": "tsx --env-file=.env scripts/verify-chargen-rules.ts"
+    "verify:chargen-rules": "tsx --env-file=.env scripts/verify-chargen-rules.ts",
+    "verify:magic-effects": "tsx --env-file=.env scripts/verify-magic-effects.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

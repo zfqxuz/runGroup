@@ -18,10 +18,15 @@ import {
   fromMicro,
   schedule,
   speedMultiplierOf,
+  spellEffectsOf,
+  spellTargeting,
+  type ActiveStatusEffect,
   type AttributeSet,
   type CompiledRulePack,
   type DefenseType,
-  type DerivedStats
+  type DerivedStats,
+  type MagicEffect,
+  type MagicSpell
 } from "@touhou/rules";
 import { rngFor } from "./rng";
 import type {
@@ -643,7 +648,267 @@ function resolveOutOfRule(ctx: ResolveContext, actor: CombatParticipantState, su
   });
 }
 
-function resolveMagic(ctx: ResolveContext, actor: CombatParticipantState, submission: ActionSubmission): void {
+function evaluateEffectNumber(pack: CompiledRulePack, source: string, vars: Record<string, number>): number {
+  try {
+    return Math.max(0, Math.floor(evaluateSource(pack, source, vars)));
+  } catch {
+    return 0;
+  }
+}
+
+function rollEffectDice(source: string, state: CombatState, salt: string): number {
+  try {
+    return Math.max(0, rollDice(parseDice(source), nextRollRng(state, salt)).total);
+  } catch {
+    return 0;
+  }
+}
+
+function addOrReplaceStatus(
+  target: CombatParticipantState,
+  status: ActiveStatusEffect
+): void {
+  const index = target.statusEffects.findIndex((effect) => effect.key === status.key);
+  if (index < 0) {
+    target.statusEffects = [...target.statusEffects, status];
+    return;
+  }
+  target.statusEffects = target.statusEffects.map((effect, effectIndex) =>
+    effectIndex === index ? { ...status, stacks: effect.stacks + status.stacks } : effect
+  );
+}
+
+/** 回合开始时结算 DOT：只在目标真正进入行动时触发一次。 */
+function applyStartOfTurnEffects(
+  ctx: ResolveContext,
+  target: CombatParticipantState
+): void {
+  if (target.defeated) return;
+  const triggered: ActiveStatusEffect[] = [];
+  const next: ActiveStatusEffect[] = [];
+  for (const effect of target.statusEffects) {
+    if ((effect.dotDamage ?? 0) <= 0) {
+      next.push(effect);
+      continue;
+    }
+    if (effect.dotLastTick === ctx.state.tick) {
+      next.push(effect);
+      continue;
+    }
+    triggered.push({ ...effect, dotLastTick: ctx.state.tick });
+    if (effect.dotTurns !== undefined) {
+      const remaining = effect.dotTurns - 1;
+      if (remaining > 0) next.push({ ...effect, dotTurns: remaining, dotLastTick: ctx.state.tick });
+    } else {
+      next.push({ ...effect, dotLastTick: ctx.state.tick });
+    }
+  }
+  if (triggered.length === 0) return;
+  target.statusEffects = next;
+
+  for (const effect of triggered) {
+    const damage = Math.max(0, effect.dotDamage ?? 0);
+    if (damage <= 0) continue;
+    const applied = applyDamageToParticipant(ctx, target, damage);
+    pushLog(ctx.state, {
+      kind: "DAMAGE",
+      actorId: target.id,
+      targetId: target.id,
+      text: target.name + " 受到「" + (effect.dotSource ?? effect.key) + "」持续伤害 " + damage,
+      data: { dot: true, key: effect.key, damage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    });
+  }
+}
+
+function clearStatuses(
+  target: CombatParticipantState,
+  keys: readonly string[]
+): void {
+  if (keys.length === 0) {
+    target.statusEffects = target.statusEffects.filter((effect) => effect.key.startsWith("DOT:") === false);
+    target.stunActions = 0;
+    target.controlActions = 0;
+    return;
+  }
+  const wanted = new Set(keys);
+  target.statusEffects = target.statusEffects.filter((effect) => wanted.has(effect.key) === false);
+  if (wanted.has("STUN")) target.stunActions = 0;
+  if (wanted.has("CONTROL")) target.controlActions = 0;
+}
+
+function resolveMagicTargets(
+  state: CombatState,
+  actor: CombatParticipantState,
+  spell: MagicSpell,
+  requestedTargetId: string | null
+): CombatParticipantState[] {
+  const targeting = spellTargeting(spell);
+  const alive = state.participants.filter((participant) => participant.defeated === false);
+  if (targeting === "SELF" || spell.target === "SELF") return [actor];
+  if (spell.target === "ALL") {
+    if (targeting === "ENEMY") return alive.filter((participant) => participant.faction !== actor.faction);
+    if (targeting === "ALLY") return alive.filter((participant) => participant.faction === actor.faction);
+    return alive;
+  }
+  if (requestedTargetId === null) return [];
+  const target = findParticipant(state, requestedTargetId);
+  return target === undefined || target.defeated ? [] : [target];
+}
+
+function applyMagicEffect(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  target: CombatParticipantState,
+  spell: MagicSpell,
+  effect: MagicEffect,
+  defense: { readonly type: DefenseType; readonly success: boolean }
+): void {
+  const state = ctx.state;
+  const meta = { spellId: spell.id, spell: spell.name };
+  const log = (text: string, data: Record<string, unknown> = {}): void => {
+    pushLog(state, {
+      kind: "SPELLCARD",
+      actorId: actor.id,
+      targetId: target.id,
+      text,
+      data: { ...meta, ...data }
+    });
+  };
+
+  if (effect.type === "DAMAGE") {
+    const base = rollEffectDice(effect.amount, state, "magic-damage:" + actor.id + ":" + spell.id + ":" + target.id);
+    const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
+    const outcome = applyDamagePipeline(ctx.pack, {
+      baseDamage: base,
+      defense: defense.type,
+      defenseSuccess: defense.success,
+      shieldMultiplier,
+      vars: target.vars
+    });
+    if (outcome.mpCost > 0) target.mp = Math.max(0, target.mp - outcome.mpCost);
+    if (outcome.mpGained > 0) target.mp = Math.min(target.maxMp, target.mp + outcome.mpGained);
+    const applied = applyDamageToParticipant(ctx, target, outcome.damage);
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: target.id,
+      text: actor.name + " 施放「" + spell.name + "」 → " + target.name + " 伤害 " + outcome.damage,
+      data: { ...meta, damage: outcome.damage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    });
+    return;
+  }
+
+  if (effect.type === "HEAL") {
+    const amount = rollEffectDice(effect.amount, state, "magic-heal:" + actor.id + ":" + spell.id + ":" + target.id);
+    const before = target.hp;
+    target.hp = Math.min(target.maxHp, target.hp + amount);
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP", { heal: target.hp - before });
+    return;
+  }
+
+  if (effect.type === "MP_RESTORE") {
+    const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
+    const before = target.mp;
+    target.mp = Math.min(target.maxMp, target.mp + amount);
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 恢复 " + (target.mp - before) + " MP", { mp: target.mp - before });
+    return;
+  }
+
+  if (effect.type === "MP_DRAIN") {
+    const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
+    const drained = Math.min(target.mp, amount);
+    target.mp -= drained;
+    actor.mp = Math.min(actor.maxMp, actor.mp + drained);
+    log(actor.name + " 施放「" + spell.name + "」 → 抽取 " + target.name + " " + drained + " MP", { drained });
+    return;
+  }
+
+  if (effect.type === "SAN_LOSS") {
+    const amount = rollEffectDice(effect.amount, state, "magic-san-loss:" + actor.id + ":" + spell.id + ":" + target.id);
+    const before = target.san;
+    target.san = Math.max(0, target.san - amount);
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 失去 " + (before - target.san) + " SAN", { sanLoss: before - target.san });
+    return;
+  }
+
+  if (effect.type === "SAN_RESTORE") {
+    const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
+    const before = target.san;
+    target.san = Math.min(target.maxSan, target.san + amount);
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 恢复 " + (target.san - before) + " SAN", { sanGain: target.san - before });
+    return;
+  }
+
+  if (effect.type === "STATUS") {
+    const stacks = Math.max(1, evaluateEffectNumber(ctx.pack, effect.stacks, actor.vars));
+    applyStatus(ctx.pack, state, target.id, effect.key, stacks);
+    return;
+  }
+
+  if (effect.type === "DOT") {
+    const amount = rollEffectDice(effect.amount, state, "magic-dot:" + actor.id + ":" + spell.id + ":" + target.id);
+    const duration = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars));
+    const key = effect.key ?? ("DOT:" + spell.id);
+    addOrReplaceStatus(target, {
+      key,
+      stacks: 1,
+      remainingTicks: Number.MAX_SAFE_INTEGER,
+      dotTurns: duration,
+      dotDamage: amount,
+      dotSource: spell.name,
+      dotLastTick: -1
+    });
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 获得持续伤害 " + amount + "（" + duration + " tick）", { dot: amount, duration });
+    return;
+  }
+
+  if (effect.type === "STUN") {
+    const actions = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationActions, actor.vars));
+    target.stunActions = Math.max(target.stunActions ?? 0, actions);
+    target.atbValue = 0;
+    target.isReady = false;
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 眩晕，跳过 " + actions + " 次行动", { stunActions: actions });
+    return;
+  }
+
+  if (effect.type === "CONTROL") {
+    const actions = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationActions, actor.vars));
+    target.controlActions = Math.max(target.controlActions ?? 0, actions);
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 被控制，跳过 " + actions + " 次行动", { controlActions: actions });
+    return;
+  }
+
+  if (effect.type === "CLEANSE") {
+    clearStatuses(target, effect.keys);
+    log(actor.name + " 施放「" + spell.name + "」 → 净化 " + target.name + " 的 " + (effect.keys.length === 0 ? "持续伤害 / 控制" : effect.keys.join("、")), { cleanse: true });
+  }
+}
+
+/** 眩晕 / 控制的单位进入行动位时强制跳过。 */
+export function applyForcedSkips(state: CombatState): void {
+  for (const participant of state.participants) {
+    if (participant.defeated || participant.isReady === false) continue;
+    const stun = participant.stunActions ?? 0;
+    const control = participant.controlActions ?? 0;
+    if (stun + control <= 0) continue;
+    if (state.pending[participant.id] !== undefined) continue;
+    if (stun > 0) participant.stunActions = stun - 1;
+    else participant.controlActions = control - 1;
+    state.pending[participant.id] = { actorId: participant.id, kind: "PASS" };
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: null,
+      text: participant.name + " 因" + (stun > 0 ? "眩晕" : "控制") + "跳过行动"
+    });
+  }
+}
+
+function resolveMagic(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
   const state = ctx.state;
   const rules = ctx.pack.pack.magic;
   if (rules === undefined || rules.enabled === false) {
@@ -669,50 +934,69 @@ function resolveMagic(ctx: ResolveContext, actor: CombatParticipantState, submis
   actor.mp = Math.max(0, actor.mp - mpCost);
   actor.san = Math.max(0, actor.san - sanCost);
 
-  const targetId = submission.targetId ?? actor.id;
-  const target = findParticipant(state, targetId);
-  if (target === undefined || target.defeated) {
+  const requestedTargetId = submission.targetId ?? null;
+  const targets = resolveMagicTargets(state, actor, spell, requestedTargetId);
+  if (targets.length === 0) {
     pushLog(state, {
       kind: "SPELLCARD",
       actorId: actor.id,
-      targetId,
+      targetId: requestedTargetId,
       text: actor.name + " 施放「" + spell.name + "」，但目标已不在场，消耗 MP " + mpCost + " / SAN " + sanCost,
       data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
     });
     return;
   }
 
-  if (spell.damage !== undefined && spell.damage !== "0") {
-    const damageRoll = rollDice(
-      parseDice(spell.damage),
-      nextRollRng(state, "magic-damage:" + actor.id + ":" + spell.id)
-    );
-    const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
-    const outcome = applyDamagePipeline(ctx.pack, {
-      baseDamage: damageRoll.total,
-      defense: "PASS",
-      defenseSuccess: false,
-      shieldMultiplier,
-      vars: target.vars
-    });
-    const applied = applyDamageToParticipant(ctx, target, outcome.damage);
-    pushLog(state, {
-      kind: "DAMAGE",
-      actorId: actor.id,
-      targetId: target.id,
-      text: actor.name + " 施放「" + spell.name + "」 → " + target.name + " 伤害 " + outcome.damage,
-      data: { spellId: spell.id, spell: spell.name, damage: outcome.damage, toHp: applied.toHp, mpCost, sanCost }
-    });
-    return;
-  }
+  const effects = spellEffectsOf(spell);
+  const targeting = spellTargeting(spell);
+  for (const target of targets) {
+    let defense: { type: DefenseType; success: boolean } = { type: "PASS", success: false };
+    const reaction = reactionFor(ctx, target.id);
+    const blocked = disabledReactionFor(ctx.pack, reaction.type);
+    const effectiveReaction = blocked === null ? reaction : { type: "PASS" as DefenseType };
 
-  pushLog(state, {
-    kind: "SPELLCARD",
-    actorId: actor.id,
-    targetId: target.id,
-    text: actor.name + " 施放「" + spell.name + "」，消耗 MP " + mpCost + " / SAN " + sanCost,
-    data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
-  });
+    if (target.id !== actor.id && effectiveReaction.type === "DODGE" && targeting !== "ALLY" && targeting !== "SELF") {
+      const dodgeTarget = skillValueOf(target, effectiveReaction.skill ?? "DODGE", target.attributes.dex);
+      const dodgeRoll = rollDie(nextRollRng(state, "magic-dodge:" + actor.id + ":" + target.id), 100);
+      const dodgeCheck = resolveCheck(ctx.pack, dodgeRoll, dodgeTarget);
+      pushLog(state, {
+        kind: "CHECK",
+        actorId: target.id,
+        targetId: actor.id,
+        text: target.name + " 应对「" + spell.name + "」闪避判定 " + dodgeRoll + "/" + dodgeTarget + " → " + dodgeCheck.result,
+        data: { roll: dodgeRoll, target: dodgeTarget, result: dodgeCheck.result }
+      });
+      if (isSuccess(dodgeCheck.result)) {
+        pushLog(state, {
+          kind: "SPELLCARD",
+          actorId: actor.id,
+          targetId: target.id,
+          text: target.name + " 成功避开了「" + spell.name + "」",
+          data: { spellId: spell.id, spell: spell.name, evaded: true, mpCost, sanCost }
+        });
+        continue;
+      }
+      defense = { type: "DODGE", success: false };
+    } else if (target.id !== actor.id && effectiveReaction.type === "DEFEND") {
+      defense = { type: "DEFEND", success: true };
+    }
+
+    if (effects.length === 0) {
+      pushLog(state, {
+        kind: "SPELLCARD",
+        actorId: actor.id,
+        targetId: target.id,
+        text: actor.name + " 施放「" + spell.name + "」 → " + target.name + "（无直接效果）",
+        data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
+      });
+      continue;
+    }
+
+    for (const effect of effects) {
+      if (target.defeated) break;
+      applyMagicEffect(ctx, actor, target, spell, effect, defense);
+    }
+  }
 }
 
 function resolveOne(
@@ -815,6 +1099,8 @@ export function resolvePending(
 
   const ctx: ResolveContext = { pack, state, reactions, queue, cancelled: new Set<string>() };
   state.pending = {};
+
+  for (const participant of order) applyStartOfTurnEffects(ctx, participant);
 
   const acted: string[] = [];
   while (ctx.queue.length > 0) {
@@ -961,6 +1247,7 @@ export function resolveInitiativeTurn(
   const actorId = currentActorId(state);
   if (actorId === null) return { acted: [], defeated: [], cleared: [] };
   const actor = findParticipant(state, actorId);
+  if (actor === undefined) return { acted: [], defeated: [], cleared: [] };
   const submission = state.pending[actorId];
   const ctx: ResolveContext = {
     pack,
@@ -969,6 +1256,7 @@ export function resolveInitiativeTurn(
     queue: submission === undefined ? [] : [submission],
     cancelled: new Set<string>()
   };
+  applyStartOfTurnEffects(ctx, actor);
   delete state.pending[actorId];
   const acted: string[] = [];
   while (ctx.queue.length > 0) {

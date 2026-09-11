@@ -1,5 +1,5 @@
 import type { ActionSubmission } from "@touhou/combat";
-import type { CompiledRulePack } from "@touhou/rules";
+import { spellTargeting, type CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 
 export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER";
@@ -165,7 +165,7 @@ export function combatFeatureFlags(pack: CompiledRulePack): CombatFeatureFlags {
 export interface CombatActionContext {
   readonly pack: CompiledRulePack;
   readonly state: {
-    readonly participants: readonly { readonly id: string; readonly defeated: boolean }[];
+    readonly participants: readonly { readonly id: string; readonly defeated: boolean; readonly faction?: string }[];
   };
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
 }
@@ -185,11 +185,33 @@ export function validateCombatAction(
       (item) => item.id === action.spellId || item.name === action.name
     );
     if (spell === undefined) return "没有找到这个法术";
-    if (spell.target !== "SELF") {
-      const targetId = action.targetId ?? null;
-      if (targetId === null) return "施法需要目标";
-      const target = context.state.participants.find((item) => item.id === targetId);
-      if (target === undefined || target.defeated) return "目标已不在场";
+    const targeting = spellTargeting(spell);
+    if (targeting === "SELF" || spell.target === "SELF") return null;
+    // ALL 由服务端按阵营选择目标；ONE 需要玩家指定合法目标。
+    if (spell.target === "ALL") return null;
+    const targetId = action.targetId ?? null;
+    if (targetId === null) return "施法需要目标";
+    const target = context.state.participants.find((item) => item.id === targetId);
+    if (target === undefined || target.defeated) return "目标已不在场";
+    const actor = context.state.participants.find((item) => item.id === action.actorId);
+    if (actor === undefined) return "施法者不在场";
+    if (targeting === "ENEMY" && target.id === actor.id) return "这个法术不能对自己使用";
+    if (
+      targeting === "ENEMY" &&
+      target.faction !== undefined &&
+      actor.faction !== undefined &&
+      target.faction === actor.faction
+    ) {
+      return "这个法术只能对敌方使用";
+    }
+    if (
+      targeting === "ALLY" &&
+      target.faction !== undefined &&
+      actor.faction !== undefined &&
+      target.faction !== actor.faction &&
+      target.id !== actor.id
+    ) {
+      return "这个法术只能对友方使用";
     }
   }
   if (action.kind === "OUT_OF_RULE") {
