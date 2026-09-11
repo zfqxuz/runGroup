@@ -6,6 +6,7 @@ import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import { selectRoomModuleAction, setActiveCharacterAction, startRoomAction, toggleReadyAction } from "@/server/actions/room";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
+import { loadGameModuleView } from "@/server/modules/revision";
 import { prisma } from "@/server/db/prisma";
 import { advancementView } from "@/server/game/view";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
@@ -87,9 +88,10 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   const activeGame = await prisma.game.findFirst({
     where: { roomId: room.id, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
     orderBy: { createdAt: "desc" },
-    select: { id: true, moduleId: true, title: true, status: true }
+    select: { id: true, moduleId: true, moduleRevisionId: true, title: true, status: true }
   });
   const resuming = activeGame?.status === "PAUSED";
+  const activeGameModule = resuming && activeGame !== null ? await loadGameModuleView(activeGame) : null;
   const activeModule = activeGame?.moduleId === null || activeGame?.moduleId === undefined
     ? null
     : roomModules.find((item) => item.id === activeGame.moduleId) ?? null;
@@ -102,7 +104,15 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   const allReady = requiredMembers.length > 0 && readyCount === requiredMembers.length;
 
   const rows = await prisma.message.findMany({
-    where: isKP ? { roomId: room.id } : { roomId: room.id, channel: { not: "KP_ONLY" } },
+    where: {
+      roomId: room.id,
+      ...(isKP ? {} : { channel: { not: "KP_ONLY" as const } }),
+      OR: [
+        { channel: { not: "WHISPER" as const } },
+        { userId: session.user.id },
+        { targetId: session.user.id }
+      ]
+    },
     include: { user: { select: { username: true, displayName: true } } },
     orderBy: { createdAt: "desc" },
     take: 50
@@ -122,6 +132,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         kind: (content.kind ?? row.type) as ChatKind,
         text: content.text ?? "",
         dice: content.dice ?? null,
+        targetId: row.targetId,
         createdAt: row.createdAt.toISOString()
       };
     });
@@ -413,6 +424,12 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             </button>
           </form>
         ) : null}
+
+        {activeGameModule === null ? null : (
+          <p className="mt-3 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-[11px] text-spirit-200">
+            本局已锁定开局快照 v{activeGameModule.version}（共 {activeGameModule.assets.length} 个资源）。暂停期间修改或替换团本，不会影响本局内容；新选择只会用于下一局。
+          </p>
+        )}
 
         {searchParams.module === "selected" ? (
           <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">

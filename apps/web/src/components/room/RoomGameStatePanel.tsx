@@ -1,6 +1,12 @@
 import { updateGameStateAction } from "@/server/actions/game";
 import type { GameStateView } from "@/shared/game";
 
+export interface ModuleStructureOption {
+  readonly id: string;
+  readonly title: string;
+  readonly detail: string | null;
+}
+
 interface Props {
   readonly roomId: string;
   readonly gameId: string;
@@ -8,6 +14,8 @@ interface Props {
   readonly status: string;
   readonly state: GameStateView;
   readonly moduleSections: readonly string[];
+  readonly moduleScenes: readonly ModuleStructureOption[];
+  readonly moduleEncounters: readonly ModuleStructureOption[];
   readonly isKP: boolean;
   readonly saved: boolean;
   readonly error: string | null;
@@ -94,28 +102,76 @@ export default function RoomGameStatePanel(props: Props) {
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">当前章节</span>
-              <input
-                name="currentChapterId"
-                list="game-module-sections"
-                defaultValue={props.state.currentChapterId ?? ""}
-                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-              />
+              {props.moduleSections.length === 0 ? (
+                <input
+                  name="currentChapterId"
+                  defaultValue={props.state.currentChapterId ?? ""}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              ) : (
+                <select
+                  name="currentChapterId"
+                  defaultValue={props.state.currentChapterId ?? ""}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                >
+                  <option value="">未设置</option>
+                  {props.moduleSections.map((section) => (
+                    <option key={section} value={section}>
+                      {section}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">当前场景</span>
-              <input
-                name="currentSceneId"
-                defaultValue={props.state.currentSceneId ?? ""}
-                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-              />
+              {props.moduleScenes.length === 0 ? (
+                <input
+                  name="currentSceneId"
+                  defaultValue={props.state.currentSceneId ?? ""}
+                  placeholder="团本里用 module-scene 块定义场景"
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              ) : (
+                <select
+                  name="currentSceneId"
+                  defaultValue={props.state.currentSceneId ?? ""}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                >
+                  <option value="">未设置</option>
+                  {props.moduleScenes.map((scene) => (
+                    <option key={scene.id} value={scene.id}>
+                      {scene.title}
+                      {scene.detail === null ? "" : " · " + scene.detail}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">当前遭遇</span>
-              <input
-                name="currentEncounterId"
-                defaultValue={props.state.currentEncounterId ?? ""}
-                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-              />
+              {props.moduleEncounters.length === 0 ? (
+                <input
+                  name="currentEncounterId"
+                  defaultValue={props.state.currentEncounterId ?? ""}
+                  placeholder="团本里用 module-encounter 块定义遭遇"
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                />
+              ) : (
+                <select
+                  name="currentEncounterId"
+                  defaultValue={props.state.currentEncounterId ?? ""}
+                  className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
+                >
+                  <option value="">未设置</option>
+                  {props.moduleEncounters.map((encounter) => (
+                    <option key={encounter.id} value={encounter.id}>
+                      {encounter.title}
+                      {encounter.detail === null ? "" : " · " + encounter.detail}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">团内时间</span>

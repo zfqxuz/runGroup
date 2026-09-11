@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -32,7 +31,6 @@ export default async function CharactersLibraryPage() {
       </header>
 
 
-      <AppTabs />
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">全部（{characters.length}）</h2>
         {characters.length === 0 ? (

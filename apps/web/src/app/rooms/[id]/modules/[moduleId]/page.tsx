@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ModuleActions from "@/components/module/ModuleActions";
 import ModuleAssetActions from "@/components/module/ModuleAssetActions";
+import ModuleMarkdown from "@/components/module/ModuleMarkdown";
 import { saveModuleAction } from "@/server/actions/module";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -225,12 +226,10 @@ export default async function ModuleDetailPage({
         <h2 className="text-sm font-medium text-white/80">正文预览</h2>
         {canViewFull === false ? (
           <p className="mt-3 text-xs text-white/35">非公开正文仅 KP 与团本作者可见。</p>
-        ) : text.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">暂无正文。</p>
         ) : (
-          <pre className="mt-4 max-h-[640px] overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-ink-900/60 px-4 py-3 font-sans text-xs leading-relaxed text-white/60">
-            {text}
-          </pre>
+          <div className="mt-4">
+            <ModuleMarkdown text={text} />
+          </div>
         )}
       </section>
     </main>

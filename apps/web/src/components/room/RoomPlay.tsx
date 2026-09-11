@@ -7,14 +7,18 @@ import type {
   Ack,
   ChatChannel,
   ChatMessage,
+  CombatLifecycle,
+  DiceVisibility,
   JoinAck,
   RoomAdvancementUpdate,
   RoomMemberView,
-  RoomStateUpdate
+  RoomStateUpdate,
+  RoomUpdate
 } from "@/shared/socket";
 
 interface Props {
   roomId: string;
+  currentUserId: string;
   isKP: boolean;
   initialMembers: readonly RoomMemberView[];
   initialMessages: readonly ChatMessage[];
@@ -28,8 +32,10 @@ export default function RoomPlay(props: Props) {
   const [messages, setMessages] = useState<ChatMessage[]>([...props.initialMessages]);
   const [members, setMembers] = useState<RoomMemberView[]>([...props.initialMembers]);
   const [channel, setChannel] = useState<ChatChannel>("OOC");
+  const [whisperTargetId, setWhisperTargetId] = useState("");
   const [text, setText] = useState("");
   const [diceExpr, setDiceExpr] = useState("1d100");
+  const [diceVisibility, setDiceVisibility] = useState<DiceVisibility>("PUBLIC");
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
@@ -83,6 +89,18 @@ export default function RoomPlay(props: Props) {
       if (cancelled) return;
       if (payload.roomId === props.roomId) router.refresh();
     });
+    socket.on("room:update", (payload: RoomUpdate) => {
+      if (cancelled) return;
+      if (payload.roomId === props.roomId) router.refresh();
+    });
+    socket.on("combat:started", (payload: CombatLifecycle) => {
+      if (cancelled) return;
+      if (payload.roomId === props.roomId) router.refresh();
+    });
+    socket.on("combat:ended", (payload: CombatLifecycle) => {
+      if (cancelled) return;
+      if (payload.roomId === props.roomId) router.refresh();
+    });
 
     socket.on("disconnect", () => {
       if (cancelled === false) setConn("offline");
@@ -109,18 +127,35 @@ export default function RoomPlay(props: Props) {
     const socket = socketRef.current;
     const value = text.trim();
     if (socket === null || value.length === 0) return;
-    socket.emit("chat:send", { roomId: props.roomId, channel, text: value }, (result: Ack) => {
-      if (result.ok === false) setError(result.error ?? "发送失败");
-    });
+    if (channel === "WHISPER" && whisperTargetId.length === 0) {
+      setError("请选择悄悄话对象");
+      return;
+    }
+    socket.emit(
+      "chat:send",
+      {
+        roomId: props.roomId,
+        channel,
+        text: value,
+        targetId: channel === "WHISPER" ? whisperTargetId : null
+      },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "发送失败");
+      }
+    );
     setText("");
   }
 
   function roll(): void {
     const socket = socketRef.current;
     if (socket === null) return;
-    socket.emit("dice:roll", { roomId: props.roomId, expression: diceExpr }, (result: Ack) => {
-      if (result.ok === false) setError(result.error ?? "掷骰失败");
-    });
+    socket.emit(
+      "dice:roll",
+      { roomId: props.roomId, expression: diceExpr, visibility: diceVisibility },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "掷骰失败");
+      }
+    );
   }
 
   const connLabel = conn === "online" ? "已连接" : conn === "connecting" ? "连接中" : "已断开";
@@ -157,6 +192,11 @@ export default function RoomPlay(props: Props) {
                       KP
                     </span>
                   ) : null}
+                  {message.channel === "WHISPER" ? (
+                    <span className="rounded border border-spirit-400/40 px-1 text-[10px] text-spirit-300">
+                      悄悄话
+                    </span>
+                  ) : null}
                   <span className="font-mono text-[10px] text-white/25">
                     {message.createdAt.slice(11, 19)}
                   </span>
@@ -190,8 +230,25 @@ export default function RoomPlay(props: Props) {
             >
               <option value="OOC">OOC</option>
               <option value="IC">IC</option>
+              <option value="WHISPER">悄悄话</option>
               {props.isKP ? <option value="KP_ONLY">KP</option> : null}
             </select>
+            {channel === "WHISPER" ? (
+              <select
+                value={whisperTargetId}
+                onChange={(event) => setWhisperTargetId(event.target.value)}
+                className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+              >
+                <option value="">选择对象</option>
+                {members
+                  .filter((member) => member.userId !== props.currentUserId)
+                  .map((member) => (
+                    <option key={member.userId} value={member.userId}>
+                      {member.displayName}
+                    </option>
+                  ))}
+              </select>
+            ) : null}
             <input
               value={text}
               onChange={(event) => setText(event.target.value)}
@@ -215,6 +272,15 @@ export default function RoomPlay(props: Props) {
               placeholder="1d100  2d6+3"
               className="flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
             />
+            <select
+              value={diceVisibility}
+              onChange={(event) => setDiceVisibility(event.target.value as DiceVisibility)}
+              className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+            >
+              <option value="PUBLIC">公开</option>
+              <option value="DARK">暗骰（发送者 + KP）</option>
+              <option value="SECRET">仅自己</option>
+            </select>
             <button
               type="button"
               onClick={roll}
@@ -230,9 +296,23 @@ export default function RoomPlay(props: Props) {
         <h2 className="text-sm font-medium text-white/80">成员（{members.length}）</h2>
         <ul className="mt-3 space-y-2">
           {members.map((member) => (
-            <li key={member.userId} className="flex items-center justify-between text-sm">
-              <span className="text-white/70">{member.displayName}</span>
-              <span className="text-[10px] text-white/35">{member.role}</span>
+            <li key={member.userId} className="flex items-center justify-between gap-2 text-sm">
+              <span className="min-w-0 truncate text-white/70">{member.displayName}</span>
+              <span className="flex items-center gap-2">
+                <span className="text-[10px] text-white/35">{member.role}</span>
+                {member.userId === props.currentUserId ? null : (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setChannel("WHISPER");
+                      setWhisperTargetId(member.userId);
+                    }}
+                    className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/45 transition hover:border-spirit-400/50 hover:text-spirit-300"
+                  >
+                    私聊
+                  </button>
+                )}
+              </span>
             </li>
           ))}
         </ul>

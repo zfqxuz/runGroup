@@ -9,7 +9,7 @@ import AdmZip from "adm-zip";
 import sharp from "sharp";
 import { uploadRoot } from "../src/server/assets/storage";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const prisma = new PrismaClient();
 
 interface CallResult {

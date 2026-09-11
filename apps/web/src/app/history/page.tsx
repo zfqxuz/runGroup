@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -17,7 +16,8 @@ export default async function GameHistoryPage() {
     },
     include: {
       room: { select: { id: true, name: true, system: true } },
-      module: { select: { id: true, title: true, era: true, system: true } }
+      module: { select: { id: true, title: true, era: true, system: true } },
+      moduleRevision: { select: { id: true, title: true, version: true, era: true, system: true } }
     },
     orderBy: { createdAt: "desc" }
   });
@@ -32,7 +32,6 @@ export default async function GameHistoryPage() {
         </div>
       </header>
 
-      <AppTabs />
 
       {games.length === 0 ? (
         <p className="rounded-xl border border-dashed border-white/15 px-5 py-12 text-center text-sm text-white/40">
@@ -49,7 +48,9 @@ export default async function GameHistoryPage() {
               <div className="min-w-0">
                 <p className="truncate font-medium text-white/85">{game.title || game.room.name}</p>
                 <p className="mt-1 text-[11px] text-white/40">
-                  房间：{game.room.name} · {game.module?.title ?? "无团本"} · {game.room.system}
+                  房间：{game.room.name} ·{" "}
+                  {game.moduleRevision === null ? game.module?.title ?? "无团本" : game.moduleRevision.title}
+                  {game.moduleRevision === null ? "" : " · 快照 v" + game.moduleRevision.version} · {game.room.system}
                 </p>
               </div>
               <div className="shrink-0 text-right text-[11px] text-white/40">

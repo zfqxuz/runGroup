@@ -7,7 +7,7 @@
 - bash 命令里不要出现英文感叹号，不要出现美元符号加数字，不要写 heredoc。工具会报 Error: [object Object] 或直接挂到超时。
 - 写文件优先用 printf 多行，复杂脚本先 printf 到 /tmp/xxx.py，再 python3 /tmp/xxx.py。
 - TypeScript 如果必须写英文感叹号相关语法（旧文档要求完全避免），用 __BANG__ 占位，写完再统一替换。
-- 后台进程会被沙箱回收；dev server 必须在用户自己的终端里启动。
+- 后台进程会被沙箱回收；dev server 必须在用户自己的终端里启动。当前本地 dev 端口为 3100（3000 留给 Codex/MCP），server.ts 会先加载 apps/web/.env 再读取 PORT。
 - Docker Hub 出口受限，镜像用 docker.m.daocloud.io 前缀拉取后重新 tag。
 - npm 走内网镜像，装包加 --cache /tmp/npmcache。
 - Prisma 改 schema 必须先写 migration，再 npx prisma migrate deploy；本地执行需要显式 DATABASE_URL。
@@ -134,11 +134,11 @@ E2E 脚本需要服务已在运行：
 
 ```bash
 cd apps/web
-E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-room-setup.ts
-E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-combat.ts
-E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-card-library.ts
-E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-character-import.ts
-E2E_BASE_URL=http://localhost:3000 npx tsx --env-file=.env scripts/verify-join-room.ts
+E2E_BASE_URL=http://localhost:3100 npx tsx --env-file=.env scripts/verify-room-setup.ts
+E2E_BASE_URL=http://localhost:3100 npx tsx --env-file=.env scripts/verify-combat.ts
+E2E_BASE_URL=http://localhost:3100 npx tsx --env-file=.env scripts/verify-card-library.ts
+E2E_BASE_URL=http://localhost:3100 npx tsx --env-file=.env scripts/verify-character-import.ts
+E2E_BASE_URL=http://localhost:3100 npx tsx --env-file=.env scripts/verify-join-room.ts
 npm run verify:combat-options
 ```
 
@@ -437,3 +437,78 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - `npm run build --workspace @touhou/web`：PASS
 - 全部既有 E2E：PASS
 - 新增 E2E：`verify:module-gallery`、`verify:game-history` PASS
+
+## 15. P0（本轮）：团本快照、资源保护、结束确认、恢复加固（已完成）
+
+### 数据层
+- 迁移 `20260910220000_module_revisions`：新增 `ModuleRevision` / `ModuleRevisionAsset`，`Game` 增加 `moduleRevisionId`。
+- 开局 `startRoomAction` 调 `ensureModuleRevision`：按团本内容 + 资源生成内容哈希并复用/创建快照。
+- `GameState.moduleVersion` 继续写快照版本；跑团页、准备页提示、历史页改从 `loadGameModuleView` 读取。
+- 旧局没有 `moduleRevisionId` 时回退读取实时 `Module`，并在继续暂停局时自动补快照。
+
+### 进行中局资源保护
+- `deleteAssetIfOrphan` 会检查 `ModuleRevisionAsset -> ModuleRevision -> Game.status`。
+- 只要有 `PREPARING / PLAYING / PAUSED / COMBAT` 的局引用旧 Asset，替换 / 删除资源时不会清理文件。
+- 局全部结束后才允许清理；快照引用保留 `relativePath / url`，`assetId` 由外键 `SET NULL` 置空。
+
+### 结束本局与批量奖励
+- 新增 `/rooms/[id]/end` 确认页和 `EndGamePanel` 批量录入组件。
+- 新增 `endGameWithAdvancementsAction`：一个事务内写入多条 `CharacterAdvancement`、同步属性 / 技能 / SAN、结束 `Game`、关闭未结束 `Combat`，房间回 `LOBBY`。
+- 跑团页「结束本局」改为跳转确认页；`verify-room-ready` 已覆盖批量 SAN 奖励。
+- 异常恢复：房间状态卡在 PLAYING / COMBAT / PAUSED 但没有进行中 Game 时，结束页仍可打开并确认重置回 LOBBY。
+- 房间解散：首页每个房主自己的房间卡片新增「解散房间」按钮，二次确认后删除房间；非房主不显示入口。
+
+### 暂停 / 重启恢复
+- `saveCombatState` 每次落盘时按活跃 `Game` 同步 `GameCharacter` 的 HP / MP / SAN / DP / status。
+- `pauseGameAction` 若 Runtime 还在内存，会先强制 `saveCombatState` 再置 PAUSED。
+- `server.ts` 把 `.env` 加载提前到读取 `PORT` / `HOST` 之前；本地 dev 端口现在为 3100。
+
+### 验证
+- `npm run typecheck` PASS；`npm test` 137 PASS；`npm run build --workspace @touhou/web` PASS。
+- 新增 `npm run verify:module-revision`：快照 / 进行中资源保护 / 结束后清理 PASS。
+- `verify:room-ready` 扩展为：开局快照 / 编辑团本不影响本局 / 批量成长结束 / 历史快照 / 异常重置 / 解散房间 PASS。
+- `verify:combat` 扩展为：清空 Runtime 后从 `CombatSnapshot` 恢复，并校验 `GameCharacter` 同步 PASS。
+- 全量 12 个 E2E 在 `http://localhost:3100` PASS。
+
+## 16. P1（本轮）：实时广播、结构化导航、线索笔记、悄悄话、Markdown、归档（已完成第一版）
+
+### 实时广播
+- 新增 `room:update`、`combat:started`、`combat:ended` 事件。
+- `RoomPlay` / `CombatBoard` 收到后自动 `router.refresh()`，在线玩家不再需要手动刷新。
+- 开局、暂停、继续、结束本局、战斗创建 / 结束 / 中止都会广播。
+
+### 结构化局内导航
+- 新增 `server/modules/structure.ts`：解析 ` ```yaml module-scene / module-encounter / module-clue / module-item / module-ending / module-reward / module-npc ` 受控块。
+- 团本保存 / 导入时写入 `content.structured`；`GameModuleView` 暴露 `structured`，旧团本在读取时动态解析。
+- `RoomGameStatePanel` 的当前章节 / 场景 / 遭遇在存在结构化数据时改为下拉选择，否则退回自由输入。
+- 正在进行的局读取的是开局 `ModuleRevision` 中的结构化数据。
+
+### 线索 / 笔记 / 手书
+- 新增 `RoomInfoPanel` 与 `actions/room-info.ts`。
+- KP 可发布线索、设置是否公开；玩家可标记已发现，写入 `ClueDiscovery`。
+- 玩家可写自己的 `Note`；KP 可写 KP 专属笔记。
+- 团本快照中的 `HANDOUT` 资源会在房间页作为手书列表展示。
+
+### 悄悄话与暗骰
+- `ChatChannel` 增加 `WHISPER`，`Message.targetId` 接入聊天流程。
+- 玩家可对指定成员发悄悄话；Socket 使用 `user:<userId>` 房间只推送给发送者与目标。
+- 掷骰新增 `PUBLIC / DARK / SECRET`：
+  - `DARK`：发送者 + KP 可见。
+  - `SECRET`：仅发送者可见。
+- 历史消息加载会按当前用户过滤悄悄话与私密掷骰。
+
+### Markdown 渲染
+- 新增 `ModuleMarkdown`（`react-markdown` + `remark-gfm`），不使用 raw HTML，避免 XSS。
+- 团本详情页与房间团本详情页的只读正文改渲染 Markdown。
+
+### 房间归档
+- 新增 `archiveRoomAction`：房主可将房间置为 `ENDED`，同时结束进行中的局与战斗，房间数据保留。
+- 首页把「已归档」房间单独分组展示；归档房间页为只读，Socket 发言 / 掷骰会被拒绝。
+- 「解散房间」仍是物理删除，两者语义区分：归档保留数据，解散删除数据。
+
+### 验证
+- `npm run typecheck` PASS；`npm test` 137 PASS；`npm run build --workspace @touhou/web` PASS。
+- `verify-game-state` 扩展：线索 / 笔记 / 悄悄话 / 暗骰 / 私密掷骰 PASS。
+- `verify-room-ready` 扩展：归档 / 解散房间 PASS。
+- `verify-combat` 扩展：房间频道 `combat:ended` / `room:update` 广播 PASS。
+- 全量 12 个 E2E 在 `http://localhost:3100` PASS。

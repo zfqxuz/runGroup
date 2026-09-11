@@ -6,6 +6,7 @@ import { auth } from "@/server/auth";
 import { createCombatRecord, listSelectableUnits } from "@/server/combat/setup";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
+import { emitCombatStarted } from "@/server/realtime";
 
 function errorUrl(roomId: string, path: string, message: string): string {
   return "/rooms/" + roomId + path + "?error=" + encodeURIComponent(message);
@@ -42,6 +43,7 @@ export async function startCombatAction(formData: FormData): Promise<void> {
     if (result.ok === false || result.combatId === undefined) {
       redirect(errorUrl(room.id, "/combat/new", result.error ?? "战斗创建失败"));
     }
+    emitCombatStarted(room.id, result.combatId);
     revalidatePath("/rooms/" + room.id);
     redirect("/rooms/" + room.id);
   }
@@ -105,6 +107,7 @@ export async function reviewCombatRequestAction(formData: FormData): Promise<voi
   if (result.ok === false || result.combatId === undefined) {
     redirect(errorUrl(roomId, "/combat/requests/" + request.id, result.error ?? "战斗创建失败"));
   }
+  emitCombatStarted(request.roomId, result.combatId);
   await prisma.combatRequest.update({
     where: { id: request.id },
     data: { status: "APPROVED", reviewedAt: new Date() }

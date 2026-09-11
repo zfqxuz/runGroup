@@ -20,6 +20,7 @@ import type { Card, Character } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
 import type { EffectivePack } from "@/server/rules/loader";
 import { NpcStatsSchema } from "@/shared/npc";
+import { emitCombatEnded } from "@/server/realtime";
 
 export type UnitKind = "CHARACTER" | "NPC";
 export type MemberRole = "KP" | "PLAYER" | "SPECTATOR";
@@ -316,21 +317,29 @@ export async function createCombatRecord(
 }
 
 export async function saveCombatState(combatId: string, state: CombatState): Promise<void> {
+  const combat = await prisma.combat.findUnique({
+    where: { id: combatId },
+    select: { roomId: true }
+  });
+  if (combat === null) return;
+
   const latest = await prisma.combatSnapshot.findFirst({
     where: { combatId },
     orderBy: { seq: "desc" },
     select: { seq: true }
   });
   const seq = (latest?.seq ?? 0) + 1;
-  if (state.phase === "ENDED") {
-    const combat = await prisma.combat.findUnique({ where: { id: combatId }, select: { roomId: true } });
-    if (combat !== null) {
-      await prisma.room.update({ where: { id: combat.roomId }, data: { status: "PLAYING" } });
-    }
-  }
+  const activeGame = await prisma.game.findFirst({
+    where: {
+      roomId: combat.roomId,
+      status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] }
+    },
+    orderBy: { createdAt: "desc" },
+    select: { id: true }
+  });
 
-  await prisma.$transaction([
-    prisma.combat.update({
+  await prisma.$transaction(async (tx) => {
+    await tx.combat.update({
       where: { id: combatId },
       data: {
         round: state.round,
@@ -338,9 +347,33 @@ export async function saveCombatState(combatId: string, state: CombatState): Pro
         phase: dbPhase(state) as never,
         endedAt: state.phase === "ENDED" ? new Date() : null
       }
-    }),
-    prisma.combatSnapshot.create({
+    });
+    await tx.combatSnapshot.create({
       data: { combatId, seq, state: state as never }
-    })
-  ]);
+    });
+
+    if (activeGame !== null) {
+      for (const participant of state.participants) {
+        if (participant.characterId === null) continue;
+        await tx.gameCharacter.updateMany({
+          where: { gameId: activeGame.id, characterId: participant.characterId },
+          data: {
+            currentHp: participant.hp,
+            currentMp: participant.mp,
+            currentSan: participant.san,
+            currentDp: participant.dp,
+            status: participant.hp <= 0 ? "DEAD" : "ALIVE"
+          }
+        });
+      }
+    }
+
+    if (state.phase === "ENDED") {
+      await tx.room.update({ where: { id: combat.roomId }, data: { status: "PLAYING" } });
+    }
+  });
+
+  if (state.phase === "ENDED") {
+    emitCombatEnded(combat.roomId, combatId);
+  }
 }

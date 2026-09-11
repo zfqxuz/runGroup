@@ -103,6 +103,9 @@ export default function CombatBoard(props: Props) {
     socket.on("combat:aborted", () => {
       if (cancelled === false) router.refresh();
     });
+    socket.on("combat:ended", () => {
+      if (cancelled === false) router.refresh();
+    });
     socket.on("disconnect", () => {
       if (cancelled === false) setConn("offline");
     });

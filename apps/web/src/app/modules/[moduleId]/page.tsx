@@ -1,9 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
 import ConfirmModuleDeleteButton from "@/components/module/ConfirmModuleDeleteButton";
 import ModuleAssetActions from "@/components/module/ModuleAssetActions";
 import ModulePublicCard from "@/components/module/ModulePublicCard";
+import ModuleMarkdown from "@/components/module/ModuleMarkdown";
 import { saveModuleAction, setModulePublishedAction } from "@/server/actions/module";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -102,7 +102,6 @@ export default async function ModuleDetailPage({
         </div>
       </header>
 
-      <AppTabs />
 
       {searchParams.saved === "1" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">团本已保存。</p>
@@ -173,9 +172,9 @@ export default async function ModuleDetailPage({
       ) : canViewFull ? (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">KP 可见正文</h2>
-          <pre className="mt-3 max-h-[640px] overflow-auto whitespace-pre-wrap rounded-lg border border-white/10 bg-ink-900/60 px-4 py-3 font-sans text-xs leading-relaxed text-white/60">
-            {text.length === 0 ? "暂无正文" : text}
-          </pre>
+          <div className="mt-3">
+            <ModuleMarkdown text={text} />
+          </div>
         </section>
       ) : (
         <ModulePublicCard module={moduleRecord} />

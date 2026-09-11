@@ -6,10 +6,12 @@ import RoomCombatPanel from "@/components/room/RoomCombatPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
+import RoomInfoPanel from "@/components/room/RoomInfoPanel";
 import RoomPlay from "@/components/room/RoomPlay";
-import { endGameAction, pauseGameAction } from "@/server/actions/room";
+import { pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
 import { loadEffectivePack } from "@/server/rules/loader";
+import { loadGameModuleView } from "@/server/modules/revision";
 import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
 import { prisma } from "@/server/db/prisma";
 import { advancementView, gameStateView } from "@/server/game/view";
@@ -28,7 +30,7 @@ export default async function RoomPage({
   searchParams
 }: {
   params: { id: string };
-  searchParams: { state?: string; advancement?: string; error?: string };
+  searchParams: { state?: string; advancement?: string; error?: string; clue?: string; note?: string };
 }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -53,7 +55,15 @@ export default async function RoomPage({
   if (room.status === "LOBBY" || room.status === "PAUSED") redirect("/rooms/" + room.id + "/prepare");
 
   const rows = await prisma.message.findMany({
-    where: isKP ? { roomId: room.id } : { roomId: room.id, channel: { not: "KP_ONLY" } },
+    where: {
+      roomId: room.id,
+      ...(isKP ? {} : { channel: { not: "KP_ONLY" as const } }),
+      OR: [
+        { channel: { not: "WHISPER" as const } },
+        { userId: session.user.id },
+        { targetId: session.user.id }
+      ]
+    },
     include: { user: { select: { username: true, displayName: true } } },
     orderBy: { createdAt: "desc" },
     take: 50
@@ -73,6 +83,7 @@ export default async function RoomPage({
         kind: (content.kind ?? row.type) as ChatKind,
         text: content.text ?? "",
         dice: content.dice ?? null,
+        targetId: row.targetId,
         createdAt: row.createdAt.toISOString()
       };
     });
@@ -108,16 +119,18 @@ export default async function RoomPage({
     }
   });
   const gameState = activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state);
-  const activeModule =
-    activeGame?.moduleId === null || activeGame?.moduleId === undefined
-      ? await prisma.module.findFirst({ where: { roomId: room.id }, orderBy: { id: "asc" }, select: { content: true } })
-      : await prisma.module.findUnique({ where: { id: activeGame.moduleId }, select: { content: true } });
-  const rawSections = activeModule?.content === null || activeModule?.content === undefined
-    ? []
-    : ((activeModule.content as { sections?: unknown }).sections ?? []);
-  const moduleSections = Array.isArray(rawSections)
-    ? rawSections.filter((section): section is string => typeof section === "string")
-    : [];
+  const gameModule = await loadGameModuleView(activeGame);
+  const moduleSections = gameModule?.sections ?? [];
+  const moduleScenes = (gameModule?.structured.scenes ?? []).map((item) => ({
+    id: item.id,
+    title: item.title,
+    detail: typeof item.data.location === "string" ? item.data.location : null
+  }));
+  const moduleEncounters = (gameModule?.structured.encounters ?? []).map((item) => ({
+    id: item.id,
+    title: item.title,
+    detail: typeof item.data.sceneId === "string" ? "场景 " + item.data.sceneId : null
+  }));
   const advancements = activeGame === null
     ? []
     : await prisma.characterAdvancement.findMany({
@@ -129,6 +142,33 @@ export default async function RoomPage({
         orderBy: { createdAt: "desc" }
       });
   const advancementRows = advancements.map((item) => advancementView(item));
+
+  const clues = await prisma.clue.findMany({
+    where: isKP
+      ? { roomId: room.id }
+      : {
+          roomId: room.id,
+          OR: [{ isPublic: true }, { discoveredBy: { some: { userId: session.user.id } } }]
+        },
+    include: {
+      _count: { select: { discoveredBy: true } },
+      discoveredBy: { where: { userId: session.user.id }, select: { userId: true } }
+    },
+    orderBy: { createdAt: "asc" }
+  });
+  const notes = await prisma.note.findMany({
+    where: isKP
+      ? { roomId: room.id, OR: [{ userId: session.user.id }, { isKPOnly: true }] }
+      : { roomId: room.id, userId: session.user.id },
+    orderBy: { id: "asc" }
+  });
+  const handoutAssets = (gameModule?.assets ?? [])
+    .filter((asset) => asset.kind === "HANDOUT")
+    .map((asset) => ({
+      id: asset.assetId ?? asset.relativePath,
+      title: asset.originalName ?? asset.relativePath,
+      url: asset.url
+    }));
   const gameCharacterOptions = activeGame?.characters.map((item) => ({
     id: item.characterId,
     name: item.character.name
@@ -194,6 +234,12 @@ export default async function RoomPage({
         </div>
       </header>
 
+      {room.status === "ENDED" ? (
+        <p className="rounded-xl border border-white/15 bg-ink-800/50 px-4 py-3 text-xs text-white/50">
+          房间已归档，仅保留历史数据与只读视图；发言、掷骰和战斗操作已停止。
+        </p>
+      ) : null}
+
       <RoomConfigPanel
         roomId={room.id}
         system={room.system}
@@ -209,30 +255,42 @@ export default async function RoomPage({
       {isKP ? (
         <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
           <div>
-            <p className="text-sm text-white/80">本局：{activeGame?.title ?? room.name}</p>
+            <p className="text-sm text-white/80">
+              {activeGame === null ? "房间状态异常" : "本局：" + activeGame.title}
+            </p>
             <p className="mt-0.5 text-[11px] text-white/35">
-              暂停会保存当前状态并返回准备页；继续时全员需要重新准备。
+              {activeGame === null
+                ? "当前没有进行中的局，但房间状态不是 LOBBY。可以结束并重置房间。"
+                : "暂停会保存当前状态并返回准备页；继续时全员需要重新准备。"}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <form action={pauseGameAction}>
-              <input type="hidden" name="roomId" value={room.id} />
-              <button
-                type="submit"
-                className="rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-300 transition hover:bg-amber-400/10"
-              >
-                暂停本局
-              </button>
-            </form>
-            <form action={endGameAction}>
-              <input type="hidden" name="roomId" value={room.id} />
-              <button
-                type="submit"
+            {activeGame === null ? (
+              <Link
+                href={"/rooms/" + room.id + "/end"}
                 className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
               >
-                结束本局
-              </button>
-            </form>
+                结束并重置房间
+              </Link>
+            ) : (
+              <>
+                <form action={pauseGameAction}>
+                  <input type="hidden" name="roomId" value={room.id} />
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-300 transition hover:bg-amber-400/10"
+                  >
+                    暂停本局
+                  </button>
+                </form>
+                <Link
+                  href={"/rooms/" + room.id + "/end"}
+                  className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
+                >
+                  结束本局
+                </Link>
+              </>
+            )}
           </div>
         </section>
       ) : null}
@@ -245,6 +303,8 @@ export default async function RoomPage({
           status={activeGame.status}
           state={gameState}
           moduleSections={moduleSections}
+          moduleScenes={moduleScenes}
+          moduleEncounters={moduleEncounters}
           isKP={isKP}
           saved={searchParams.state === "saved"}
           error={searchParams.error ?? null}
@@ -262,6 +322,30 @@ export default async function RoomPage({
           saved={searchParams.advancement === "saved"}
         />
       )}
+
+      <RoomInfoPanel
+        roomId={room.id}
+        isKP={isKP}
+        readOnly={room.status === "ENDED"}
+        clues={clues.map((clue) => ({
+          id: clue.id,
+          title: clue.title,
+          content: clue.content,
+          isPublic: clue.isPublic,
+          discoveredByMe: clue.discoveredBy.length > 0,
+          discoveredCount: clue._count.discoveredBy
+        }))}
+        notes={notes.map((note) => ({
+          id: note.id,
+          title: note.title,
+          content: note.content,
+          isKPOnly: note.isKPOnly,
+          isMine: note.userId === session.user.id
+        }))}
+        handouts={handoutAssets}
+        clueStatus={searchParams.clue ?? null}
+        noteStatus={searchParams.note ?? null}
+      />
 
       {activeCombat === null ? (
         <RoomCombatPanel
@@ -291,6 +375,7 @@ export default async function RoomPage({
 
       <RoomPlay
         roomId={room.id}
+        currentUserId={session.user.id}
         isKP={isKP}
         initialMembers={initialMembers}
         initialMessages={initialMessages}

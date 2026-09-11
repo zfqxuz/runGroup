@@ -5,6 +5,11 @@ import { revalidatePath } from "next/cache";
 import { builtinRegistry, resolveRulePack, type CombatMode } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { ensureModuleRevision } from "@/server/modules/revision";
+import { applyAdvancement, parseAdvancementRows } from "@/server/game/advancement";
+import { emitRoomUpdate } from "@/server/realtime";
+import { hasCombatRuntime, loadCombatRuntime } from "@/server/combat/runtime";
+import { saveCombatState } from "@/server/combat/setup";
 
 function generateInviteCode(): string {
   return Math.random().toString(36).slice(2, 8).toUpperCase();
@@ -224,7 +229,15 @@ export async function startRoomAction(formData: FormData): Promise<void> {
   });
 
   if (activeGame !== null && activeGame.status === "PAUSED") {
-    await prisma.game.update({ where: { id: activeGame.id }, data: { status: "PLAYING" } });
+    const missingRevision = activeGame.moduleRevisionId === null && activeGame.moduleId !== null;
+    const revision = missingRevision ? await ensureModuleRevision(activeGame.moduleId as string) : null;
+    await prisma.game.update({
+      where: { id: activeGame.id },
+      data: {
+        status: "PLAYING",
+        moduleRevisionId: revision === null ? activeGame.moduleRevisionId : revision.id
+      }
+    });
     await prisma.gameState.upsert({
       where: { gameId: activeGame.id },
       update: { paused: false },
@@ -259,12 +272,14 @@ export async function startRoomAction(formData: FormData): Promise<void> {
       where: { id: roomId },
       data: { selectedModuleId: roomModule?.id ?? null }
     });
+    const revision = roomModule === null ? null : await ensureModuleRevision(roomModule.id);
     const game = await prisma.game.create({
       data: {
         roomId,
         moduleId: roomModule?.id ?? null,
+        moduleRevisionId: revision === null ? null : revision.id,
         status: "PLAYING",
-        title: roomModule?.title ?? room.name,
+        title: revision?.title ?? roomModule?.title ?? room.name,
         startedAt: new Date(),
         createdBy: session.user.id
       },
@@ -274,7 +289,7 @@ export async function startRoomAction(formData: FormData): Promise<void> {
       data: {
         gameId: game.id,
         moduleId: roomModule?.id ?? null,
-        moduleVersion: roomModule?.version ?? null,
+        moduleVersion: revision?.version ?? roomModule?.version ?? null,
         paused: false
       }
     });
@@ -314,6 +329,7 @@ export async function startRoomAction(formData: FormData): Promise<void> {
   }
 
   await prisma.room.update({ where: { id: roomId }, data: { status: "PLAYING" } });
+  emitRoomUpdate(roomId, "PLAYING");
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
   redirect("/rooms/" + roomId);
@@ -367,6 +383,16 @@ export async function pauseGameAction(formData: FormData): Promise<void> {
   });
   if (activeGame === null) redirect("/rooms/" + roomId + "/prepare?error=game");
 
+  const activeCombat = await prisma.combat.findFirst({
+    where: { roomId, endedAt: null },
+    orderBy: { startedAt: "desc" },
+    select: { id: true }
+  });
+  if (activeCombat !== null && hasCombatRuntime(activeCombat.id)) {
+    const runtime = await loadCombatRuntime(activeCombat.id);
+    if (runtime !== null) await saveCombatState(activeCombat.id, runtime.state);
+  }
+
   await prisma.game.update({ where: { id: activeGame.id }, data: { status: "PAUSED" } });
   await prisma.gameState.upsert({
     where: { gameId: activeGame.id },
@@ -378,52 +404,210 @@ export async function pauseGameAction(formData: FormData): Promise<void> {
     where: { roomId, role: { not: "SPECTATOR" } },
     data: { ready: false }
   });
+  emitRoomUpdate(roomId, "PAUSED");
 
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
   redirect("/rooms/" + roomId + "/prepare");
 }
 
-export async function endGameAction(formData: FormData): Promise<void> {
+export async function endGameWithAdvancementsAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");
+
   const roomId = String(formData.get("roomId") ?? "");
+  const gameId = String(formData.get("gameId") ?? "");
   const membership = await prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId, userId: session.user.id } },
     select: { role: true }
   });
   if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
 
+  const parsedRows = parseAdvancementRows(String(formData.get("rows") ?? "[]"));
+  if (parsedRows.ok === false) {
+    redirect("/rooms/" + roomId + "/end?error=advancement");
+  }
+
   const activeGame = await prisma.game.findFirst({
-    where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
-    orderBy: { createdAt: "desc" }
+    where: {
+      id: gameId,
+      roomId,
+      status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] }
+    },
+    include: { characters: { include: { character: true } } }
   });
-  if (activeGame !== null) {
-    await prisma.game.update({
+  if (activeGame === null) {
+    if (parsedRows.rows.length > 0) {
+      redirect("/rooms/" + roomId + "/end?error=game");
+    }
+    const otherActiveGame = await prisma.game.findFirst({
+      where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+      select: { id: true }
+    });
+    if (otherActiveGame !== null) {
+      redirect("/rooms/" + roomId + "/end?error=game");
+    }
+
+    await prisma.$transaction(async (tx) => {
+      await tx.combat.updateMany({
+        where: { roomId, endedAt: null },
+        data: { phase: "ENDED", endedAt: new Date() }
+      });
+      await tx.room.update({ where: { id: roomId }, data: { status: "LOBBY" } });
+      await tx.roomMember.updateMany({
+        where: { roomId, role: { not: "SPECTATOR" } },
+        data: { ready: false }
+      });
+    });
+
+    emitRoomUpdate(roomId, "LOBBY");
+    revalidatePath("/rooms/" + roomId);
+    revalidatePath("/rooms/" + roomId + "/prepare");
+    revalidatePath("/rooms/" + roomId + "/end");
+    redirect("/rooms/" + roomId + "/prepare?ended=1");
+  }
+
+  const targets: { readonly row: (typeof parsedRows.rows)[number]; readonly gameCharacter: (typeof activeGame.characters)[number] }[] = [];
+  for (const row of parsedRows.rows) {
+    const gameCharacter = activeGame.characters.find((item) => item.characterId === row.characterId);
+    if (gameCharacter === undefined) {
+      redirect("/rooms/" + roomId + "/end?error=advancement");
+    }
+    targets.push({ row, gameCharacter });
+  }
+
+  await prisma.$transaction(async (tx) => {
+    for (const item of targets) {
+      await applyAdvancement(
+        tx,
+        activeGame.id,
+        item.row.characterId,
+        item.gameCharacter.character as unknown as Record<string, unknown>,
+        item.row
+      );
+    }
+    await tx.game.update({
       where: { id: activeGame.id },
       data: { status: "ENDED", endedAt: new Date() }
     });
-    await prisma.gameState.updateMany({
+    await tx.gameState.updateMany({
       where: { gameId: activeGame.id },
       data: { paused: false }
     });
-    await prisma.gameCharacter.updateMany({
+    await tx.combat.updateMany({
+      where: { roomId, endedAt: null },
+      data: { phase: "ENDED", endedAt: new Date() }
+    });
+    await tx.gameCharacter.updateMany({
       where: { gameId: activeGame.id, currentHp: { gt: 0 } },
       data: { status: "ALIVE" }
     });
-    await prisma.gameCharacter.updateMany({
+    await tx.gameCharacter.updateMany({
       where: { gameId: activeGame.id, currentHp: { lte: 0 } },
       data: { status: "DEAD" }
     });
-  }
+  });
 
   await prisma.room.update({ where: { id: roomId }, data: { status: "LOBBY" } });
   await prisma.roomMember.updateMany({
     where: { roomId, role: { not: "SPECTATOR" } },
     data: { ready: false }
   });
+  emitRoomUpdate(roomId, "LOBBY");
 
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
-  redirect("/rooms/" + roomId + "/prepare");
+  revalidatePath("/rooms/" + roomId + "/end");
+  redirect("/rooms/" + roomId + "/prepare?ended=1");
+}
+
+export async function disbandRoomAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = String(formData.get("roomId") ?? "").trim();
+  if (roomId.length === 0) redirect("/");
+
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    select: { id: true, ownerId: true }
+  });
+  if (room === null) redirect("/");
+  if (room.ownerId !== session.user.id) redirect("/?error=disband");
+
+  const modules = await prisma.module.findMany({
+    where: { roomId },
+    select: { id: true }
+  });
+  if (modules.length > 0) {
+    await prisma.moduleRevision.deleteMany({
+      where: { moduleId: { in: modules.map((item) => item.id) } }
+    });
+  }
+
+  await prisma.room.delete({ where: { id: roomId } });
+
+  revalidatePath("/");
+  revalidatePath("/modules");
+  revalidatePath("/modules/mine");
+  revalidatePath("/history");
+  redirect("/?disbanded=1");
+}
+
+export async function archiveRoomAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = String(formData.get("roomId") ?? "").trim();
+  if (roomId.length === 0) redirect("/");
+
+  const room = await prisma.room.findUnique({
+    where: { id: roomId },
+    select: { id: true, ownerId: true, status: true }
+  });
+  if (room === null) redirect("/");
+  if (room.ownerId !== session.user.id) redirect("/?error=archive");
+  if (room.status === "ENDED") redirect("/?archived=1");
+
+  const activeGame = await prisma.game.findFirst({
+    where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true }
+  });
+
+  await prisma.$transaction(async (tx) => {
+    if (activeGame !== null) {
+      await tx.game.update({
+        where: { id: activeGame.id },
+        data: { status: "ENDED", endedAt: new Date() }
+      });
+      await tx.gameState.updateMany({
+        where: { gameId: activeGame.id },
+        data: { paused: false }
+      });
+      await tx.gameCharacter.updateMany({
+        where: { gameId: activeGame.id, currentHp: { gt: 0 } },
+        data: { status: "ALIVE" }
+      });
+      await tx.gameCharacter.updateMany({
+        where: { gameId: activeGame.id, currentHp: { lte: 0 } },
+        data: { status: "DEAD" }
+      });
+    }
+    await tx.combat.updateMany({
+      where: { roomId, endedAt: null },
+      data: { phase: "ENDED", endedAt: new Date() }
+    });
+    await tx.room.update({ where: { id: roomId }, data: { status: "ENDED" } });
+    await tx.roomMember.updateMany({
+      where: { roomId, role: { not: "SPECTATOR" } },
+      data: { ready: false }
+    });
+  });
+
+  emitRoomUpdate(roomId, "ENDED");
+  revalidatePath("/");
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  redirect("/?archived=1");
 }

@@ -29,6 +29,10 @@ export function clearCombatRuntime(combatId: string): void {
   cache.delete(combatId);
 }
 
+export function hasCombatRuntime(combatId: string): boolean {
+  return cache.has(combatId);
+}
+
 export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime | null> {
   const cached = cache.get(combatId);
   if (cached !== undefined) return cached;

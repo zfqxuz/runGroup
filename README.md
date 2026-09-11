@@ -32,7 +32,7 @@ npm run db:deploy   --workspace @touhou/web
 npm run dev
 ```
 
-打开 http://localhost:3000 。
+打开 http://localhost:3100（可在 apps/web/.env 里调整 PORT/HOST）。
 
 ## 目录结构
 

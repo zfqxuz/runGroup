@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
 import { auth } from "@/server/auth";
+import { loadGameModuleView } from "@/server/modules/revision";
 import { prisma } from "@/server/db/prisma";
 
 export const dynamic = "force-dynamic";
@@ -19,18 +19,6 @@ export default async function GameHistoryDetailPage({ params }: { params: { game
     where: { id: params.gameId },
     include: {
       room: { select: { id: true, name: true, system: true, ownerId: true } },
-      module: {
-        select: {
-          id: true,
-          title: true,
-          author: true,
-          system: true,
-          era: true,
-          background: true,
-          synopsis: true,
-          occupationRecommendation: true
-        }
-      },
       state: true,
       characters: {
         include: {
@@ -45,6 +33,10 @@ export default async function GameHistoryDetailPage({ params }: { params: { game
     }
   });
   if (game === null) notFound();
+  const gameModule = await loadGameModuleView({
+    moduleId: game.moduleId,
+    moduleRevisionId: game.moduleRevisionId
+  });
 
   const membership = await prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId: game.roomId, userId: session.user.id } },
@@ -76,27 +68,31 @@ export default async function GameHistoryDetailPage({ params }: { params: { game
         </p>
       </header>
 
-      <AppTabs />
 
-      {game.module === null ? null : (
+      {gameModule === null ? null : (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-          <h2 className="text-sm font-medium text-white/80">使用团本</h2>
-          <p className="mt-2 text-sm text-white/80">{game.module.title}</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-white/80">使用团本</h2>
+            <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/45">
+              {gameModule.source === "revision" ? "本局快照" : "历史数据"} · v{gameModule.version}
+            </span>
+          </div>
+          <p className="mt-2 text-sm text-white/80">{gameModule.title}</p>
           <p className="mt-1 text-[11px] text-white/40">
-            {game.module.author ?? "未署名"} · {game.module.system ?? "未指定系统"} · {game.module.era ?? "未指定年代"}
+            {gameModule.author ?? "未署名"} · {gameModule.system ?? "未指定系统"} · {gameModule.era ?? "未指定年代"}
           </p>
           <div className="mt-3 grid gap-2 text-xs sm:grid-cols-2">
             <div>
               <p className="text-[10px] text-white/35">背景</p>
-              <p className="mt-0.5 whitespace-pre-wrap text-white/60">{game.module.background ?? "未填写"}</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-white/60">{gameModule.background ?? "未填写"}</p>
             </div>
             <div>
               <p className="text-[10px] text-white/35">职业推荐</p>
-              <p className="mt-0.5 whitespace-pre-wrap text-white/60">{game.module.occupationRecommendation ?? "未填写"}</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-white/60">{gameModule.occupationRecommendation ?? "未填写"}</p>
             </div>
             <div className="sm:col-span-2">
               <p className="text-[10px] text-white/35">简介</p>
-              <p className="mt-0.5 whitespace-pre-wrap text-white/60">{game.module.synopsis ?? "未填写"}</p>
+              <p className="mt-0.5 whitespace-pre-wrap text-white/60">{gameModule.synopsis ?? "未填写"}</p>
             </div>
           </div>
         </section>

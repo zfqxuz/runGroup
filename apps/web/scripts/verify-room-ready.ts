@@ -6,7 +6,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const prisma = new PrismaClient();
 
 interface CallResult {
@@ -224,7 +224,7 @@ async function main(): Promise<void> {
         roomId: room.id,
         title: "E2E 准备团本",
         version: "1.0.0",
-        content: { text: "## 元信息\n\nE2E" } as never,
+        content: { text: "## 元信息\n\nE2E\n\n```yaml module-scene\nid: e2e-scene\nname: 测试场景\n```\n", sections: ["元信息"] } as never,
         metadata: {} as never,
         importReport: {} as never
       },
@@ -239,6 +239,40 @@ async function main(): Promise<void> {
     expectEqual(startedGame?.moduleId, module.id, "开始时应绑定所选团本");
     const startedState = await prisma.gameState.findUnique({ where: { gameId: startedGame?.id ?? "" } });
     expectEqual(startedState?.moduleId, module.id, "GameState 应记录所选团本");
+    const revisionId = startedGame?.moduleRevisionId ?? null;
+    if (revisionId === null) throw new Error("E2E 断言失败：开局应创建团本快照");
+    const revision = await prisma.moduleRevision.findUnique({ where: { id: revisionId } });
+    expectEqual(revision?.version, "1.0.0", "开局快照版本");
+    const snapshotText = ((revision?.content ?? {}) as { text?: string }).text ?? "";
+    ensure(snapshotText.includes("E2E"), "开局快照应包含当时的团本正文");
+
+    await prisma.module.update({
+      where: { id: module.id },
+      data: {
+        title: "E2E 准备团本 v2",
+        version: "2.0.0",
+        content: { text: "## 元信息\n\n已修改", sections: ["已修改"] } as never
+      }
+    });
+    const liveModuleAfter = await prisma.module.findUnique({
+      where: { id: module.id },
+      select: { title: true, version: true, content: true }
+    });
+    expectEqual(liveModuleAfter?.version, "2.0.0", "编辑后团本版本");
+    const revisionAfter = await prisma.moduleRevision.findUnique({
+      where: { id: revisionId },
+      select: { title: true, version: true, content: true }
+    });
+    expectEqual(revisionAfter?.title, "E2E 准备团本", "开局快照标题不应随团本编辑变化");
+    expectEqual(revisionAfter?.version, "1.0.0", "开局快照版本不应随团本编辑变化");
+
+    const playAfterEdit = await call(kpJar, "/rooms/" + room.id);
+    expectEqual(playAfterEdit.status, 200, "GET 编辑后的跑团页");
+    ensure(playAfterEdit.text.includes("元信息"), "跑团页应读取开局快照的章节");
+    ensure(playAfterEdit.text.includes("已修改") === false, "跑团页不应读取编辑后的团本章节");
+    ensure(playAfterEdit.text.includes("e2e-scene"), "跑团页应读取快照中的结构化场景");
+    ensure(playAfterEdit.text.includes("测试场景"), "结构化场景应作为局内状态选项");
+
     const gameCharacters = await prisma.gameCharacter.count({ where: { gameId: startedGame?.id ?? "" } });
     expectEqual(gameCharacters, 1, "开始后应为 PL 创建 GameCharacter");
 
@@ -274,14 +308,26 @@ async function main(): Promise<void> {
     const resumedState = await prisma.gameState.findUnique({ where: { gameId: startedGame?.id ?? "" }, select: { paused: true } });
     expectEqual(resumedState?.paused, false, "继续后 GameState.paused");
 
-    const playAgain = await call(kpJar, "/rooms/" + room.id);
-    const endField = extractActionFieldAround(playAgain.text, "结束本局");
+    const sanBefore = await prisma.character.findUnique({
+      where: { id: character.id },
+      select: { san: true, maxSan: true }
+    });
+    const endPage = await call(kpJar, "/rooms/" + room.id + "/end");
+    expectEqual(endPage.status, 200, "GET 结束本局确认页");
+    const endField = extractActionFieldAround(endPage.text, "确认结束本局");
     const endForm = new FormData();
     endForm.set(endField, "");
     endForm.set("roomId", room.id);
-    const endedResponse = await call(kpJar, "/rooms/" + room.id, {
+    endForm.set("gameId", startedGame?.id ?? "");
+    endForm.set(
+      "rows",
+      JSON.stringify([
+        { characterId: character.id, kind: "SAN", target: null, delta: 1, note: "E2E 结束奖励" }
+      ])
+    );
+    const endedResponse = await call(kpJar, "/rooms/" + room.id + "/end", {
       method: "POST",
-      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id },
+      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id + "/end" },
       body: endForm
     });
     ensure(endedResponse.status < 400, "结束本局请求失败");
@@ -290,7 +336,81 @@ async function main(): Promise<void> {
     const endedGame = await prisma.game.findUnique({ where: { id: startedGame?.id ?? "" }, select: { status: true } });
     expectEqual(endedGame?.status, "ENDED", "结束后 Game 状态");
 
-    console.log("PASS 准备闸门 E2E：ready / 角色审核 / 开始 / 暂停 / 继续 / 结束");
+    const endAdvancement = await prisma.characterAdvancement.findFirst({
+      where: { gameId: startedGame?.id ?? "", characterId: character.id, kind: "SAN" }
+    });
+    if (endAdvancement === null) throw new Error("E2E 断言失败：结束本局应写入批量成长记录");
+    const sanAfter = await prisma.character.findUnique({
+      where: { id: character.id },
+      select: { san: true, maxSan: true }
+    });
+    expectEqual(sanAfter?.maxSan, (sanBefore?.maxSan ?? 0) + 1, "结束奖励应同步 SAN 上限");
+    expectEqual(sanAfter?.san, (sanBefore?.san ?? 0) + 1, "结束奖励应同步当前 SAN");
+
+    const history = await call(kpJar, "/history/" + (startedGame?.id ?? ""));
+    expectEqual(history.status, 200, "GET 历史详情页");
+    ensure(history.text.includes("E2E 准备团本"), "历史详情应显示开局快照团本");
+    ensure(history.text.includes("E2E 准备团本 v2") === false, "历史详情不应显示编辑后的团本标题");
+
+    // 异常恢复：房间卡在 PLAYING 但没有任何进行中的 Game 时，也应能确认重置。
+    await prisma.room.update({ where: { id: room.id }, data: { status: "PLAYING" } });
+    const brokenEndPage = await call(kpJar, "/rooms/" + room.id + "/end");
+    expectEqual(brokenEndPage.status, 200, "GET 异常房间结束页");
+    ensure(brokenEndPage.text.includes("当前没有进行中的局"), "异常房间结束页应显示重置提示");
+    const resetField = extractActionFieldAround(brokenEndPage.text, "结束并重置房间");
+    const resetForm = new FormData();
+    resetForm.set(resetField, "");
+    resetForm.set("roomId", room.id);
+    resetForm.set("gameId", "");
+    resetForm.set("rows", "[]");
+    const resetResponse = await call(kpJar, "/rooms/" + room.id + "/end", {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/rooms/" + room.id + "/end" },
+      body: resetForm
+    });
+    ensure(resetResponse.status < 400, "异常房间重置请求失败");
+    const resetRoom = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
+    expectEqual(resetRoom?.status, "LOBBY", "异常房间应重置回 LOBBY");
+
+    // 房主在房间列表页可以解散房间；非房主不应看到入口。
+    const playerHome = await call(plJar, "/");
+    ensure(playerHome.text.includes("解散房间") === false, "非房主不应显示解散按钮");
+    const home = await call(kpJar, "/");
+    expectEqual(home.status, 200, "GET 房间列表页");
+    ensure(home.text.includes("解散房间"), "房主房间卡片应显示解散按钮");
+
+    const archiveField = extractActionFieldAround(home.text, "归档房间");
+    const archiveForm = new FormData();
+    archiveForm.set(archiveField, "");
+    archiveForm.set("roomId", room.id);
+    const archiveResponse = await call(kpJar, "/", {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/" },
+      body: archiveForm
+    });
+    ensure(archiveResponse.status < 400, "归档房间请求失败");
+    const archivedRoom = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
+    expectEqual(archivedRoom?.status, "ENDED", "归档后房间状态");
+    const archivedHome = await call(kpJar, "/");
+    ensure(archivedHome.text.includes("已归档"), "归档后列表应显示已归档分组");
+    const archivedRoomPage = await call(kpJar, "/rooms/" + room.id);
+    expectEqual(archivedRoomPage.status, 200, "归档房间页可访问");
+    ensure(archivedRoomPage.text.includes("房间已归档"), "归档房间页应显示只读提示");
+
+    const disbandField = extractActionFieldAround(archivedHome.text, "解散房间");
+    const disbandForm = new FormData();
+    disbandForm.set(disbandField, "");
+    disbandForm.set("roomId", room.id);
+    const disbandResponse = await call(kpJar, "/", {
+      method: "POST",
+      headers: { origin: BASE, referer: BASE + "/" },
+      body: disbandForm
+    });
+    ensure(disbandResponse.status < 400, "解散房间请求失败");
+    const dissolvedRoom = await prisma.room.findUnique({ where: { id: room.id }, select: { id: true } });
+    if (dissolvedRoom !== null) throw new Error("E2E 断言失败：解散后房间应删除");
+
+    console.log("PASS 准备闸门 E2E：ready / 角色审核 / 开始 / 快照 / 暂停 / 继续 / 批量成长 / 历史快照 / 异常重置 / 归档 / 解散房间");
   } finally {
     if (roomId !== null) await prisma.room.deleteMany({ where: { id: roomId } });
     await prisma.user.deleteMany({ where: { username: { in: [kpName, plName] } } });

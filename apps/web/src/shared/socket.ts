@@ -1,7 +1,7 @@
 import type { ActionKind, CombatView } from "@touhou/combat";
 import type { GameStateView } from "./game";
 
-export type ChatChannel = "OOC" | "IC" | "KP_ONLY";
+export type ChatChannel = "OOC" | "IC" | "KP_ONLY" | "WHISPER";
 export type ChatKind = "CHAT" | "DICE" | "SYSTEM";
 
 export interface DiceRollView {
@@ -21,8 +21,11 @@ export interface ChatMessage {
   readonly kind: ChatKind;
   readonly text: string;
   readonly dice: DiceRollView | null;
+  readonly targetId: string | null;
   readonly createdAt: string;
 }
+
+export type DiceVisibility = "PUBLIC" | "DARK" | "SECRET";
 
 export interface RoomMemberView {
   readonly userId: string;
@@ -93,4 +96,12 @@ export interface CombatUpdate {
 export interface CombatJoinAck extends Ack {
   readonly view?: CombatView;
 }
+export interface RoomUpdate {
+  readonly roomId: string;
+  readonly status: "LOBBY" | "PLAYING" | "PAUSED" | "COMBAT" | "ENDED";
+}
 
+export interface CombatLifecycle {
+  readonly roomId: string;
+  readonly combatId: string;
+}

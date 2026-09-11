@@ -58,9 +58,17 @@ export async function auth(): Promise<import("next-auth").Session | null> {
   if (session === null) return null;
   const userId = session.user.id;
   if (typeof userId === "string" && userId.length > 0) {
-    const exists = await prisma.user.findUnique({ where: { id: userId }, select: { id: true } });
-    if (exists === null) return null;
-    return session;
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, username: true, displayName: true, avatarUrl: true }
+    });
+    if (user) {
+      session.user.id = user.id;
+      session.user.username = user.username;
+      session.user.name = user.displayName ?? user.username;
+      session.user.avatarUrl = user.avatarUrl;
+      return session;
+    }
   }
   return null;
 }

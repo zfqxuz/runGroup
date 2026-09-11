@@ -4,8 +4,9 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { io, type Socket } from "socket.io-client";
+import type { Ack, ChatMessage } from "../src/shared/socket";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const prisma = new PrismaClient();
 
 interface CallResult {
@@ -119,6 +120,26 @@ function waitForJoin(socket: Socket, roomId: string): Promise<Record<string, unk
   });
 }
 
+function emitAck<T>(socket: Socket, event: string, payload: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Socket ack 超时：" + event)), 5000);
+    socket.emit(event, payload, (result: T) => {
+      clearTimeout(timer);
+      resolve(result);
+    });
+  });
+}
+
+function waitEvent<T>(socket: Socket, event: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("Socket 事件超时：" + event)), 5000);
+    socket.once(event, (value: T) => {
+      clearTimeout(timer);
+      resolve(value);
+    });
+  });
+}
+
 async function main(): Promise<void> {
   const suffix = Date.now().toString(36);
   const kpName = "e2e_state_kp_" + suffix;
@@ -126,6 +147,7 @@ async function main(): Promise<void> {
   const password = "e2e_state_pass";
   let roomId: string | null = null;
   let socket: Socket | null = null;
+  let plSocket: Socket | null = null;
 
   try {
     const kpId = await register(kpName, password);
@@ -244,6 +266,47 @@ async function main(): Promise<void> {
     const updatedCharacter = await prisma.character.findUnique({ where: { id: character.id } });
     expectEqual(updatedCharacter?.str, 11, "属性成长应应用到角色卡");
 
+    const infoPage = await call(kpJar, "/rooms/" + room.id);
+    const clueField = extractActionFieldAround(infoPage.text, "发布线索");
+    const clueTitle = "E2E 线索标题";
+    const clueForm = new FormData();
+    clueForm.set(clueField, "");
+    clueForm.set("roomId", room.id);
+    clueForm.set("title", clueTitle);
+    clueForm.set("content", "E2E 线索内容");
+    clueForm.set("isPublic", "1");
+    await submitAction(kpJar, "/rooms/" + room.id, clueForm);
+    const clueRow = await prisma.clue.findFirst({ where: { roomId: room.id, title: clueTitle } });
+    if (clueRow === null) throw new Error("E2E 断言失败：应写入 Clue");
+
+    const infoPageAfterClue = await call(kpJar, "/rooms/" + room.id);
+    const noteField = extractActionFieldAround(infoPageAfterClue.text, "保存笔记");
+    const noteTitle = "E2E KP 私有笔记";
+    const noteForm = new FormData();
+    noteForm.set(noteField, "");
+    noteForm.set("roomId", room.id);
+    noteForm.set("title", noteTitle);
+    noteForm.set("content", "E2E 笔记内容");
+    await submitAction(kpJar, "/rooms/" + room.id, noteForm);
+    const noteRow = await prisma.note.findFirst({ where: { roomId: room.id, title: noteTitle } });
+    ensure(noteRow !== null, "应写入 Note");
+
+    const plJar = await login(plName, password);
+    const plInfoPage = await call(plJar, "/rooms/" + room.id);
+    expectEqual(plInfoPage.status, 200, "PL GET 跑团页");
+    ensure(plInfoPage.text.includes(clueTitle), "公开线索应对 PL 可见");
+    ensure(plInfoPage.text.includes(noteTitle) === false, "PL 不应看到 KP 的私有笔记");
+    const discoverField = extractActionFieldAround(plInfoPage.text, "标记为已发现");
+    const discoverForm = new FormData();
+    discoverForm.set(discoverField, "");
+    discoverForm.set("roomId", room.id);
+    discoverForm.set("clueId", clueRow.id);
+    await submitAction(plJar, "/rooms/" + room.id, discoverForm);
+    const discovery = await prisma.clueDiscovery.findUnique({
+      where: { clueId_userId: { clueId: clueRow.id, userId: plId } }
+    });
+    ensure(discovery !== null, "玩家标记发现应写入 ClueDiscovery");
+
     const ticketResponse = await call(kpJar, "/api/socket-ticket", { method: "POST" });
     const ticketPayload = JSON.parse(ticketResponse.text) as { ok?: boolean; ticket?: string };
     ensure(ticketPayload.ok === true && typeof ticketPayload.ticket === "string", "应签发 Socket 票据");
@@ -272,8 +335,87 @@ async function main(): Promise<void> {
     expectEqual(reconnectedState?.version, 2, "Socket 重连应返回更新后的 GameState");
     expectEqual(joinAck.activeCombatId, null, "无战斗时 activeCombatId 应为 null");
 
-    console.log("PASS 局内状态 E2E：状态更新 / 成长记录 / Socket 重连返回 GameState");
+    // P1：悄悄话 / 暗骰 / 私密掷骰。
+    const plTicketResponse = await call(plJar, "/api/socket-ticket", { method: "POST" });
+    const plTicketPayload = JSON.parse(plTicketResponse.text) as { ok?: boolean; ticket?: string };
+    ensure(plTicketPayload.ok === true && typeof plTicketPayload.ticket === "string", "PL 应签发 Socket 票据");
+    plSocket = io(BASE, {
+      path: "/api/socket",
+      transports: ["websocket"],
+      auth: { ticket: plTicketPayload.ticket },
+      autoConnect: true,
+      reconnection: false
+    });
+    await new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("PL Socket 连接超时")), 5000);
+      plSocket?.on("connect", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+      plSocket?.on("connect_error", (error) => {
+        clearTimeout(timer);
+        reject(error);
+      });
+    });
+    const plJoinAck = await waitForJoin(plSocket, room.id);
+    expectEqual(plJoinAck.ok, true, "PL Socket room:join 应成功");
+
+    const whisperText = "E2E 悄悄话内容";
+    const whisperEvent = waitEvent<ChatMessage>(plSocket, "chat:message");
+    const whisperAck = await emitAck<Ack>(socket, "chat:send", {
+      roomId: room.id,
+      channel: "WHISPER",
+      text: whisperText,
+      targetId: plId
+    });
+    expectEqual(whisperAck.ok, true, "KP 发送悄悄话");
+    const whisperMessage = await whisperEvent;
+    expectEqual(whisperMessage.text, whisperText, "PL 应收到悄悄话");
+    expectEqual(whisperMessage.targetId, plId, "悄悄话 targetId 应为 PL");
+
+    let kpSawSecret = false;
+    function onKpMessage(message: ChatMessage): void {
+      if (message.text.includes("SECRET")) kpSawSecret = true;
+    }
+    socket.on("chat:message", onKpMessage);
+    const secretDiceEvent = waitEvent<ChatMessage>(plSocket, "chat:message");
+    const secretAck = await emitAck<Ack>(plSocket, "dice:roll", {
+      roomId: room.id,
+      expression: "1d100",
+      label: "SECRET",
+      visibility: "SECRET"
+    });
+    expectEqual(secretAck.ok, true, "PL 提交仅自己可见的掷骰");
+    const secretMessage = await secretDiceEvent;
+    expectEqual(secretMessage.channel, "WHISPER", "秘密掷骰应为 WHISPER 频道");
+    expectEqual(secretMessage.targetId, plId, "秘密掷骰应只发给自己");
+    await new Promise((resolve) => setTimeout(resolve, 250));
+    expectEqual(kpSawSecret, false, "KP 不应看到仅自己可见的掷骰");
+    socket.off("chat:message", onKpMessage);
+
+    const secretRoll = await prisma.diceRoll.findFirst({
+      where: { roomId: room.id, userId: plId, visibility: "SECRET" },
+      orderBy: { createdAt: "desc" }
+    });
+    ensure(secretRoll !== null, "秘密掷骰应写入 DiceRoll");
+
+    const darkDiceEvent = waitEvent<ChatMessage>(plSocket, "chat:message");
+    const darkKpEvent = waitEvent<ChatMessage>(socket, "chat:message");
+    const darkAck = await emitAck<Ack>(plSocket, "dice:roll", {
+      roomId: room.id,
+      expression: "1d100",
+      label: "DARK",
+      visibility: "DARK"
+    });
+    expectEqual(darkAck.ok, true, "PL 提交暗骰");
+    const darkMessage = await darkDiceEvent;
+    const darkKpMessage = await darkKpEvent;
+    expectEqual(darkMessage.targetId, kpId, "暗骰应同步给 KP");
+    expectEqual(darkKpMessage.text.includes("DARK"), true, "KP 应收到暗骰");
+
+    console.log("PASS 局内状态 E2E：状态 / 成长 / 重连 / 悄悄话 / 暗骰");
   } finally {
+    plSocket?.close();
     socket?.close();
     if (roomId !== null) await prisma.room.deleteMany({ where: { id: roomId } });
     await prisma.user.deleteMany({ where: { username: { in: [kpName, plName] } } });

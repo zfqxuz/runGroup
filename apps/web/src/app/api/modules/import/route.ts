@@ -11,6 +11,7 @@ import {
   parseModulePackage,
   slugifyModuleId
 } from "@/server/modules/format";
+import { parseStructuredBlocks } from "@/server/modules/structure";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -91,7 +92,8 @@ export async function POST(request: Request): Promise<NextResponse> {
       content: {
         format: "markdown",
         text: parsed.markdown,
-        sections: parsed.sections
+        sections: parsed.sections,
+        structured: parseStructuredBlocks(parsed.markdown)
       } as never,
       metadata: parsed.frontMatter as never,
       importReport: {

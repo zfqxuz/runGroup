@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { REQUIRED_MODULE_SECTIONS } from "@/server/modules/format";
+import { parseStructuredBlocks } from "@/server/modules/structure";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -134,7 +135,8 @@ export async function saveModuleAction(formData: FormData): Promise<void> {
       content: {
         format: previous.format ?? "markdown",
         text,
-        sections: previous.sections ?? []
+        sections: previous.sections ?? [],
+        structured: parseStructuredBlocks(text)
       } as never
     }
   });
@@ -311,7 +313,8 @@ export async function createBlankModuleAction(formData: FormData): Promise<void>
       content: {
         format: "markdown",
         text,
-        sections: [...REQUIRED_MODULE_SECTIONS]
+        sections: [...REQUIRED_MODULE_SECTIONS],
+        structured: parseStructuredBlocks(text)
       } as never,
       metadata: {
         spec: "touhou-module/v1",

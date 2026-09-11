@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import ImageUpload from "@/components/upload/ImageUpload";
 import { copyCardTemplateAction, deleteCardAction, setCardTemplateAction } from "@/server/actions/card";
-import AppTabs from "@/components/layout/AppTabs";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
@@ -54,7 +53,6 @@ export default async function CardsLibraryPage() {
       </header>
 
 
-      <AppTabs />
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">我的卡牌（{cards.length}）</h2>
         {cards.length === 0 ? (

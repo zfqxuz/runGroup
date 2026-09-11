@@ -3,7 +3,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const prisma = new PrismaClient();
 
 function absorbCookies(response: Response, jar: Map<string, string>): void {

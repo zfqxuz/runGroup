@@ -2,12 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { ATTRIBUTE_KEYS, type AttributeKey } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
-import { isActiveGameStatus, isAdvancementKind, gameStateView } from "@/server/game/view";
+import { applyAdvancement, validateAdvancement } from "@/server/game/advancement";
+import { isActiveGameStatus, gameStateView } from "@/server/game/view";
 import { getSocketServer } from "@/server/socket/io";
-import type { AdvancementKind } from "@/shared/game";
 
 function clean(value: FormDataEntryValue | null, maxLength: number): string {
   return String(value ?? "").trim().slice(0, maxLength);
@@ -124,7 +123,6 @@ export async function recordAdvancementAction(formData: FormData): Promise<void>
   const gameId = clean(formData.get("gameId"), 64);
   const characterId = clean(formData.get("characterId"), 64);
   const kindRaw = clean(formData.get("kind"), 40);
-  const kind: AdvancementKind = isAdvancementKind(kindRaw) ? kindRaw : "OTHER";
   const target = optionalClean(formData.get("target"), 120);
   const delta = integerOf(formData.get("delta"));
   const note = optionalClean(formData.get("note"), 1000);
@@ -149,56 +147,19 @@ export async function recordAdvancementAction(formData: FormData): Promise<void>
     redirect("/rooms/" + roomId + "?error=advancement");
   }
 
-  if (kind === "ATTRIBUTE") {
-    if (target === null || (ATTRIBUTE_KEYS as readonly string[]).includes(target) === false || delta === null || delta === 0) {
-      redirect("/rooms/" + roomId + "?error=advancement");
-    }
-  }
-  if (kind === "SKILL" && (target === null || delta === null || delta === 0)) {
-    redirect("/rooms/" + roomId + "?error=advancement");
-  }
-  if (kind === "SAN" && (delta === null || delta === 0)) {
+  const validation = validateAdvancement(kindRaw, target, delta, note);
+  if (validation.ok === false) {
     redirect("/rooms/" + roomId + "?error=advancement");
   }
 
   await prisma.$transaction(async (tx) => {
-    if (kind === "ATTRIBUTE" && target !== null && delta !== null) {
-      const character = gameCharacter.character;
-      const current = Number((character as unknown as Record<string, unknown>)[target as AttributeKey] ?? 0);
-      const next = Math.max(0, Math.min(999, current + delta));
-      await tx.character.update({
-        where: { id: characterId },
-        data: { [target]: next } as never
-      });
-    } else if (kind === "SKILL" && target !== null && delta !== null) {
-      const character = gameCharacter.character;
-      const skills = ((character.skills ?? {}) as Record<string, number>);
-      const current = Number(skills[target] ?? 0);
-      const next = Math.max(0, Math.min(999, current + delta));
-      await tx.character.update({
-        where: { id: characterId },
-        data: { skills: { ...skills, [target]: next } as never }
-      });
-    } else if (kind === "SAN" && delta !== null) {
-      const character = gameCharacter.character;
-      const nextMax = Math.max(0, character.maxSan + delta);
-      const nextCurrent = Math.max(0, Math.min(nextMax, character.san + delta));
-      await tx.character.update({
-        where: { id: characterId },
-        data: { maxSan: nextMax, san: nextCurrent }
-      });
-    }
-
-    await tx.characterAdvancement.create({
-      data: {
-        characterId,
-        gameId,
-        kind,
-        target,
-        delta,
-        note
-      }
-    });
+    await applyAdvancement(
+      tx,
+      gameId,
+      characterId,
+      gameCharacter.character as unknown as Record<string, unknown>,
+      validation.value
+    );
   });
 
   getSocketServer()?.to("room:" + roomId).emit("room:advancement:update", {

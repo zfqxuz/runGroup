@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
 import ConfirmModuleDeleteButton from "@/components/module/ConfirmModuleDeleteButton";
 import ModuleImporter from "@/components/module/ModuleImporter";
 import { createBlankModuleAction, setModulePublishedAction } from "@/server/actions/module";
@@ -39,7 +38,6 @@ export default async function MyModulesPage({
         </Link>
       </header>
 
-      <AppTabs />
 
       {searchParams.deleted === "1" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">

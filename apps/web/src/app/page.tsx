@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
-import { auth, signOut } from "@/server/auth";
+import { auth } from "@/server/auth";
 import { joinRoomAction } from "@/server/actions/room";
 import { prisma } from "@/server/db/prisma";
+import DisbandRoomButton from "@/components/room/DisbandRoomButton";
+import ArchiveRoomButton from "@/components/room/ArchiveRoomButton";
 
 export const dynamic = "force-dynamic";
 
@@ -52,15 +53,10 @@ async function createRoom(formData: FormData): Promise<void> {
   redirect("/rooms/" + room.id);
 }
 
-async function doSignOut(): Promise<void> {
-  "use server";
-  await signOut({ redirectTo: "/login" });
-}
-
 const inputClass =
   "rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-sakura-500";
 
-export default async function HomePage(props: { searchParams: { error?: string; moduleId?: string } }) {
+export default async function HomePage(props: { searchParams: { error?: string; moduleId?: string; disbanded?: string; archived?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -87,41 +83,37 @@ export default async function HomePage(props: { searchParams: { error?: string; 
     }
   }
 
+  const activeMemberships = memberships.filter((membership) => membership.room.status !== "ENDED");
+  const archivedMemberships = memberships.filter((membership) => membership.room.status === "ENDED");
+
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-10 px-6 py-14">
       <header className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold">东方 TRPG 跑团平台</h1>
-          <p className="mt-1 text-sm text-white/50">
-            当前账号：{session.user.name ?? session.user.id}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link
-            href="/characters"
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/35 hover:text-white"
-          >
-            我的角色
-          </Link>
-          <Link
-            href="/cards"
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/35 hover:text-white"
-          >
-            我的卡牌
-          </Link>
-          <form action={doSignOut}>
-
-          <button
-            type="submit"
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/30 hover:text-white"
-          >
-            退出登录
-          </button>
-          </form>
         </div>
       </header>
 
-      <AppTabs />
+      {props.searchParams.disbanded === "1" ? (
+        <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-200">
+          房间已解散，相关数据已删除。
+        </p>
+      ) : null}
+      {props.searchParams.error === "disband" ? (
+        <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-xs text-red-200">
+          只有房主可以解散房间。
+        </p>
+      ) : null}
+      {props.searchParams.archived === "1" ? (
+        <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-200">
+          房间已归档，仍保留历史数据。
+        </p>
+      ) : null}
+      {props.searchParams.error === "archive" ? (
+        <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-xs text-red-200">
+          只有房主可以归档房间。
+        </p>
+      ) : null}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/60 p-5">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-3"><h2 className="text-sm font-medium text-white/80">创建房间</h2><Link href="/rooms/new" className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">按配置新建</Link></div>
@@ -194,20 +186,23 @@ export default async function HomePage(props: { searchParams: { error?: string; 
 
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-medium text-white/80">
-          我的房间（{memberships.length}）
+          我的房间（{activeMemberships.length}）
         </h2>
 
-        {memberships.length === 0 ? (
+        {activeMemberships.length === 0 ? (
           <p className="rounded-xl border border-dashed border-white/15 px-5 py-10 text-center text-sm text-white/40">
             还没有房间，用上面的表单创建一个
           </p>
         ) : (
           <ul className="flex flex-col gap-3">
-            {memberships.map((membership) => (
-              <li key={membership.id}>
+            {activeMemberships.map((membership) => (
+              <li
+                key={membership.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/40 px-5 py-4 transition hover:border-sakura-500/40"
+              >
                 <Link
                   href={"/rooms/" + membership.roomId}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/40 px-5 py-4 transition hover:border-sakura-500/40"
+                  className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3"
                 >
                   <div>
                     <p className="font-medium">{membership.room.name}</p>
@@ -232,11 +227,51 @@ export default async function HomePage(props: { searchParams: { error?: string; 
                     </span>
                   </div>
                 </Link>
+                {membership.room.ownerId === session.user.id ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <ArchiveRoomButton roomId={membership.roomId} roomName={membership.room.name} />
+                    <DisbandRoomButton roomId={membership.roomId} roomName={membership.room.name} />
+                  </div>
+                ) : null}
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {archivedMemberships.length === 0 ? null : (
+        <section className="flex flex-col gap-3">
+          <h2 className="text-sm font-medium text-white/55">
+            已归档（{archivedMemberships.length}）
+          </h2>
+          <ul className="flex flex-col gap-3">
+            {archivedMemberships.map((membership) => (
+              <li
+                key={membership.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/30 px-5 py-4"
+              >
+                <Link
+                  href={"/rooms/" + membership.roomId}
+                  className="flex min-w-0 flex-1 flex-wrap items-center justify-between gap-3"
+                >
+                  <div>
+                    <p className="font-medium text-white/70">{membership.room.name}</p>
+                    <p className="mt-1 font-mono text-xs text-white/30">
+                      邀请码 {membership.room.inviteCode}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/40">
+                    已归档 · {membership.room._count.members} 人
+                  </span>
+                </Link>
+                {membership.room.ownerId === session.user.id ? (
+                  <DisbandRoomButton roomId={membership.roomId} roomName={membership.room.name} />
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
     </main>
   );
 }

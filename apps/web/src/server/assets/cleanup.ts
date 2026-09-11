@@ -35,10 +35,20 @@ export async function deleteAssetIfOrphan(assetId: string): Promise<boolean> {
       layers: { select: { id: true } },
       tokens: { select: { id: true } },
       clues: { select: { id: true } },
-      moduleAssets: { select: { id: true } }
+      moduleAssets: { select: { id: true } },
+      moduleRevisionAssets: {
+        select: {
+          id: true,
+          revision: { select: { games: { select: { status: true } } } }
+        }
+      }
     }
   });
   if (asset === null) return false;
+  const activeGameStatuses = new Set(["PREPARING", "PLAYING", "PAUSED", "COMBAT"]);
+  const referencedByActiveGame = asset.moduleRevisionAssets.some((link) =>
+    link.revision.games.some((game) => activeGameStatuses.has(game.status))
+  );
   const referenced =
     asset.portraitOf !== null ||
     asset.avatarOf !== null ||
@@ -48,7 +58,8 @@ export async function deleteAssetIfOrphan(assetId: string): Promise<boolean> {
     asset.layers.length > 0 ||
     asset.tokens.length > 0 ||
     asset.clues.length > 0 ||
-    asset.moduleAssets.length > 0;
+    asset.moduleAssets.length > 0 ||
+    referencedByActiveGame;
   if (referenced) return false;
   await deleteAssetFilesByUrl(asset.url);
   await prisma.asset.delete({ where: { id: assetId } }).catch(() => undefined);

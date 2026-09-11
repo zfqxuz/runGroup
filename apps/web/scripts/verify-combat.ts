@@ -1,11 +1,12 @@
 import { io, type Socket } from "socket.io-client";
 import { characterRef, createCombatRecord, npcRef } from "../src/server/combat/setup";
+import { clearCombatRuntime, loadCombatRuntime } from "../src/server/combat/runtime";
 import { prisma } from "../src/server/db/prisma";
 import { loadEffectivePack } from "../src/server/rules/loader";
 import { NpcStatsSchema } from "../src/shared/npc";
-import type { Ack, CombatJoinAck, CombatReactionRequest, CombatUpdate } from "../src/shared/socket";
+import type { Ack, CombatJoinAck, CombatLifecycle, CombatReactionRequest, CombatUpdate, RoomUpdate } from "../src/shared/socket";
 
-const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3000";
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const jar = new Map<string, string>();
 
 function absorbCookies(response: Response): void {
@@ -108,6 +109,7 @@ async function main(): Promise<void> {
   const password = "test-password-123";
   let roomId: string | null = null;
   let socket: Socket | null = null;
+  let roomSocket: Socket | null = null;
   try {
     const register = await call("/api/register", {
       method: "POST",
@@ -160,6 +162,27 @@ async function main(): Promise<void> {
     });
     await prisma.roomCharacterEntry.create({
       data: { roomId: room.id, characterId: character.id, status: "APPROVED" }
+    });
+
+    const e2eGame = await prisma.game.create({
+      data: {
+        roomId: room.id,
+        status: "PLAYING",
+        title: "E2E 战斗局",
+        createdBy: userId
+      },
+      select: { id: true }
+    });
+    await prisma.gameCharacter.create({
+      data: {
+        gameId: e2eGame.id,
+        characterId: character.id,
+        userId,
+        currentHp: character.hp,
+        currentMp: character.mp,
+        currentSan: character.san,
+        currentDp: character.dp
+      }
     });
 
     const npcStats = NpcStatsSchema.parse({
@@ -254,10 +277,35 @@ async function main(): Promise<void> {
     const damageEntry = update.view.log.find((entry) => entry.kind === "DAMAGE");
 
     assert(damageEntry !== undefined, "日志中没有伤害记录");
+
+    // 房间频道广播：战斗结束时在线玩家应收到 combat:ended 与 room:update。
+    roomSocket = await connectSocket(ticket);
+    const roomJoin = await emitAck<Ack>(roomSocket, "room:join", room.id);
+    assert(roomJoin.ok === true, roomJoin.error ?? "房间频道加入失败");
+    const roomUpdateEvent = waitEvent<RoomUpdate>(roomSocket, "room:update");
+    const combatEndedEvent = waitEvent<CombatLifecycle>(roomSocket, "combat:ended");
+
+    // 模拟服务重启：清空进程内 Runtime，必须能从最新 CombatSnapshot 恢复。
+    clearCombatRuntime(combatId);
+    const recovered = await loadCombatRuntime(combatId);
+    assert(recovered !== null, "服务重启后无法从快照恢复 Runtime");
+    assert(recovered.roomId === room.id, "恢复后的 Runtime 房间不正确");
+    const recoveredPc = recovered.state.participants.find((participant) => participant.characterId === character.id);
+    assert(recoveredPc !== undefined, "恢复后的 Runtime 缺少 PC 单位");
+    const syncedGameCharacter = await prisma.gameCharacter.findUnique({
+      where: { gameId_characterId: { gameId: e2eGame.id, characterId: character.id } },
+      select: { currentHp: true, currentSan: true }
+    });
+    assert(syncedGameCharacter !== null, "战斗状态没有同步到 GameCharacter");
+    assert(syncedGameCharacter.currentHp === recoveredPc.hp, "GameCharacter HP 与最新快照不一致");
     const endedUpdate = waitForView(socket, combatId, (next) => next.view.phase === "ENDED");
     const abortAck = await emitAck<Ack>(socket, "combat:abort", { combatId });
     assert(abortAck.ok === true, abortAck.error ?? "中止战斗失败");
     await endedUpdate;
+    const roomUpdate = await roomUpdateEvent;
+    assert(roomUpdate.status === "PLAYING", "中止后应广播 room:update PLAYING");
+    const combatEnded = await combatEndedEvent;
+    assert(combatEnded.combatId === combatId, "combat:ended 应包含战斗 ID");
     const roomAfterAbort = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
     assert(roomAfterAbort?.status === "PLAYING", "中止后房间状态应回到 PLAYING");
 
@@ -266,9 +314,10 @@ async function main(): Promise<void> {
     const snapshots = await prisma.combatSnapshot.count({ where: { combatId } });
     assert(snapshots >= 2, "战斗快照没有持久化");
 
-    console.log("PASS 战斗 E2E：建战斗 → Socket 加入 → 提交行动 → 防守反应 → 结算并广播");
+    console.log("PASS 战斗 E2E：建战斗 → Socket 加入 → 行动 → 反应 → 结算 → 广播 → 快照恢复");
     console.log("  战斗 " + combatId + " 日志条数 " + update.view.log.length + " 快照数 " + snapshots);
   } finally {
+    if (roomSocket !== null) roomSocket.close();
     if (socket !== null) socket.close();
     if (roomId === null) {
       await prisma.user.deleteMany({ where: { username } });

@@ -390,24 +390,27 @@ model Occupation {
 }
 
 model Game {
-  id        String   @id @default(cuid())
-  roomId    String
-  moduleId  String?
-  status    String   @default("PREPARING")
-  title     String
-  startedAt DateTime?
-  endedAt   DateTime?
-  createdBy String
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt
+  id               String   @id @default(cuid())
+  roomId           String
+  moduleId         String?
+  moduleRevisionId String?
+  status           String   @default("PREPARING")
+  title            String
+  startedAt        DateTime?
+  endedAt          DateTime?
+  createdBy        String
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt        DateTime @updatedAt
 
-  room         Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  module       Module?                @relation(fields: [moduleId], references: [id])
-  state        GameState?
-  characters   GameCharacter[]
-  advancements CharacterAdvancement[]
+  room           Room                   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  module         Module?                @relation(fields: [moduleId], references: [id])
+  moduleRevision ModuleRevision?        @relation(fields: [moduleRevisionId], references: [id], onDelete: SetNull)
+  state          GameState?
+  characters     GameCharacter[]
+  advancements   CharacterAdvancement[]
 
   @@index([roomId, status])
+  @@index([moduleRevisionId])
 }
 
 model GameState {
@@ -537,6 +540,7 @@ model Asset {
   tokens            Token[]
   clues             Clue[]
   moduleAssets      ModuleAsset[]
+  moduleRevisionAssets ModuleRevisionAsset[]
 
   @@index([ownerId])
   @@index([roomId, type])
@@ -575,6 +579,7 @@ model Module {
   chapters ModuleChapter[]
   assets   ModuleAsset[]
   games    Game[]
+  revisions ModuleRevision[]
 
   @@index([roomId, slug])
   @@index([ownerId, isPublished])
@@ -596,6 +601,54 @@ model ModuleAsset {
 
   @@unique([moduleId, relativePath])
   @@index([moduleId, kind])
+}
+
+/// 开局时的团本快照，保证已开始的局与历史局不受后续编辑影响。
+model ModuleRevision {
+  id                       String   @id @default(cuid())
+  moduleId                 String?
+  version                  String
+  title                    String
+  author                   String?
+  system                   String?
+  era                      String?
+  background               String?
+  occupationRecommendation String?
+  synopsis                 String?
+  metadata                 Json     @default("{}")
+  content                  Json     @default("{}")
+  contentHash              String
+  createdAt                DateTime @default(now()) @db.Timestamptz(3)
+
+  module Module?               @relation(fields: [moduleId], references: [id], onDelete: SetNull)
+  assets ModuleRevisionAsset[]
+  games  Game[]
+
+  @@unique([moduleId, contentHash])
+  @@index([moduleId, createdAt])
+}
+
+/// 快照中的团本资源引用。资源被进行中的局使用时，清理逻辑会跳过。
+model ModuleRevisionAsset {
+  id           String   @id @default(cuid())
+  revisionId   String
+  assetId      String?
+  relativePath String
+  originalName String?
+  kind         String
+  orderIndex   Int      @default(0)
+  url          String
+  mimeType     String?
+  size         Int?
+  width        Int?
+  height       Int?
+
+  revision ModuleRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+  asset    Asset?         @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@unique([revisionId, relativePath])
+  @@index([assetId])
+  @@index([revisionId, orderIndex])
 }
 
 model ModuleChapter {

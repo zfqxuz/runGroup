@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
-import AppTabs from "@/components/layout/AppTabs";
 import ModulePublicCard, { ModulePreviewLink } from "@/components/module/ModulePublicCard";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -35,7 +34,6 @@ export default async function ModuleSquarePage() {
         </Link>
       </header>
 
-      <AppTabs />
 
       {modules.length === 0 ? (
         <p className="rounded-xl border border-dashed border-white/15 px-5 py-12 text-center text-sm text-white/40">
