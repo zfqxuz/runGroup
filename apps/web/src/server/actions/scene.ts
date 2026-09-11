@@ -215,6 +215,7 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
   const [kind, id] = unitRef.split(":", 2);
   let name = "";
   let characterId: string | null = null;
+  let cardId: string | null = null;
   let borderColor = "#ffffff";
 
   if (kind === "character" && id !== undefined) {
@@ -238,6 +239,7 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
       redirect(scenesPath(roomId, "?error=unit"));
     }
     name = card.name;
+    cardId = card.id;
     borderColor = "#ef4444";
   } else {
     redirect(scenesPath(roomId, "?error=unit"));
@@ -253,6 +255,7 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
     data: {
       mapId: map.id,
       characterId,
+      cardId,
       name,
       x: spawn.x,
       y: spawn.y,

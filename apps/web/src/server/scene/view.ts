@@ -16,6 +16,7 @@ interface TokenLike {
   readonly id: string;
   readonly name: string;
   readonly characterId: string | null;
+  readonly cardId?: string | null;
   readonly x: number;
   readonly y: number;
   readonly size: number;
@@ -31,8 +32,11 @@ interface TokenLike {
     readonly userId: string;
     readonly hp: number;
     readonly maxHp: number;
+    readonly token?: { readonly url: string } | null;
+    readonly portrait?: { readonly url: string } | null;
     readonly avatar?: { readonly url: string } | null;
   } | null;
+  readonly card?: { readonly imageUrl: string | null } | null;
 }
 
 interface LayerLike {
@@ -178,9 +182,12 @@ export const tokenInclude = {
       userId: true,
       hp: true,
       maxHp: true,
+      token: { select: { url: true } },
+      portrait: { select: { url: true } },
       avatar: { select: { url: true } }
     }
-  }
+  },
+  card: { select: { imageUrl: true } }
 } as const;
 
 export function tokenView(token: TokenLike, hpByCharacter: SceneHpMap): SceneTokenView {
@@ -190,7 +197,13 @@ export function tokenView(token: TokenLike, hpByCharacter: SceneHpMap): SceneTok
     name: token.name,
     characterId: token.characterId,
     ownerUserId: token.character?.userId ?? null,
-    imageUrl: token.asset?.url ?? token.character?.avatar?.url ?? null,
+    imageUrl:
+      token.asset?.url ??
+      token.character?.token?.url ??
+      token.character?.portrait?.url ??
+      token.character?.avatar?.url ??
+      token.card?.imageUrl ??
+      null,
     x: token.x,
     y: token.y,
     size: token.size,

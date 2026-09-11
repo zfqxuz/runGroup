@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ImageUpload from "@/components/upload/ImageUpload";
+import { tokenInclude } from "@/server/scene/view";
 import {
   activateSceneAction,
   createMapLayerAction,
@@ -69,10 +70,7 @@ export default async function SceneManagementPage({
           },
           _count: { select: { tokens: true, walls: true, lights: true } },
           tokens: {
-            include: {
-              asset: { select: { url: true } },
-              character: { select: { userId: true } }
-            },
+            include: tokenInclude,
             orderBy: { zIndex: "asc" }
           }
         }
@@ -113,7 +111,7 @@ export default async function SceneManagementPage({
         <div>
           <Link href={"/rooms/" + room.id} className="text-xs text-white/40 transition hover:text-white/70">← 返回跑团页</Link>
           <h1 className="mt-2 text-2xl font-semibold">场景 / 地图</h1>
-          <p className="mt-1 text-sm text-white/50">KP 可创建场景、上传地图、放置角色与 NPC Token；玩家在跑团页拖动自己的 Token。</p>
+          <p className="mt-1 text-sm text-white/50">KP 可创建场景、上传地图、放置角色与 NPC Token；Token 图片自动取角色卡立绘 / 头像，未配置时显示默认占位，不再单独上传。</p>
         </div>
         <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">我的身份：{membership.role}</span>
       </header>
@@ -434,14 +432,25 @@ export default async function SceneManagementPage({
                       </div>
 
                       <div className="mt-3 flex flex-wrap items-start gap-3">
-                        {canEdit ? (
-                          <ImageUpload kind="TOKEN" targetId={token.id} currentUrl={token.asset?.url ?? null} label="上传 Token 图" shape="square" />
-                        ) : token.asset === null ? (
-                          <span className="flex h-20 w-20 items-center justify-center rounded-lg border border-white/10 text-[10px] text-white/25">无图</span>
-                        ) : (
-                          // eslint-disable-next-line @next/next/no-img-element
-                          <img src={token.asset.url} alt="" className="h-20 w-20 rounded-lg border border-white/10 object-cover" />
-                        )}
+                        {(() => {
+                          const tokenImage =
+                            token.asset?.url ??
+                            token.character?.token?.url ??
+                            token.character?.portrait?.url ??
+                            token.character?.avatar?.url ??
+                            token.card?.imageUrl ??
+                            null;
+                          return tokenImage === null ? (
+                            <span className="flex h-20 w-20 items-center justify-center rounded-lg border border-dashed border-white/15 text-center text-[10px] text-white/35">
+                              默认占位
+                              <br />
+                              角色卡未配置图片
+                            </span>
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img src={tokenImage} alt="" className="h-20 w-20 rounded-lg border border-white/10 object-cover" />
+                          );
+                        })()}
 
                         {canEdit ? (
                           <form action={updateSceneTokenAction} className="grid min-w-[220px] flex-1 gap-2 sm:grid-cols-2">

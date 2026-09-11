@@ -1065,3 +1065,46 @@ DEEPSEEK_MODEL="deepseek-flash"
 - 回归：`verify:realtime-sync`、`verify:combat-rounds`、`verify-module-gallery`、`verify-room-ready`、`verify-scene-increments` 全部 PASS。
 - `npm run typecheck` PASS；`npm test` PASS（146 tests）。
 - 生产构建与 3100 部署已更新。
+
+## 30. 团本结构化编辑、素材上传、Token 取图与线索正文修复（本轮）
+
+### 关键数据修复：线索 / NPC / 物品内容全部读空
+- 现象：AI / 标准导入的团本，同步出的 `ClueTemplate.content`、NPC 属性、物品 stats 全为空，只剩标题。
+- 根因：`Module.content.structured` 保存的是带 `data` 包装的 entry（`{ id, kind, title, data: {...} }`），
+  而 `structuredOfContent` 又把它当原始数据包了一层，字段变成 `entry.data.data.content`。
+- 修复：`normalizeArray` 识别 `data` 包装并解包；已对现有模块执行一次模板重同步（鬼屋 15 条线索正文全部恢复）。
+- `ensureModuleTemplates` 改为每次应用预设前都重新 sync 一次，旧房间重新应用预设即可拿到修复后的内容。
+- DeepSeek 提示词补充：clues 的 content 正文为必填，禁止只输出标题。
+
+### 我的团本页结构化编辑
+- `/modules/[moduleId]` 新增 `ModuleEntityEditors`：
+  - NPC / 角色：名称、副标题、种族、Tier、稀有度、标签、九项属性、HP/MP/SAN/DP、技能、描述、立绘 / Token 图。
+  - 物品 / 武器 / 证物：名称、类型、稀有度、数量、描述、伤害、射程、技能、命中修正、图片、效果。
+  - 线索 / 手书：标题、正文、图片、默认公开、关联证物 id。
+  - 场景：名称、描述、旁白、宽高、网格、背景色、网格 / 迷雾开关、地图背景。
+  - 每个实体支持新增 / 编辑 / 删除；保存后同步写入 Markdown `module-*` 结构化块，并刷新只读模板。
+- 新增 `structured-edit.ts`：负责解包后的 structured 增删改、序列化回 YAML、重写 Markdown 结构化段。
+- 新增 `actions/module-entity.ts`：`saveModuleEntityAction` / `deleteModuleEntityAction`。
+
+### 素材上传
+- `POST /api/modules/[moduleId]/assets` 支持两种模式：
+  - 传 `moduleAssetId`：替换已有资源（原行为）。
+  - 不传：新建 ModuleAsset，按 `kind` 自动落到 `assets/images|maps|handouts|audio|video|files/<module>/`。
+- 新增 `ModuleAssetUpload` 客户端组件：在任意实体表单里上传图片 / 文件，自动回填相对路径。
+- 权限：团本作者，或本房 KP。
+
+### Token 图片自动取角色卡
+- `Token` 新增 `cardId`（迁移 `20260916000000_token_source_card`）：
+  - PC Token → 依次取 `Character.token / portrait / avatar`。
+  - NPC Token → 取来源 `Card.imageUrl`。
+  - 旧的手动上传 asset 仍兼容；都没有则前端显示角色名首字 / 默认占位。
+- `createSceneTokenAction` 为 NPC Token 写入 `cardId`。
+- 场景页移除「上传 Token 图」，改为显示自动来源与默认占位提示；NPC / 角色立绘在团本编辑器的角色卡里上传。
+
+### E2E
+- 新增 `npm run verify:module-entities`：结构化新增 / 编辑线索（正文）、物品、场景、NPC；素材上传；ClueTemplate 同步；Token 自动取来源卡图 / 无图返回 null；场景页无 Token 上传入口。
+- 回归：`verify-module-import`、`verify-module-gallery`、`verify-module-preset`、`verify-module-revision`、`verify-clue-npc-edit`、`verify-scene-increments`、`verify-scene-board`、`verify-room-ready`、`verify-realtime-sync`、`verify-ai-import` 全部 PASS。
+- `npm run typecheck` PASS；`npm test` PASS（146 tests）；生产构建与 3100 部署已更新。
+
+### 使用提示
+- 已存在的房间如果线索正文为空，让 KP 在准备页重新「应用团本预设」即可刷新；新开的房间会自动带上修复后的内容。

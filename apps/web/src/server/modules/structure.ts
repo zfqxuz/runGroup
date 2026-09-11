@@ -57,7 +57,22 @@ function normalizeArray(value: unknown, kind: string): StructuredModuleEntry[] {
   const rows: StructuredModuleEntry[] = [];
   value.forEach((item, index) => {
     if (item === null || typeof item !== "object" || Array.isArray(item)) return;
-    rows.push(entryOf(kind, index, item as Record<string, unknown>));
+    const record = item as Record<string, unknown>;
+    // content.structured 可能同时存在两种形态：
+    // 1. 原始数据：{ title, content, ... }
+    // 2. 解析后的 entry：{ id, kind, title, data: { title, content, ... } }
+    // 之前统一按原始数据再包一层 data，导致模板内容全部读空，只剩标题。
+    const nested = record.data;
+    if (nested !== null && typeof nested === "object" && Array.isArray(nested) === false) {
+      const data = nested as Record<string, unknown>;
+      const merged: Record<string, unknown> = { ...data };
+      if (merged.id === undefined && record.id !== undefined) merged.id = record.id;
+      if (merged.title === undefined && record.title !== undefined) merged.title = record.title;
+      if (merged.name === undefined && record.name !== undefined) merged.name = record.name;
+      rows.push(entryOf(kind, index, merged));
+      return;
+    }
+    rows.push(entryOf(kind, index, record));
   });
   return rows;
 }

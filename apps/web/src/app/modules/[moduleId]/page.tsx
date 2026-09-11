@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ConfirmModuleDeleteButton from "@/components/module/ConfirmModuleDeleteButton";
 import ModuleAssetActions from "@/components/module/ModuleAssetActions";
+import ModuleEntityEditors from "@/components/module/ModuleEntityEditors";
 import ModulePublicCard from "@/components/module/ModulePublicCard";
 import ModuleMarkdown from "@/components/module/ModuleMarkdown";
 import { saveModuleAction, setModulePublishedAction } from "@/server/actions/module";
@@ -49,6 +50,8 @@ export default async function ModuleDetailPage({
 
   const content = (moduleRecord.content ?? {}) as ModuleContent;
   const text = content.text ?? "";
+  const assetUrlByPath: Record<string, string> = {};
+  for (const item of moduleRecord.assets) assetUrlByPath[item.relativePath] = item.asset.url;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-12">
@@ -166,7 +169,7 @@ export default async function ModuleDetailPage({
             <textarea name="content" rows={22} defaultValue={text} className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-xs leading-relaxed outline-none focus:border-sakura-500" />
           </label>
           <div>
-            <button type="submit" className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400">保存</button>
+            <button type="submit" className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400">保存正文与元信息</button>
           </div>
         </form>
       ) : canViewFull ? (
@@ -179,6 +182,15 @@ export default async function ModuleDetailPage({
       ) : (
         <ModulePublicCard module={moduleRecord} />
       )}
+
+      {canEdit ? (
+        <ModuleEntityEditors
+          moduleId={moduleRecord.id}
+          content={moduleRecord.content}
+          assets={assetUrlByPath}
+          returnTo={"/modules/" + moduleRecord.id}
+        />
+      ) : null}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">资源（{moduleRecord.assets.length}）</h2>

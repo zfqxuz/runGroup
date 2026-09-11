@@ -23,6 +23,10 @@ interface SkillPackLike {
   readonly skills: readonly { readonly id: string; readonly name: string }[];
 }
 
+export function moduleEntitySourceKey(input: string): string {
+  return safeKey(input, "entity");
+}
+
 function safeKey(input: string, fallback: string): string {
   const key = input
     .toLowerCase()
@@ -446,6 +450,13 @@ export async function syncModuleTemplatesFromModule(moduleId: string): Promise<T
 }
 
 export async function ensureModuleTemplates(moduleId: string): Promise<TemplateSyncCounts> {
+  // 每次应用预设前都重新同步一次结构化数据：修复旧模块 / 旧缓存中
+  // 线索正文、NPC 属性为空的问题；只 upsert，不会删除 npcs.yaml 等来源的模板。
+  try {
+    await syncModuleTemplatesFromModule(moduleId);
+  } catch {
+    // 同步失败时仍返回数据库里已有模板计数，避免旧模块完全无法应用。
+  }
   const [chapters, npcs, items, clues, scenes, encounters, magic] = await Promise.all([
     prisma.chapterTemplate.count({ where: { moduleId } }),
     prisma.npcTemplate.count({ where: { moduleId } }),
@@ -455,8 +466,5 @@ export async function ensureModuleTemplates(moduleId: string): Promise<TemplateS
     prisma.encounterTemplate.count({ where: { moduleId } }),
     prisma.magicTemplate.count({ where: { moduleId } })
   ]);
-  if (chapters + npcs + items + clues + scenes + encounters + magic > 0) {
-    return { chapters, npcs, items, clues, scenes, encounters, magic, warnings: [] };
-  }
-  return syncModuleTemplatesFromModule(moduleId);
+  return { chapters, npcs, items, clues, scenes, encounters, magic, warnings: [] };
 }

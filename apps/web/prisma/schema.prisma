@@ -581,6 +581,7 @@ model Card {
   template  Card?      @relation("CardTemplate", fields: [templateId], references: [id])
   instances Card[]     @relation("CardTemplate")
   roomEntries RoomCardEntry[]
+  tokens      Token[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt
@@ -847,6 +848,8 @@ model Token {
   mapId       String
   assetId     String?
   characterId String?
+  /// NPC Token 的来源卡；图片自动取角色卡 / NPC 卡，不再单独上传。
+  cardId      String?
   name        String
   x           Float
   y           Float
@@ -862,8 +865,10 @@ model Token {
   map       Map        @relation(fields: [mapId], references: [id], onDelete: Cascade)
   asset     Asset?     @relation(fields: [assetId], references: [id])
   character Character? @relation(fields: [characterId], references: [id])
+  card      Card?      @relation(fields: [cardId], references: [id], onDelete: SetNull)
 
   @@index([mapId])
+  @@index([cardId])
 }
 
 model Wall {
