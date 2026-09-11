@@ -555,3 +555,39 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - Socket 多实例、断线重连、消息背压与限流。
 - 上传文件安全、资源访问鉴权、慢查询与索引优化。
 - 核心页面加载性能与错误边界。
+
+## 18. P2-1 战术棋盘 MVP（第一版已完成）
+
+### 已落地
+- 新增 `/rooms/[id]/scenes` 场景管理页，KP 可以：
+  - 创建场景并自动创建默认地图。
+  - 切换当前场景、编辑场景名、描述、旁白、天气、时段。
+  - 编辑地图宽高、格子大小、格子类型、背景色、初始 X/Y/缩放、显示网格 / 迷雾开关。
+  - 上传场景背景与地图背景。
+  - 从本局 GameCharacter / 本房 NPC 卡添加 Token。
+  - 删除 Token / 删除场景。
+- 跑团页新增 `SceneBoard`：
+  - 渲染当前激活场景的地图、背景、网格、迷雾遮罩和 Token。
+  - Token 显示名称、头像 / 图片、边框色、HP 条。
+  - KP 可拖动全部 Token；玩家可拖动自己的角色 Token；锁定 / 不可见 Token 不可拖动。
+  - 拖动结束后通过 `scene:token:move` Socket 事件移动并广播。
+- Socket：
+  - 新增 `scene:token:move` 客户端事件与 `scene:token:updated` 房间广播。
+  - 新增 `scene:updated` 广播，场景切换 / 编辑后在线客户端自动刷新。
+- 资源：
+  - `/api/upload` 新增 `SCENE_BG` / `MAP` 用途。
+  - `attachAssetAction` 支持设置场景背景与地图背景，旧背景失引后自动清理。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS。
+- 新增 `npm run verify:scene-board`：创建场景 / 添加 Token / 玩家 Socket 拖动 / KP 实时收到广播 PASS。
+- 全量 E2E 13 项在 `http://localhost:3100` PASS。
+
+### 后续 P2-1 增量
+- 六边形网格与网格吸附。
+- 战争迷雾实际操作（探索区域 / 手动揭示）。
+- 墙体、灯光、视线遮挡。
+- 地图图层与多背景切换。
+- Token 图片上传 / 旋转 / 缩放 / 右键菜单。
+- 场景与团本结构化块的自动绑定。

@@ -76,10 +76,10 @@ npm run typecheck # 全量类型检查
 准备页、开局闸门、团本管理、Game / GameState、暂停 / 继续 / 结束、
 跨局成长、重连恢复、团本广场、游戏历史、P0/P1 跑团能力均已完成第一版。
 
-后续 P2 计划见 [`docs/HANDOFF.md`](docs/HANDOFF.md) 第 17 节，优先级建议：
+后续 P2 计划见 [`docs/HANDOFF.md`](docs/HANDOFF.md) 第 17 节，当前进度：
 
-1. 战术棋盘 / 场景地图（Scene / Map / Token / Fog / Wall / Light）
-2. 规则内容补全与 RulePack 后台管理
+1. 战术棋盘 / 场景地图 MVP（已完成第一版：场景、地图、Token、玩家拖动、实时同步）
+2. 规则内容补全与 RulePack 后台管理（下一步）
 3. 角色成长系统闭环
 4. 用户 / 房间协作与权限
 5. 部署、CI、备份与可观测性

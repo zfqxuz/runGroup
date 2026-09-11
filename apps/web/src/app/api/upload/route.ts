@@ -6,7 +6,7 @@ import { prisma } from "@/server/db/prisma";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_TYPES = ["PORTRAIT", "AVATAR", "TOKEN", "CARD_ART"] as const;
+const ALLOWED_TYPES = ["PORTRAIT", "AVATAR", "TOKEN", "CARD_ART", "SCENE_BG", "MAP"] as const;
 type AllowedType = (typeof ALLOWED_TYPES)[number];
 
 function isAllowed(value: string): value is AllowedType {

@@ -8,10 +8,12 @@ import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomInfoPanel from "@/components/room/RoomInfoPanel";
 import RoomPlay from "@/components/room/RoomPlay";
+import SceneBoard from "@/components/room/SceneBoard";
 import { pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { loadGameModuleView } from "@/server/modules/revision";
+import { loadSceneView } from "@/server/scene/load";
 import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
 import { prisma } from "@/server/db/prisma";
 import { advancementView, gameStateView } from "@/server/game/view";
@@ -120,6 +122,7 @@ export default async function RoomPage({
   });
   const gameState = activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state);
   const gameModule = await loadGameModuleView(activeGame);
+  const activeScene = await loadSceneView(room.id);
   const moduleSections = gameModule?.sections ?? [];
   const moduleScenes = (gameModule?.structured.scenes ?? []).map((item) => ({
     id: item.id,
@@ -228,6 +231,12 @@ export default async function RoomPage({
           >
             团本管理
           </Link>
+          <Link
+            href={"/rooms/" + room.id + "/scenes"}
+            className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
+          >
+            场景 / 地图
+          </Link>
           <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
             我的身份：{membership.role}
           </span>
@@ -320,6 +329,30 @@ export default async function RoomPage({
           advancements={advancementRows}
           skillOptions={skillOptions}
           saved={searchParams.advancement === "saved"}
+        />
+      )}
+
+      {activeScene === null ? (
+        isKP && room.status !== "ENDED" ? (
+          <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-medium text-white/80">战术棋盘</h2>
+                <p className="mt-1 text-[11px] text-white/35">还没有激活的场景，先到场景 / 地图页面创建并切换。</p>
+              </div>
+              <Link href={"/rooms/" + room.id + "/scenes"} className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400">
+                去创建场景
+              </Link>
+            </div>
+          </section>
+        ) : null
+      ) : (
+        <SceneBoard
+          roomId={room.id}
+          isKP={isKP}
+          currentUserId={session.user.id}
+          readOnly={room.status === "ENDED"}
+          scene={activeScene}
         />
       )}
 

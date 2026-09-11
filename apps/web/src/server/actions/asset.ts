@@ -5,7 +5,7 @@ import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
-export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART";
+export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART" | "SCENE_BG" | "MAP";
 
 export interface AttachInput {
   readonly kind: AttachKind;
@@ -38,6 +38,56 @@ export async function attachAssetAction(input: AttachInput): Promise<AttachResul
       data: { imageUrl: asset.url, thumbnailUrl: asset.thumbnailUrl }
     });
     revalidatePath("/cards");
+    return { ok: true, url: asset.url };
+  }
+
+  if (input.kind === "SCENE_BG") {
+    const scene = await prisma.scene.findUnique({
+      where: { id: input.targetId },
+      select: { id: true, roomId: true, backgroundId: true }
+    });
+    if (scene === null) return { ok: false, error: "场景不存在" };
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: scene.roomId, userId: session.user.id } },
+      select: { role: true }
+    });
+    if (membership === null || membership.role !== "KP") {
+      return { ok: false, error: "只有 KP 可以设置场景背景" };
+    }
+    await prisma.scene.update({
+      where: { id: scene.id },
+      data: { backgroundId: asset.id }
+    });
+    if (scene.backgroundId !== null && scene.backgroundId !== asset.id) {
+      await deleteAssetIfOrphan(scene.backgroundId);
+    }
+    revalidatePath("/rooms/" + scene.roomId + "/scenes");
+    revalidatePath("/rooms/" + scene.roomId);
+    return { ok: true, url: asset.url };
+  }
+
+  if (input.kind === "MAP") {
+    const map = await prisma.map.findUnique({
+      where: { id: input.targetId },
+      select: { id: true, backgroundId: true, scene: { select: { roomId: true } } }
+    });
+    if (map === null) return { ok: false, error: "地图不存在" };
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: map.scene.roomId, userId: session.user.id } },
+      select: { role: true }
+    });
+    if (membership === null || membership.role !== "KP") {
+      return { ok: false, error: "只有 KP 可以设置地图背景" };
+    }
+    await prisma.map.update({
+      where: { id: map.id },
+      data: { backgroundId: asset.id }
+    });
+    if (map.backgroundId !== null && map.backgroundId !== asset.id) {
+      await deleteAssetIfOrphan(map.backgroundId);
+    }
+    revalidatePath("/rooms/" + map.scene.roomId + "/scenes");
+    revalidatePath("/rooms/" + map.scene.roomId);
     return { ok: true, url: asset.url };
   }
 

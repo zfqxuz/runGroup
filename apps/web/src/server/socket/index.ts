@@ -4,6 +4,7 @@ import { cryptoRng, parseDice, rollDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
 import { gameStateView } from "@/server/game/view";
 import { registerCombatHandlers } from "./combat";
+import { registerSceneHandlers } from "./scene";
 import { verifyTicket } from "./ticket";
 import type {
   Ack,
@@ -107,6 +108,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     void socket.join(userChannel(me.userId));
 
     registerCombatHandlers(io, socket);
+    registerSceneHandlers(io, socket);
 
     socket.on("room:join", async (roomId: unknown, ack: (result: JoinAck) => void) => {
       if (typeof roomId !== "string") {
