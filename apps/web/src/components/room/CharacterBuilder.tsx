@@ -694,7 +694,7 @@ export default function CharacterBuilder(props: Props) {
                 <h3 className="text-xs font-semibold tracking-wide text-white/60">{group.label}</h3>
                 <span className="font-mono text-[10px] text-white/25">{group.skills.length} 项</span>
               </div>
-              <div className="grid gap-2 xl:grid-cols-2">
+              <div className="grid gap-2 lg:grid-cols-2">
                 {group.skills.map((skill) => {
                   const base = skillBases[skill.id] ?? 0;
                   const occupation = occupationAdded[skill.id] ?? 0;

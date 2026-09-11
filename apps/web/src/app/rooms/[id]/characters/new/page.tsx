@@ -29,7 +29,7 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
   });
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
       <header>
         <Link
           href={"/rooms/" + room.id + "/prepare"}
