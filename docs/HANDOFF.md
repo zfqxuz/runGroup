@@ -2,6 +2,46 @@
 
 给下一个会话的 AI / 开发者。当前基线 commit 见 `git log -1`，分支 `main`，工作区干净。
 
+## 0.1 最新交接摘要（优先阅读）
+
+### 当前状态
+- 平台已具备：认证、房间准备/跑团、团本广场、我的团本、角色/卡牌库、战斗、团本快照、局内状态、暂停/继续/结束、游戏历史、用户菜单、线索/笔记/手书、悄悄话/暗骰、Markdown 渲染、房间归档。
+- P2 当前进度：
+  - P2-1 战术棋盘 MVP 第一版已完成：场景、地图、Token、拖动、实时同步。
+  - P2-1 增量已完成：Token 图片、名称、边框色、尺寸、旋转、显示名称/HP、KP 可见/锁定。
+  - P2-3 角色成长闭环基础已完成：成长汇总、差异标注、跨局继承。
+- 测试基线：`npm run typecheck`、`npm test`、全量 14 个 E2E 均通过。
+
+### 下一步开发顺序（用户已确认）
+1. **继续 P2-3**
+   - CoC 幕间成长检定（成长点 / 技能成长掷骰）。
+   - 成长记录编辑 / 撤销 / 来源标注补全。
+   - 角色页成长历史筛选与导出。
+   - KP 结束本局前的成长确认页与角色卡预览。
+2. **P2-1 战术棋盘后续增量**（P2-3 完成后，再按用户指示）
+   - 六边形网格与网格吸附。
+   - 战争迷雾实际操作、墙体、灯光、视线遮挡。
+   - 地图图层与多背景。
+   - 场景与团本结构化块自动绑定。
+
+### 暂缓 / 不要主动做
+- P2-2 规则内容与 RulePack 后台：hold。
+- P2-4 用户 / 房间协作：hold。
+- P2-5 部署与运维：hold。用户当前通过本机 terminal 运行 Next(3100) + frpc 内网穿透使用，不需要部署其他服务器。
+- P2-6 质量与性能：除必要回归外 hold。
+
+### P2-3 关键文件
+- `apps/web/src/server/game/advancement.ts`：成长校验、应用、汇总。
+- `apps/web/src/app/characters/[id]/page.tsx`：角色页成长展示。
+- `apps/web/src/app/rooms/[id]/end/page.tsx` + `apps/web/src/components/room/EndGamePanel.tsx`：结束与批量成长。
+- `apps/web/scripts/verify-growth-inheritance.ts`：成长闭环 E2E。
+
+### 重要约束
+- 反代 / 隧道配置、token、`frpc.ini` 不得提交 Git；仓库内目前没有相关文件。
+- 本地 dev 端口为 `3100`，由用户在 terminal 启动；沙箱后台进程会被回收，不要依赖沙箱常驻。
+- 任何代码改动完成后先跑验证，再提交并推送 `origin/main`。
+- 新增 E2E 脚本要加入 `apps/web/package.json` 的 `verify:*` 命令。
+
 ## 0. 环境约束（先读）
 
 - bash 命令里不要出现英文感叹号，不要出现美元符号加数字，不要写 heredoc。工具会报 Error: [object Object] 或直接挂到超时。
