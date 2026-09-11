@@ -106,6 +106,19 @@ function buildZip(png: Buffer): Buffer {
   ].join("\n");
   const zip = new AdmZip();
   zip.addFile("e2e-module/module.md", Buffer.from(markdown, "utf8"));
+  const npcsYaml = [
+    "npcs:",
+    "  - id: yaml-npc",
+    "    name: YAML 预设 NPC",
+    "    tier: STANDARD",
+    "    attributes: { str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, luck: 50 }",
+    "    skills: { DODGE: 40, FIGHTING_BRAWL: 45 }",
+    "    maxHp: 10",
+    "    maxMp: 0",
+    "    maxSan: 0",
+    "    maxDp: 0"
+  ].join("\n");
+  zip.addFile("e2e-module/characters/npcs.yaml", Buffer.from(npcsYaml, "utf8"));
   zip.addFile("e2e-module/assets/images/e2e-module/cover.png", png);
   return zip.toBuffer();
 }
@@ -159,6 +172,10 @@ async function main(): Promise<void> {
     if (module === null) throw new Error("E2E 断言失败：Module 未创建");
     expectEqual(module.sourceType, "ZIP", "sourceType");
     expectEqual(module.assets.length, 1, "资源数量");
+    const importedNpcTemplates = await prisma.npcTemplate.count({ where: { moduleId: module.id } });
+    ensure(importedNpcTemplates >= 1, "标准包 characters/npcs.yaml 应创建 NPC 模板");
+    const importedSceneTemplates = await prisma.sceneTemplate.count({ where: { moduleId: module.id } });
+    ensure(importedSceneTemplates === 0, "未提供 module-scene 时不应创建场景模板");
     const relativePath = module.assets[0]?.relativePath ?? "";
     ensure(relativePath.startsWith("assets/images/e2e-module/"), "资源路径应被规范化：" + relativePath);
     const assetUrl = module.assets[0]?.asset.url ?? "";

@@ -186,6 +186,10 @@ export async function deleteModuleAdminAction(formData: FormData): Promise<void>
     select: { id: true, title: true, ownerId: true }
   });
   if (moduleRecord === null) redirect(adminPath("/admin/modules", "?error=not-found"));
+  const activePresetUses = await prisma.roomPresetApplication.count({
+    where: { moduleId, status: "ACTIVE" }
+  });
+  if (activePresetUses > 0) redirect(adminPath("/admin/modules", "?error=preset-active"));
   const activeGame = await prisma.game.findFirst({
     where: { moduleId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
     select: { id: true }

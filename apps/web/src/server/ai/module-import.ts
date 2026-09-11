@@ -7,6 +7,7 @@ import { prisma } from "@/server/db/prisma";
 import { storeImage, publicPath } from "@/server/assets/storage";
 import { REQUIRED_MODULE_SECTIONS, parseModuleMarkdown, slugifyModuleId } from "@/server/modules/format";
 import { parseStructuredBlocks } from "@/server/modules/structure";
+import { syncModuleTemplatesFromModule } from "@/server/modules/templates";
 import {
   chatDeepSeek,
   extractJsonObject,
@@ -421,9 +422,9 @@ function jsonInstruction(): string {
     '    "chapters": [{ "id": "ch1", "name": "章节名", "summary": "..." }],',
     '    "scenes": [{ "id": "scene1", "name": "场景名", "description": "...", "width": 1600, "height": 1000, "gridType": "SQUARE 或 HEX", "bgColor": "#1a1a2e", "background": "assets/images/xxx.png 或留空" }],',
     '    "encounters": [{ "id": "enc1", "name": "遭遇名", "sceneId": "scene1", "chapterId": "ch1", "trigger": "触发条件", "setup": {} }],',
-    '    "npcs": [{ "id": "npc1", "name": "NPC 名", "role": "身份", "description": "..." }],',
-    '    "clues": [{ "id": "clue1", "name": "线索名", "content": "..." }],',
-    '    "items": [{ "id": "item1", "name": "道具名", "effect": "..." }],',
+    '    "npcs": [{ "id": "npc1", "name": "NPC 名", "tier": "MINION 或 STANDARD 或 ELITE 或 BOSS", "rarity": "COMMON", "race": null, "tags": [], "description": "...", "portrait": "assets/images/xxx.png 或留空", "attributes": { "str": 50, "con": 50, "siz": 50, "dex": 50, "app": 50, "int": 50, "pow": 50, "edu": 50, "luck": 50 }, "skills": { "DODGE": 40, "FIGHTING_BRAWL": 50 }, "maxHp": 12, "maxMp": 10, "maxSan": 50, "maxDp": 0 }],',
+    '    "clues": [{ "id": "clue1", "title": "线索名", "content": "线索内容", "image": "assets/handouts/xxx.png 或留空", "isPublic": false, "linkedItemId": "item1 或留空" }],',
+    '    "items": [{ "id": "item1", "name": "道具名", "itemType": "WEAPON 或 ITEM 或 TOME 或 ARTIFACT 或 EVIDENCE", "description": "...", "rarity": "COMMON", "image": "assets/images/xxx.png 或留空", "quantity": 1, "damage": "1d6 或留空", "range": "MELEE/NEAR/FAR 或留空", "skillId": "FIGHTING_BRAWL 等或留空", "accuracyMod": 0 }],',
     '    "endings": [{ "id": "end1", "name": "结局名", "condition": "...", "description": "..." }],',
     '    "rewards": [{ "id": "reward1", "name": "奖励名", "description": "..." }],',
     '    "magic": [{ "id": "spell1", "name": "法术名", "skill": "MAGIC 或 OCCULT", "mpCost": "3", "sanCost": "1d3", "damage": "1d6", "target": "ONE", "description": "..." }]',
@@ -433,6 +434,9 @@ function jsonInstruction(): string {
     "- 14 个标准章节必须全部存在，即 JSON 的 sections 必须包含上面列出的全部 key。",
     "- 内容尽量具体，但不要编造与素材冲突的关键事实；缺失处写“素材未提供，KP 可自行补充”。",
     "- structured 至少给出 1 个 chapter、2 个 scene、1 个 encounter，方便后台自动生成战术棋盘。",
+    "- 素材中出现的每个重要 NPC / Boss / 怪物都要整理成 npcs，并尽量补全九项属性、技能、HP/MP/SAN/DP；素材没给数值时可用系统默认值。",
+    "- 素材中出现的武器、物品、法器、法术书、关键证物都要整理成 items；关键证物 itemType 用 EVIDENCE。",
+    "- 素材中出现的线索、手书、照片、文件都要整理成 clues；没有图片则 image 留空，不要编造资源路径。",
     "- 如果素材涉及魔法 / 法术 / 咒文 / 仪式 / 超自然能力，必须整理成 structured.magic 数组并尽量给出可结算数值（技能、消耗、伤害、目标）；没有魔法则给空数组 []。",
     "- 若素材提供了图片，请在相关章节使用 markdown 图片语法，路径必须严格使用上面给出的引用路径。",
     "- 总篇幅控制在约 12000 字以内，保证返回 JSON 完整。"
@@ -644,6 +648,15 @@ export async function importModuleWithDeepSeek(input: {
   } catch (error) {
     await prisma.module.delete({ where: { id: moduleRecord.id } }).catch(() => undefined);
     throw new Error("团本资源保存失败：" + (error instanceof Error ? error.message : "未知错误"));
+  }
+
+  try {
+    const templateCounts = await syncModuleTemplatesFromModule(moduleRecord.id);
+    for (const warning of templateCounts.warnings) {
+      warnings.push({ filename: "模板解析", message: warning });
+    }
+  } catch (error) {
+    warnings.push({ filename: "模板解析", message: error instanceof Error ? error.message : "模板解析失败" });
   }
 
   return {

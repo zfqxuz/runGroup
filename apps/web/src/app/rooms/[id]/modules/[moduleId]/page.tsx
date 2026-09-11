@@ -101,6 +101,11 @@ export default async function ModuleDetailPage({
           标题不能为空。
         </p>
       ) : null}
+      {searchParams.error === "preset-active" ? (
+        <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
+          该团本已应用到某个房间的准备预设。请先在对应房间换预设或删除预设对象，再删除团本。
+        </p>
+      ) : null}
       {searchParams.error === "owner" ? (
         <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
           只有团本作者可以删除此团本。

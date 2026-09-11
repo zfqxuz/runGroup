@@ -256,15 +256,125 @@ secret: 偷偷拿走了书
 
 已定义块类型：
 
+- `module-chapter`
 - `module-npc`
 - `module-scene`
 - `module-encounter`
 - `module-clue`
 - `module-item`
+- `module-magic`
 - `module-ending`
 - `module-reward`
 
-第一版允许只有普通 Markdown 正文，结构化块可以后续再补。
+导入时这些块不会只停留在 JSON：平台会把它们解析成**只读模板表**
+`ChapterTemplate / NpcTemplate / SceneTemplate / EncounterTemplate / ClueTemplate / ItemTemplate / MagicTemplate`。
+KP 在房间准备页点击「应用团本预设到房间」时，再从模板克隆出当前房间的
+`RoomChapter / Card / Scene + Map / Clue / Encounter / Room 魔法规则`。
+
+### 7.1 结构化块字段
+
+`module-npc`：
+
+```yaml
+id: npc-marina
+name: 深海祭司
+tier: BOSS            # MINION / STANDARD / ELITE / BOSS
+rarity: EPIC          # COMMON / UNCOMMON / RARE / EPIC / LEGENDARY
+race: null
+tags: [MYTHOS]
+description: ...
+portrait: assets/images/demo-marina/portrait.png
+token: assets/images/demo-marina/token.png
+attributes: { str: 70, con: 65, siz: 60, dex: 50, app: 30, int: 60, pow: 80, edu: 40, luck: 35 }
+skills: { DODGE: 40, FIGHTING_BRAWL: 55, OCCULT: 60 }
+maxHp: 35
+maxMp: 15
+maxSan: 0
+maxDp: 0
+isPublic: false
+```
+
+`module-item`：
+
+```yaml
+id: item-dagger
+name: 祭祀匕首
+itemType: WEAPON      # WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE
+description: ...
+rarity: RARE
+quantity: 1
+image: assets/images/demo-dagger.png
+damage: 1d6
+range: MELEE          # MELEE / NEAR / FAR
+skillId: FIGHTING_BRAWL
+accuracyMod: 0
+effect: 可选
+```
+
+`module-clue`：
+
+```yaml
+id: clue-footprint
+title: 湿漉漉的脚印
+content: ...
+image: assets/handouts/footprint.png
+isPublic: false
+linkedItemId: item-dagger
+```
+
+`module-scene`：
+
+```yaml
+id: scene-hall
+name: 审判庭
+description: ...
+narration: ...
+background: assets/maps/hall.png
+width: 1600
+height: 1000
+gridSize: 70
+gridType: SQUARE      # SQUARE / HEX / NONE
+bgColor: "#111827"
+showGrid: true
+showFog: true
+layers:
+  - name: 地板
+    type: TILE
+    image: assets/maps/floor.png
+    zIndex: 1
+tokens:
+  - npcId: npc-marina
+    x: 800
+    y: 500
+```
+
+`module-encounter`：
+
+```yaml
+id: enc-cellar
+title: 地下室遭遇
+chapterId: chapter-1
+sceneId: scene-cellar
+trigger: 打开暗门后
+npcs: [npc-marina]
+items: [item-dagger]
+```
+
+`module-magic`：
+
+```yaml
+id: spell-banish
+name: 驱逐深潜者
+skill: OCCULT         # COC7 默认 OCCULT，东方默认 MAGIC
+mpCost: "3"
+sanCost: "1d3"
+damage: "1d6"
+target: ONE           # SELF / ONE / ALL
+description: ...
+```
+
+缺少可选字段时平台使用默认值；`module-ending` / `module-reward` 目前作为结局与奖励的只读结构化数据保存。
+第一版仍允许只有普通 Markdown 正文，但那样不会生成任何卡 / 场景 / 线索模板。
 
 ---
 
@@ -280,11 +390,11 @@ secret: 偷偷拿走了书
 
 导入行为：
 
-- 第一版只保存为团本附件。
+- `characters/npcs.yaml` 会被解析为 `NpcTemplate`（只读）。
+- 其余 `characters/` 文件作为团本附件保存。
 - 不自动创建房间成员。
-- 不自动通过角色审核。
-- KP 可以手动选用 NPC 资源生成 NPC / Boss 卡。
-- 玩家角色卡仍走现有 xlsx 导入与入房审核流程。
+- 角色 / PC 不自动通过审核；玩家角色仍走 xlsx 导入与入房审核流程。
+- KP 在准备页应用团本预设后，`NpcTemplate` 才会克隆成房间 `Card(type=NPC)`。
 
 ---
 
@@ -437,3 +547,16 @@ AI 把旧团本转换为标准格式时，按以下顺序执行：
 - 旧版本包自动升级到 `touhou-module/v1`。
 - 未知 Front Matter 字段保留到 `Module.metadata`。
 - 未知结构化块保留原文，不阻止导入。
+
+
+## 14. 模板与房间实例
+
+- 模板层（只读，无 `roomId`）：
+  - `ChapterTemplate` / `NpcTemplate` / `SceneTemplate`
+  - `EncounterTemplate` / `ClueTemplate` / `ItemTemplate` / `MagicTemplate`
+- 房间实例层（可编辑，有 `roomId`）：
+  - `RoomChapter` / `Card` / `Scene + Map + MapLayer` / `Clue` / `Encounter`
+  - `Room.ruleOverride.magic`（由 `MagicTemplate` 生成）
+- 克隆入口：房间准备页「应用团本预设到房间」。
+- 切换团本预设时，本房间上一次预设生成的对象整批替换；玩家手动创建的对象不受影响。
+- 底层图片 / 音频 Asset 仍然共享引用，不随房间复制。

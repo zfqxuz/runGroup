@@ -271,6 +271,15 @@ export async function startRoomAction(formData: FormData): Promise<void> {
   });
 
   if (activeGame !== null && activeGame.status === "PAUSED") {
+    if (activeGame.moduleId !== null) {
+      const activePreset = await prisma.roomPresetApplication.findFirst({
+        where: { roomId, status: "ACTIVE" },
+        select: { moduleId: true }
+      });
+      if (activePreset === null || activePreset.moduleId !== activeGame.moduleId) {
+        redirect("/rooms/" + roomId + "/prepare?error=preset-not-applied");
+      }
+    }
     await applyMagicRulesToRoom(roomId, activeGame.moduleId);
     const missingRevision = activeGame.moduleRevisionId === null && activeGame.moduleId !== null;
     const revision = missingRevision ? await ensureModuleRevision(activeGame.moduleId as string) : null;
@@ -310,6 +319,15 @@ export async function startRoomAction(formData: FormData): Promise<void> {
         orderBy: { id: "asc" },
         select: { id: true, title: true, version: true }
       });
+    }
+    if (roomModule !== null) {
+      const activePreset = await prisma.roomPresetApplication.findFirst({
+        where: { roomId, status: "ACTIVE" },
+        select: { moduleId: true }
+      });
+      if (activePreset === null || activePreset.moduleId !== roomModule.id) {
+        redirect("/rooms/" + roomId + "/prepare?error=preset-not-applied");
+      }
     }
     await prisma.room.update({
       where: { id: roomId },

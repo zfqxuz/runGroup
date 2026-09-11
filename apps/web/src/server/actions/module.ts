@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { REQUIRED_MODULE_SECTIONS } from "@/server/modules/format";
 import { parseStructuredBlocks } from "@/server/modules/structure";
+import { syncModuleTemplatesFromModule } from "@/server/modules/templates";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -141,6 +142,12 @@ export async function saveModuleAction(formData: FormData): Promise<void> {
     }
   });
 
+  try {
+    await syncModuleTemplatesFromModule(moduleId);
+  } catch {
+    // 保存正文不应因为结构化解析失败而失败
+  }
+
   if (roomId.length > 0) {
     revalidatePath("/rooms/" + roomId + "/prepare");
     revalidatePath("/rooms/" + roomId + "/modules");
@@ -245,6 +252,12 @@ export async function deleteModuleAction(formData: FormData): Promise<void> {
   if (existing === null || existing.roomId !== roomId) redirect("/rooms/" + roomId + "/modules");
   if (existing.ownerId !== null && existing.ownerId !== session.user.id) {
     redirect("/rooms/" + roomId + "/modules/" + moduleId + "?error=owner");
+  }
+  const activePresetUses = await prisma.roomPresetApplication.count({
+    where: { moduleId, status: "ACTIVE" }
+  });
+  if (activePresetUses > 0) {
+    redirect("/rooms/" + roomId + "/modules/" + moduleId + "?error=preset-active");
   }
 
   const activeGame = await prisma.game.findFirst({

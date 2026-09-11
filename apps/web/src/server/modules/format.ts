@@ -54,6 +54,8 @@ export interface ParsedModulePackage {
   readonly assets: readonly ModuleAssetInput[];
   readonly warnings: readonly string[];
   readonly errors: readonly string[];
+  /** 标准包 characters/npcs.yaml 原文，可选。 */
+  readonly npcYaml?: string | null;
 }
 
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp", "gif"]);
@@ -328,6 +330,7 @@ export function parseModulePackage(buffer: Buffer, filename: string): ParsedModu
   const moduleSlug = slugifyModuleId(parsed.frontMatter.id || parsed.frontMatter.title);
 
   const assets: ModuleAssetInput[] = [];
+  let npcYaml: string | null = null;
   const usedPaths = new Set<string>();
   const replacement = new Map<string, string>();
 
@@ -335,6 +338,10 @@ export function parseModulePackage(buffer: Buffer, filename: string): ParsedModu
     const rawName = entry.entryName.replace(/\\/g, "/");
     if (rawName === moduleEntry) continue;
     const relative = rawName.startsWith(rootPrefix) ? rawName.slice(rootPrefix.length) : rawName;
+    if (relative === "characters/npcs.yaml" || relative === "characters/npcs.yml") {
+      npcYaml = entry.getData().toString("utf8");
+      continue;
+    }
     if (relative.startsWith("assets/") === false) continue;
     const ext = extensionOf(relative);
     if (ext.length === 0 || ALLOWED_ASSET_EXTENSIONS.has(ext) === false) {
@@ -377,7 +384,8 @@ export function parseModulePackage(buffer: Buffer, filename: string): ParsedModu
     sections: reparsed.sections,
     assets,
     warnings: [...warnings, ...reparsed.warnings],
-    errors: [...errors, ...reparsed.errors]
+    errors: [...errors, ...reparsed.errors],
+    npcYaml
   };
 }
 

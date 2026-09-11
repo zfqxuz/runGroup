@@ -33,7 +33,8 @@
     "verify:admin-console": "tsx --env-file=.env scripts/verify-admin-console.ts",
     "verify:scene-increments": "tsx --env-file=.env scripts/verify-scene-increments.ts",
     "verify:ai-import": "tsx --env-file=.env scripts/verify-ai-import.ts",
-    "verify:visibility-magic": "tsx --env-file=.env scripts/verify-visibility-magic.ts"
+    "verify:visibility-magic": "tsx --env-file=.env scripts/verify-visibility-magic.ts",
+    "verify:module-preset": "tsx --env-file=.env scripts/verify-module-preset.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

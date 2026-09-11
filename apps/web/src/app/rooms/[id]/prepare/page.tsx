@@ -10,6 +10,7 @@ import {
   startRoomAction,
   toggleReadyAction
 } from "@/server/actions/room";
+import { applyModulePresetAction } from "@/server/actions/preset";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { loadGameModuleView } from "@/server/modules/revision";
@@ -36,7 +37,19 @@ const ADVANCEMENT_KIND_LABELS: Record<string, string> = {
   OTHER: "其他"
 };
 
-export default async function RoomPage({ params, searchParams }: { params: { id: string }; searchParams: { error?: string; module?: string } }) {
+export default async function RoomPage({ params, searchParams }: { params: { id: string }; searchParams: {
+    error?: string;
+    module?: string;
+    preset?: string;
+    reason?: string;
+    chapters?: string;
+    scenes?: string;
+    npcs?: string;
+    items?: string;
+    clues?: string;
+    encounters?: string;
+    magic?: string;
+  } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -107,6 +120,12 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     : roomModules.find((item) => item.id === room.selectedModuleId) ?? roomModules[0] ?? null;
   const defaultModule = selectedModule ?? activeModule ?? roomModules[0] ?? null;
   const selectedModuleMagic = selectedModule === null ? null : await loadModuleMagicInfo(selectedModule.id);
+  const activePreset = await prisma.roomPresetApplication.findFirst({
+    where: { roomId: room.id, status: "ACTIVE" },
+    include: { module: { select: { id: true, title: true, version: true } } },
+    orderBy: { createdAt: "desc" }
+  });
+  const presetReady = selectedModule === null || activePreset?.moduleId === selectedModule.id;
   const requiredMembers = room.members.filter((member) => member.role !== "SPECTATOR");
   const readyCount = requiredMembers.filter((member) => member.ready).length;
   const allReady = requiredMembers.length > 0 && readyCount === requiredMembers.length;
@@ -195,7 +214,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     : activeCharacter.character.advancements.map((item) =>
         advancementView({ ...item, character: { name: activeCharacter.character.name } })
       );
-  const canStart = allReady && allPlayersHaveApprovedCharacter;
+  const canStart = allReady && allPlayersHaveApprovedCharacter && presetReady;
 
   const cardEntries = await prisma.roomCardEntry.findMany({
     where: isKP ? { roomId: room.id } : { roomId: room.id, card: { ownerId: session.user.id } },
@@ -452,6 +471,69 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             本局已锁定开局快照 v{activeGameModule.version}（共 {activeGameModule.assets.length} 个资源）。暂停期间修改或替换团本，不会影响本局内容；新选择只会用于下一局。
           </p>
         )}
+
+        {activePreset === null ? null : (
+          <p className="mt-3 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-[11px] text-spirit-200">
+            当前已应用团本预设：《{activePreset.module.title}》v{activePreset.module.version}。房间内的 NPC/Boss、物品、证物、场景与遭遇均来自这次应用。
+          </p>
+        )}
+
+        {isKP && selectedModule !== null ? (
+          <form action={applyModulePresetAction} className="mt-4 rounded-lg border border-dashed border-sakura-500/40 bg-sakura-500/5 p-4">
+            <input type="hidden" name="roomId" value={room.id} />
+            <input type="hidden" name="moduleId" value={selectedModule.id} />
+            <input
+              type="hidden"
+              name="force"
+              value={activePreset !== null && activePreset.moduleId === selectedModule.id ? "1" : "0"}
+            />
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-medium text-white/85">
+                  应用团本预设到房间
+                  {activePreset === null ? "" : activePreset.moduleId === selectedModule.id ? "（重新应用）" : "（切换预设）"}
+                </h3>
+                <p className="mt-1 text-[11px] leading-relaxed text-white/45">
+                  点击后会从只读模板克隆：章节、场景地图、NPC/Boss 卡、武器/物品/证物卡、线索、遭遇与魔法规则。
+                  换预设时，上一次预设生成的房间对象会整批替换；玩家自己创建的内容不受影响。
+                </p>
+                {activeGame === null ? null : (
+                  <p className="mt-1 text-[11px] text-amber-300">
+                    当前局「{activeGame.title}」尚未结束。请先结束本局，再应用或更换预设。
+                  </p>
+                )}
+              </div>
+              <button
+                type="submit"
+                disabled={activeGame !== null}
+                className="shrink-0 rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {activePreset !== null && activePreset.moduleId === selectedModule.id ? "重新应用预设" : "应用团本预设"}
+              </button>
+            </div>
+          </form>
+        ) : null}
+
+        {searchParams.preset === "applied" ? (
+          <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">
+            团本预设已应用：章节 {searchParams.chapters ?? "0"} / 场景 {searchParams.scenes ?? "0"} / NPC·Boss {searchParams.npcs ?? "0"} / 武器物品 {searchParams.items ?? "0"} / 线索证物 {searchParams.clues ?? "0"} / 遭遇 {searchParams.encounters ?? "0"} / 魔法 {searchParams.magic ?? "0"}。
+          </p>
+        ) : null}
+        {searchParams.error === "preset" ? (
+          <p className="mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-[11px] text-red-200">
+            应用团本预设失败：{searchParams.reason ?? "未知错误"}
+          </p>
+        ) : null}
+        {presetReady ? null : (
+          <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            当前选择的是《{selectedModule?.title ?? "未选择团本"}》，但本房间尚未应用该预设。请先点击上方「应用团本预设到房间」，否则不允许开始本局。
+          </p>
+        )}
+        {searchParams.error === "preset-not-applied" ? (
+          <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
+            本局还未应用所选团本预设，请先点击「应用团本预设到房间」。
+          </p>
+        ) : null}
 
         {searchParams.module === "selected" ? (
           <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">

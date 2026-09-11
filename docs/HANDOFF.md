@@ -13,8 +13,9 @@
   - P2-3 角色成长闭环已完成：基础、跨局继承、CoC 幕间成长检定、成长记录编辑 / 撤销 / 来源标注、筛选与 CSV 导出、结束确认页。
   - DeepSeek 智能团本导入已完成：任意数量 md/txt/json/docx/pptx/xlsx/pdf（元信息）/图片多文件上传，DeepSeek 整合为 `touhou-module/v1` 标准团本；默认 `deepseek-flash`（支持图片视觉）；素材涉及魔法时会生成 structured.magic。
   - 隐藏信息规则已完成：NPC/Boss 默认隐藏、KP 可公开；玩家互见角色属性是房间配置（默认公开）；隐藏 Boss 战斗只展示伤害；模组魔法可在准备阶段启用并在战斗施放。
+  - 团本模板/物化已完成：module-* 结构化块与 characters/npcs.yaml 解析为只读模板；KP 在准备页点「应用团本预设」时克隆出房间 NPC/Boss 卡、武器/物品/证物卡、场景地图、线索、遭遇与魔法；换预设整批替换。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线：`npm run typecheck`、`npm test`（144 tests）、全量 19 个 E2E 均通过。
+- 测试基线：`npm run typecheck`、`npm test`（144 tests）、全量 20 个 E2E 均通过。
 
 ### 下一步开发顺序（用户已确认）
 1. ~~继续 P2-3~~ **已完成（见第 20 节）**。
@@ -877,3 +878,51 @@ DEEPSEEK_MODEL="deepseek-flash"
 - 清理 `.next / .next-dev` 后重启 `npm run dev`，`/login` 200，模块列表 / 详情页正常编译。
 - 跑 `verify:module-import`、`verify:module-gallery` PASS，日志无 `vendor-chunks` / `Cannot find module`。
 - dev 运行中执行 `npm run build` 成功（写 `.next`），不再互相污染。
+
+
+## 25. 团本只读模板与房间物化（本轮完成）
+
+### 数据模型
+- 只读模板表：
+  - `ChapterTemplate` / `SceneTemplate` / `NpcTemplate`
+  - `ItemTemplate`（`ItemTemplateType`: WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE）
+  - `ClueTemplate` / `EncounterTemplate` / `MagicTemplate`
+- 房间实例：
+  - `RoomChapter`（房间级章节，避免模块章节被多房间共享）
+  - `Encounter.roomChapterId` 指向房间章节；旧 `chapterId` 兼容保留。
+  - `CardType` 新增 `CLUE`：关键证物卡。
+- 应用批次：
+  - `RoomPresetApplication`：一次「应用团本预设」的 ACTIVE / REPLACED 记录。
+  - `RoomPresetInstance`：模板 id → 房间实体 id 映射，用于幂等与整批清理。
+
+### 解析规则
+- `module-chapter` → `ChapterTemplate`
+- `module-npc` → `NpcTemplate`（属性 / 技能 / HP / MP / SAN / DP / tier / 图片）
+- `module-item` → `ItemTemplate`（WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE）
+- `module-clue` → `ClueTemplate`（可关联 `linkedItemId`，默认隐藏）
+- `module-scene` → `SceneTemplate`（地图尺寸 / 网格 / 背景 / 图层 / Token 初始位）
+- `module-encounter` → `EncounterTemplate`（chapter/scene/npc/item 引用）
+- `module-magic` → `MagicTemplate`
+- 标准 zip 的 `characters/npcs.yaml` → 合并解析为 `NpcTemplate`
+- 未知技能名会按有效 RulePack 的技能 id / 中文名映射；映射失败写入 importReport 警告。
+
+### 物化流程
+- 入口：准备页「应用团本预设到房间」按钮，服务端 `applyModulePresetToRoom`。
+- 事务内：
+  1. 旧 ACTIVE 批次标记 REPLACED，并按 `RoomPresetInstance` 整批删除旧房间实体；
+  2. 逐类克隆模板到 `RoomChapter / Scene + Map + MapLayer / Card / Clue / Encounter`；
+  3. `EncounterTemplate` 的 chapter/scene/npc/item 引用重写为房间实体 id；
+  4. 证物卡与 `Clue` 关联；
+  5. 有 `MagicTemplate` 时自动合并 `Room.ruleOverride.magic` 并启用；没有则关闭。
+- 约束：当前局未结束时禁止应用 / 换预设，必须先结束本局。
+- 换预设只替换上一次预设生成的对象；玩家手动创建的对象不受影响。
+- 图片 / 音频沿用同一 `Asset`，不做文件复制。
+- 老模块没有模板数据时，首次应用会从 `Module.content.structured` 懒解析生成模板。
+
+### 导入入口
+- AI 导入：`importModuleWithDeepSeek` 完成后调用 `syncModuleTemplatesFromModule`。
+- 标准 `.md/.zip` 导入：`/api/modules/import` 完成后同步模板，`characters/npcs.yaml` 自动合并。
+- 团本保存：`saveModuleAction` 重新结构化解析模板。
+- 验证脚本：`npm run verify:module-preset`（NPC / 武器 / 证物 / 场景地图 / 线索 / 遭遇 / 魔法；换预设整批替换）。
+- 开局闸门新增：如果房间已选择团本，必须先应用该团本预设且当前 ACTIVE 应用与所选团本一致，才允许开始 / 继续本局。
+- 删除保护：已存在 ACTIVE `RoomPresetApplication` 的团本不可删除（房间端与管理后台都会拒绝），避免房间实例变成孤儿。

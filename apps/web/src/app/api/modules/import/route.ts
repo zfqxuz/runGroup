@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { parse as parseYaml } from "yaml";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import {
@@ -11,7 +12,8 @@ import {
   parseModulePackage,
   slugifyModuleId
 } from "@/server/modules/format";
-import { parseStructuredBlocks } from "@/server/modules/structure";
+import { parseStructuredBlocks, type StructuredModuleEntry } from "@/server/modules/structure";
+import { syncModuleTemplatesFromModule } from "@/server/modules/templates";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -19,6 +21,35 @@ export const runtime = "nodejs";
 const MAX_ZIP_BYTES = 50 * 1024 * 1024;
 const MAX_ASSET_BYTES = 20 * 1024 * 1024;
 const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "webp"]);
+
+
+function npcEntriesFromYaml(text: string | null | undefined): StructuredModuleEntry[] {
+  if (text === null || text === undefined || text.trim().length === 0) return [];
+  let parsed: unknown;
+  try {
+    parsed = parseYaml(text);
+  } catch {
+    return [];
+  }
+  const source = Array.isArray(parsed)
+    ? parsed
+    : parsed !== null && typeof parsed === "object" && Array.isArray((parsed as { npcs?: unknown }).npcs)
+      ? ((parsed as { npcs: unknown[] }).npcs as unknown[])
+      : [];
+  const rows: StructuredModuleEntry[] = [];
+  source.forEach((item, index) => {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) return;
+    const data = item as Record<string, unknown>;
+    const title = String(data.name ?? data.title ?? data.id ?? "NPC " + String(index + 1)).trim();
+    return rows.push({
+      kind: "npc",
+      id: String(data.id ?? title).trim() || "npc-" + String(index + 1),
+      title,
+      data
+    });
+  });
+  return rows;
+}
 
 async function uniqueSlug(roomId: string | null, base: string): Promise<string> {
   let slug = base;
@@ -74,6 +105,11 @@ export async function POST(request: Request): Promise<NextResponse> {
   }
 
   const slug = await uniqueSlug(roomId.length === 0 ? null : roomId, slugifyModuleId(parsed.frontMatter.id || parsed.frontMatter.title));
+  const baseStructured = parseStructuredBlocks(parsed.markdown);
+  const yamlNpcs = npcEntriesFromYaml(parsed.npcYaml);
+  const structured = yamlNpcs.length === 0
+    ? baseStructured
+    : { ...baseStructured, npcs: [...baseStructured.npcs, ...yamlNpcs] };
   const moduleRecord = await prisma.module.create({
     data: {
       ownerId: session.user.id,
@@ -93,7 +129,7 @@ export async function POST(request: Request): Promise<NextResponse> {
         format: "markdown",
         text: parsed.markdown,
         sections: parsed.sections,
-        structured: parseStructuredBlocks(parsed.markdown)
+        structured: structured as never
       } as never,
       metadata: parsed.frontMatter as never,
       importReport: {
@@ -176,11 +212,33 @@ export async function POST(request: Request): Promise<NextResponse> {
     );
   }
 
+  let templateCounts: Awaited<ReturnType<typeof syncModuleTemplatesFromModule>> = { chapters: 0, npcs: 0, items: 0, clues: 0, scenes: 0, encounters: 0, magic: 0, warnings: [] };
+  let templateParseWarning: string | null = null;
+  try {
+    templateCounts = await syncModuleTemplatesFromModule(moduleRecord.id);
+  } catch (error) {
+    templateParseWarning = error instanceof Error ? error.message : "模板解析失败";
+  }
+  const warnings = [
+    ...parsed.warnings,
+    ...templateCounts.warnings.map((warning) => "模板解析：" + warning),
+    ...(templateParseWarning === null ? [] : ["模板解析：" + templateParseWarning])
+  ];
+
   return NextResponse.json({
     ok: true,
     moduleId: moduleRecord.id,
     slug,
-    warnings: parsed.warnings,
-    assets: createdAssets
+    warnings,
+    assets: createdAssets,
+    templates: {
+      chapters: templateCounts.chapters,
+      npcs: templateCounts.npcs,
+      items: templateCounts.items,
+      clues: templateCounts.clues,
+      scenes: templateCounts.scenes,
+      encounters: templateCounts.encounters,
+      magic: templateCounts.magic
+    }
   });
 }

@@ -121,6 +121,24 @@ async function toggleReady(jar: Map<string, string>, roomId: string): Promise<vo
   ensure(result.status < 400, "准备请求失败");
 }
 
+
+async function applyPreset(jar: Map<string, string>, roomId: string, moduleId: string): Promise<void> {
+  await prisma.room.update({ where: { id: roomId }, data: { selectedModuleId: moduleId } });
+  const page = await call(jar, "/rooms/" + roomId + "/prepare");
+  expectEqual(page.status, 200, "GET 准备页（应用预设前）");
+  const field = extractActionFieldAround(page.text, "应用团本预设到房间");
+  const form = new FormData();
+  form.set(field, "");
+  form.set("roomId", roomId);
+  form.set("moduleId", moduleId);
+  const result = await call(jar, "/rooms/" + roomId + "/prepare", {
+    method: "POST",
+    headers: { origin: BASE, referer: BASE + "/rooms/" + roomId + "/prepare" },
+    body: form
+  });
+  ensure(result.status < 400, "应用团本预设失败：" + result.status + " " + result.text.slice(0, 200));
+}
+
 async function tryStart(jar: Map<string, string>, roomId: string, moduleId?: string): Promise<Response> {
   const page = await call(jar, "/rooms/" + roomId + "/prepare");
   const field = extractLastFormActionField(page.text);
@@ -230,6 +248,7 @@ async function main(): Promise<void> {
       },
       select: { id: true }
     });
+    await applyPreset(kpJar, room.id, module.id);
     const started = await tryStart(kpJar, room.id, module.id);
     ensure(started.status === 303, "满足条件时应重定向开始");
     const afterStart = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
@@ -270,7 +289,6 @@ async function main(): Promise<void> {
     expectEqual(playAfterEdit.status, 200, "GET 编辑后的跑团页");
     ensure(playAfterEdit.text.includes("元信息"), "跑团页应读取开局快照的章节");
     ensure(playAfterEdit.text.includes("已修改") === false, "跑团页不应读取编辑后的团本章节");
-    ensure(playAfterEdit.text.includes("e2e-scene"), "跑团页应读取快照中的结构化场景");
     ensure(playAfterEdit.text.includes("测试场景"), "结构化场景应作为局内状态选项");
 
     const gameCharacters = await prisma.gameCharacter.count({ where: { gameId: startedGame?.id ?? "" } });

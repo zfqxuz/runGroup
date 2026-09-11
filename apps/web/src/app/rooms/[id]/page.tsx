@@ -131,9 +131,16 @@ export default async function RoomPage({
       : canSeeAllCharacters
         ? activeGame.characters
         : activeGame.characters.filter((item) => item.userId === session.user.id);
-  const [dbChapters, dbScenes, dbEncounters] = activeGame === null
-    ? [[], [], []]
+  const [dbRoomChapters, dbChapters, dbScenes, dbEncounters] = activeGame === null
+    ? [[], [], [], []]
     : await Promise.all([
+        isKP
+          ? prisma.roomChapter.findMany({
+              where: { roomId: room.id },
+              orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
+              select: { id: true, title: true, summary: true }
+            })
+          : Promise.resolve([]),
         activeGame.moduleId === null
           ? Promise.resolve([])
           : prisma.moduleChapter.findMany({
@@ -149,7 +156,7 @@ export default async function RoomPage({
         prisma.encounter.findMany({
           where: { roomId: room.id },
           orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
-          select: { id: true, title: true, sceneId: true }
+          select: { id: true, title: true, sceneId: true, roomChapterId: true }
         })
       ]);
   const moduleSections = isKP ? (gameModule?.sections ?? []) : [];
@@ -172,9 +179,11 @@ export default async function RoomPage({
         detail: typeof item.data.sceneId === "string" ? "场景 " + item.data.sceneId : null
       }))
     : [];
-  const moduleChapters = dbChapters.length > 0
-    ? dbChapters.map((item) => ({ id: item.id, title: item.title, detail: item.summary }))
-    : structuredChapters;
+  const moduleChapters = dbRoomChapters.length > 0
+    ? dbRoomChapters.map((item) => ({ id: item.id, title: item.title, detail: item.summary }))
+    : dbChapters.length > 0
+      ? dbChapters.map((item) => ({ id: item.id, title: item.title, detail: item.summary }))
+      : structuredChapters;
   const moduleScenesForView = dbScenes.length > 0
     ? dbScenes.map((item) => ({ id: item.id, title: item.name, detail: item.isActive ? "当前激活" : null }))
     : structuredScenes;

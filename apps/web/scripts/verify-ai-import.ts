@@ -56,7 +56,9 @@ async function main(): Promise<void> {
       "场景一：村口告示牌，线索是红色符纸。",
       "场景二：废弃茶屋内室，遭遇一只发狂的妖精。",
       "场景三：地下室祭坛，最终 Boss 是操控影子的妖怪。",
-      "关键 NPC：慧音负责调查线索；魔理沙提供火力支援。",
+      "关键 NPC：慧音负责调查线索，属性与技能按 COC7 常规调查员配置；魔理沙提供火力支援。",
+      "武器：迷你八卦炉，近战/投掷，伤害 1d6，可作为武器卡。",
+      "关键证物：染血的符纸，itemType=EVIDENCE，关联线索「红色符纸」。",
       "魔法：茶屋里残留着符纸法阵，调查员可以学会「退魔符」法术，消耗 2 点 MP、1d3 点 SAN，对妖怪造成 1d6 伤害。",
       "图片 red-clue.png 是一张红色符纸的照片，请写进线索章节并引用。"
     ].join("\n");
@@ -70,7 +72,7 @@ async function main(): Promise<void> {
       author: "AI E2E",
       requestedSystem: "COC7",
       requestedEra: "MODERN",
-      instructions: "尽量简短，确保结构化 chapters / scenes / encounters 各至少 1 个，并在图片章节引用给定路径；素材包含魔法，structured.magic 至少整理 1 条法术。",
+      instructions: "尽量简短，确保结构化 chapters / scenes / encounters / npcs / items / clues 各至少 1 个，并在图片章节引用给定路径；素材包含魔法，structured.magic 至少整理 1 条法术；证物用 itemType=EVIDENCE。",
       requestedModel: ""
     });
     moduleId = result.moduleId;
@@ -82,7 +84,7 @@ async function main(): Promise<void> {
     if (moduleRecord === null) throw new Error("模块创建后读取失败");
     const content = moduleRecord.content as {
       text?: string;
-      structured?: { scenes?: unknown[]; encounters?: unknown[]; chapters?: unknown[]; magic?: unknown[] };
+      structured?: { scenes?: unknown[]; encounters?: unknown[]; chapters?: unknown[]; magic?: unknown[]; npcs?: unknown[]; items?: unknown[]; clues?: unknown[] };
     };
     const text = content.text ?? "";
 
@@ -96,15 +98,39 @@ async function main(): Promise<void> {
     ensure((content.structured?.scenes?.length ?? 0) >= 1, "至少应有 1 个结构化场景");
     ensure((content.structured?.encounters?.length ?? 0) >= 1, "至少应有 1 个结构化遭遇");
     ensure((content.structured?.magic?.length ?? 0) >= 1, "素材涉及魔法时至少应有 1 条结构化魔法规则");
+    ensure((content.structured?.npcs?.length ?? 0) >= 1, "素材涉及 NPC 时应至少应有 1 个结构化 NPC");
+    ensure((content.structured?.items?.length ?? 0) >= 1, "素材涉及武器 / 证物时应至少应有 1 个结构化物品");
+    ensure((content.structured?.clues?.length ?? 0) >= 1, "素材涉及线索时应至少应有 1 条结构化线索");
     ensure(moduleRecord.assets.length >= 1, "图片素材应保存为模块资源");
+
+    const templateCounts = {
+      chapters: await prisma.chapterTemplate.count({ where: { moduleId: result.moduleId } }),
+      npcs: await prisma.npcTemplate.count({ where: { moduleId: result.moduleId } }),
+      items: await prisma.itemTemplate.count({ where: { moduleId: result.moduleId } }),
+      clues: await prisma.clueTemplate.count({ where: { moduleId: result.moduleId } }),
+      scenes: await prisma.sceneTemplate.count({ where: { moduleId: result.moduleId } }),
+      encounters: await prisma.encounterTemplate.count({ where: { moduleId: result.moduleId } }),
+      magic: await prisma.magicTemplate.count({ where: { moduleId: result.moduleId } })
+    };
+    ensure(templateCounts.chapters >= 1, "应创建章节模板");
+    ensure(templateCounts.npcs >= 1, "应创建 NPC 模板");
+    ensure(templateCounts.items >= 1, "应创建物品模板");
+    ensure(templateCounts.clues >= 1, "应创建线索模板");
+    ensure(templateCounts.scenes >= 1, "应创建场景模板");
+    ensure(templateCounts.encounters >= 1, "应创建遭遇模板");
+    ensure(templateCounts.magic >= 1, "应创建魔法模板");
 
     console.log("PASS DeepSeek 智能团本导入");
     console.log("  model=" + result.model + " attempts=" + String(result.attempts) + " images=" + String(result.imagesUsed));
+    console.log("  templates=" + JSON.stringify(templateCounts));
     console.log("  sections=" + String(parseInt(String(text.split("## ").length - 1), 10)) + " structured=" + JSON.stringify({
       chapters: content.structured?.chapters?.length ?? 0,
       scenes: content.structured?.scenes?.length ?? 0,
       encounters: content.structured?.encounters?.length ?? 0,
-      magic: content.structured?.magic?.length ?? 0
+      magic: content.structured?.magic?.length ?? 0,
+      npcs: content.structured?.npcs?.length ?? 0,
+      items: content.structured?.items?.length ?? 0,
+      clues: content.structured?.clues?.length ?? 0
     }));
   } finally {
     if (moduleId !== null) {

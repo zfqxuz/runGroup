@@ -44,6 +44,15 @@ enum CardType {
   SPELLCARD
   ABILITY
   NPC
+  CLUE
+}
+
+enum ItemTemplateType {
+  WEAPON
+  ITEM
+  TOME
+  ARTIFACT
+  EVIDENCE
 }
 
 enum CardScope {
@@ -290,6 +299,8 @@ model Room {
   ruleAudits RuleOverrideAudit[]
   combatRequests   CombatRequest[]
   encounters Encounter[]
+  roomChapters RoomChapter[]
+  presetApplications RoomPresetApplication[]
   Character  Character[]
   games      Game[]
 
@@ -647,6 +658,14 @@ model Module {
   assets   ModuleAsset[]
   games    Game[]
   revisions ModuleRevision[]
+  chapterTemplates ChapterTemplate[]
+  sceneTemplates   SceneTemplate[]
+  npcTemplates     NpcTemplate[]
+  itemTemplates    ItemTemplate[]
+  clueTemplates    ClueTemplate[]
+  encounterTemplates EncounterTemplate[]
+  magicTemplates   MagicTemplate[]
+  presetApplications RoomPresetApplication[]
 
   @@index([roomId, slug])
   @@index([ownerId, isPublished])
@@ -732,20 +751,23 @@ model ModuleChapter {
 }
 
 model Encounter {
-  id         String  @id @default(cuid())
-  chapterId  String
-  roomId     String?
-  sceneId    String?
-  title      String
-  trigger    String?
-  setup      Json    @default("{}")
-  orderIndex Int
+  id            String  @id @default(cuid())
+  chapterId     String?
+  roomChapterId String?
+  roomId        String?
+  sceneId       String?
+  title         String
+  trigger       String?
+  setup         Json    @default("{}")
+  orderIndex    Int
 
-  chapter ModuleChapter @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  room    Room?         @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  scene   Scene?        @relation(fields: [sceneId], references: [id])
+  chapter     ModuleChapter? @relation(fields: [chapterId], references: [id], onDelete: SetNull)
+  roomChapter RoomChapter?  @relation("EncounterRoomChapter", fields: [roomChapterId], references: [id], onDelete: SetNull)
+  room        Room?          @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  scene       Scene?         @relation(fields: [sceneId], references: [id])
 
   @@index([chapterId, orderIndex])
+  @@index([roomChapterId, orderIndex])
 }
 
 model Scene {
@@ -1104,4 +1126,218 @@ model SystemSetting {
   updatedAt DateTime @updatedAt
 
   @@index([updatedAt])
+}
+
+/// 团本章节预设，只读；应用团本预设时在房间内克隆为 RoomChapter。
+model ChapterTemplate {
+  id         String   @id @default(cuid())
+  moduleId   String
+  sourceKey  String
+  title      String
+  summary    String?
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// 场景 / 地图预设，只读。核心字段与 Scene + Map 对应，资源存相对路径，应用时解析为 Asset。
+model SceneTemplate {
+  id             String   @id @default(cuid())
+  moduleId       String
+  sourceKey      String
+  name           String
+  description    String?
+  narration      String?
+  weather        String   @default("NONE")
+  timeOfDay      String   @default("DAY")
+  width          Int      @default(1600)
+  height         Int      @default(1000)
+  gridSize       Int      @default(70)
+  gridType       GridType @default(SQUARE)
+  bgColor        String   @default("#1a1a2e")
+  showGrid       Boolean  @default(true)
+  showFog        Boolean  @default(false)
+  backgroundPath String?
+  bgMusicPath    String?
+  ambientPath    String?
+  layers         Json     @default("[]")
+  tokens         Json     @default("[]")
+  orderIndex     Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// NPC / Boss 预设，只读；应用时克隆为 Card(type=NPC, scope=ROOM)。
+model NpcTemplate {
+  id             String   @id @default(cuid())
+  moduleId       String
+  sourceKey      String
+  name           String
+  subtitle       String?
+  description    String?
+  tier           String   @default("STANDARD")
+  rarity         String   @default("COMMON")
+  race           String?
+  tags           Json     @default("[]")
+  attributes     Json     @default("{}")
+  skills         Json     @default("{}")
+  maxHp          Int      @default(10)
+  maxMp          Int      @default(0)
+  maxSan         Int      @default(0)
+  maxDp          Int      @default(0)
+  portraitPath   String?
+  tokenPath      String?
+  isPublicDefault Boolean @default(false)
+  orderIndex     Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// 物品 / 武器 / 法器 / 证物预设，只读；应用时克隆为对应 Card。
+model ItemTemplate {
+  id          String           @id @default(cuid())
+  moduleId    String
+  sourceKey   String
+  name        String
+  itemType    ItemTemplateType @default(ITEM)
+  description String?
+  rarity      String           @default("COMMON")
+  imagePath   String?
+  stats       Json             @default("{}")
+  quantity    Int              @default(1)
+  orderIndex  Int              @default(0)
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// 线索 / 手书预设，只读；应用时克隆为 Clue，必要时关联证物卡。
+model ClueTemplate {
+  id             String   @id @default(cuid())
+  moduleId       String
+  sourceKey      String
+  title          String
+  content        String   @default("")
+  imagePath      String?
+  linkedItemKey  String?
+  isPublicDefault Boolean @default(false)
+  orderIndex     Int      @default(0)
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt      DateTime @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// 遭遇预设，只读；应用时克隆为 Encounter，并把内部引用重写到房间实体 id。
+model EncounterTemplate {
+  id         String   @id @default(cuid())
+  moduleId   String
+  sourceKey  String
+  title      String
+  chapterKey String?
+  sceneKey   String?
+  trigger    String?
+  setup      Json     @default("{}")
+  orderIndex Int      @default(0)
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// 魔法 / 法术预设，只读；应用时写入房间的 magic 规则。
+model MagicTemplate {
+  id          String   @id @default(cuid())
+  moduleId    String
+  sourceKey   String
+  name        String
+  skill       String   @default("OCCULT")
+  description String?
+  mpCost      String   @default("0")
+  sanCost     String   @default("0")
+  damage      String?
+  target      String   @default("ONE")
+  orderIndex  Int      @default(0)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt
+
+  module Module @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([moduleId, sourceKey])
+  @@index([moduleId, orderIndex])
+}
+
+/// 房间级章节实例：从 ChapterTemplate 克隆，保证不同房间互不影响。
+model RoomChapter {
+  id               String   @id @default(cuid())
+  roomId           String
+  sourceTemplateId String?
+  title            String
+  summary          String?
+  orderIndex       Int      @default(0)
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+
+  room       Room        @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  encounters Encounter[] @relation("EncounterRoomChapter")
+
+  @@index([roomId, orderIndex])
+}
+
+/// 一次“应用团本预设”的记录；换预设时旧记录标记 REPLACED，旧实例整批清理。
+model RoomPresetApplication {
+  id               String   @id @default(cuid())
+  roomId           String
+  moduleId         String
+  moduleRevisionId String?
+  status           String   @default("ACTIVE")
+  appliedBy        String
+  createdAt        DateTime @default(now()) @db.Timestamptz(3)
+  replacedAt       DateTime? @db.Timestamptz(3)
+
+  room      Room                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  module    Module               @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  instances RoomPresetInstance[]
+
+  @@index([roomId, status])
+  @@index([moduleId])
+}
+
+/// 预设 → 房间实例的映射，用于幂等、换预设清理、重新同步。
+model RoomPresetInstance {
+  id            String   @id @default(cuid())
+  applicationId String
+  templateType  String
+  templateId    String
+  entityId      String
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  application RoomPresetApplication @relation(fields: [applicationId], references: [id], onDelete: Cascade)
+
+  @@index([applicationId])
+  @@index([templateType, entityId])
 }
