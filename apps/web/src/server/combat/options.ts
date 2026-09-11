@@ -141,6 +141,7 @@ export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatRea
 export interface CombatFeatureFlags {
   readonly canCounter: boolean;
   readonly canOutOfRule: boolean;
+  readonly canCastMagic: boolean;
 }
 
 export function combatFeatureFlags(pack: CompiledRulePack): CombatFeatureFlags {
@@ -153,7 +154,11 @@ export function combatFeatureFlags(pack: CompiledRulePack): CombatFeatureFlags {
         ? false
         : outOfRule === undefined
           ? false
-          : outOfRule.defaultEnabled === true
+          : outOfRule.defaultEnabled === true,
+    canCastMagic:
+      pack.pack.magic === undefined
+        ? false
+        : pack.pack.magic.enabled && pack.pack.magic.spells.length > 0
   };
 }
 
@@ -172,6 +177,20 @@ export function validateCombatAction(
   const events = context.pack.combat.events;
   if (action.kind === "SPELLCARD" && context.pack.pack.spellcard === undefined) {
     return "本规则包不支持符卡";
+  }
+  if (action.kind === "MAGIC") {
+    const magic = context.pack.pack.magic;
+    if (magic === undefined || magic.enabled === false) return "本规则包未启用魔法规则";
+    const spell = magic.spells.find(
+      (item) => item.id === action.spellId || item.name === action.name
+    );
+    if (spell === undefined) return "没有找到这个法术";
+    if (spell.target !== "SELF") {
+      const targetId = action.targetId ?? null;
+      if (targetId === null) return "施法需要目标";
+      const target = context.state.participants.find((item) => item.id === targetId);
+      if (target === undefined || target.defeated) return "目标已不在场";
+    }
   }
   if (action.kind === "OUT_OF_RULE") {
     if (context.pack.pack.spellcard === undefined) return "本规则包不支持规则外施法";

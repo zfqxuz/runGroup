@@ -95,6 +95,7 @@ export interface ParticipantInit {
   readonly atbMax: number;
   readonly speed: number;
   readonly isIdentified?: boolean;
+  readonly isPublic?: boolean;
 }
 
 export function addParticipant(
@@ -133,7 +134,8 @@ export function addParticipant(
     statusEffects: [],
     declaration: null,
     usedSpellCards: [],
-    isIdentified: init.isIdentified ?? init.kind === "PLAYER"
+    isIdentified: init.isIdentified ?? init.kind === "PLAYER",
+    isPublic: init.isPublic ?? false
   };
   state.participants.push(participant);
   return participant;
@@ -632,6 +634,78 @@ function resolveOutOfRule(ctx: ResolveContext, actor: CombatParticipantState, su
   });
 }
 
+function resolveMagic(ctx: ResolveContext, actor: CombatParticipantState, submission: ActionSubmission): void {
+  const state = ctx.state;
+  const rules = ctx.pack.pack.magic;
+  if (rules === undefined || rules.enabled === false) {
+    pushLog(state, { kind: "SYSTEM", actorId: actor.id, targetId: null, text: "本规则包未启用魔法规则" });
+    return;
+  }
+  const spell = rules.spells.find((item) => item.id === submission.spellId || item.name === submission.name);
+  if (spell === undefined) {
+    pushLog(state, { kind: "SYSTEM", actorId: actor.id, targetId: null, text: "没有找到这个法术" });
+    return;
+  }
+
+  const mpCost = Math.max(0, Math.floor(evaluateSource(ctx.pack, spell.mpCost, actor.vars)));
+  let sanCost = 0;
+  try {
+    sanCost = Math.max(
+      0,
+      rollDice(parseDice(spell.sanCost), nextRollRng(state, "magic-san:" + actor.id + ":" + spell.id)).total
+    );
+  } catch {
+    sanCost = 0;
+  }
+  actor.mp = Math.max(0, actor.mp - mpCost);
+  actor.san = Math.max(0, actor.san - sanCost);
+
+  const targetId = submission.targetId ?? actor.id;
+  const target = findParticipant(state, targetId);
+  if (target === undefined || target.defeated) {
+    pushLog(state, {
+      kind: "SPELLCARD",
+      actorId: actor.id,
+      targetId,
+      text: actor.name + " 施放「" + spell.name + "」，但目标已不在场，消耗 MP " + mpCost + " / SAN " + sanCost,
+      data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
+    });
+    return;
+  }
+
+  if (spell.damage !== undefined && spell.damage !== "0") {
+    const damageRoll = rollDice(
+      parseDice(spell.damage),
+      nextRollRng(state, "magic-damage:" + actor.id + ":" + spell.id)
+    );
+    const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
+    const outcome = applyDamagePipeline(ctx.pack, {
+      baseDamage: damageRoll.total,
+      defense: "PASS",
+      defenseSuccess: false,
+      shieldMultiplier,
+      vars: target.vars
+    });
+    const applied = applyDamageToParticipant(ctx, target, outcome.damage);
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: target.id,
+      text: actor.name + " 施放「" + spell.name + "」 → " + target.name + " 伤害 " + outcome.damage,
+      data: { spellId: spell.id, spell: spell.name, damage: outcome.damage, toHp: applied.toHp, mpCost, sanCost }
+    });
+    return;
+  }
+
+  pushLog(state, {
+    kind: "SPELLCARD",
+    actorId: actor.id,
+    targetId: target.id,
+    text: actor.name + " 施放「" + spell.name + "」，消耗 MP " + mpCost + " / SAN " + sanCost,
+    data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
+  });
+}
+
 function resolveOne(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -641,6 +715,9 @@ function resolveOne(
   const targetId = submission.targetId ?? null;
 
   switch (submission.kind) {
+    case "MAGIC":
+      resolveMagic(ctx, actor, submission);
+      return;
     case "OUT_OF_RULE":
       resolveOutOfRule(ctx, actor, submission);
       return;
@@ -752,7 +829,7 @@ export function resolvePending(
     if (participant.defeated) continue;
     const submission = submissions[participant.id];
     const kind = submission?.kind ?? "PASS";
-    const costKind = kind === "OUT_OF_RULE" ? "SPELLCARD" : kind;
+    const costKind = kind === "OUT_OF_RULE" || kind === "MAGIC" ? "SPELLCARD" : kind;
     const cost = submission?.atbCost ?? resolveActionCost(pack, costKind, participant.vars);
     consumeAction(participant, cost);
   }

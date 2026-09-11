@@ -1,6 +1,8 @@
 export type SceneWeather = "NONE" | "RAIN" | "SNOW" | "FOG" | "STORM" | "SAKURA" | "PETALS";
 export type SceneTimeOfDay = "DAWN" | "DAY" | "DUSK" | "NIGHT" | "MIDNIGHT";
 export type SceneGridType = "SQUARE" | "HEX" | "NONE";
+export type SceneLayerType = "BACKGROUND" | "TILE" | "OBJECT" | "EFFECT" | "FOREGROUND";
+export type SceneWallType = "WALL" | "DOOR" | "WINDOW" | "DIFFICULT_TERRAIN";
 
 export interface SceneTokenView {
   readonly id: string;
@@ -22,6 +24,35 @@ export interface SceneTokenView {
   readonly maxHp: number | null;
 }
 
+export interface SceneLayerView {
+  readonly id: string;
+  readonly name: string;
+  readonly type: SceneLayerType;
+  readonly zIndex: number;
+  readonly opacity: number;
+  readonly visible: boolean;
+  readonly locked: boolean;
+  readonly offsetX: number;
+  readonly offsetY: number;
+  readonly scale: number;
+  readonly imageUrl: string | null;
+}
+
+export interface SceneWallView {
+  readonly id: string;
+  readonly points: readonly number[];
+  readonly type: SceneWallType;
+}
+
+export interface SceneLightView {
+  readonly id: string;
+  readonly x: number;
+  readonly y: number;
+  readonly radius: number;
+  readonly color: string;
+  readonly intensity: number;
+}
+
 export interface SceneMapView {
   readonly id: string;
   readonly name: string;
@@ -32,10 +63,14 @@ export interface SceneMapView {
   readonly bgColor: string;
   readonly showGrid: boolean;
   readonly showFog: boolean;
+  readonly fogRevealed: readonly string[];
   readonly initialX: number;
   readonly initialY: number;
   readonly initialZoom: number;
   readonly backgroundUrl: string | null;
+  readonly layers: readonly SceneLayerView[];
+  readonly walls: readonly SceneWallView[];
+  readonly lights: readonly SceneLightView[];
   readonly tokens: readonly SceneTokenView[];
 }
 
@@ -58,4 +93,17 @@ export interface SceneTokenUpdate {
 export interface SceneUpdated {
   readonly roomId: string;
   readonly sceneId: string | null;
+}
+
+
+export interface SceneMapUpdated {
+  readonly roomId: string;
+  readonly sceneId: string;
+  readonly map: SceneMapView;
+}
+
+export interface SceneFogUpdated {
+  readonly roomId: string;
+  readonly sceneId: string;
+  readonly fogRevealed: readonly string[];
 }

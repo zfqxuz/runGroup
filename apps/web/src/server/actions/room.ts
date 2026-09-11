@@ -6,6 +6,7 @@ import { builtinRegistry, resolveRulePack, type CombatMode } from "@touhou/rules
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { ensureModuleRevision } from "@/server/modules/revision";
+import { applyMagicRulesToRoom, disableMagicRulesInRoom } from "@/server/modules/magic";
 import { applyAdvancement, parseAdvancementRows } from "@/server/game/advancement";
 import { resolveGameGrowthChecks } from "@/server/game/growth";
 import { emitAdvancementUpdate, emitRoomUpdate } from "@/server/realtime";
@@ -63,6 +64,8 @@ export async function createRoomAction(formData: FormData): Promise<void> {
   );
 
   const allowRaw = formData.get("allowPlayerCombatRequest");
+  const characterVisibilityRaw = String(formData.get("characterVisibility") ?? "PUBLIC");
+  const characterVisibility = characterVisibilityRaw === "PRIVATE" ? "PRIVATE" : "PUBLIC";
   const requestedModuleId = String(formData.get("moduleId") ?? "").trim();
   let selectedModuleId: string | null = null;
   if (requestedModuleId.length > 0) {
@@ -94,6 +97,7 @@ export async function createRoomAction(formData: FormData): Promise<void> {
       chargenMethod: method.id,
       era,
       allowPlayerCombatRequest: allowRaw === null ? true : String(allowRaw) === "1",
+      characterVisibility,
       selectedModuleId,
       ruleOverride: ruleOverride as never,
       members: { create: { userId: session.user.id, role: "KP" } }
@@ -178,6 +182,43 @@ export async function setActiveCharacterAction(formData: FormData): Promise<void
   redirect("/rooms/" + roomId + "/prepare");
 }
 
+export async function setCharacterVisibilityAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true, room: { select: { status: true } } }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+  const raw = String(formData.get("characterVisibility") ?? "PUBLIC");
+  const characterVisibility = raw === "PRIVATE" ? "PRIVATE" : "PUBLIC";
+  await prisma.room.update({ where: { id: roomId }, data: { characterVisibility } });
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  const inLobby = membership.room.status === "LOBBY" || membership.room.status === "PAUSED";
+  redirect(inLobby ? "/rooms/" + roomId + "/prepare?settings=visibility" : "/rooms/" + roomId);
+}
+
+export async function setRoomMagicEnabledAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true, room: { select: { status: true } } }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+  const enabled = String(formData.get("enabled") ?? "0") === "1";
+  await prisma.room.update({ where: { id: roomId }, data: { magicEnabled: enabled } });
+  if (enabled) await applyMagicRulesToRoom(roomId);
+  else await disableMagicRulesInRoom(roomId);
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  const inLobby = membership.room.status === "LOBBY" || membership.room.status === "PAUSED";
+  redirect(inLobby ? "/rooms/" + roomId + "/prepare?settings=magic" : "/rooms/" + roomId);
+}
+
 export async function startRoomAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -230,6 +271,7 @@ export async function startRoomAction(formData: FormData): Promise<void> {
   });
 
   if (activeGame !== null && activeGame.status === "PAUSED") {
+    await applyMagicRulesToRoom(roomId, activeGame.moduleId);
     const missingRevision = activeGame.moduleRevisionId === null && activeGame.moduleId !== null;
     const revision = missingRevision ? await ensureModuleRevision(activeGame.moduleId as string) : null;
     await prisma.game.update({
@@ -273,6 +315,7 @@ export async function startRoomAction(formData: FormData): Promise<void> {
       where: { id: roomId },
       data: { selectedModuleId: roomModule?.id ?? null }
     });
+    await applyMagicRulesToRoom(roomId, roomModule?.id ?? null);
     const revision = roomModule === null ? null : await ensureModuleRevision(roomModule.id);
     const game = await prisma.game.create({
       data: {
@@ -364,6 +407,11 @@ export async function selectRoomModuleAction(formData: FormData): Promise<void> 
     where: { id: roomId },
     data: { selectedModuleId: moduleId.length > 0 ? moduleId : null }
   });
+  const roomState = await prisma.room.findUnique({ where: { id: roomId }, select: { magicEnabled: true } });
+  if (roomState?.magicEnabled === true) {
+    const applied = await applyMagicRulesToRoom(roomId, moduleId.length > 0 ? moduleId : null);
+    if (applied === 0) await prisma.room.update({ where: { id: roomId }, data: { magicEnabled: false } });
+  }
   revalidatePath("/rooms/" + roomId + "/prepare");
   redirect("/rooms/" + roomId + "/prepare?module=selected");
 }

@@ -1,4 +1,5 @@
 import NextAuth from "next-auth";
+import { redirect } from "next/navigation";
 import Credentials from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
@@ -27,10 +28,15 @@ const nextAuth = NextAuth({
         const user = await prisma.user.findUnique({
           where: { username: parsed.data.username }
         });
-        if (user === null) return null;
+        if (user === null || user.isDisabled) return null;
 
         const matched = await bcrypt.compare(parsed.data.password, user.passwordHash);
         if (matched === false) return null;
+
+        await prisma.user.update({
+          where: { id: user.id },
+          data: { lastLoginAt: new Date() }
+        });
 
         return {
           id: user.id,
@@ -60,15 +66,23 @@ export async function auth(): Promise<import("next-auth").Session | null> {
   if (typeof userId === "string" && userId.length > 0) {
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, displayName: true, avatarUrl: true }
+      select: { id: true, username: true, displayName: true, avatarUrl: true, role: true, isDisabled: true }
     });
-    if (user) {
+    if (user !== null && user.isDisabled === false) {
       session.user.id = user.id;
       session.user.username = user.username;
       session.user.name = user.displayName ?? user.username;
       session.user.avatarUrl = user.avatarUrl;
+      session.user.role = user.role;
       return session;
     }
   }
   return null;
+}
+
+export async function requireAdmin(): Promise<import("next-auth").Session> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  if (session.user.role !== "ADMIN") redirect("/");
+  return session;
 }

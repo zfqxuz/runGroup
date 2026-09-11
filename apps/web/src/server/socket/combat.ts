@@ -37,6 +37,7 @@ const combatChannel = (combatId: string): string => "combat:" + combatId;
 const ACTION_KINDS: readonly string[] = [
   "DANMAKU",
   "SPELLCARD",
+  "MAGIC",
   "DEFEND",
   "DODGE",
   "COUNTER",
@@ -196,6 +197,7 @@ async function handleAction(
     accuracyMod: asNumber(raw.accuracyMod),
     atbCost: asNumber(raw.atbCost),
     name: asString(raw.name),
+    spellId: asString(raw.spellId),
     mpCost: asNumber(raw.mpCost),
     sanCost: asString(raw.sanCost),
     spellcardMode: raw.spellcardMode === "DECLARATION" || raw.spellcardMode === "CONSUMPTION" ? raw.spellcardMode : undefined,

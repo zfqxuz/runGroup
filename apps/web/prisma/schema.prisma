@@ -12,6 +12,11 @@ enum System {
   TOUHOU
 }
 
+enum UserRole {
+  USER
+  ADMIN
+}
+
 enum RoomStatus {
   LOBBY
   PLAYING
@@ -165,6 +170,11 @@ model User {
   passwordHash String
   displayName  String?
   avatarUrl    String?
+  /// 平台权限：USER / ADMIN。管理员可进入管理后台。
+  role         UserRole @default(USER)
+  /// 禁用后无法登录，Socket 票据校验也会拒绝。
+  isDisabled   Boolean  @default(false)
+  lastLoginAt  DateTime? @db.Timestamptz(3)
   createdAt    DateTime @default(now()) @db.Timestamptz(3)
 
   characters  Character[]
@@ -181,16 +191,22 @@ model User {
   ruleAudits  RuleOverrideAudit[]
   combatRequests CombatRequest[] @relation("CombatRequestInitiator")
   modules     Module[]
+  adminAuditLogs AdminAuditLog[]
 }
 
 model RulePack {
-  id          String  @id @default(cuid())
-  slug        String  @unique
+  id          String   @id @default(cuid())
+  slug        String   @unique
   name        String
   system      System
   description String?
   ownerId     String?
-  isBuiltin   Boolean @default(false)
+  isBuiltin   Boolean  @default(false)
+  /// 发布状态：只有已发布的规则包可以在建房时被选择。
+  isPublished Boolean  @default(false)
+  publishedAt DateTime? @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt
 
   owner    User?             @relation(fields: [ownerId], references: [id])
   versions RulePackVersion[]
@@ -204,6 +220,11 @@ model RulePackVersion {
   config        Json
   checksum      String
   isActive      Boolean  @default(false)
+  /// DRAFT / PUBLISHED / ARCHIVED
+  status        String   @default("DRAFT")
+  notes         String?
+  createdBy     String?
+  publishedAt   DateTime? @db.Timestamptz(3)
   createdAt     DateTime @default(now()) @db.Timestamptz(3)
 
   pack    RulePack @relation(fields: [packId], references: [id], onDelete: Cascade)
@@ -243,6 +264,10 @@ model Room {
   era               String?
   /// 玩家是否可以发起战斗申请（KP 仍可直接发起）。
   allowPlayerCombatRequest Boolean @default(true)
+  /// 玩家之间是否可见彼此角色属性：PUBLIC / PRIVATE。KP 永远可见全部。
+  characterVisibility String @default("PUBLIC")
+  /// 本局是否启用模组携带的魔法规则（由 KP 在准备阶段开启）。
+  magicEnabled Boolean @default(false)
   /// 准备页当前选中的团本。可以为房间私有团本或广场公开团本。
   selectedModuleId  String?
   createdAt         DateTime   @default(now()) @db.Timestamptz(3)
@@ -535,6 +560,8 @@ model Card {
   pointCost  Int     @default(0)
   /// 是否作为跨用户可见的共享模板卡。
   isTemplate Boolean @default(false)
+  /// NPC / Boss 卡是否对玩家公开属性；默认隐藏，只能看到战斗中的伤害。
+  isPublic Boolean @default(false)
 
   owner     User?      @relation("CardOwner", fields: [ownerId], references: [id])
   character Character? @relation(fields: [characterId], references: [id], onDelete: Cascade)
@@ -879,6 +906,8 @@ model CombatParticipant {
   maxDp         Int     @default(0)
   statusEffects Json    @default("[]")
   isIdentified  Boolean @default(false)
+  /// 对玩家公开属性（NPC/Boss）。
+  isPublic      Boolean @default(false)
   spellState    Json    @default("{}")
 
   combat    Combat     @relation(fields: [combatId], references: [id], onDelete: Cascade)
@@ -1047,4 +1076,32 @@ model CombatRequest {
   initiator User @relation("CombatRequestInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
 
   @@index([roomId, status])
+}
+
+/// 管理员操作审计日志。
+model AdminAuditLog {
+  id         String   @id @default(cuid())
+  actorId    String
+  actorName  String?
+  action     String
+  targetType String
+  targetId   String?
+  detail     Json     @default("{}")
+  createdAt  DateTime @default(now()) @db.Timestamptz(3)
+
+  actor User @relation(fields: [actorId], references: [id], onDelete: Cascade)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId])
+}
+
+/// 平台级设置，管理后台可修改，AI 导入等模块按需读取。
+model SystemSetting {
+  key       String   @id
+  value     Json     @default("{}")
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+
+  @@index([updatedAt])
 }

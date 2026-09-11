@@ -10,6 +10,7 @@ export type ParticipantKind = "PLAYER" | "NPC";
 export type ActionKind =
   | "DANMAKU"
   | "SPELLCARD"
+  | "MAGIC"
   | "OUT_OF_RULE"
   | "DEFEND"
   | "DODGE"
@@ -66,6 +67,8 @@ export interface CombatParticipantState {
   declaration: SpellDeclaration | null;
   usedSpellCards: string[];
   isIdentified: boolean;
+  /** 对玩家公开属性；默认隐藏，公开后战斗视图展示 HP 等数值。 */
+  isPublic: boolean;
 }
 export interface ActionSubmission {
   readonly actorId: string;
@@ -78,8 +81,9 @@ export interface ActionSubmission {
   readonly accuracyMod?: number;
   /** 本次行动消耗的 ATB 进度（微计数）。 */
   readonly atbCost?: number;
-  /** 符卡。 */
+  /** 符卡 / 法术。 */
   readonly name?: string;
+  readonly spellId?: string;
   readonly mpCost?: number;
   readonly sanCost?: string;
   readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";

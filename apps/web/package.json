@@ -29,7 +29,11 @@
     "verify:game-history": "tsx --env-file=.env scripts/verify-game-history.ts",
     "verify:scene-board": "tsx --env-file=.env scripts/verify-scene-board.ts",
     "verify:growth-inheritance": "tsx --env-file=.env scripts/verify-growth-inheritance.ts",
-    "verify:growth-checks": "tsx --env-file=.env scripts/verify-growth-checks.ts"
+    "verify:growth-checks": "tsx --env-file=.env scripts/verify-growth-checks.ts",
+    "verify:admin-console": "tsx --env-file=.env scripts/verify-admin-console.ts",
+    "verify:scene-increments": "tsx --env-file=.env scripts/verify-scene-increments.ts",
+    "verify:ai-import": "tsx --env-file=.env scripts/verify-ai-import.ts",
+    "verify:visibility-magic": "tsx --env-file=.env scripts/verify-visibility-magic.ts"
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

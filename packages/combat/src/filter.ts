@@ -9,6 +9,8 @@ export interface Viewer {
   readonly characterId: string | null;
   /** 同一玩家可操控多个角色时使用；与 characterId 取并集。 */
   readonly characterIds?: readonly string[];
+  /** 房间配置允许玩家互见角色属性时为 true。KP 始终可见。 */
+  readonly canSeePartyStats?: boolean;
 }
 
 export interface ParticipantView {
@@ -21,7 +23,7 @@ export interface ParticipantView {
   readonly defeated: boolean;
   readonly hp: number | null;
   readonly maxHp: number | null;
-  readonly hpText: string;
+  readonly hpText: string | null;
   readonly mp: number | null;
   readonly san: number | null;
   readonly dp: number | null;
@@ -67,19 +69,27 @@ export function describeHp(current: number, max: number): string {
  */
 export function filterCombatForViewer(state: CombatState, viewer: Viewer): CombatView {
   const isKP = viewer.role === "KP";
+  const canSeePartyStats = viewer.canSeePartyStats === true;
+  const identifiedIds = new Set<string>();
 
   const participants: ParticipantView[] = state.participants.map((participant) => {
     const controlledIds = new Set<string>();
     if (viewer.characterId !== null) controlledIds.add(viewer.characterId);
     for (const id of viewer.characterIds ?? []) controlledIds.add(id);
     const isSelf = participant.characterId !== null && controlledIds.has(participant.characterId);
-    const identified = isKP || isSelf || participant.isIdentified;
-    const showNumbers = isKP || isSelf;
+    const identityKnown = participant.kind === "PLAYER" || isKP || isSelf || participant.isPublic;
+    // 只有 KP、本人、KP 公开的 NPC/Boss，或房间开启玩家互见时，才下发精确数值。
+    const showNumbers =
+      isKP ||
+      isSelf ||
+      participant.isPublic ||
+      (participant.kind === "PLAYER" && canSeePartyStats);
+    if (identityKnown) identifiedIds.add(participant.id);
     const declaration = participant.declaration;
 
     return {
       id: participant.id,
-      name: identified ? participant.name : "???",
+      name: identityKnown ? participant.name : "???",
       kind: participant.kind,
       faction: isKP ? participant.faction : null,
       isSelf,
@@ -87,13 +97,15 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       defeated: participant.defeated,
       hp: showNumbers ? participant.hp : null,
       maxHp: showNumbers ? participant.maxHp : null,
-      hpText: describeHp(participant.hp, participant.maxHp),
+      hpText: showNumbers ? describeHp(participant.hp, participant.maxHp) : null,
       mp: showNumbers ? participant.mp : null,
       san: showNumbers ? participant.san : null,
       dp: showNumbers ? participant.dp : null,
-      statusEffects: participant.statusEffects.map((effect) =>
-        effect.stacks > 1 ? `${effect.key} x${effect.stacks}` : effect.key
-      ),
+      statusEffects: showNumbers
+        ? participant.statusEffects.map((effect) =>
+            effect.stacks > 1 ? `${effect.key} x${effect.stacks}` : effect.key
+          )
+        : [],
       hasDeclaration: declaration !== null,
       declarationHp: showNumbers ? (declaration?.hp ?? null) : null,
       atbValue: participant.atbValue,
@@ -101,6 +113,16 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       speed: participant.speed,
       skills: showNumbers ? participant.skills : null
     };
+  });
+
+  const hiddenNames = new Set(
+    state.participants.filter((participant) => identifiedIds.has(participant.id) === false).map((participant) => participant.name)
+  );
+  const log: LogEntry[] = state.log.map((entry) => {
+    if (hiddenNames.size === 0) return entry;
+    let text = entry.text;
+    for (const name of hiddenNames) text = text.split(name).join("???");
+    return { ...entry, text };
   });
 
   return {
@@ -113,7 +135,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
     initiativeOrder: [...state.initiativeOrder],
     activeActorId: state.mode === "INITIATIVE" ? state.initiativeOrder[state.activeIndex] ?? null : null,
     participants,
-    log: state.log,
+    log,
     pendingIds: Object.keys(state.pending)
   };
 }

@@ -3,10 +3,17 @@ import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
-import { selectRoomModuleAction, setActiveCharacterAction, startRoomAction, toggleReadyAction } from "@/server/actions/room";
+import {
+  selectRoomModuleAction,
+  setActiveCharacterAction,
+  setRoomMagicEnabledAction,
+  startRoomAction,
+  toggleReadyAction
+} from "@/server/actions/room";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { loadGameModuleView } from "@/server/modules/revision";
+import { loadModuleMagicInfo } from "@/server/modules/magic";
 import { prisma } from "@/server/db/prisma";
 import { advancementView } from "@/server/game/view";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
@@ -99,6 +106,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     ? activeModule
     : roomModules.find((item) => item.id === room.selectedModuleId) ?? roomModules[0] ?? null;
   const defaultModule = selectedModule ?? activeModule ?? roomModules[0] ?? null;
+  const selectedModuleMagic = selectedModule === null ? null : await loadModuleMagicInfo(selectedModule.id);
   const requiredMembers = room.members.filter((member) => member.role !== "SPECTATOR");
   const readyCount = requiredMembers.filter((member) => member.ready).length;
   const allReady = requiredMembers.length > 0 && readyCount === requiredMembers.length;
@@ -139,7 +147,17 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   void initialMessages;
 
   const characterEntries = await prisma.roomCharacterEntry.findMany({
-    where: { roomId: room.id },
+    where: {
+      roomId: room.id,
+      ...(isKP
+        ? {}
+        : {
+            OR: [
+              { character: { userId: session.user.id } },
+              ...(room.characterVisibility === "PUBLIC" ? [{ status: "APPROVED" as const }] : [])
+            ]
+          })
+    },
     include: {
       character: {
         include: {
@@ -180,7 +198,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   const canStart = allReady && allPlayersHaveApprovedCharacter;
 
   const cardEntries = await prisma.roomCardEntry.findMany({
-    where: { roomId: room.id },
+    where: isKP ? { roomId: room.id } : { roomId: room.id, card: { ownerId: session.user.id } },
     include: {
       card: { include: { owner: { select: { username: true, displayName: true } } } }
     },
@@ -253,6 +271,10 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         status={room.status}
         inviteCode={room.inviteCode}
         allowPlayerCombatRequest={room.allowPlayerCombatRequest}
+        isKP={isKP}
+        characterVisibility={room.characterVisibility}
+        magicEnabled={room.magicEnabled}
+        magicSpellCount={selectedModuleMagic?.spells.length ?? 0}
       />
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
@@ -436,6 +458,42 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             团本选择已保存，全员可见。
           </p>
         ) : null}
+
+        {selectedModuleMagic === null || selectedModuleMagic.spells.length === 0 ? null : (
+          <div className="mt-4 rounded-lg border border-purple-400/30 bg-purple-400/5 px-4 py-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-purple-200">模组魔法规则（{selectedModuleMagic.spells.length}）</p>
+                <p className="mt-1 text-[11px] leading-relaxed text-white/45">
+                  由 DeepSeek / 团本结构化数据提前整理。开启后，本局规则包会纳入这些法术，战斗中可消耗 MP/SAN 施放。
+                </p>
+              </div>
+              {isKP ? (
+                <form action={setRoomMagicEnabledAction}>
+                  <input type="hidden" name="roomId" value={room.id} />
+                  <input type="hidden" name="enabled" value={room.magicEnabled ? "0" : "1"} />
+                  <button
+                    type="submit"
+                    className="rounded-lg border border-purple-400/40 px-3 py-1.5 text-xs text-purple-200 transition hover:bg-purple-400/10"
+                  >
+                    {room.magicEnabled ? "停用魔法规则" : "启用魔法规则"}
+                  </button>
+                </form>
+              ) : (
+                <span className="rounded-full border border-purple-400/30 px-2 py-0.5 text-[10px] text-purple-200">
+                  {room.magicEnabled ? "已启用" : "未启用"}
+                </span>
+              )}
+            </div>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {selectedModuleMagic.spells.slice(0, 12).map((spell) => (
+                <span key={spell.id} className="rounded border border-white/10 px-2 py-0.5 text-[10px] text-white/50">
+                  {spell.name}
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">

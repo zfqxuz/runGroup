@@ -66,6 +66,7 @@ export interface CombatActionPayload {
   readonly damage?: string;
   readonly accuracyMod?: number;
   readonly name?: string;
+  readonly spellId?: string;
   readonly mpCost?: number;
   readonly sanCost?: string;
   readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";

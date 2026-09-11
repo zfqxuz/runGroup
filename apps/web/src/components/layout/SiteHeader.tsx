@@ -14,6 +14,7 @@ export interface SiteHeaderUser {
   readonly username: string;
   readonly displayName: string;
   readonly avatarUrl: string | null;
+  readonly isAdmin: boolean;
 }
 
 export default function SiteHeader({ user }: { readonly user: SiteHeaderUser }) {

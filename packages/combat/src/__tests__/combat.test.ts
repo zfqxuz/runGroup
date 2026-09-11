@@ -219,7 +219,7 @@ describe("权限过滤：服务端构造视图", () => {
     expect(npc?.hp).toBeGreaterThan(0);
   });
 
-  it("PL 看不到未识别 NPC 的名字与数值，只看到文字描述", () => {
+  it("PL 看不到未识别 NPC 的名字与任何生命信息", () => {
     const { state } = makeCombat();
     const view = filterCombatForViewer(state, {
       userId: "u1", role: "PLAYER", characterId: "char-a"
@@ -229,7 +229,8 @@ describe("权限过滤：服务端构造视图", () => {
     expect(npc?.faction).toBeNull();
     expect(npc?.hp).toBeNull();
     expect(npc?.maxHp).toBeNull();
-    expect(npc?.hpText).toBe("完好");
+    expect(npc?.hpText).toBeNull();
+    expect(npc?.statusEffects).toEqual([]);
   });
 
   it("PL 对自己的角色可见全量，对队友隐藏数值", () => {
@@ -256,5 +257,74 @@ describe("权限过滤：服务端构造视图", () => {
       expect(participant.hp).toBeNull();
       expect(participant.san).toBeNull();
     }
+  });
+
+  it("KP 公开 NPC 后，玩家可以看到名字与精确数值", () => {
+    const { state, npc } = makeCombat();
+    npc.isPublic = true;
+    const view = filterCombatForViewer(state, {
+      userId: "u1", role: "PLAYER", characterId: "char-a"
+    });
+    const shown = view.participants.find((p) => p.id === "npc");
+    expect(shown?.name).toBe("露米娅");
+    expect(shown?.hp).toBeGreaterThan(0);
+    expect(shown?.maxHp).toBeGreaterThan(0);
+    expect(shown?.hpText).not.toBeNull();
+  });
+
+  it("房间开启玩家互见时，玩家可以看到队友精确数值", () => {
+    const { state } = makeCombat();
+    const view = filterCombatForViewer(state, {
+      userId: "u1", role: "PLAYER", characterId: "char-a", canSeePartyStats: true
+    });
+    const ally = view.participants.find((p) => p.id === "b");
+    expect(ally?.hp).toBeGreaterThan(0);
+    expect(ally?.san).toBeGreaterThan(0);
+    const hiddenNpc = view.participants.find((p) => p.id === "npc");
+    expect(hiddenNpc?.hp).toBeNull();
+  });
+});
+
+describe("魔法施放", () => {
+  const magicPack = compileParsedRulePack({
+    ...resolveRulePack("touhou-ext", builtinRegistry()),
+    magic: {
+      enabled: true,
+      system: "TOUHOU",
+      spells: [
+        {
+          id: "fireball",
+          name: "火球",
+          skill: "MAGIC",
+          mpCost: "3",
+          sanCost: "0",
+          damage: "1d6",
+          target: "ONE"
+        }
+      ]
+    }
+  });
+
+  it("启用法术规则后，MAGIC 行动会消耗 MP 并造成伤害", () => {
+    const state = createCombat({ id: "magic-test", seed: "magic-seed", tickMs: 250 });
+    const derived = computeDerived(magicPack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(magicPack, { dex: 55 }), speed: computeBaseSpeed(magicPack, { dex: 55 })
+    });
+    const target = addParticipant(state, {
+      id: "target", name: "妖精", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(magicPack, { dex: 50 }), speed: computeBaseSpeed(magicPack, { dex: 50 })
+    });
+    caster.isReady = true;
+    const mpBefore = caster.mp;
+    expect(submitAction(state, { actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "fireball" })).toBe(true);
+    const result = resolvePending(magicPack, state, {});
+    expect(result.acted).toContain("caster");
+    expect(caster.mp).toBe(mpBefore - 3);
+    expect(target.hp).toBeLessThan(target.maxHp);
+    expect(state.log.some((entry) => entry.text.includes("火球"))).toBe(true);
   });
 });

@@ -44,6 +44,7 @@ export default function RoomSetupForm(props: Props) {
   const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB">(initialOptions.defaultMode);
   const [disabled, setDisabled] = useState<readonly string[]>([]);
   const [allowPlayerCombatRequest, setAllowPlayerCombatRequest] = useState(true);
+  const [characterVisibility, setCharacterVisibility] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
 
   function switchSystem(next: SystemKey): void {
     const nextOptions = props.options[next];
@@ -210,6 +211,26 @@ export default function RoomSetupForm(props: Props) {
             </label>
           ))}
         </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">玩家角色可见性</h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              默认玩家之间可见彼此角色属性；选择“私密”后，玩家只能看到自己的角色卡，KP 始终可见全部。
+            </p>
+          </div>
+          <select
+            value={characterVisibility}
+            onChange={(event) => setCharacterVisibility(event.target.value === "PRIVATE" ? "PRIVATE" : "PUBLIC")}
+            className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500"
+          >
+            <option value="PUBLIC">玩家互见（默认）</option>
+            <option value="PRIVATE">仅自己可见</option>
+          </select>
+        </div>
+        <input type="hidden" name="characterVisibility" value={characterVisibility} />
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

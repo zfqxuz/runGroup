@@ -16,6 +16,7 @@ export interface StructuredModuleData {
   readonly items: readonly StructuredModuleEntry[];
   readonly endings: readonly StructuredModuleEntry[];
   readonly rewards: readonly StructuredModuleEntry[];
+  readonly magic: readonly StructuredModuleEntry[];
 }
 
 const BLOCK_PATTERN = /```[ \t]*yaml[ \t]+(module-[a-z0-9-]+)[ \t]*\r?\n([\s\S]*?)```/g;
@@ -29,7 +30,8 @@ function emptyData(): StructuredModuleData {
     clues: [],
     items: [],
     endings: [],
-    rewards: []
+    rewards: [],
+    magic: []
   };
 }
 
@@ -70,6 +72,7 @@ export function parseStructuredBlocks(markdown: string): StructuredModuleData {
   const items: StructuredModuleEntry[] = [];
   const endings: StructuredModuleEntry[] = [];
   const rewards: StructuredModuleEntry[] = [];
+  const magic: StructuredModuleEntry[] = [];
 
   for (const match of markdown.matchAll(BLOCK_PATTERN)) {
     const rawKind = match[1] ?? "";
@@ -92,9 +95,10 @@ export function parseStructuredBlocks(markdown: string): StructuredModuleData {
     else if (kind === "item") items.push(entry);
     else if (kind === "ending") endings.push(entry);
     else if (kind === "reward") rewards.push(entry);
+    else if (kind === "magic") magic.push(entry);
   }
 
-  return { chapters, scenes, encounters, npcs, clues, items, endings, rewards };
+  return { chapters, scenes, encounters, npcs, clues, items, endings, rewards, magic };
 }
 
 export function structuredOfContent(content: unknown): StructuredModuleData {
@@ -111,7 +115,8 @@ export function structuredOfContent(content: unknown): StructuredModuleData {
       clues: normalizeArray(source.clues, "clue"),
       items: normalizeArray(source.items, "item"),
       endings: normalizeArray(source.endings, "ending"),
-      rewards: normalizeArray(source.rewards, "reward")
+      rewards: normalizeArray(source.rewards, "reward"),
+      magic: normalizeArray(source.magic, "magic")
     };
   }
   const text = typeof record.text === "string" ? record.text : "";

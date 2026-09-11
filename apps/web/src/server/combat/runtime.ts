@@ -18,6 +18,7 @@ export interface CombatRuntime {
   readonly state: CombatState;
   readonly controllers: Map<string, string[]>;
   readonly roles: Map<string, RuntimeRole>;
+  readonly partyStatsVisible: boolean;
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
   pendingReactions: Map<string, string>;
   reactions: Record<string, DefenseReaction>;
@@ -38,7 +39,14 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
   if (cached !== undefined) return cached;
   const combat = await prisma.combat.findUnique({
     where: { id: combatId },
-    include: { room: { include: { members: { select: { userId: true, role: true } } } } }
+    include: {
+      room: {
+        select: {
+          characterVisibility: true,
+          members: { select: { userId: true, role: true } }
+        }
+      }
+    }
   });
   if (combat === null) return null;
   const snapshot = await prisma.combatSnapshot.findFirst({
@@ -98,6 +106,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     state,
     controllers,
     roles,
+    partyStatsVisible: combat.room.characterVisibility !== "PRIVATE",
     attackSkills,
     pendingReactions: new Map(),
     reactions: {}
@@ -127,7 +136,8 @@ export function viewForUser(runtime: CombatRuntime, userId: string): CombatView 
     userId,
     role,
     characterId: null,
-    characterIds: controlledCharacterIds(runtime, userId)
+    characterIds: controlledCharacterIds(runtime, userId),
+    canSeePartyStats: runtime.partyStatsVisible
   });
 }
 

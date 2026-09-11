@@ -1,0 +1,7 @@
+-- 可见性与模组魔法准备字段
+ALTER TABLE "Room" ADD COLUMN "characterVisibility" TEXT NOT NULL DEFAULT 'PUBLIC';
+ALTER TABLE "Room" ADD COLUMN "magicEnabled" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "Card" ADD COLUMN "isPublic" BOOLEAN NOT NULL DEFAULT false;
+
+ALTER TABLE "CombatParticipant" ADD COLUMN "isPublic" BOOLEAN NOT NULL DEFAULT false;

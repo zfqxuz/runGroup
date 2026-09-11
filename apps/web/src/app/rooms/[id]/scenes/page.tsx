@@ -3,13 +3,18 @@ import { notFound, redirect } from "next/navigation";
 import ImageUpload from "@/components/upload/ImageUpload";
 import {
   activateSceneAction,
+  createMapLayerAction,
   createSceneAction,
   createSceneTokenAction,
+  deleteMapLayerAction,
   deleteSceneAction,
   deleteSceneTokenAction,
+  importModuleScenesAction,
+  updateMapLayerAction,
   updateSceneAction,
   updateSceneTokenAction
 } from "@/server/actions/scene";
+import { loadGameModuleView } from "@/server/modules/revision";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -38,7 +43,7 @@ export default async function SceneManagementPage({
   searchParams
 }: {
   params: { id: string };
-  searchParams: { saved?: string; error?: string };
+  searchParams: { saved?: string; error?: string; scenes?: string; encounters?: string };
 }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -58,14 +63,18 @@ export default async function SceneManagementPage({
       map: {
         include: {
           background: { select: { url: true } },
+          layers: {
+            include: { asset: { select: { url: true } } },
+            orderBy: { zIndex: "asc" }
+          },
+          _count: { select: { tokens: true, walls: true, lights: true } },
           tokens: {
             include: {
               asset: { select: { url: true } },
               character: { select: { userId: true } }
             },
             orderBy: { zIndex: "asc" }
-          },
-          _count: { select: { tokens: true } }
+          }
         }
       }
     },
@@ -89,6 +98,14 @@ export default async function SceneManagementPage({
     select: { id: true, name: true },
     orderBy: { createdAt: "asc" }
   });
+  const moduleGame = await prisma.game.findFirst({
+    where: { roomId: room.id, moduleId: { not: null } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, moduleId: true, moduleRevisionId: true }
+  });
+  const moduleView = moduleGame === null ? null : await loadGameModuleView(moduleGame);
+  const moduleSceneCount = moduleView === null ? 0 : moduleView.structured.scenes.length;
+  const moduleEncounterCount = moduleView === null ? 0 : moduleView.structured.encounters.length;
 
   return (
     <main className="mx-auto flex min-h-screen max-w-5xl flex-col gap-6 px-6 py-12">
@@ -107,6 +124,27 @@ export default async function SceneManagementPage({
       {searchParams.error === undefined ? null : (
         <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">操作失败：{searchParams.error}</p>
       )}
+      {searchParams.saved === "module-scenes" ? (
+        <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
+          已从团本结构化数据生成场景：新增 {searchParams.scenes ?? "0"} 个场景 / {searchParams.encounters ?? "0"} 个遭遇。
+        </p>
+      ) : null}
+
+      {isKP && moduleSceneCount > 0 ? (
+        <section className="rounded-xl border border-spirit-400/30 bg-spirit-400/5 p-5">
+          <h2 className="text-sm font-medium text-white/80">从团本自动生成场景</h2>
+          <p className="mt-1 text-[11px] leading-5 text-white/40">
+            当前团本《{moduleView?.title ?? "未命名"}》包含 {moduleSceneCount} 个结构化场景、{moduleEncounterCount} 个遭遇。
+            点击后后台会按标准块生成场景、地图、章节与遭遇绑定；已存在的同名场景会复用。
+          </p>
+          <form action={importModuleScenesAction} className="mt-3">
+            <input type="hidden" name="roomId" value={room.id} />
+            <button type="submit" className="rounded-lg bg-spirit-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-spirit-400">
+              同步团本场景与遭遇
+            </button>
+          </form>
+        </section>
+      ) : null}
 
       {isKP ? (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
@@ -243,18 +281,110 @@ export default async function SceneManagementPage({
           ) : null}
 
           {scene.map === null ? null : (
-            <div className="mt-4 grid gap-4 border-t border-white/10 pt-4 sm:grid-cols-2">
-              <div className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
-                <p className="text-xs text-white/60">场景背景</p>
-                <div className="mt-2">
-                  <ImageUpload kind="SCENE_BG" targetId={scene.id} currentUrl={scene.background?.url ?? null} label="上传场景背景" shape="wide" />
+            <div className="mt-4 flex flex-col gap-4 border-t border-white/10 pt-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
+                  <p className="text-xs text-white/60">场景背景</p>
+                  <div className="mt-2">
+                    <ImageUpload kind="SCENE_BG" targetId={scene.id} currentUrl={scene.background?.url ?? null} label="上传场景背景" shape="wide" />
+                  </div>
+                </div>
+                <div className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
+                  <p className="text-xs text-white/60">地图背景</p>
+                  <div className="mt-2">
+                    <ImageUpload kind="MAP" targetId={scene.map.id} currentUrl={scene.map.background?.url ?? null} label="上传地图背景" shape="wide" />
+                  </div>
                 </div>
               </div>
+
               <div className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
-                <p className="text-xs text-white/60">地图背景</p>
-                <div className="mt-2">
-                  <ImageUpload kind="MAP" targetId={scene.map.id} currentUrl={scene.map.background?.url ?? null} label="上传地图背景" shape="wide" />
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-xs text-white/60">地图图层（{scene.map.layers.length}）· 墙 {scene.map._count.walls} · 灯 {scene.map._count.lights}</p>
+                  <span className="text-[10px] text-white/30">场景页可管理图层图片；墙体 / 灯光 / 战雾在跑团页战术棋盘上操作。</span>
                 </div>
+                {isKP ? (
+                  <div className="mt-3 flex flex-col gap-3">
+                    {scene.map.layers.map((layer) => (
+                      <div key={layer.id} className="flex flex-wrap items-start gap-3 rounded border border-white/10 p-2">
+                        <ImageUpload kind="MAP_LAYER" targetId={layer.id} currentUrl={layer.asset?.url ?? null} label="图层图片" shape="square" />
+                        <form action={updateMapLayerAction} className="grid min-w-[240px] flex-1 gap-2 sm:grid-cols-3">
+                          <input type="hidden" name="layerId" value={layer.id} />
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/40">名称</span>
+                            <input name="name" defaultValue={layer.name} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/40">类型</span>
+                            <select name="layerType" defaultValue={layer.type} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs">
+                              <option value="BACKGROUND">背景</option>
+                              <option value="TILE">地块</option>
+                              <option value="OBJECT">物件</option>
+                              <option value="EFFECT">特效</option>
+                              <option value="FOREGROUND">前景</option>
+                            </select>
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/40">Z 序</span>
+                            <input name="zIndex" type="number" defaultValue={layer.zIndex} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/40">透明度</span>
+                            <input name="opacity" type="number" step="0.1" min="0" max="1" defaultValue={layer.opacity} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/40">缩放</span>
+                            <input name="scale" type="number" step="0.1" min="0.1" max="8" defaultValue={layer.scale} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                          </label>
+                          <label className="flex flex-col gap-1">
+                            <span className="text-[10px] text-white/40">X / Y 偏移</span>
+                            <span className="flex gap-1">
+                              <input name="offsetX" type="number" defaultValue={layer.offsetX} className="w-full rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                              <input name="offsetY" type="number" defaultValue={layer.offsetY} className="w-full rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                            </span>
+                          </label>
+                          <label className="flex items-center gap-1 text-[10px] text-white/55">
+                            <input type="checkbox" name="visible" value="1" defaultChecked={layer.visible} className="accent-sakura-500" /> 可见
+                          </label>
+                          <label className="flex items-center gap-1 text-[10px] text-white/55">
+                            <input type="checkbox" name="locked" value="1" defaultChecked={layer.locked} className="accent-sakura-500" /> 锁定
+                          </label>
+                          <div className="flex items-center gap-2 sm:col-span-3">
+                            <button type="submit" className="rounded bg-sakura-500 px-3 py-1.5 text-xs font-medium text-ink-900">保存图层</button>
+                          </div>
+                        </form>
+                        <form action={deleteMapLayerAction}>
+                          <input type="hidden" name="layerId" value={layer.id} />
+                          <button type="submit" className="rounded border border-red-400/30 px-2 py-1 text-[10px] text-red-300">删除</button>
+                        </form>
+                      </div>
+                    ))}
+                    <form action={createMapLayerAction} className="flex flex-wrap items-end gap-2 rounded border border-dashed border-white/15 p-2">
+                      <input type="hidden" name="roomId" value={room.id} />
+                      <input type="hidden" name="sceneId" value={scene.id} />
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[10px] text-white/40">新图层名</span>
+                        <input name="name" placeholder="例：室内地板" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[10px] text-white/40">类型</span>
+                        <select name="layerType" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs">
+                          <option value="TILE">地块</option>
+                          <option value="OBJECT">物件</option>
+                          <option value="EFFECT">特效</option>
+                          <option value="FOREGROUND">前景</option>
+                        </select>
+                      </label>
+                      <label className="flex flex-col gap-1">
+                        <span className="text-[10px] text-white/40">Z 序</span>
+                        <input name="zIndex" type="number" defaultValue={scene.map.layers.length} className="w-16 rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs" />
+                      </label>
+                      <label className="flex items-center gap-1 text-[10px] text-white/55">
+                        <input type="checkbox" name="visible" value="1" defaultChecked className="accent-sakura-500" /> 可见
+                      </label>
+                      <button type="submit" className="rounded border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-300">新增图层</button>
+                    </form>
+                  </div>
+                ) : null}
               </div>
             </div>
           )}

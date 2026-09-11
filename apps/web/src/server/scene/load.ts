@@ -1,5 +1,5 @@
 import { prisma } from "@/server/db/prisma";
-import type { SceneTokenView, SceneView } from "@/shared/scene";
+import type { SceneMapView, SceneTokenView, SceneView } from "@/shared/scene";
 import { sceneInclude, sceneView, tokenInclude, tokenView, type SceneHpMap } from "./view";
 
 async function loadHpMap(roomId: string): Promise<SceneHpMap> {
@@ -41,4 +41,19 @@ export async function loadSceneTokenView(tokenId: string): Promise<{ roomId: str
   if (token === null) return null;
   const hpByCharacter = await loadHpMap(token.map.scene.roomId);
   return { roomId: token.map.scene.roomId, token: tokenView(token, hpByCharacter) };
+}
+
+export async function loadSceneMapView(
+  roomId: string,
+  sceneId: string
+): Promise<{ readonly roomId: string; readonly sceneId: string; readonly map: SceneMapView } | null> {
+  const scene = await prisma.scene.findFirst({
+    where: { id: sceneId, roomId },
+    include: sceneInclude
+  });
+  if (scene === null) return null;
+  const hpByCharacter = await loadHpMap(roomId);
+  const view = sceneView(scene, hpByCharacter);
+  if (view.map === null) return null;
+  return { roomId, sceneId, map: view.map };
 }

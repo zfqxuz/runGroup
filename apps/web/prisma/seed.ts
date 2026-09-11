@@ -64,7 +64,21 @@ async function seedOccupations(): Promise<void> {
 
 async function main(): Promise<void> {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
+  const adminPasswordHash = await bcrypt.hash(process.env.ADMIN_PASSWORD ?? DEMO_PASSWORD, 10);
   await seedOccupations();
+
+  // 需求：用户 bdmin 是平台管理员。已存在则只提升角色，不覆盖密码。
+  await prisma.user.upsert({
+    where: { username: "bdmin" },
+    update: { role: "ADMIN" },
+    create: {
+      username: "bdmin",
+      displayName: "平台管理员",
+      email: "bdmin@example.test",
+      passwordHash: adminPasswordHash,
+      role: "ADMIN"
+    }
+  });
 
   const kp = await prisma.user.upsert({
     where: { username: "demo_kp" },

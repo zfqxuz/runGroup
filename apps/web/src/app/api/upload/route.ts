@@ -6,7 +6,7 @@ import { prisma } from "@/server/db/prisma";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const ALLOWED_TYPES = ["PORTRAIT", "AVATAR", "TOKEN", "CARD_ART", "SCENE_BG", "MAP"] as const;
+const ALLOWED_TYPES = ["PORTRAIT", "AVATAR", "TOKEN", "CARD_ART", "SCENE_BG", "MAP", "MAP_LAYER"] as const;
 type AllowedType = (typeof ALLOWED_TYPES)[number];
 
 function isAllowed(value: string): value is AllowedType {
@@ -58,7 +58,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   const asset = await prisma.asset.create({
     data: {
       ownerId: session.user.id,
-      type: typeRaw,
+      type: typeRaw === "MAP_LAYER" ? "MAP" : typeRaw,
       filename: stored.filename,
       // 原始文件名只做展示，永远不参与路径拼接
       originalName: file.name.slice(0, 120),

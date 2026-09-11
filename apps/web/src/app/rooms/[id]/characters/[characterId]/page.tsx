@@ -49,9 +49,19 @@ export default async function CharacterPage({
       cards: { orderBy: { createdAt: "asc" } }
     }
   });
-  if (character === null || character.roomId !== params.id) notFound();
+  if (character === null) notFound();
 
   const room = membership.room;
+  const entry = await prisma.roomCharacterEntry.findUnique({
+    where: { roomId_characterId: { roomId: room.id, characterId: character.id } },
+    select: { status: true }
+  });
+  const isOwner = character.userId === session.user.id;
+  const isKP = membership.role === "KP";
+  const canViewByRoomConfig =
+    room.characterVisibility === "PUBLIC" && entry !== null && entry.status === "APPROVED";
+  if (isOwner === false && isKP === false && canViewByRoomConfig === false) notFound();
+  const canManage = isOwner || isKP;
   const pack = resolveRulePack(
     room.system === "TOUHOU" ? "touhou-ext" : "coc7-baseline",
     builtinRegistry()
@@ -65,14 +75,12 @@ export default async function CharacterPage({
   const outcome = computeDerived(compiled, { attributes: base, race: character.race });
   const effective = outcome.attributes as unknown as Record<string, number>;
 
-  const isOwner = character.userId === session.user.id;
-  const isKP = membership.role === "KP";
-  const canManage = isOwner || isKP;
-
-  const pool = await prisma.card.findMany({
-    where: { roomId: room.id, scope: "ROOM", type: { not: "NPC" } },
-    orderBy: { createdAt: "desc" }
-  });
+  const pool = canManage
+    ? await prisma.card.findMany({
+        where: { roomId: room.id, scope: "ROOM", type: { not: "NPC" } },
+        orderBy: { createdAt: "desc" }
+      })
+    : [];
 
 
 
@@ -165,6 +173,7 @@ export default async function CharacterPage({
         )}
       </section>
 
+      {canManage === false ? null : (
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">持有卡牌（{character.cards.length}）</h2>
         {character.cards.length === 0 ? (
@@ -182,8 +191,7 @@ export default async function CharacterPage({
                 {card.subtitle === null ? null : (
                   <p className="mt-0.5 truncate text-[11px] text-white/35">{card.subtitle}</p>
                 )}
-                {canManage === false ? null : (
-                  <form action={unequipCardAction} className="mt-2">
+                <form action={unequipCardAction} className="mt-2">
                     <input type="hidden" name="cardId" value={card.id} />
                     <button
                       type="submit"
@@ -196,12 +204,12 @@ export default async function CharacterPage({
                       卸下
                     </button>
                   </form>
-                )}
               </div>
             ))}
           </div>
         )}
       </section>
+      )}
 
     </main>
   );

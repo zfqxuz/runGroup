@@ -217,3 +217,29 @@ export async function createCustomNpcAction(formData: FormData): Promise<void> {
   revalidatePath("/rooms/" + room.id);
   redirect("/rooms/" + room.id);
 }
+
+/** KP 切换某张 NPC / Boss 卡是否向玩家公开属性。 */
+export async function setNpcVisibilityAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const cardId = String(formData.get("cardId") ?? "");
+  const isPublic = String(formData.get("isPublic") ?? "0") === "1";
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+
+  const card = await prisma.card.findUnique({
+    where: { id: cardId },
+    select: { id: true, roomId: true, scope: true, type: true }
+  });
+  if (card === null || card.roomId !== roomId || card.scope !== "ROOM" || card.type !== "NPC") {
+    redirect("/rooms/" + roomId);
+  }
+
+  await prisma.card.update({ where: { id: card.id }, data: { isPublic } });
+  revalidatePath("/rooms/" + roomId);
+  redirect("/rooms/" + roomId);
+}

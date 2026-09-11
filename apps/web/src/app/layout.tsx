@@ -18,7 +18,8 @@ export default async function RootLayout({
       : {
           username: session.user.username,
           displayName: session.user.name ?? session.user.username,
-          avatarUrl: session.user.avatarUrl
+          avatarUrl: session.user.avatarUrl,
+          isAdmin: session.user.role === "ADMIN"
         };
 
   return (

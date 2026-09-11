@@ -166,6 +166,7 @@ export default async function ModuleDetailPage({
         </form>
       ) : null}
 
+      {canViewFull ? (
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">资源（{moduleRecord.assets.length}）</h2>
         {moduleRecord.assets.length === 0 ? (
@@ -203,6 +204,12 @@ export default async function ModuleDetailPage({
           </div>
         )}
       </section>
+      ) : (
+        <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+          <h2 className="text-sm font-medium text-white/80">资源</h2>
+          <p className="mt-3 text-xs text-white/35">地图、图片、手书与附件仅 KP / 团本作者可见。玩家只会看到公开元信息与 KP 主动分享的线索。</p>
+        </section>
+      )}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">公开信息</h2>

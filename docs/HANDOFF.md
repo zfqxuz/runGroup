@@ -8,19 +8,19 @@
 - 平台已具备：认证、房间准备/跑团、团本广场、我的团本、角色/卡牌库、战斗、团本快照、局内状态、暂停/继续/结束、游戏历史、用户菜单、线索/笔记/手书、悄悄话/暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘 MVP 第一版已完成：场景、地图、Token、拖动、实时同步。
-  - P2-1 增量已完成：Token 图片、名称、边框色、尺寸、旋转、显示名称/HP、KP 可见/锁定。
-  - P2-3 角色成长闭环已完成：
-    - 基础：成长汇总、差异标注、跨局继承。
-    - 增量：CoC 幕间成长检定（成长点 / 技能成长掷骰）、成长记录编辑 / 撤销 / 来源标注、角色页筛选与 CSV 导出、结束本局成长确认页与角色卡预览。
-- 测试基线：`npm run typecheck`、`npm test`（141 tests）、全量 15 个 E2E 均通过。
+  - P2-1 增量已完成：Token 图片与属性、六边形网格与吸附、战争迷雾绘制、墙体 / 灯光 / 视线遮挡、地图图层、团本结构化场景自动绑定。
+  - P2-2 规则包后台已完成：DB 规则包、版本、发布 / 归档、绑房、JSON 导入导出、内置同步、审计；管理后台入口在管理员用户下拉菜单。
+  - P2-3 角色成长闭环已完成：基础、跨局继承、CoC 幕间成长检定、成长记录编辑 / 撤销 / 来源标注、筛选与 CSV 导出、结束确认页。
+  - DeepSeek 智能团本导入已完成：任意数量 md/txt/json/docx/pptx/xlsx/pdf（元信息）/图片多文件上传，DeepSeek 整合为 `touhou-module/v1` 标准团本；默认 `deepseek-flash`（支持图片视觉）；素材涉及魔法时会生成 structured.magic。
+  - 隐藏信息规则已完成：NPC/Boss 默认隐藏、KP 可公开；玩家互见角色属性是房间配置（默认公开）；隐藏 Boss 战斗只展示伤害；模组魔法可在准备阶段启用并在战斗施放。
+- 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
+- 测试基线：`npm run typecheck`、`npm test`（144 tests）、全量 19 个 E2E 均通过。
 
 ### 下一步开发顺序（用户已确认）
-1. ~~继续 P2-3~~ **已完成（见第 20 节）**。若用户没有新指示，转入 P2-1。
-2. **P2-1 战术棋盘后续增量**
-   - 六边形网格与网格吸附。
-   - 战争迷雾实际操作、墙体、灯光、视线遮挡。
-   - 地图图层与多背景。
-   - 场景与团本结构化块自动绑定。
+1. ~~继续 P2-3~~ **已完成（见第 20 节）**。
+2. ~~P2-1 战术棋盘后续增量~~ **已完成（见第 21 节）**。
+3. ~~P2-2 规则包后台与 DeepSeek 智能团本导入~~ **已完成（见第 21 节）**。
+4. 后续优先补 P2-2 的**规则内容**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；以及车卡 / 团本编辑器的结构化选择器。
 
 ### 暂缓 / 不要主动做
 - P2-2 规则内容与 RulePack 后台：hold。
@@ -713,3 +713,112 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 ### 备注
 - 若需要用独立构建目录跑 E2E，可临时在 `apps/web/next.config.mjs` 加 `distDir: process.env.NEXT_DIST_DIR ?? ".next"`，避免与 3100 的 dev server 共用 `.next`；本轮验证后已还原，不进入提交。
 - 成长点目前由 KP 标记 / 结算；后续如需玩家自助标记自己的技能，可在权限上扩展。
+
+
+## 21. P2-1 增量、P2-2 管理后台与 DeepSeek 智能导入（本轮完成）
+
+### 管理后台（P2-2 总入口）
+- `User.role` 新增 `UserRole`（USER / ADMIN）；`isDisabled`、`lastLoginAt`。
+- `bdmin` 由迁移 `20260912000000_admin_console_and_rulepacks` 与 `prisma/seed.ts` 提升为 ADMIN（已存在用户不覆盖密码）。
+- 登录与 Socket 票据都会拒绝 `isDisabled` 用户。
+- 管理员入口：右上角用户下拉菜单「管理后台」→ `/admin`。
+- 页面：`/admin` 总览、`/admin/users`、`/admin/rooms`、`/admin/modules`、`/admin/games`、`/admin/rulepacks`、`/admin/system`、`/admin/audit`。
+- 关键操作全部写入 `AdminAuditLog`：用户角色 / 禁用、房间状态 / 删除、团本发布 / 删除、规则包创建 / 版本 / 发布 / 绑房 / 导入 / 删除、系统设置。
+
+### P2-2 规则包管理
+- `RulePack` 增加 `isPublished / publishedAt / createdAt / updatedAt`；`RulePackVersion` 增加 `status / notes / createdBy / publishedAt`。
+- `/admin/rulepacks`：从内置注册表同步（`coc7-baseline` / `touhou-ext`）、新建规则包（可从内置复制或粘贴 JSON）、绑定房间。
+- 详情页：版本列表、发布 / 归档、JSON 导出、JSON 文件导入版本、删除规则包。
+- 绑定房间时必须房间系统一致且版本为 PUBLISHED；`loadEffectivePack` 已支持 DB 版本优先于内置包，仍会叠加 `Room.ruleOverride`。
+- `SystemSetting` 表用于平台配置，当前接入 AI 导入模型与文件数上限。
+- E2E：`npm run verify:admin-console`（非管理员拦截 / 后台页面 / 内置同步 / 绑房 / 导出 / `loadEffectivePack` 编译回读）。
+- 尚未做：规则包内容可视化编辑器（目前是 JSON 编辑 + 复制内置），完整的 RulePack 后台内容校验提示可以继续增强。
+
+### DeepSeek 智能团本导入
+- 入口：`/modules/mine` 与 `/rooms/[id]/modules` 的「DeepSeek 智能整合」页签。
+- 路由：`POST /api/modules/ai-import`（登录可访问；房间导入仍要求本房 KP）。
+- 服务端：`apps/web/src/server/ai/deepseek.ts`、`apps/web/src/server/ai/module-import.ts`。
+- 支持任意数量文件（最多 40 个，单文件 25MB，总 150MB）：md / txt / json / yaml / csv / html / docx / pptx / xlsx / pdf（PDF 目前仅保留元信息）/ png / jpg / webp / gif。
+- 图片会先压缩到 1400px JPEG 再发给 vision 模型，成功后保存为 `ModuleAsset`（`assets/images/*.png`），AI 输出会自动补图片索引。
+- DeepSeek 输出严格 JSON，服务端组装为 14 章标准 Markdown + 结构化 `module-chapter / module-scene / module-npc / module-clue / module-item / module-ending / module-reward` YAML 块；校验失败会自动带错误重试，最多 3 次。
+- API Key 只从环境变量 `DEEPSEEK_API_KEY` 读取（已配置在本机 `apps/web/.env`，该文件不提交）；`DEEPSEEK_BASE_URL` 默认 `https://api.deepseek.com`；默认模型 `deepseek-flash`（支持图片视觉，推荐），可在 `/admin/system` 修改。
+- E2E：`npm run verify:ai-import`（无 key 时 SKIP；调用真实 DeepSeek，验证标准章节 / 结构化块 / 图片资源）。
+- 尚未做：流式进度、失败后断点重试、PDF 正文抽取（需额外依赖）。
+
+### P2-1 战术棋盘增量
+- 几何库：`apps/web/src/shared/scene-geometry.ts`
+  - 方格 / 六边形轴向坐标、中心吸附、覆盖格子、六边形多边形。
+  - 2D 可见性多边形（向墙端点和边界投射射线）。
+- 战争迷雾：`Map.fogRevealed` 存格子 key；SceneBoard 提供 KP 战雾工具（揭示 / 遮回 / 清空），拖动刷格子，Socket `scene:fog:paint` / `scene:fog:reset` 持久化并广播。
+- 墙体：Socket `scene:wall:create` / `scene:wall:delete`，支持 WALL / DOOR / WINDOW / DIFFICULT_TERRAIN，SceneBoard 画墙与删除。
+- 灯光：Socket `scene:light:create` / `scene:light:delete`，场景页与棋盘渲染光晕。
+- 视线遮挡：有墙且玩家模式时按自己 Token 计算 visible polygon，墙后 Token 不渲染；KP 可勾选「预览玩家视线遮挡」。
+- 地图图层：`MapLayer` 增加管理 UI（名称 / 类型 / Z 序 / 透明度 / 偏移 / 缩放 / 可见 / 锁定），`ImageUpload` 新增 `MAP_LAYER` 上传用途；SceneBoard 按 Z 序渲染多背景。
+- 团本结构化绑定：场景页「同步团本场景与遭遇」读取当前局的 `ModuleRevision / Module` 结构化数据，自动创建 `ModuleChapter`、`Scene + Map`、`Encounter` 并绑定 sceneId / chapterId。
+- E2E：`npm run verify:scene-increments`（六边形几何 / 墙体 / 灯光 / 战雾 / 图层 / 团本结构化自动绑定）。
+
+### 本轮验证
+- `npm run typecheck`：PASS。
+- `npm test`：141 tests PASS。
+- `npm run build --workspace @touhou/web`：PASS。
+- E2E（全部 18 个）：既有 15 个全部 PASS + `verify:admin-console` / `verify:scene-increments` / `verify:ai-import` PASS。
+
+### 环境变量补充
+```bash
+DEEPSEEK_API_KEY="sk-..."
+DEEPSEEK_BASE_URL="https://api.deepseek.com"
+DEEPSEEK_MODEL="deepseek-flash"
+```
+
+
+## 22. 隐藏信息规则、玩家互见与模组魔法（本轮完成）
+
+### 信息可见性原则
+- **玩家只看到有限公共信息**：
+  - 准备页：非 KP 只看到自己的带入申请；队友的 `APPROVED` 角色才会按房间配置展示，`PENDING_REVIEW / REJECTED` 与他人的带入卡牌不对非 KP 展示。
+  - 跑团页：成长记录、成长点、角色技能表按 `Room.characterVisibility` 过滤，`PRIVATE` 时只有自己可见；KP 永远可见全部。
+  - 团本结构化场景 / 遭遇 / 正文不进入玩家页面；房间团本详情页对非 KP 隐藏资源（地图、图片、手书、附件），只保留公开元信息。
+  - 手书资源不再直接下发给玩家；后续如需公开，应增加显式的“对玩家公开”位。
+- **NPC / Boss 默认隐藏**：
+  - `Card.isPublic` 默认 false；`RoomNpcPanel` 只给 KP 全量展示，玩家只看 `isPublic = true` 的卡。
+  - KP 可在准备页点击「公开属性」。公开后玩家能看到名字、HP/MP/SAN/DP、九项属性与技能列表。
+- **战斗视图**：
+  - `CombatParticipant.isPublic` 随 NPC 卡写入战斗状态；`filterCombatForViewer` 对隐藏 NPC 返回 `???`、`hp/mp/san/dp = null`、`hpText = null`、`statusEffects = []`、`skills = null`，并把日志里的隐藏单位名字替换为 `???`，只保留伤害数值。
+  - 公开 NPC 或 KP / 自己操控的单位展示完整数值。
+  - `Room.characterVisibility`：
+    - `PUBLIC`（默认）：玩家在战斗视图里能看到其他 PLAYER 的 HP / SAN 等精确数值；角色详情页允许查看队友已通过审核的角色。
+    - `PRIVATE`：玩家之间不可查看彼此角色；战斗里队友数值同样置空。
+    - KP 永远可见全部玩家属性；创建房间与 `RoomConfigPanel` 均可切换。
+- 角色详情页权限已修复：不再依赖 `Character.roomId`，改为校验 `RoomCharacterEntry` + 房间配置 + owner/KP；非本人查看他人角色时隐藏“持有卡牌”。
+
+### 模组魔法准备
+- `RulePackSchema` 新增可选 `magic`：
+  ```ts
+  magic?: {
+    enabled: boolean;
+    system?: "COC7" | "TOUHOU";
+    spells: { id, name, skill, description?, mpCost, sanCost, damage?, target }[]
+  }
+  ```
+- 团本结构化格式新增 `module-magic` 块，`StructuredModuleData.magic` 参与解析。
+- DeepSeek 导入提示词要求：素材涉及魔法 / 法术 / 咒文 / 仪式 / 超自然能力时，必须输出 `structured.magic`；没有则空数组。
+- `apps/web/src/server/modules/magic.ts`：
+  - 从模块结构化数据读取法术，校验公式/骰式，生成 `magic` 覆盖。
+  - `applyMagicRulesToRoom`：`Room.magicEnabled = true` 时把法术写入 `Room.ruleOverride.magic`；模块没有魔法时自动关闭。
+  - `disableMagicRulesInRoom`：停用时写 `magic.enabled = false`。
+- 准备页 / `RoomConfigPanel`：
+  - 检测到模组魔法时显示法术数量；KP 可「启用 / 停用魔法规则」。
+  - `startRoomAction` 与恢复暂停局都会重新同步魔法规则，避免换模组后残留。
+- 战斗施法：
+  - `ActionKind` 新增 `MAGIC`，`CombatActionPayload.spellId` 前后端贯通。
+  - `validateCombatAction` 校验规则启用、法术存在、目标合法。
+  - 结算：消耗 MP / SAN，命中直接伤害（使用现有伤害管线与符卡吸收），写入 DAMAGE 日志；不进入反应窗口。
+  - `CombatBoard` 新增法术选择与「施法」按钮。
+- E2E：`npm run verify:visibility-magic` 覆盖 NPC 隐藏/公开、房间角色互见、魔法规则启用、`loadEffectivePack` 回读与 MAGIC 行动校验。
+
+### 验证更新
+- `npm run typecheck`：PASS。
+- `npm test`：144 tests PASS（formula 48 / rules 61 / combat 35）。
+- `npm run build --workspace @touhou/web`：PASS。
+- E2E 共 19 个脚本，本轮回归全部 PASS：
+  - 既有 15 个 + `verify:admin-console` / `verify:scene-increments` / `verify:ai-import` / `verify:visibility-magic`。

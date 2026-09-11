@@ -164,7 +164,8 @@ function buildNpcInit(pack: CompiledRulePack, card: Card, faction: string): Part
     skills: { ...parsed.data.skills },
     atbMax: computeAtbMax(pack, vars),
     speed: computeBaseSpeed(pack, vars),
-    isIdentified: false
+    isIdentified: false,
+    isPublic: card.isPublic
   };
 }
 
@@ -296,6 +297,7 @@ export async function createCombatRecord(
           maxDp: participant.maxDp,
           statusEffects: participant.statusEffects as never,
           isIdentified: participant.isIdentified,
+          isPublic: participant.isPublic,
           spellState: (participant.declaration ?? {}) as never
         }
       });

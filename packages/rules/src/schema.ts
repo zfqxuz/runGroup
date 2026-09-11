@@ -110,6 +110,26 @@ export const DamageRulesSchema = z.object({
   })
 });
 
+/** 模组携带的魔法规则。由 DeepSeek 在团本准备阶段整理，KP 在房间里启用。 */
+export const MagicSpellSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** 施法检定使用的技能 id；COC7 缺省用 OCCULT，东方缺省用 MAGIC。 */
+  skill: z.string().default("MAGIC"),
+  description: z.string().optional(),
+  mpCost: ExprSchema.default("0"),
+  sanCost: DiceExprSchema.default("0"),
+  /** 命中后的伤害骰；没有则视为纯叙事 / 支援法术。 */
+  damage: DiceExprSchema.optional(),
+  target: z.enum(["SELF", "ONE", "ALL"]).default("ONE")
+});
+
+export const MagicRulesSchema = z.object({
+  enabled: z.boolean().default(false),
+  system: z.enum(["COC7", "TOUHOU"]).optional(),
+  spells: z.array(MagicSpellSchema).default([])
+});
+
 export const SpellCardRulesSchema = z.object({
   declaration: z.object({
     hpRatio: ExprSchema,
@@ -271,6 +291,7 @@ export const RulePackSchema = z.object({
     .default({ occupation: "edu * 4", interest: "int * 2", maxAtCreation: "70" }),
   statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
   spellcard: SpellCardRulesSchema.optional(),
+  magic: MagicRulesSchema.optional(),
 
   cardBudget: z
     .object({
@@ -286,6 +307,8 @@ export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;
 export type DamageRules = z.output<typeof DamageRulesSchema>;
 export type SpellCardRules = z.output<typeof SpellCardRulesSchema>;
+export type MagicSpell = z.output<typeof MagicSpellSchema>;
+export type MagicRules = z.output<typeof MagicRulesSchema>;
 export type ActionCostKey = (typeof ACTION_COST_KEYS)[number];
 export type PipelineStep = (typeof PIPELINE_STEPS)[number];
 

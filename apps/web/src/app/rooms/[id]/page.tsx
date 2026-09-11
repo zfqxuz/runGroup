@@ -124,21 +124,35 @@ export default async function RoomPage({
   const gameState = activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state);
   const gameModule = await loadGameModuleView(activeGame);
   const activeScene = await loadSceneView(room.id);
-  const moduleSections = gameModule?.sections ?? [];
-  const moduleScenes = (gameModule?.structured.scenes ?? []).map((item) => ({
-    id: item.id,
-    title: item.title,
-    detail: typeof item.data.location === "string" ? item.data.location : null
-  }));
-  const moduleEncounters = (gameModule?.structured.encounters ?? []).map((item) => ({
-    id: item.id,
-    title: item.title,
-    detail: typeof item.data.sceneId === "string" ? "场景 " + item.data.sceneId : null
-  }));
+  const canSeeAllCharacters = isKP || room.characterVisibility !== "PRIVATE";
+  const visibleGameCharacters =
+    activeGame === null
+      ? []
+      : canSeeAllCharacters
+        ? activeGame.characters
+        : activeGame.characters.filter((item) => item.userId === session.user.id);
+  const moduleSections = isKP ? (gameModule?.sections ?? []) : [];
+  const moduleScenes = isKP
+    ? (gameModule?.structured.scenes ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        detail: typeof item.data.location === "string" ? item.data.location : null
+      }))
+    : [];
+  const moduleEncounters = isKP
+    ? (gameModule?.structured.encounters ?? []).map((item) => ({
+        id: item.id,
+        title: item.title,
+        detail: typeof item.data.sceneId === "string" ? "场景 " + item.data.sceneId : null
+      }))
+    : [];
   const advancements = activeGame === null
     ? []
     : await prisma.characterAdvancement.findMany({
-        where: { gameId: activeGame.id },
+        where: {
+          gameId: activeGame.id,
+          ...(canSeeAllCharacters ? {} : { character: { userId: session.user.id } })
+        },
         include: {
           character: { select: { name: true } },
           game: { select: { title: true } }
@@ -149,7 +163,11 @@ export default async function RoomPage({
   const growthCheckRows = activeGame === null
     ? []
     : await prisma.growthCheck.findMany({
-        where: { gameId: activeGame.id, state: "PENDING" },
+        where: {
+          gameId: activeGame.id,
+          state: "PENDING",
+          ...(canSeeAllCharacters ? {} : { character: { userId: session.user.id } })
+        },
         include: { character: { select: { name: true } } },
         orderBy: [{ createdAt: "asc" }, { id: "asc" }]
       });
@@ -158,7 +176,7 @@ export default async function RoomPage({
   for (const skill of effective.compiled.skills) skillNameById.set(skill.id, skill.name);
   const characterSkills = activeGame === null
     ? []
-    : activeGame.characters.map((item) => {
+    : visibleGameCharacters.map((item) => {
         const values = buildEffectiveSkills(effective.compiled, item.character);
         const rows = Object.entries(values)
           .map(([id, value]) => ({ id, name: skillNameById.get(id) ?? id, value }))
@@ -186,17 +204,17 @@ export default async function RoomPage({
       : { roomId: room.id, userId: session.user.id },
     orderBy: { id: "asc" }
   });
-  const handoutAssets = (gameModule?.assets ?? [])
+  const handoutAssets = (isKP ? gameModule?.assets ?? [] : [])
     .filter((asset) => asset.kind === "HANDOUT")
     .map((asset) => ({
       id: asset.assetId ?? asset.relativePath,
       title: asset.originalName ?? asset.relativePath,
       url: asset.url
     }));
-  const gameCharacterOptions = activeGame?.characters.map((item) => ({
+  const gameCharacterOptions = visibleGameCharacters.map((item) => ({
     id: item.characterId,
     name: item.character.name
-  })) ?? [];
+  }));
 
   const combatFeatures = combatFeatureFlags(effective.compiled);
   const attackSkillsByParticipant: Record<string, readonly string[]> = {};
@@ -280,6 +298,10 @@ export default async function RoomPage({
         status={room.status}
         inviteCode={room.inviteCode}
         allowPlayerCombatRequest={room.allowPlayerCombatRequest}
+        isKP={isKP}
+        characterVisibility={room.characterVisibility}
+        magicEnabled={room.magicEnabled}
+        magicSpellCount={effective.compiled.pack.magic?.spells.length ?? 0}
       />
 
       {isKP ? (
@@ -426,6 +448,16 @@ export default async function RoomPage({
             system={room.system}
             canCounter={combatFeatures.canCounter}
             canOutOfRule={combatFeatures.canOutOfRule}
+            canCastMagic={combatFeatures.canCastMagic}
+            magicSpells={(effective.compiled.pack.magic?.spells ?? []).map((spell) => ({
+              id: spell.id,
+              name: spell.name,
+              description: spell.description,
+              mpCost: spell.mpCost,
+              sanCost: spell.sanCost,
+              damage: spell.damage,
+              target: spell.target
+            }))}
             attackSkillsByParticipant={attackSkillsByParticipant}
           />
         </section>

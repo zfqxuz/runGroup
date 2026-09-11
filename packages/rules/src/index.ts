@@ -1,6 +1,8 @@
 export {
   RulePackSchema,
   RulePackOverlaySchema,
+  MagicRulesSchema,
+  MagicSpellSchema,
   RaceSchema,
   StatusEffectSchema,
   DamageRulesSchema,
@@ -36,7 +38,9 @@ export type {
   PresetTier,
   PresetAttributes,
   PresetCharacter,
-  PresetCharacterInput
+  PresetCharacterInput,
+  MagicRules,
+  MagicSpell
 } from "./schema";
 
 export { RulePackError } from "./errors";

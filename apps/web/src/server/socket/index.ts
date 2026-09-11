@@ -88,10 +88,10 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { id: true, username: true, displayName: true }
+      select: { id: true, username: true, displayName: true, isDisabled: true }
     });
 
-    if (user === null) {
+    if (user === null || user.isDisabled) {
       next(new Error("unauthorized"));
       return;
     }

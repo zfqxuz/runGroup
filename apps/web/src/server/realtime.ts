@@ -1,5 +1,5 @@
 import { getSocketServer } from "@/server/socket/io";
-import type { SceneTokenView } from "@/shared/scene";
+import type { SceneMapView, SceneTokenView } from "@/shared/scene";
 
 export type BroadcastRoomStatus = "LOBBY" | "PLAYING" | "PAUSED" | "COMBAT" | "ENDED";
 
@@ -44,4 +44,12 @@ export function emitAdvancementUpdate(roomId: string, gameId: string, characterI
     gameId,
     characterId
   });
+}
+
+export function emitSceneMapUpdate(roomId: string, sceneId: string, map: SceneMapView): void {
+  getSocketServer()?.to(roomChannel(roomId)).emit("scene:map:updated", { roomId, sceneId, map });
+}
+
+export function emitSceneFogUpdate(roomId: string, sceneId: string, fogRevealed: readonly string[]): void {
+  getSocketServer()?.to(roomChannel(roomId)).emit("scene:fog:updated", { roomId, sceneId, fogRevealed });
 }

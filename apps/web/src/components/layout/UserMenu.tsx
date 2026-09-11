@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { useFormState, useFormStatus } from "react-dom";
@@ -16,6 +17,7 @@ interface Props {
     readonly username: string;
     readonly displayName: string;
     readonly avatarUrl: string | null;
+    readonly isAdmin: boolean;
   };
 }
 
@@ -183,6 +185,17 @@ export default function UserMenu({ user }: Props) {
                   <span className="block truncate text-[11px] text-white/35">@{user.username}</span>
                 </span>
               </div>
+
+              {user.isAdmin ? (
+                <Link
+                  href="/admin"
+                  onClick={close}
+                  className="flex items-center justify-between rounded-lg border border-sakura-500/40 bg-sakura-500/10 px-3 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+                >
+                  <span>管理后台</span>
+                  <span className="text-[10px] text-sakura-300/70">ADMIN</span>
+                </Link>
+              ) : null}
 
               <div className="flex flex-col">
                 <button

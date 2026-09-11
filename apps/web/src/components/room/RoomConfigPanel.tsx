@@ -1,4 +1,5 @@
 import { loadEffectivePack } from "@/server/rules/loader";
+import { setCharacterVisibilityAction, setRoomMagicEnabledAction } from "@/server/actions/room";
 
 interface Props {
   readonly roomId: string;
@@ -10,6 +11,10 @@ interface Props {
   readonly status: string;
   readonly inviteCode: string;
   readonly allowPlayerCombatRequest: boolean;
+  readonly isKP: boolean;
+  readonly characterVisibility: string;
+  readonly magicEnabled: boolean;
+  readonly magicSpellCount: number;
 }
 
 const MODE_LABELS: Record<string, string> = {
@@ -73,7 +78,45 @@ export default async function RoomConfigPanel(props: Props) {
         <span>战斗事件 {enabledEvents}/{events.length} 启用</span>
         <span>·</span>
         <span>玩家战斗申请：{props.allowPlayerCombatRequest ? "允许" : "禁止"}</span>
+        <span>·</span>
+        <span>玩家互见角色属性：{props.characterVisibility === "PRIVATE" ? "仅自己" : "公开（默认）"}</span>
+        <span>·</span>
+        <span>模组魔法：{props.magicSpellCount > 0 ? (props.magicEnabled ? "已启用 " + String(props.magicSpellCount) + " 条" : "检测到 " + String(props.magicSpellCount) + " 条，未启用") : "无"}</span>
       </div>
+
+      {props.isKP ? (
+        <div className="mt-4 grid gap-3 border-t border-white/10 pt-4 sm:grid-cols-2">
+          <form action={setCharacterVisibilityAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="roomId" value={props.roomId} />
+            <label className="flex flex-col gap-1.5">
+              <span className="text-[11px] text-white/45">玩家之间是否可见对方角色属性</span>
+              <select
+                name="characterVisibility"
+                defaultValue={props.characterVisibility === "PRIVATE" ? "PRIVATE" : "PUBLIC"}
+                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500"
+              >
+                <option value="PUBLIC">公开（默认）</option>
+                <option value="PRIVATE">仅自己可见</option>
+              </select>
+            </label>
+            <button type="submit" className="rounded-lg border border-spirit-400/40 px-3 py-2 text-xs text-spirit-300 transition hover:bg-spirit-400/10">
+              保存可见性
+            </button>
+          </form>
+          {props.magicSpellCount === 0 ? null : (
+            <form action={setRoomMagicEnabledAction} className="flex flex-wrap items-end gap-2">
+              <input type="hidden" name="roomId" value={props.roomId} />
+              <input type="hidden" name="enabled" value={props.magicEnabled ? "0" : "1"} />
+              <span className="text-[11px] leading-5 text-white/45">
+                模组包含 {props.magicSpellCount} 条魔法规则；关闭时战斗中将无法施法。
+              </span>
+              <button type="submit" className="rounded-lg border border-purple-400/40 px-3 py-2 text-xs text-purple-200 transition hover:bg-purple-400/10">
+                {props.magicEnabled ? "停用魔法" : "启用魔法"}
+              </button>
+            </form>
+          )}
+        </div>
+      ) : null}
       <div className="mt-3 flex flex-wrap gap-2">
         {events.map(([id, rule]) => (
           <span

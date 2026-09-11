@@ -5,7 +5,7 @@ import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
-export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART" | "SCENE_BG" | "MAP" | "TOKEN";
+export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART" | "SCENE_BG" | "MAP" | "MAP_LAYER" | "TOKEN";
 
 export interface AttachInput {
   readonly kind: AttachKind;
@@ -38,6 +38,32 @@ export async function attachAssetAction(input: AttachInput): Promise<AttachResul
       data: { imageUrl: asset.url, thumbnailUrl: asset.thumbnailUrl }
     });
     revalidatePath("/cards");
+    return { ok: true, url: asset.url };
+  }
+
+  if (input.kind === "MAP_LAYER") {
+    const layer = await prisma.mapLayer.findUnique({
+      where: { id: input.targetId },
+      select: {
+        id: true,
+        assetId: true,
+        map: { select: { scene: { select: { id: true, roomId: true } } } }
+      }
+    });
+    if (layer === null) return { ok: false, error: "图层不存在" };
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: layer.map.scene.roomId, userId: session.user.id } },
+      select: { role: true }
+    });
+    if (membership === null || membership.role !== "KP") {
+      return { ok: false, error: "只有 KP 可以设置图层图片" };
+    }
+    await prisma.mapLayer.update({ where: { id: layer.id }, data: { assetId: asset.id } });
+    if (layer.assetId !== null && layer.assetId !== asset.id) {
+      await deleteAssetIfOrphan(layer.assetId);
+    }
+    revalidatePath("/rooms/" + layer.map.scene.roomId + "/scenes");
+    revalidatePath("/rooms/" + layer.map.scene.roomId);
     return { ok: true, url: asset.url };
   }
 
