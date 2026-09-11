@@ -5,38 +5,39 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 平台已具备：认证、房间准备/跑团、团本广场、我的团本、角色/卡牌库、战斗、团本快照、局内状态、暂停/继续/结束、游戏历史、用户菜单、线索/笔记/手书、悄悄话/暗骰、Markdown 渲染、房间归档。
+- 最新基线：`548c432 feat(magic): 通用法术效果指令、自选目标与应对等待窗口`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
-  - P2-1 战术棋盘 MVP 第一版已完成：场景、地图、Token、拖动、实时同步。
-  - P2-1 增量已完成：Token 图片与属性、六边形网格与吸附、战争迷雾绘制、墙体 / 灯光 / 视线遮挡、地图图层、团本结构化场景自动绑定。
-  - P2-2 规则包后台已完成：DB 规则包、版本、发布 / 归档、绑房、JSON 导入导出、内置同步、审计；管理后台入口在管理员用户下拉菜单。
+  - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。
+  - P2-2 规则包后台已完成：DB 规则包、版本、发布 / 归档、绑房、JSON 导入导出、内置同步、审计；管理后台入口在管理员用户下拉菜单。规则内容本身（`touhou-ext` 完整法术表 / 特色物品 / 普通型与幻想型进阶效果）仍是待办。
   - P2-3 角色成长闭环已完成：基础、跨局继承、CoC 幕间成长检定、成长记录编辑 / 撤销 / 来源标注、筛选与 CSV 导出、结束确认页。
-  - DeepSeek 智能团本导入已完成：任意数量 md/txt/json/docx/pptx/xlsx/pdf（元信息）/图片多文件上传，DeepSeek 整合为 `touhou-module/v1` 标准团本；默认 `deepseek-flash`（支持图片视觉）；素材涉及魔法时会生成 structured.magic。导入已异步化（后台任务 + 轮询进度），避免公网穿透 30-60 秒断流。
-  - 隐藏信息规则已完成：NPC/Boss 默认隐藏、KP 可公开；玩家互见角色属性是房间配置（默认公开）；隐藏 Boss 战斗只展示伤害；模组魔法可在准备阶段启用并在战斗施放。
-  - 团本模板/物化已完成：module-* 结构化块与 characters/npcs.yaml 解析为只读模板；KP 在准备页点「应用团本预设」时克隆出房间 NPC/Boss 卡、武器/物品/证物卡、场景地图、线索、遭遇与魔法；换预设整批替换。
+  - DeepSeek 智能团本导入已完成：任意数量 md / txt / json / docx / pptx / xlsx / pdf（元信息）/ 图片多文件上传；默认 `deepseek-flash`；异步后台任务 + 轮询进度；整合为 `touhou-module/v1`。失败断点重试与 PDF 正文抽取尚未实现。
+  - 隐藏信息规则已完成：NPC / Boss 默认隐藏、KP 可公开；玩家互见由房间配置（默认公开）；隐藏 Boss 战斗仅展示伤害；模组魔法可在准备阶段启用并在战斗施放。
+  - 团本模板 / 物化已完成：`module-*` 结构化块与 `characters/npcs.yaml` 解析为只读模板；KP 在准备页「应用团本预设」可克隆出房间 NPC / Boss 卡、武器 / 物品 / 证物卡、场景地图、线索、遭遇与魔法；换预设整批替换。
+  - CoC7 车卡规则修正已完成：本职 / 分类 / 社交 / 自由技能判定；本职 80 / 兴趣 70 的上限；母语等高基础值不误报且不能再加点。
+  - 通用法术系统已完成（见第 33 节）：RulePack `effects` 指令集（DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN / STATUS / DOT / STUN / CONTROL / CLEANSE）；`targeting` 自动推断；SELF / ONE / ALL；SELF 与 ALLY 可选自己；敌对法术统一进入应对窗口；旧 `damage` 字段兼容；AI 导入提示词已同步。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线：`npm run typecheck`、`npm test`（144 tests）、全量 20 个 E2E 均通过。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 153 tests（formula 48 / rules 65 / combat 40）；`apps/web/scripts/verify-*.ts` 共 27 个，且全部注册为 `npm run verify:*`。本轮最终 commit 的相关回归（战斗、法术、车卡、可见性）PASS；全量 27 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
-### 下一步开发顺序（用户已确认）
-1. ~~继续 P2-3~~ **已完成（见第 20 节）**。
-2. ~~P2-1 战术棋盘后续增量~~ **已完成（见第 21 节）**。
-3. ~~P2-2 规则包后台与 DeepSeek 智能团本导入~~ **已完成（见第 21 节）**。
-4. 后续优先补 P2-2 的**规则内容**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；以及车卡 / 团本编辑器的结构化选择器。
+### 接手建议（用户尚未给出下一项开工指令）
+1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
+2. **DeepSeek 导入健壮性**：失败后断点重试、PDF 正文抽取（需额外依赖）。
+3. **小范围可选**：玩家自助标记成长点（需权限扩展）；手书显式公开开关。
+4. 当前远端 `origin/main` 已是最新；接手前先 `git status`、`git log -1` 确认。
 
 ### 暂缓 / 不要主动做
-- P2-2 规则内容与 RulePack 后台：hold。
+- P2-2 规则内容与 RulePack 后台可视化：hold，等用户明确指令。
 - P2-4 用户 / 房间协作：hold。
 - P2-5 部署与运维：hold。用户当前通过本机 terminal 运行 Next(3100) + frpc 内网穿透使用，不需要部署其他服务器。
 - P2-6 质量与性能：除必要回归外 hold。
 
-### P2-3 关键文件
-- `apps/web/src/server/game/advancement.ts`：成长校验、应用、反向回退、汇总。
-- `apps/web/src/server/game/growth.ts`：CoC 幕间成长检定（事务内结算与成长记录写入）。
-- `apps/web/src/server/actions/advancement.ts`：标记 / 取消成长点、成长掷骰、成长记录编辑 / 撤销。
-- `apps/web/src/app/characters/[id]/page.tsx`：角色页成长展示、筛选、编辑 / 撤销。
-- `apps/web/src/app/characters/[id]/growth/export/route.ts`：成长记录 CSV 导出。
-- `apps/web/src/app/rooms/[id]/end/page.tsx` + `apps/web/src/components/room/EndGamePanel.tsx`：结束确认、成长点结算与角色卡预览。
-- `apps/web/scripts/verify-growth-inheritance.ts`、`apps/web/scripts/verify-growth-checks.ts`：成长闭环 E2E。
+### 最新一轮关键文件（通用法术系统）
+- `packages/rules/src/magic.ts`、`packages/rules/src/schema.ts`：效果指令、目标推断、旧 `damage` 兼容。
+- `packages/combat/src/combat.ts`：效果结算、DOT / STUN / CONTROL、SELF / ALL 目标、法术应对窗口。
+- `apps/web/src/server/combat/options.ts`、`apps/web/src/server/socket/combat.ts`：技能 / 目标 / 应对校验与实时事件。
+- `apps/web/src/components/room/CombatBoard.tsx`：目标选择（含自己 / 全体）、等待应对提示、状态展示。
+- `apps/web/src/server/modules/magic.ts`、`apps/web/src/server/ai/module-import.ts`：模组 `structured.magic` 与 DeepSeek 提示词。
+- `apps/web/scripts/verify-magic-effects.ts`：本轮 E2E。
 
 ### 重要约束
 - 反代 / 隧道配置、token、`frpc.ini` 不得提交 Git；仓库内目前没有相关文件。
@@ -69,8 +70,8 @@
 - 首页新增“加入房间”；玩家输入 KP 提供的邀请码即可加入房间并进入准备页 / 跑团页。
 - xlsx 人物卡导入：基础信息、属性、职业序号、技能（初始 / 成长 / 职业 / 兴趣）、信用评级与武器可一键导入个人角色库。
 
-测试规模：137 unit tests 全部通过（formula 48 / rules 57 / combat 32）；
-E2E 脚本已覆盖 room-setup / combat / card-library / combat-options / character-import。
+测试规模：153 unit tests 全部通过（formula 48 / rules 65 / combat 40）；
+`apps/web/scripts/verify-*.ts` 共 27 个 E2E，覆盖房间、战斗、团本、成长、场景、管理与 AI 导入等。
 
 ## 2. 本轮完成（第 4 节 1 至 6 项）
 

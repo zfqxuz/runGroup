@@ -63,10 +63,10 @@ packages/
 
 - [x] npm workspaces 工程结构
 - [x] Next.js 14 + 自定义 server + Socket.IO（已验证 ack 往返）
-- [x] PostgreSQL 数据模型（32 张表/枚举）与初始迁移（含 2 个部分唯一索引）
+- [x] PostgreSQL 数据模型（52 models / 21 enums）与迁移（含 2 个部分唯一索引）
 - [x] Prisma Client 单例
 - [x] `@touhou/formula` 配置表达式引擎（48 tests）
-- [x] `@touhou/rules` RulePack 配置驱动规则引擎（37 tests）
+- [x] `@touhou/rules` RulePack 配置驱动规则引擎（65 tests）
   - Zod Schema + extends 链深合并
   - derived 拓扑排序 + 环检测
   - COC7 判定（边界全覆盖）
@@ -77,7 +77,7 @@ packages/
 ## 测试
 
 ```bash
-npm test          # 144 tests / 3 packages
+npm test          # 153 tests / 3 packages
 npm run typecheck # 全量类型检查
 ```
 
