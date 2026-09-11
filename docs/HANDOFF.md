@@ -5,23 +5,24 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`548c432 feat(magic): 通用法术效果指令、自选目标与应对等待窗口`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`6f485d2 fix(ai,scene): 隔离 AI 导入会话并支持 PDF/图片解析，限制 Token 重复放置`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
-  - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。
+  - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
   - P2-2 规则包后台已完成：DB 规则包、版本、发布 / 归档、绑房、JSON 导入导出、内置同步、审计；管理后台入口在管理员用户下拉菜单。规则内容本身（`touhou-ext` 完整法术表 / 特色物品 / 普通型与幻想型进阶效果）仍是待办。
   - P2-3 角色成长闭环已完成：基础、跨局继承、CoC 幕间成长检定、成长记录编辑 / 撤销 / 来源标注、筛选与 CSV 导出、结束确认页。
-  - DeepSeek 智能团本导入已完成：任意数量 md / txt / json / docx / pptx / xlsx / pdf（元信息）/ 图片多文件上传；默认 `deepseek-flash`；异步后台任务 + 轮询进度；整合为 `touhou-module/v1`。失败断点重试与 PDF 正文抽取尚未实现。
+  - DeepSeek 智能团本导入已完成：任意数量 md / txt / json / docx / pptx / xlsx / pdf（正文 + 内嵌图片）/ png / jpg / webp / gif / avif / bmp / tiff / heic 多文件上传；默认 `deepseek-flash`；异步后台任务 + 轮询进度；每次导入生成独立 `aiSessionId` 且不继承历史会话；整合为 `touhou-module/v1`。失败断点重试尚未实现。
   - 隐藏信息规则已完成：NPC / Boss 默认隐藏、KP 可公开；玩家互见由房间配置（默认公开）；隐藏 Boss 战斗仅展示伤害；模组魔法可在准备阶段启用并在战斗施放。
   - 团本模板 / 物化已完成：`module-*` 结构化块与 `characters/npcs.yaml` 解析为只读模板；KP 在准备页「应用团本预设」可克隆出房间 NPC / Boss 卡、武器 / 物品 / 证物卡、场景地图、线索、遭遇与魔法；换预设整批替换。
   - CoC7 车卡规则修正已完成：本职 / 分类 / 社交 / 自由技能判定；本职 80 / 兴趣 70 的上限；母语等高基础值不误报且不能再加点。
   - 通用法术系统已完成（见第 33 节）：RulePack `effects` 指令集（DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN / STATUS / DOT / STUN / CONTROL / CLEANSE）；`targeting` 自动推断；SELF / ONE / ALL；SELF 与 ALLY 可选自己；敌对法术统一进入应对窗口；旧 `damage` 字段兼容；AI 导入提示词已同步。
+  - AI 导入会话隔离与 PDF / 图片解析已完成（见第 34 节）：每次导入独立 session；PDF 正文与内嵌图片；HEIC / AVIF / TIFF / BMP / SVG 兜底；图片存在但选了非视觉模型时自动切换 `deepseek-flash`。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 153 tests（formula 48 / rules 65 / combat 40）；`apps/web/scripts/verify-*.ts` 共 27 个，且全部注册为 `npm run verify:*`。本轮最终 commit 的相关回归（战斗、法术、车卡、可见性）PASS；全量 27 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 153 tests（formula 48 / rules 65 / combat 40）；`apps/web/scripts/verify-*.ts` 共 28 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-ai-pdf-parse`、`verify-ai-import`、`verify-scene-ops` PASS；全量 28 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
-2. **DeepSeek 导入健壮性**：失败后断点重试、PDF 正文抽取（需额外依赖）。
+2. **DeepSeek 导入健壮性**：失败后断点重试；扫描版 PDF 如需更强 OCR，可在现有“抽内嵌图片 + vision”基础上再加页面渲染 OCR。
 3. **小范围可选**：玩家自助标记成长点（需权限扩展）；手书显式公开开关。
 4. 当前远端 `origin/main` 已是最新；接手前先 `git status`、`git log -1` 确认。
 
@@ -44,6 +45,8 @@
 - 本地 dev 端口为 `3100`，由用户在 terminal 启动；沙箱后台进程会被回收，不要依赖沙箱常驻。
 - 任何代码改动完成后先跑验证，再提交并推送 `origin/main`。
 - 新增 E2E 脚本要加入 `apps/web/package.json` 的 `verify:*` 命令。
+- PDF 解析依赖 `unpdf@1.8.1`，要求 Node >= 22；换 Node 环境时确认版本。
+- Token 唯一约束来自迁移 `20260917000000_scene_token_unique_placement`，新环境执行 `npx prisma migrate deploy` 会清理历史重复 Token（同 map 保留最早一条）。
 
 ## 0. 环境约束（先读）
 
@@ -740,12 +743,12 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - 入口：`/modules/mine` 与 `/rooms/[id]/modules` 的「DeepSeek 智能整合」页签。
 - 路由：`POST /api/modules/ai-import`（登录可访问；房间导入仍要求本房 KP）。
 - 服务端：`apps/web/src/server/ai/deepseek.ts`、`apps/web/src/server/ai/module-import.ts`。
-- 支持任意数量文件（最多 40 个，单文件 25MB，总 150MB）：md / txt / json / yaml / csv / html / docx / pptx / xlsx / pdf（PDF 目前仅保留元信息）/ png / jpg / webp / gif。
+- 支持任意数量文件（最多 40 个，单文件 25MB，总 150MB）：md / txt / json / yaml / csv / html / docx / pptx / xlsx / pdf（正文 + 内嵌图片）/ png / jpg / webp / gif / avif / bmp / tiff / heic。
 - 图片会先压缩到 1400px JPEG 再发给 vision 模型，成功后保存为 `ModuleAsset`（`assets/images/*.png`），AI 输出会自动补图片索引。
 - DeepSeek 输出严格 JSON，服务端组装为 14 章标准 Markdown + 结构化 `module-chapter / module-scene / module-npc / module-clue / module-item / module-ending / module-reward` YAML 块；校验失败会自动带错误重试，最多 3 次。
 - API Key 只从环境变量 `DEEPSEEK_API_KEY` 读取（已配置在本机 `apps/web/.env`，该文件不提交）；`DEEPSEEK_BASE_URL` 默认 `https://api.deepseek.com`；默认模型 `deepseek-flash`（支持图片视觉，推荐），可在 `/admin/system` 修改。
-- E2E：`npm run verify:ai-import`（无 key 时 SKIP；调用真实 DeepSeek，验证标准章节 / 结构化块 / 图片资源）。
-- 尚未做：失败后断点重试、PDF 正文抽取（需额外依赖）；进度已通过后台任务轮询提供。
+- E2E：`npm run verify:ai-import`（无 key 时 SKIP；调用真实 DeepSeek，验证标准章节 / 结构化块 / 图片资源 / 独立 aiSessionId）；`npm run verify:ai-pdf-parse`（离线验证 PDF 正文与内嵌图片提取）。
+- 尚未做：失败后断点重试；进度已通过后台任务轮询提供。
 
 ### P2-1 战术棋盘增量
 - 几何库：`apps/web/src/shared/scene-geometry.ts`
@@ -1259,3 +1262,55 @@ MagicEffect =
 - `npm test`：153 tests PASS（formula 48 / rules 65 / combat 40）。
 - 回归：`verify-visibility-magic`、`verify-combat`、`verify-combat-options`、`verify-chargen-rules` PASS。
 - 生产构建与 3100 部署已更新。
+
+## 34. AI 导入会话隔离、PDF / 图片解析与 Token 唯一放置（本轮修复）
+
+### 问题
+- 用户导入现代意大利 PDF 团本时，输出成了 1924 年美国本。
+- 数据库排查发现该次导入的 `importReport.sourceCount = 0`，警告为：
+  - `PDF（当前仅保留文件元数据，未能抽取文字）没有提取到可用文字，已跳过内容整合`
+- 也就是说 AI 实际只收到 0 个文本素材 + 1 张地图图片，意大利正文完全没有进入 prompt；模型在缺少素材时按 CoC 经典时代自由发挥。
+- 旧实现失败重试时会把上一轮 assistant 输出放进消息链，存在同一次导入内“继续上下文”的风险。
+- 棋盘放置 Token 旧实现没有检查重复，同一角色 / NPC 卡可以重复放到同一场景。
+
+### 修复内容
+
+#### AI 导入会话隔离
+- 每次 `importModuleWithDeepSeek` 创建独立 `sessionId`；写入 Module 的 `metadata.aiSessionId`，并通过 `/api/modules/ai-import` 完成响应返回。
+- `generateDraft` 每次只发送 `system + user`；失败重试也**不再带 assistant 历史**，而是把上次输出当作“错误样本”放进新的 user 消息。
+- system prompt 与素材 prompt 均明确声明“全新独立导入，不引用历史对话 / 上次设定”，并以用户选择的 system / era 为硬约束。
+- 前端拿到 `jobId` 后立刻 `form.reset()`，避免下一次导入误带旧文件、旧年代或旧额外要求。
+
+#### PDF / 图片解析
+- 新增依赖 `unpdf@1.8.1`。
+- `readPdf`：
+  - `extractText(..., { mergePages: true })` 抽取数字版 PDF 正文。
+  - 逐页 `extractImages` 抽取 >=160px 的内嵌图片，转 PNG 后再压缩给 vision 模型。
+  - 扫描版 PDF（无文字层）会自动退化为“内嵌图片 + vision 模型”路线。
+  - PDF 既没有文字也没有可用图片时，给出明确警告，不再静默生成一个无关团本。
+- `prepareSources` 现在同时支持数字版 PDF 正文与内嵌图片；单文件仍限制 24000 字、总量 120000 字，图片总量最多 12 张。
+- 图片格式兜底：新增 HEIC / HEIF / AVIF / BMP / TIFF / SVG 的 magic / sharp 识别；无法直接给 vision 的格式会先转 JPEG；无法转换的格式提示并跳过。
+- 若用户上传了图片但选了非 vision 模型（`deepseek-v4-pro`），自动切换到 `deepseek-flash` 并写 warning。
+- `/modules/mine` 与房间团本导入页的提示文案已改为“pdf（自动抽取正文与内嵌图片）”。
+
+#### Token 唯一放置
+- `createSceneTokenAction` 创建前检查同一 `mapId` 下是否已有同 `characterId` / 同 `cardId` 的 Token；重复请求会带着 `error=token-exists` 返回。
+- `SceneBoard` 的“放置玩家 / NPC Token”下拉只列出当前场景尚未放置的单位。
+- Prisma `Token` 增加：
+  - `@@unique([mapId, characterId])`
+  - `@@unique([mapId, cardId])`
+- 迁移 `20260917000000_scene_token_unique_placement` 会先清理历史重复 Token（同一 map 保留最早一条），再创建唯一索引。
+- 唯一范围是“每个场景 map”；同一角色在不同场景仍然可以各有一个 Token，这是战术棋盘多场景的正常用法。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（153 tests：formula 48 / rules 65 / combat 40）。
+- `npm run build --workspace @touhou/web` PASS。
+- `npm run verify:ai-pdf-parse` PASS：离线构造带正文和内嵌图片的 PDF，验证两者都能提取，不需要 API Key。
+- `npm run verify:ai-import` PASS：真实 DeepSeek，验证标准章节 / 结构化块 / 图片资源 / 独立 `aiSessionId`。
+- `npm run verify:scene-ops` PASS：生产构建 3101 实测，重复放置 PC Token 被拒绝。
+
+### 环境 / 迁移注意
+- `unpdf@1.8.1` 声明 Node >= 22；当前开发机使用 Node 24，部署环境需要同步。
+- 新环境需要执行 `npx prisma migrate deploy`，让 Token 唯一约束和重复数据清理生效。
+- `apps/web/scripts/verify-ai-pdf-parse.ts` 已注册为 `npm run verify:ai-pdf-parse`。
