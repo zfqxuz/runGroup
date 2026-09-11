@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`1cd00e1 feat(chargen): COC7 年龄补正、派生属性与 Excel 职业空位`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`6c0792d fix(chargen): 信用评级范围校验与本职判定`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -19,6 +19,7 @@
   - AI 导入会话隔离与 PDF / 图片解析已完成（见第 34 节）：每次导入独立 session；PDF 正文与内嵌图片；HEIC / AVIF / TIFF / BMP / SVG 兜底；图片存在但选了非视觉模型时自动切换 `deepseek-flash`。
   - CoC7 年龄补正与派生属性已完成（见第 38 节）：年龄空位一次性分配后锁定；车卡页 / 角色页展示 DB、Build、MOV、重伤值，技能显示困难 / 极限成功率；DB 表覆盖 444 以上每 80 点成长。
   - COC7 Excel 职业空位模型已完成（见第 38 节）：230 个职业从「本职技能」矩阵生成固定本职 + `☆ / ⊙ / ☯ / ※ / 任意特长` 结构化空位；必须先选中空位技能才能使用职业点；TOUHOU 仍走旧文本解析回退。
+  - 信用评级校验已完成（见第 38 节）：信用评级始终视为 COC7 本职技能（可吃职业点），最终值必须落在职业 `creditMin~creditMax` 范围内，客户端 / 服务端都会拦截。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
 - 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 165 tests（formula 48 / rules 75 / combat 42）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
@@ -1498,17 +1499,19 @@ MagicEffect =
   - 取消空位会清掉该技能身上的职业点；放入空位会清掉该技能身上的兴趣点。
 - `saveCharacter`：
   - 有 profile 时用结构化空位判定代替旧文本解析：固定本职 + 已选空位 = FIXED，可吃职业点；其余技能 = NONE，只能用兴趣点。
+  - 信用评级 `CREDIT_RATING` 始终视为 COC7 本职技能，可吃职业点；最终值必须落在职业 `creditMin~creditMax`，否则拒绝保存。
   - 无 profile（TOUHOU 或旧数据）仍走 `occupationSkillAccess` 文本解析作为回退。
 - 新增 `apps/web/scripts/verify-occupation-slots.ts` 与 `npm run verify:occupation-slots`，覆盖：
   - 230 个职业 profile 全覆盖。
   - 建筑师 / 秘书 / 士兵 / 猎人四个代表职业的固定本职与空位候选。
   - 空位分配范围、重复占用、任意特长排除克苏鲁神话。
+  - 信用评级本职判定与建筑师 30~70 范围。
 
 ### 验证
 - `npm run typecheck` PASS。
 - `npm test` PASS（165 tests：formula 48 / rules 75 / combat 42）。
 - `npm run build --workspace @touhou/web` PASS。
-- `npm run verify:occupation-slots` PASS。
+- `npm run verify:occupation-slots` PASS（含信用评级本职与建筑师 30~70 范围断言）。
 - `npm run verify:chargen-rules` PASS（旧文本解析回退仍正常）。
 
 ### 相关文件
