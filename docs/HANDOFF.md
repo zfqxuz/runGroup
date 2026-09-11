@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`f8b9dc8 style(chargen): 加宽车卡页面并优化技能栅格`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`8191a74 feat(chargen): 按本职/兴趣筛选并调整属性生成方式`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -1352,3 +1352,52 @@ MagicEffect =
 - `apps/web/src/shared/occupation.ts`：`skillPointUsageIssue`。
 - `apps/web/src/server/actions/character.ts`：服务端强制校验。
 - `apps/web/scripts/verify-chargen-rules.ts`：回归断言。
+
+## 36. 车卡筛选组合、可选本职默认兴趣、属性生成方式（本轮）
+
+### 本职分类口径
+- 可选本职（分类 / 社交 / 任意等可选位）在未投入职业点前，**不算本职**，按兴趣技能处理。
+- 只有职业数据明确点名的固定本职，或用户投入职业点并正式选中的技能，才算实际本职。
+- 新增 `isActualOccupationSkill({ access, occupation })` 统一判定，客户端筛选和后续逻辑共用。
+- `skillPointUsageIssue` 继续保证：
+  - 固定本职不能用兴趣点；
+  - 非本职不能用职业点；
+  - 同一技能不能混用。
+
+### 筛选栏
+- 保留原“用途”筛选：
+  - `可选本职`
+  - `已加点`
+- 新增“类型”筛选：
+  - `本职`（固定本职 + 用户选中的可选本职）
+  - `兴趣`（其余全部，包括未选中的可选本职）
+- 支持与以下条件组合：
+  - 技能名 / ID 搜索
+  - 技能类别（战斗 / 身体 / 知识 / 社交 / 技术 / 法术 / 其他）
+- 同一筛选组内为 OR，不同筛选组之间为 AND；支持一键清空筛选。
+
+### 属性生成方式
+- 移除九维属性左右两侧的全部 `±1 / ±5` 按钮。
+- `POINT_BUY`（480 点自选 / 总点数模式）：
+  - 九维全部改为用户直接输入数字；
+  - 初始值按单项上下限内 50 起步；
+  - 实时显示“已用 / 剩余 / 超出”和点购校验错误；
+  - 总点数未分配完或超出时不允许保存。
+- `ROLL_SETS`（天命 5）：
+  - 只能点击一次“掷 5 组”，掷完按钮永久禁用；
+  - 属性不允许手动填写或修改；
+  - 用户只能从掷出的 5 组中“选用”1 组，可以改选其他组；
+  - 未选用任一组时不允许保存。
+- `MANUAL`（手动填写）：九维直接输入，服务端校验上下限。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（153 tests）。
+- `npm run build --workspace @touhou/web` PASS。
+- `npm run verify:chargen-rules` PASS：新增“可选本职未选中时不算本职 / 投入职业点后才算本职 / 固定本职直接算本职”断言。
+- 生产构建下渲染 `/characters/new` 实测：页面包含“用途 + 类型”组合筛选、单次天命 5、无属性 `±` 按钮。
+
+### 相关文件
+- `apps/web/src/shared/occupation.ts`：`isActualOccupationSkill`。
+- `apps/web/src/components/room/CharacterBuilder.tsx`：组合筛选、属性生成 UI、单次掷天命。
+- `apps/web/scripts/verify-chargen-rules.ts`：本职分类与互斥规则回归。
