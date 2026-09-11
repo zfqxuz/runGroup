@@ -7,6 +7,7 @@
 import { builtinRegistry, compileParsedRulePack, resolveRulePack } from "@touhou/rules";
 import { prisma } from "../src/server/db/prisma";
 import {
+  isActualOccupationSkill,
   isSkillCreationWithinCap,
   isOccupationSkill,
   occupationChoiceLimits,
@@ -39,6 +40,7 @@ async function main(): Promise<void> {
   expectEqual(occupationSkillAccess(architect, "科学（生物学）").kind, "CATEGORY", "建筑师·科学（生物学）应属于科学分类");
   expectEqual(occupationSkillAccess(architect, "潜行").kind, "NONE", "建筑师·潜行不应是本职");
   ensure(isOccupationSkill(architect, "潜行") === false, "建筑师·潜行不应标成本职");
+  ensure(isOccupationSkill(architect, "法律") === true, "建筑师·法律应视为固定本职");
 
   // 2. 带「任意」「社交技能」的职业：任意技能是可选项，不是本职；社交有数量上限。
   const magician = await loadOccupation("魔术师");
@@ -87,6 +89,24 @@ async function main(): Promise<void> {
     "未选为本职的技能应允许兴趣点"
   );
 
+  // 5. 可选本职未选中时，分类上仍算兴趣。
+  ensure(
+    isActualOccupationSkill({ access: occupationSkillAccess(magician, "潜行"), occupation: 0 }) === false,
+    "任意可选技能在未投入职业点前不应算本职"
+  );
+  ensure(
+    isActualOccupationSkill({ access: occupationSkillAccess(magician, "潜行"), occupation: 10 }) === true,
+    "任意可选技能投入职业点后应算本职"
+  );
+  ensure(
+    isActualOccupationSkill({ access: occupationSkillAccess(architect, "法律"), occupation: 0 }) === true,
+    "职业固定本职即使还没加点也应算本职"
+  );
+  ensure(
+    isActualOccupationSkill({ access: occupationSkillAccess(magician, "精神分析"), occupation: 0 }) === true,
+    "职业固定本职（魔术师·精神分析）应算本职"
+  );
+
   // 4. 规则包默认上限为 80 / 70。
   const pack = resolveRulePack("coc7-baseline", builtinRegistry());
   const compiled = compileParsedRulePack(pack);
@@ -97,7 +117,7 @@ async function main(): Promise<void> {
   expectEqual(occupationMax, 80, "规则包本职上限默认应为 80");
   expectEqual(interestMax, 70, "规则包兴趣上限默认应为 70");
 
-  console.log("PASS 车卡规则 E2E：本职判定 / 本职 80 / 兴趣 70 / 母语基础值 / 职业点与兴趣点互斥");
+  console.log("PASS 车卡规则 E2E：本职判定 / 本职 80 / 兴趣 70 / 母语基础值 / 职业点与兴趣点互斥 / 可选本职默认算兴趣");
   console.log("  建筑师=潜行 NONE，魔术师=潜行 FREE，社交上限 " + magicianLimits.social + "，任意上限 " + magicianLimits.free);
 }
 

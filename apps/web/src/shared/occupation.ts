@@ -166,19 +166,31 @@ export function occupationSkillAccess(
   return hasFree ? { kind: "FREE", group: null } : { kind: "NONE", group: null };
 }
 
-/** 严格本职（固定 / 分类 / 社交选择）——不包含「任意」自由项。 */
+/** 职业数据里明确点名的固定本职技能（不包含分类 / 社交 / 任意等可选位）。 */
 export function isOccupationSkill(
   occupation: Pick<OccupationView, "skillNames">,
   skillName: string
 ): boolean {
-  const access = occupationSkillAccess(occupation, skillName);
-  return access.kind !== "NONE" && access.kind !== "FREE";
+  return occupationSkillAccess(occupation, skillName).kind === "FIXED";
 }
 
 export type SkillPointUsageIssue =
   | "OCCUPATION_NOT_ALLOWED"
   | "INTEREST_NOT_ALLOWED"
   | "MIXED_POINTS";
+
+/**
+ * 实际本职技能：
+ * - 职业数据明确指定的固定本职；
+ * - 用户在分类 / 社交 / 任意可选位里投入职业点、正式选中的技能。
+ * 仅仅是“可选本职”但还没选中的技能，不算本职，车卡时按兴趣技能处理。
+ */
+export function isActualOccupationSkill(input: {
+  readonly access: OccupationSkillAccess;
+  readonly occupation: number;
+}): boolean {
+  return input.access.kind === "FIXED" || input.occupation > 0;
+}
 
 /**
  * 车卡加点规则：

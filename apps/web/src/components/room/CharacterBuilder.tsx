@@ -18,6 +18,7 @@ import { saveCharacter, type SaveCharacterResult } from "@/server/actions/charac
 import {
   ERA_LABELS,
   hasFreeSkillChoice,
+  isActualOccupationSkill,
   occupationChoiceLimits,
   occupationSkillAccess,
   type OccupationSkillAccess,
@@ -67,9 +68,26 @@ const SKILL_CATEGORY_LABELS: Record<string, string> = {
 const inputClass =
   "w-full rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-sakura-500";
 
+function toggleArrayValue<T>(list: readonly T[], value: T): T[] {
+  return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
+}
+
 function emptyAttributes(): AttributeSet {
   const base: Record<string, number> = {};
   for (const key of ATTRIBUTE_KEYS) base[key] = 0;
+  return base as unknown as AttributeSet;
+}
+
+function defaultAttributesForMethod(
+  method: RulePack["attributes"]["methods"][number] | undefined
+): AttributeSet {
+  if (method === undefined || method.kind === "ROLL_SETS") return emptyAttributes();
+  const value =
+    method.kind === "POINT_BUY"
+      ? Math.max(method.perAttributeMin, Math.min(method.perAttributeMax, 50))
+      : 50;
+  const base: Record<string, number> = {};
+  for (const key of ATTRIBUTE_KEYS) base[key] = value;
   return base as unknown as AttributeSet;
 }
 
@@ -77,7 +95,10 @@ export default function CharacterBuilder(props: Props) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [race, setRace] = useState<string | null>(null);
-  const [attributes, setAttributes] = useState<AttributeSet>(emptyAttributes);
+  const initialMethod =
+    props.pack.attributes.methods.find((item) => item.id === props.chargenMethod) ??
+    props.pack.attributes.methods[0];
+  const [attributes, setAttributes] = useState<AttributeSet>(() => defaultAttributesForMethod(initialMethod));
   const [sets, setSets] = useState<AttributeSetOption[]>([]);
   const [selectedSet, setSelectedSet] = useState<number | null>(null);
   const [occupationId, setOccupationId] = useState<string>("");
@@ -87,7 +108,8 @@ export default function CharacterBuilder(props: Props) {
   const [message, setMessage] = useState<string | null>(null);
   const [skillQuery, setSkillQuery] = useState("");
   const [skillCategory, setSkillCategory] = useState<string>("ALL");
-  const [skillFilter, setSkillFilter] = useState<"ALL" | "OCCUPATION" | "ALLOCATED">("ALL");
+  const [skillIdentityFilters, setSkillIdentityFilters] = useState<("OCCUPATION" | "INTEREST")[]>([]);
+  const [skillUsageFilters, setSkillUsageFilters] = useState<("POTENTIAL" | "ALLOCATED")[]>([]);
 
   const compiled = useMemo(() => compileParsedRulePack(props.pack), [props.pack]);
 
@@ -192,14 +214,43 @@ export default function CharacterBuilder(props: Props) {
         return false;
       }
       if (skillCategory !== "ALL" && skill.category !== skillCategory) return false;
+
       const access = accessBySkillId.get(skill.id) ?? { kind: "NONE" as const, group: null };
       const occupation = occupationAdded[skill.id] ?? 0;
       const interest = interestAdded[skill.id] ?? 0;
-      if (skillFilter === "OCCUPATION" && access.kind === "NONE") return false;
-      if (skillFilter === "ALLOCATED" && occupation === 0 && interest === 0) return false;
+      // 只有职业数据明确指定的固定本职，或用户自己投入职业点选中的技能，才算本职；
+      // 其余（包括还没选中的可选本职）一律按兴趣技能分类。
+      const isOccupational = isActualOccupationSkill({ access, occupation });
+      const isInterest = isOccupational === false;
+      const isPotential = access.kind !== "NONE";
+      const isAllocated = occupation > 0 || interest > 0;
+
+      if (skillIdentityFilters.length > 0) {
+        const identityMatched =
+          (skillIdentityFilters.includes("OCCUPATION") && isOccupational) ||
+          (skillIdentityFilters.includes("INTEREST") && isInterest);
+        if (identityMatched === false) return false;
+      }
+
+      if (skillUsageFilters.length > 0) {
+        const usageMatched =
+          (skillUsageFilters.includes("POTENTIAL") && isPotential) ||
+          (skillUsageFilters.includes("ALLOCATED") && isAllocated);
+        if (usageMatched === false) return false;
+      }
+
       return true;
     });
-  }, [accessBySkillId, compiled.skills, interestAdded, occupationAdded, skillCategory, skillFilter, skillQuery]);
+  }, [
+    accessBySkillId,
+    compiled.skills,
+    interestAdded,
+    occupationAdded,
+    skillCategory,
+    skillIdentityFilters,
+    skillQuery,
+    skillUsageFilters
+  ]);
 
   const groupedSkills = useMemo(
     () =>
@@ -214,7 +265,9 @@ export default function CharacterBuilder(props: Props) {
   const raceOptions = Object.entries(props.pack.races);
   const raceInfo = race === null ? null : props.pack.races[race];
   const canRoll = method?.kind === "ROLL_SETS";
-  const pointValid = pointCheck === null || pointCheck.valid;
+  const rolled = sets.length > 0;
+  const attributesValid = canRoll ? selectedSet !== null : pointCheck === null || pointCheck.valid;
+  const derivedReady = canRoll ? selectedSet !== null : true;
 
   function updateAttribute(key: AttributeKey, value: number): void {
     const numeric = Math.floor(Number(value));
@@ -227,6 +280,7 @@ export default function CharacterBuilder(props: Props) {
 
   function rollDestiny(): void {
     if (method?.kind !== "ROLL_SETS") return;
+    if (sets.length > 0) return;
     setSets(rollAttributeSets(method, cryptoRng));
     setSelectedSet(null);
     setAttributes(emptyAttributes());
@@ -359,6 +413,10 @@ export default function CharacterBuilder(props: Props) {
   }
 
   async function submit(): Promise<void> {
+    if (attributesValid === false) {
+      setMessage(canRoll ? "请先掷 5 组属性并选择其中一组。" : "属性点尚未分配完毕。");
+      return;
+    }
     setBusy(true);
     setMessage(null);
 
@@ -392,9 +450,6 @@ export default function CharacterBuilder(props: Props) {
     router.push(props.roomId === null ? "/characters" : "/rooms/" + props.roomId);
     router.refresh();
   }
-
-  const stepButton =
-    "h-8 min-w-8 rounded-md border border-white/15 px-1.5 text-[11px] text-white/60 transition hover:border-white/35 hover:text-white";
 
   const choiceLimits = selectedOccupation === null ? null : occupationChoiceLimits(selectedOccupation);
   const choiceCounts = currentChoiceCounts();
@@ -480,28 +535,44 @@ export default function CharacterBuilder(props: Props) {
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-white/80">
-            属性 · {method?.label ?? "未知方式"}
-          </h2>
+          <div>
+            <h2 className="text-sm font-medium text-white/80">
+              属性 · {method?.label ?? "未知方式"}
+            </h2>
+            <p className="mt-1 text-[11px] text-white/40">
+              {canRoll
+                ? "天命 5 只能掷一次；掷完后从 5 组结果中选择 1 组，不能手动修改属性。"
+                : method?.kind === "POINT_BUY"
+                  ? "直接在九维输入框里填写数值，系统实时校验总和与单项范围。"
+                  : "直接填写九维属性；保存时由服务端校验范围。"}
+            </p>
+          </div>
           <div className="flex items-center gap-3">
             {pointCheck === null ? null : (
               <span
                 className={
-                  pointCheck.remaining === 0
-                    ? "rounded-full border border-emerald-400/40 px-3 py-1 font-mono text-xs text-emerald-300"
-                    : "rounded-full border border-amber-400/40 px-3 py-1 font-mono text-xs text-amber-300"
+                  "rounded-full border px-3 py-1 font-mono text-xs " +
+                  (pointCheck.valid
+                    ? "border-emerald-400/40 text-emerald-300"
+                    : "border-amber-400/40 text-amber-300")
                 }
               >
-                已用 {pointCheck.total} · 剩余 {pointCheck.remaining}
+                已用 {pointCheck.total} ·{" "}
+                {pointCheck.remaining === 0
+                  ? "已满"
+                  : pointCheck.remaining > 0
+                    ? "剩余 " + pointCheck.remaining
+                    : "超出 " + Math.abs(pointCheck.remaining)}
               </span>
             )}
             {canRoll ? (
               <button
                 type="button"
+                disabled={rolled}
                 onClick={rollDestiny}
-                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400"
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
               >
-                {sets.length === 0 ? "掷天命 5" : "重新掷 5 组"}
+                {rolled ? "已掷完（只能掷一次）" : "掷 5 组"}
               </button>
             ) : null}
           </div>
@@ -511,22 +582,27 @@ export default function CharacterBuilder(props: Props) {
           {ATTRIBUTE_KEYS.map((key) => {
             const raw = attributes[key];
             const effective = outcome.attributes[key];
+            const editable = canRoll === false;
             return (
               <div key={key} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                 <p className="text-xs text-white/50">{ATTRIBUTE_LABELS[key]}</p>
-                <div className="mt-2 flex items-center justify-center gap-1">
-                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw - 5)}>−5</button>
-                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw - 1)}>−1</button>
-                  <input
-                    type="number"
-                    value={raw}
-                    onChange={(event) => updateAttribute(key, Number(event.target.value) || 0)}
-                    className="h-9 w-16 rounded-md border border-white/20 bg-ink-900 px-1 text-center font-mono text-lg font-semibold text-white outline-none focus:border-sakura-500"
-                  />
-                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw + 1)}>+1</button>
-                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw + 5)}>+5</button>
+                <div className="mt-2">
+                  {editable ? (
+                    <input
+                      type="number"
+                      min={method?.kind === "POINT_BUY" ? method.perAttributeMin : props.pack.attributes.min}
+                      max={method?.kind === "POINT_BUY" ? method.perAttributeMax : props.pack.attributes.max}
+                      value={raw}
+                      onChange={(event) => updateAttribute(key, Number(event.target.value) || 0)}
+                      className="h-11 w-full rounded-lg border border-white/20 bg-ink-900 px-2 text-center font-mono text-lg font-semibold text-white outline-none focus:border-sakura-500"
+                    />
+                  ) : (
+                    <div className="flex h-11 items-center justify-center rounded-lg border border-white/10 bg-black/20 font-mono text-lg font-semibold text-white/80">
+                      {rolled && selectedSet !== null ? raw : "—"}
+                    </div>
+                  )}
                 </div>
-                {effective === raw ? null : (
+                {canRoll && rolled === false ? null : effective === raw ? null : (
                   <p className="mt-1 text-[11px] text-sakura-300">种族修正后 {effective}</p>
                 )}
               </div>
@@ -542,8 +618,19 @@ export default function CharacterBuilder(props: Props) {
           </ul>
         ) : null}
 
-        {sets.length === 0 ? null : (
+        {canRoll && rolled === false ? (
+          <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+            先掷一次 5 组属性；鼠标点击下方结果里的「选用」后，9 维才会锁定为那一组。
+          </p>
+        ) : null}
+
+        {rolled === false ? null : (
           <div className="mt-5 overflow-x-auto">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <p className="text-xs text-white/55">
+                {selectedSet === null ? "请从以下 5 组中选择 1 组：" : "已选择第 " + (selectedSet + 1) + " 组；只能掷一次，但可以重新选用其他组。"}
+              </p>
+            </div>
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-white/40">
@@ -565,7 +652,7 @@ export default function CharacterBuilder(props: Props) {
                   >
                     <td className="py-1.5 text-white/60">#{option.index + 1}</td>
                     {ATTRIBUTE_KEYS.map((key) => (
-                      <td key={key} className="py-1.5 text-center font-mono text-white/70">
+                      <td key={key} className="py-1.5 text-center font-mono text-white/75">
                         {option.attributes[key]}
                       </td>
                     ))}
@@ -574,9 +661,14 @@ export default function CharacterBuilder(props: Props) {
                       <button
                         type="button"
                         onClick={() => pickSet(option.index)}
-                        className="rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10"
+                        className={
+                          "rounded-md border px-2 py-1 text-[11px] transition " +
+                          (selectedSet === option.index
+                            ? "border-emerald-400/50 bg-emerald-400/10 text-emerald-300"
+                            : "border-sakura-500/40 text-sakura-400 hover:bg-sakura-500/10")
+                        }
                       >
-                        选用
+                        {selectedSet === option.index ? "已选用" : "选用"}
                       </button>
                     </td>
                   </tr>
@@ -597,7 +689,7 @@ export default function CharacterBuilder(props: Props) {
             >
               <p className="text-xs text-white/40">{DERIVED_LABELS[key]}</p>
               <p className="mt-1 text-2xl font-semibold text-spirit-400">
-                {outcome.derived[key]}
+                {derivedReady ? outcome.derived[key] : "—"}
               </p>
             </div>
           ))}
@@ -614,7 +706,7 @@ export default function CharacterBuilder(props: Props) {
           <div className="min-w-[260px] flex-1">
             <h2 className="text-base font-semibold text-white/90">技能分配</h2>
             <p className="mt-1 text-xs leading-relaxed text-white/50">
-              职业写明的本职 + 你自行选中的本职只能用职业点；其余技能都视为兴趣，只能用兴趣点。同一技能不能混用两种点数；填了一边后另一边会锁定，点右侧「清空」可改。
+              职业写明的本职 + 你自行选中的本职只能用职业点；可选本职在选中前、以及其余所有技能都视为兴趣，只能用兴趣点。同一技能不能混用两种点数；填了一边后另一边会锁定，点右侧「清空」可改。
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -659,24 +751,55 @@ export default function CharacterBuilder(props: Props) {
             ))}
           </select>
           <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/20 p-1">
+            <span className="px-1.5 text-[10px] text-white/30">用途</span>
             {([
-              ["ALL", "全部"],
-              ["OCCUPATION", "本职 / 可选"],
+              ["POTENTIAL", "可选本职"],
               ["ALLOCATED", "已加点"]
             ] as const).map(([value, label]) => (
               <button
                 key={value}
                 type="button"
-                onClick={() => setSkillFilter(value)}
+                onClick={() => setSkillUsageFilters((prev) => toggleArrayValue(prev, value))}
                 className={
                   "rounded-md px-2.5 py-1 text-[11px] transition " +
-                  (skillFilter === value ? "bg-white/15 text-white" : "text-white/45 hover:text-white/80")
+                  (skillUsageFilters.includes(value) ? "bg-white/15 text-white" : "text-white/45 hover:text-white/80")
                 }
               >
                 {label}
               </button>
             ))}
           </div>
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/20 p-1">
+            <span className="px-1.5 text-[10px] text-white/30">类型</span>
+            {([
+              ["OCCUPATION", "本职"],
+              ["INTEREST", "兴趣"]
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setSkillIdentityFilters((prev) => toggleArrayValue(prev, value))}
+                className={
+                  "rounded-md px-2.5 py-1 text-[11px] transition " +
+                  (skillIdentityFilters.includes(value) ? "bg-white/15 text-white" : "text-white/45 hover:text-white/80")
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {skillIdentityFilters.length + skillUsageFilters.length === 0 ? null : (
+            <button
+              type="button"
+              onClick={() => {
+                setSkillIdentityFilters([]);
+                setSkillUsageFilters([]);
+              }}
+              className="rounded-md border border-white/15 px-2.5 py-1 text-[11px] text-white/45 transition hover:text-white"
+            >
+              清空筛选
+            </button>
+          )}
           <span className="ml-auto font-mono text-[11px] text-white/35">
             {filteredSkills.length} / {compiled.skills.length} 项
           </span>
@@ -821,7 +944,7 @@ export default function CharacterBuilder(props: Props) {
         </div>
         <button
           type="button"
-          disabled={[busy, name.trim().length === 0, pointValid === false].includes(true)}
+          disabled={[busy, name.trim().length === 0, attributesValid === false].includes(true)}
           onClick={submit}
           className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
         >
