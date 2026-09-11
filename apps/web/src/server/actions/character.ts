@@ -14,7 +14,13 @@ import {
 } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
-import { hasFreeSkillChoice, isOccupationSkill, toOccupationView } from "@/shared/occupation";
+import {
+  isSkillCreationWithinCap,
+  occupationChoiceLimits,
+  occupationSkillAccess,
+  toOccupationView,
+  type OccupationSkillAccess
+} from "@/shared/occupation";
 
 export interface SkillAllocationInput {
   readonly occupation: Record<string, number>;
@@ -147,7 +153,8 @@ export async function saveCharacter(
     skillBases[skill.id] = Math.floor(evaluate(skill.base, context));
   }
 
-  const maxAtCreation = Math.floor(evaluate(compiled.skillPoints.maxAtCreation, context));
+  const occupationMax = Math.floor(evaluate(compiled.skillPoints.occupationMax, context));
+  const interestMax = Math.floor(evaluate(compiled.skillPoints.interestMax, context));
   const raceRule = input.race === null ? undefined : pack.races[input.race];
   const interestExpression =
     raceRule?.interestPoints === undefined
@@ -190,18 +197,59 @@ export async function saveCharacter(
     }
 
     const occupationView = occupation === null ? null : toOccupationView(occupation);
-    const freeChoice = occupationView === null ? false : hasFreeSkillChoice(occupationView);
+    const limits = occupationView === null
+      ? { free: 0, social: 0, categories: {} as Record<string, number> }
+      : occupationChoiceLimits(occupationView);
+    const accessBySkill = new Map<string, OccupationSkillAccess>();
+    for (const skill of compiled.skills) {
+      accessBySkill.set(skill.id, occupationView === null ? { kind: "NONE", group: null } : occupationSkillAccess(occupationView, skill.name));
+    }
+    const choiceCounts = {
+      social: new Set<string>(),
+      free: new Set<string>(),
+      categories: new Map<string, Set<string>>()
+    };
     skills = {};
     for (const skill of compiled.skills) {
       const base = skillBases[skill.id] ?? 0;
       const occ = occupationAdded[skill.id] ?? 0;
-      if (occ > 0 && occupationView !== null && !freeChoice && !isOccupationSkill(occupationView, skill.name)) {
-        return { ok: false, error: skill.name + " 不是本职业的本职或可选技能" };
-      }
       const interest = interestAdded[skill.id] ?? 0;
+      const access = accessBySkill.get(skill.id) ?? { kind: "NONE", group: null };
+
+      if (occ > 0) {
+        if (access.kind === "NONE") {
+          return { ok: false, error: skill.name + " 不是本职业的本职或可选技能" };
+        }
+        if (access.kind === "SOCIAL" && choiceCounts.social.has(skill.id) === false) {
+          if (choiceCounts.social.size >= limits.social) {
+            return { ok: false, error: "本职业最多只能选择 " + limits.social + " 项社交技能" };
+          }
+          choiceCounts.social.add(skill.id);
+        } else if (access.kind === "FREE" && choiceCounts.free.has(skill.id) === false) {
+          if (choiceCounts.free.size >= limits.free) {
+            return { ok: false, error: "本职业最多只能自由选择 " + limits.free + " 项技能" };
+          }
+          choiceCounts.free.add(skill.id);
+        } else if (access.kind === "CATEGORY" && access.group !== null) {
+          const groupSet = choiceCounts.categories.get(access.group) ?? new Set<string>();
+          if (groupSet.has(skill.id) === false) {
+            if (groupSet.size >= (limits.categories[access.group] ?? 1)) {
+              return { ok: false, error: "本职业的「" + access.group + "」分类只能选择 1 项技能" };
+            }
+          }
+          groupSet.add(skill.id);
+          choiceCounts.categories.set(access.group, groupSet);
+        }
+      }
+
+      // 基础值可以天然高于车卡上限（例如 EDU 很高时的母语）；此时只保留基础值，不允许再加点。
       const total = base + occ + interest;
-      if (total > maxAtCreation) {
-        return { ok: false, error: skill.name + " 超过车卡上限 " + maxAtCreation };
+      const withinCap = isSkillCreationWithinCap({ base, occupation: occ, interest, occupationMax, interestMax });
+      if (withinCap === false) {
+        return {
+          ok: false,
+          error: skill.name + " 超过" + (occ > 0 ? "本职" : "兴趣") + "技能上限 " + (occ > 0 ? occupationMax : interestMax)
+        };
       }
       if (total > 0) skills[skill.id] = total;
     }

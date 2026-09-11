@@ -285,10 +285,14 @@ export const RulePackSchema = z.object({
       occupation: ExprSchema,
       /** 兴趣技能点，例如 "int * 2"。 */
       interest: ExprSchema,
-      /** 车卡时的单项上限。 */
-      maxAtCreation: ExprSchema
+      /** 旧字段：统一单项上限；新逻辑优先使用 occupationMax / interestMax。 */
+      maxAtCreation: ExprSchema.default("70"),
+      /** 本职技能使用职业点后的最终上限。 */
+      occupationMax: ExprSchema.default("80"),
+      /** 兴趣技能使用兴趣点后的最终上限。 */
+      interestMax: ExprSchema.default("70")
     })
-    .default({ occupation: "edu * 4", interest: "int * 2", maxAtCreation: "70" }),
+    .default({ occupation: "edu * 4", interest: "int * 2", maxAtCreation: "70", occupationMax: "80", interestMax: "70" }),
   statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
   spellcard: SpellCardRulesSchema.optional(),
   magic: MagicRulesSchema.optional(),

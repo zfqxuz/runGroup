@@ -54,6 +54,8 @@ export interface CompiledSkillPoints {
   readonly occupation: CompiledExpr;
   readonly interest: CompiledExpr;
   readonly maxAtCreation: CompiledExpr;
+  readonly occupationMax: CompiledExpr;
+  readonly interestMax: CompiledExpr;
 }
 
 export interface CompiledCombat {
@@ -272,6 +274,12 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     ),
     maxAtCreation: wrap("skillPoints.maxAtCreation", () =>
       compileExpr(pack.skillPoints.maxAtCreation, { vars: attributeVars, consts: constantNames })
+    ),
+    occupationMax: wrap("skillPoints.occupationMax", () =>
+      compileExpr(pack.skillPoints.occupationMax, { vars: attributeVars, consts: constantNames })
+    ),
+    interestMax: wrap("skillPoints.interestMax", () =>
+      compileExpr(pack.skillPoints.interestMax, { vars: attributeVars, consts: constantNames })
     )
   };
 

@@ -1145,3 +1145,39 @@ DEEPSEEK_MODEL="deepseek-flash"
   - 切到 PLAYING 后跑团页仍能渲染场景与 Token。
 - 回归：`verify-room-ready`、`verify-scene-board`、`verify-scene-increments`、`verify-realtime-sync`、`verify-module-preset`、`verify-clue-npc-edit`、`verify-module-entities` 全部 PASS。
 - `npm run typecheck` PASS；`npm test` PASS（146 tests）；生产构建与 3100 部署已更新。
+
+## 32. CoC7 车卡规则修复：本职判定、上限 80/70、母语基础值（本轮）
+
+### Bug 1：所有技能都显示「本职」
+- 根因：`isOccupationSkill` 的模糊匹配里：
+  - `FREE_TOKENS.some((free) => token.includes(free))` 只要职业有「任意 / 自选」，就对**任意技能**返回 true；
+  - `name.includes(token) || token.includes(name)` 进一步造成性别字面量误匹配。
+- 修复：`shared/occupation.ts` 重写为明确的技能访问分类：
+  - `FIXED`：职业 token 精确匹配某个具体技能（含「射击（手枪/步枪）」这类拆分）。
+  - `CATEGORY`：职业 token 是「格斗 / 射击 / 科学 / 技艺 / 外语 / 语言 / 驾驶」等分类，只匹配该分类下技能，且默认每组只能选 1 项。
+  - `SOCIAL`：职业写「一项 / 两项社交技能」时，从魅惑 / 取笑 / 话术 / 恐吓 / 说服中选择，数量受限。
+  - `FREE`：「任意 / 自选」技能位，可选任何技能，但必须按职业文本解析出的数量（例如「任意两项」= 2）占用，不再显示为「本职」。
+- UI 只对 FIXED / CATEGORY / SOCIAL 标「本职」；FREE 标「可选」。
+
+### Bug 2 / 3：本职上限 80、兴趣上限 70，母语等基础值不应报错
+- 根因：旧逻辑只有一个 `skillPoints.maxAtCreation`（默认 70），并且直接判断 `base + occ + interest > maxAtCreation`。
+  - 母语基础值 = EDU，EDU 高时基础值本身 > 70，即使不加点也会被判定超限；
+  - 本职点与兴趣点混用同一个 70 上限，不符合「本职 80 / 兴趣 70」。
+- 修复：
+  - `RulePackSchema.skillPoints` 新增 `occupationMax`（默认 80）与 `interestMax`（默认 70）；旧 `maxAtCreation` 保留兼容。
+  - 新增纯函数 `skillCreationCap / isSkillCreationWithinCap`：
+    - 使用职业点的技能：上限 = `max(occupationMax, base)`；
+    - 只用兴趣点的技能：上限 = `max(interestMax, base)`；
+    - 基础值天然超过上限时（高 EDU 的母语），保留基础值，但不能再加点。
+  - 客户端 `CharacterBuilder` 与服务端 `saveCharacter` 共用同一函数；技能面板显示「本职上限 80 · 兴趣上限 70」。
+  - 服务端同步校验自由 / 社交 / 分类选择的数量上限，防止绕过 UI。
+
+### E2E
+- 新增 `npm run verify:chargen-rules`：
+  - 建筑师：法律 / 母语为本职，科学属于科学分类，潜行不是本职；
+  - 魔术师：精神分析为本职，恐吓为社交选择（限 1），潜行属于任意可选（限 2）且不标本职；
+  - 本职点 70+10=80 允许、70+11=81 拒绝；兴趣 50+20=70 允许、50+21 拒绝；
+  - 基础 85 的母语不报错，但不能再加兴趣点；
+  - 规则包默认本职上限 80、兴趣上限 70。
+- 回归：`verify-character-import`、`verify-admin-console`、`verify-room-ready` PASS。
+- `npm run typecheck` PASS；`npm test` PASS（146 tests）；生产构建与 3100 部署已更新。

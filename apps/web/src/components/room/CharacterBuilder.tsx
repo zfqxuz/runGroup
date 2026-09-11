@@ -18,7 +18,10 @@ import { saveCharacter, type SaveCharacterResult } from "@/server/actions/charac
 import {
   ERA_LABELS,
   hasFreeSkillChoice,
-  isOccupationSkill,
+  isSkillCreationWithinCap,
+  occupationChoiceLimits,
+  occupationSkillAccess,
+  type OccupationSkillAccess,
   type OccupationView
 } from "@/shared/occupation";
 
@@ -130,9 +133,15 @@ export default function CharacterBuilder(props: Props) {
       ),
       maxAtCreation: Math.floor(
         evaluate(compiled.skillPoints.maxAtCreation, { vars: effectiveVars, consts: props.pack.const })
+      ),
+      occupationMax: Math.floor(
+        evaluate(compiled.skillPoints.occupationMax, { vars: effectiveVars, consts: props.pack.const })
+      ),
+      interestMax: Math.floor(
+        evaluate(compiled.skillPoints.interestMax, { vars: effectiveVars, consts: props.pack.const })
       )
     }),
-    [compiled.skillPoints.maxAtCreation, effectiveVars, props.pack.const, raceInterest, selectedOccupation]
+    [compiled.skillPoints.interestMax, compiled.skillPoints.maxAtCreation, compiled.skillPoints.occupationMax, effectiveVars, props.pack.const, raceInterest, selectedOccupation]
   );
 
   const usedOccupationPoints = useMemo(
@@ -169,12 +178,57 @@ export default function CharacterBuilder(props: Props) {
     setSelectedSet(index);
   }
 
+  function accessOf(skillId: string): OccupationSkillAccess {
+    if (selectedOccupation === null) return { kind: "NONE", group: null };
+    const skill = compiled.skills.find((item) => item.id === skillId);
+    if (skill === undefined) return { kind: "NONE", group: null };
+    return occupationSkillAccess(selectedOccupation, skill.name);
+  }
+
+  function currentChoiceCounts(): {
+    readonly social: Set<string>;
+    readonly free: Set<string>;
+    readonly categories: Map<string, Set<string>>;
+  } {
+    const social = new Set<string>();
+    const free = new Set<string>();
+    const categories = new Map<string, Set<string>>();
+    if (selectedOccupation === null) return { social, free, categories };
+    for (const skill of compiled.skills) {
+      if ((occupationAdded[skill.id] ?? 0) <= 0) continue;
+      const access = occupationSkillAccess(selectedOccupation, skill.name);
+      if (access.kind === "SOCIAL") social.add(skill.id);
+      else if (access.kind === "FREE") free.add(skill.id);
+      else if (access.kind === "CATEGORY" && access.group !== null) {
+        const set = categories.get(access.group) ?? new Set<string>();
+        set.add(skill.id);
+        categories.set(access.group, set);
+      }
+    }
+    return { social, free, categories };
+  }
+
+  function canAddOccupationChoice(skillId: string, access: OccupationSkillAccess): boolean {
+    if (access.kind === "NONE") return false;
+    if ((occupationAdded[skillId] ?? 0) > 0) return true;
+    if (access.kind === "FIXED") return true;
+    const limits = selectedOccupation === null
+      ? { free: 0, social: 0, categories: {} as Record<string, number> }
+      : occupationChoiceLimits(selectedOccupation);
+    const counts = currentChoiceCounts();
+    if (access.kind === "SOCIAL") return counts.social.size < limits.social;
+    if (access.kind === "FREE") return limits.free > 0 && counts.free.size < limits.free;
+    if (access.kind === "CATEGORY" && access.group !== null) {
+      return (counts.categories.get(access.group)?.size ?? 0) < (limits.categories[access.group] ?? 1);
+    }
+    return true;
+  }
+
   function canUseOccupation(skillId: string): boolean {
     if (selectedOccupation === null) return false;
-    if (occupationFreeChoice) return true;
-    const skill = compiled.skills.find((item) => item.id === skillId);
-    if (skill === undefined) return false;
-    return isOccupationSkill(selectedOccupation, skill.name);
+    const access = accessOf(skillId);
+    if (access.kind === "NONE") return false;
+    return canAddOccupationChoice(skillId, access);
   }
 
   function adjustSkill(skillId: string, field: "occupation" | "interest", delta: number): void {
@@ -184,10 +238,21 @@ export default function CharacterBuilder(props: Props) {
     const nextOccupation = field === "occupation" ? currentOccupation + delta : currentOccupation;
     const nextInterest = field === "interest" ? currentInterest + delta : currentInterest;
     if (nextOccupation < 0 || nextInterest < 0) return;
-    if (base + nextOccupation + nextInterest > skillPool.maxAtCreation) return;
+    // 车卡上限：本职点可到 80，兴趣点可到 70；基础值本身超过上限时保留基础值，不再额外加点。
+    const withinCap = isSkillCreationWithinCap({
+      base,
+      occupation: nextOccupation,
+      interest: nextInterest,
+      occupationMax: skillPool.occupationMax,
+      interestMax: skillPool.interestMax
+    });
+    if (withinCap === false) return;
     if (field === "occupation") {
-      if (delta > 0 && canUseOccupation(skillId) === false) return;
-      if (delta > 0 && usedOccupationPoints + delta > skillPool.occupation) return;
+      if (delta > 0) {
+        const access = accessOf(skillId);
+        if (canAddOccupationChoice(skillId, access) === false) return;
+        if (usedOccupationPoints + delta > skillPool.occupation) return;
+      }
       setOccupationAdded((prev) => ({ ...prev, [skillId]: nextOccupation }));
       return;
     }
@@ -447,7 +512,7 @@ export default function CharacterBuilder(props: Props) {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-white/80">技能 · {compiled.skills.length} 项</h2>
           <span className="rounded-full border border-white/15 px-3 py-1 font-mono text-xs text-white/60">
-            职业 {usedOccupationPoints}/{skillPool.occupation} · 兴趣 {usedInterestPoints}/{skillPool.interest} · 单项上限 {skillPool.maxAtCreation}
+            职业 {usedOccupationPoints}/{skillPool.occupation} · 兴趣 {usedInterestPoints}/{skillPool.interest} · 本职上限 {skillPool.occupationMax} · 兴趣上限 {skillPool.interestMax}
           </span>
         </div>
 
@@ -457,15 +522,17 @@ export default function CharacterBuilder(props: Props) {
             const occupation = occupationAdded[skill.id] ?? 0;
             const interest = interestAdded[skill.id] ?? 0;
             const total = base + occupation + interest;
+            const access = accessOf(skill.id);
             const occupationEnabled = selectedOccupation === null ? false : canUseOccupation(skill.id);
+            const accessLabel = access.kind === "FREE" ? "可选" : access.kind === "NONE" ? null : "本职";
             return (
               <div key={skill.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                 <div className="min-w-0">
                   <p className="flex items-center gap-1 truncate text-xs text-white/70">
                     <span className="truncate">{skill.name}</span>
-                    {occupationEnabled ? (
-                      <span className="shrink-0 rounded border border-sakura-500/40 px-1 text-[9px] text-sakura-400">本职</span>
-                    ) : null}
+                    {accessLabel === null || (accessLabel === "可选" && occupationEnabled === false) ? null : (
+                      <span className={"shrink-0 rounded border px-1 text-[9px] " + (accessLabel === "本职" ? "border-sakura-500/40 text-sakura-400" : "border-white/20 text-white/45")}>{accessLabel}</span>
+                    )}
                   </p>
                   <p className="font-mono text-[10px] text-white/30">
                     {base} + 职{occupation} + 趣{interest} = {total}
