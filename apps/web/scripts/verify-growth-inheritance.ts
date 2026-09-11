@@ -63,6 +63,19 @@ async function submitAction(jar: Map<string, string>, pathName: string, form: Fo
   return result;
 }
 
+async function applyPresetToRoom(jar: Map<string, string>, roomId: string, moduleId: string): Promise<void> {
+  await prisma.room.update({ where: { id: roomId }, data: { selectedModuleId: moduleId } });
+  const page = await call(jar, "/rooms/" + roomId + "/prepare");
+  expectEqual(page.status, 200, "GET 准备页（应用预设前）");
+  const field = extractActionFieldAround(page.text, "应用团本预设到房间");
+  const form = new FormData();
+  form.set(field, "");
+  form.set("roomId", roomId);
+  form.set("moduleId", moduleId);
+  form.set("force", "0");
+  await submitAction(jar, "/rooms/" + roomId + "/prepare", form);
+}
+
 async function register(username: string, password: string): Promise<string> {
   const response = await fetch(BASE + "/api/register", {
     method: "POST",
@@ -112,7 +125,15 @@ async function main(): Promise<void> {
     });
     roomId = room.id;
     const module = await prisma.module.create({
-      data: { roomId: room.id, title: "E2E 成长团本", version: "1.0.0", content: { text: "## 元信息" } as never },
+      data: {
+        roomId: room.id,
+        title: "E2E 成长团本",
+        version: "1.0.0",
+        content: {
+          text: "## 元信息\n\nE2E 成长\n\n```yaml module-scene\nid: e2e-growth-scene\nname: 成长测试场景\n```\n",
+          sections: ["元信息"]
+        } as never
+      },
       select: { id: true }
     });
     await prisma.room.update({ where: { id: room.id }, data: { selectedModuleId: module.id } });
@@ -135,6 +156,9 @@ async function main(): Promise<void> {
 
     const kpJar = await login(kpName, password);
     const playerJar = await login(playerName, password);
+
+    // 新开局闸门：选择了团本时必须先应用预设。
+    await applyPresetToRoom(kpJar, room.id, module.id);
 
     const preparePage = await call(kpJar, "/rooms/" + room.id + "/prepare");
     const startField = extractActionFieldAround(preparePage.text, "开始跑团");
