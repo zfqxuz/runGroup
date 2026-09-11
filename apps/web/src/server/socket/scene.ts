@@ -49,7 +49,11 @@ async function membershipForEdit(roomId: string, userId: string): Promise<{ read
     select: { role: true, room: { select: { status: true } } }
   });
   if (membership === null) return null;
-  const editable = membership.room.status === "PLAYING" || membership.room.status === "COMBAT" || membership.room.status === "PAUSED";
+  const editable =
+    membership.room.status === "LOBBY" ||
+    membership.room.status === "PLAYING" ||
+    membership.room.status === "COMBAT" ||
+    membership.room.status === "PAUSED";
   return { isKp: membership.role === "KP", editable };
 }
 
@@ -105,7 +109,7 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
       ack({ ok: false, error: "你不在这个房间里" });
       return;
     }
-    if (membership.room.status === "LOBBY" || membership.room.status === "PAUSED" || membership.room.status === "ENDED") {
+    if (membership.room.status === "ENDED") {
       ack({ ok: false, error: "当前阶段不能移动地图 Token" });
       return;
     }
@@ -235,6 +239,50 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
     const color = asString(input.color, 20) ?? "#ffaa00";
     const intensity = Math.max(0, Math.min(2, asNumber(input.intensity) ?? 1));
     await prisma.light.create({ data: { mapId: scene.mapId, x, y, radius, color, intensity } });
+    await broadcastMap(io, input.roomId, input.sceneId);
+    ack({ ok: true });
+  });
+
+  socket.on("scene:wall:clear", async (payload: unknown, ack: (result: Ack) => void) => {
+    const userId = userIdOf(socket);
+    const input = (payload ?? {}) as { roomId?: unknown; sceneId?: unknown };
+    if (userId === null || typeof input.roomId !== "string" || typeof input.sceneId !== "string") {
+      ack({ ok: false, error: "参数不合法" });
+      return;
+    }
+    const membership = await membershipForEdit(input.roomId, userId);
+    if (membership === null || membership.editable === false || membership.isKp === false) {
+      ack({ ok: false, error: "只有 KP 可以清除墙体" });
+      return;
+    }
+    const scene = await sceneWithMap(input.roomId, input.sceneId);
+    if (scene === null) {
+      ack({ ok: false, error: "场景不存在" });
+      return;
+    }
+    await prisma.wall.deleteMany({ where: { mapId: scene.mapId } });
+    await broadcastMap(io, input.roomId, input.sceneId);
+    ack({ ok: true });
+  });
+
+  socket.on("scene:light:clear", async (payload: unknown, ack: (result: Ack) => void) => {
+    const userId = userIdOf(socket);
+    const input = (payload ?? {}) as { roomId?: unknown; sceneId?: unknown };
+    if (userId === null || typeof input.roomId !== "string" || typeof input.sceneId !== "string") {
+      ack({ ok: false, error: "参数不合法" });
+      return;
+    }
+    const membership = await membershipForEdit(input.roomId, userId);
+    if (membership === null || membership.editable === false || membership.isKp === false) {
+      ack({ ok: false, error: "只有 KP 可以清除灯光" });
+      return;
+    }
+    const scene = await sceneWithMap(input.roomId, input.sceneId);
+    if (scene === null) {
+      ack({ ok: false, error: "场景不存在" });
+      return;
+    }
+    await prisma.light.deleteMany({ where: { mapId: scene.mapId } });
     await broadcastMap(io, input.roomId, input.sceneId);
     ack({ ok: true });
   });

@@ -36,6 +36,7 @@
     "verify:module-entities": "tsx --env-file=.env scripts/verify-module-entities.ts",
     "verify:admin-console": "tsx --env-file=.env scripts/verify-admin-console.ts",
     "verify:scene-increments": "tsx --env-file=.env scripts/verify-scene-increments.ts",
+    "verify:scene-ops": "tsx --env-file=.env scripts/verify-scene-ops.ts",
     "verify:ai-import": "tsx --env-file=.env scripts/verify-ai-import.ts",
     "verify:visibility-magic": "tsx --env-file=.env scripts/verify-visibility-magic.ts",
     "verify:module-preset": "tsx --env-file=.env scripts/verify-module-preset.ts"

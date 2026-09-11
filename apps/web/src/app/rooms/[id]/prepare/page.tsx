@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
+import SceneBoard from "@/components/room/SceneBoard";
 import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import {
@@ -15,6 +16,7 @@ import { applyModulePresetAction } from "@/server/actions/preset";
 import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { loadGameModuleView } from "@/server/modules/revision";
+import { loadSceneView } from "@/server/scene/load";
 import { loadModuleMagicInfo } from "@/server/modules/magic";
 import { prisma } from "@/server/db/prisma";
 import { advancementView } from "@/server/game/view";
@@ -239,6 +241,31 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     role: member.role
   }));
   void initialMembers;
+
+  const activeSceneForPrepare = await loadSceneView(room.id);
+  const scenesForPrepare = await prisma.scene.findMany({
+    where: { roomId: room.id },
+    select: { id: true, name: true, isActive: true },
+    orderBy: [{ orderIndex: "asc" }, { createdAt: "asc" }]
+  });
+  const npcCardsForPrepare = await prisma.card.findMany({
+    where: { roomId: room.id, scope: "ROOM", type: "NPC" },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" }
+  });
+  const approvedForPrepare = await prisma.roomCharacterEntry.findMany({
+    where: { roomId: room.id, status: "APPROVED" },
+    include: { character: { select: { name: true } } },
+    orderBy: { submittedAt: "asc" }
+  });
+  const sceneUnitsForPrepare = [
+    ...approvedForPrepare.map((entry) => ({
+      ref: "character:" + entry.characterId,
+      name: entry.character.name,
+      kind: "PLAYER" as const
+    })),
+    ...npcCardsForPrepare.map((card) => ({ ref: "npc:" + card.id, name: card.name, kind: "NPC" as const }))
+  ];
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
@@ -840,6 +867,24 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
 
       <RoomNpcPanel roomId={room.id} isKP={isKP} />
+
+      {activeSceneForPrepare === null ? (
+        <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+          <h2 className="text-sm font-medium text-white/80">战术棋盘</h2>
+          <p className="mt-2 text-xs text-white/40">还没有激活的场景。KP 可先到「场景 / 地图」创建并切换场景，再回来布置 Token、墙体与灯光。</p>
+        </section>
+      ) : (
+        <SceneBoard
+          roomId={room.id}
+          isKP={isKP}
+          currentUserId={session.user.id}
+          readOnly={false}
+          returnTo={"/rooms/" + room.id + "/prepare"}
+          scenes={scenesForPrepare.map((scene) => ({ id: scene.id, name: scene.name, isActive: scene.isActive }))}
+          units={sceneUnitsForPrepare}
+          scene={activeSceneForPrepare}
+        />
+      )}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">

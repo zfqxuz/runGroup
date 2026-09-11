@@ -1108,3 +1108,40 @@ DEEPSEEK_MODEL="deepseek-flash"
 
 ### 使用提示
 - 已存在的房间如果线索正文为空，让 KP 在准备页重新「应用团本预设」即可刷新；新开的房间会自动带上修复后的内容。
+
+## 31. 场景在准备阶段可用、墙灯清除与 Token 放置修复（本轮）
+
+### 问题
+- 场景布置本来应该发生在开局前，但准备页完全没有 SceneBoard：
+  - 无法切换场景（只能去场景管理页）。
+  - 墙体 / 灯光只能开局后在跑团页画，准备阶段看不到棋盘。
+  - KP 无法在棋盘上直接放置玩家 / NPC Token。
+  - 只能逐个点删除墙 / 灯，没有清空入口。
+  - PC Token 创建要求已有进行中的 Game，在 LOBBY 永远失败。
+
+### 修复
+- 准备页接入 `SceneBoard`：
+  - KP 可切换场景、放置 PC / NPC Token、画墙 / 灯光、操作战雾。
+  - 玩家可提前看到棋盘并拖动自己的 Token。
+- Socket 场景编辑放开到 `LOBBY / PAUSED`；Token 移动不再拒绝这两个阶段。
+- `createSceneTokenAction` 的 PC 分支不再强制要求进行中的 Game：
+  - 有 GameCharacter 时用局内角色；
+  - LOBBY 阶段可用已通过审核的 `RoomCharacterEntry` 创建/复用角色 Token。
+- `SceneBoard` 新增：
+  - KP 场景切换下拉（服务端 action，成功后回原页面）。
+  - KP「放置玩家 / NPC Token」下拉（PC + 本房 NPC 卡）。
+  - 删除模式下「清空墙体 / 清空灯光」按钮。
+  - `activateSceneAction` / `createSceneTokenAction` 支持 `returnTo`，从准备页操作后不会跳去场景页。
+- 新增 Socket 事件 `scene:wall:clear` / `scene:light:clear`：KP 一键清空当前地图墙体 / 灯光，并广播 `scene:map:updated`。
+- 场景背景图：`/api/upload` + `attachAssetAction` 路径已回归验证；跑团页 / 准备页都会渲染 `map.backgroundUrl`。
+
+### E2E
+- 新增 `npm run verify:scene-ops`：
+  - LOBBY 下创建 / 切换场景；
+  - 上传地图背景并验证 URL 可访问、`loadSceneView` 带 `backgroundUrl`；
+  - Socket 创建墙体 / 灯光后 `scene:wall:clear`、`scene:light:clear` 清空；
+  - 场景页放置 PC 与 NPC Token；
+  - 准备页出现「战术棋盘 / 切换场景 / 放置玩家 / NPC Token」；
+  - 切到 PLAYING 后跑团页仍能渲染场景与 Token。
+- 回归：`verify-room-ready`、`verify-scene-board`、`verify-scene-increments`、`verify-realtime-sync`、`verify-module-preset`、`verify-clue-npc-edit`、`verify-module-entities` 全部 PASS。
+- `npm run typecheck` PASS；`npm test` PASS（146 tests）；生产构建与 3100 部署已更新。

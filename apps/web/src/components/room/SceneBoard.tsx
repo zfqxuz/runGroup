@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
+import { activateSceneAction, createSceneTokenAction } from "@/server/actions/scene";
 import type { Ack } from "@/shared/socket";
 import type { SceneMapView, SceneTokenUpdate, SceneTokenView, SceneUpdated } from "@/shared/scene";
 import {
@@ -22,6 +23,9 @@ interface Props {
   readonly isKP: boolean;
   readonly currentUserId: string;
   readonly readOnly: boolean;
+  readonly returnTo: string;
+  readonly scenes: readonly { readonly id: string; readonly name: string; readonly isActive: boolean }[];
+  readonly units: readonly { readonly ref: string; readonly name: string; readonly kind: "PLAYER" | "NPC" }[];
   readonly scene: {
     readonly id: string;
     readonly name: string;
@@ -364,6 +368,24 @@ export default function SceneBoard(props: Props) {
     }
   }
 
+  function clearWalls(): void {
+    if (window.confirm("确定清空当前场景的所有墙体吗？") === false) return;
+    const socket = socketRef.current;
+    if (socket === null) return;
+    socket.emit("scene:wall:clear", { roomId: props.roomId, sceneId: props.scene.id }, (result: Ack) => {
+      if (result.ok === false) setError(result.error ?? "清空墙体失败");
+    });
+  }
+
+  function clearLights(): void {
+    if (window.confirm("确定清空当前场景的所有灯光吗？") === false) return;
+    const socket = socketRef.current;
+    if (socket === null) return;
+    socket.emit("scene:light:clear", { roomId: props.roomId, sceneId: props.scene.id }, (result: Ack) => {
+      if (result.ok === false) setError(result.error ?? "清空灯光失败");
+    });
+  }
+
   function resetFog(): void {
     const socket = socketRef.current;
     if (socket === null) return;
@@ -457,6 +479,48 @@ export default function SceneBoard(props: Props) {
       </div>
 
       {props.isKP && props.readOnly === false ? (
+        <div className="mt-4 grid gap-2 rounded-xl border border-white/10 bg-ink-900/60 p-3 sm:grid-cols-2">
+          <form action={activateSceneAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="roomId" value={props.roomId} />
+            <input type="hidden" name="returnTo" value={props.returnTo} />
+            <label className="flex min-w-[160px] flex-1 flex-col gap-1">
+              <span className="text-[10px] text-white/35">切换场景</span>
+              <select name="sceneId" defaultValue={props.scene.id} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75">
+                {props.scenes.map((scene) => (
+                  <option key={scene.id} value={scene.id}>
+                    {scene.name}
+                    {scene.isActive ? "（当前）" : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" className="rounded border border-emerald-400/40 px-3 py-1.5 text-[11px] text-emerald-300 transition hover:bg-emerald-400/10">
+              切换
+            </button>
+          </form>
+          <form action={createSceneTokenAction} className="flex flex-wrap items-end gap-2">
+            <input type="hidden" name="roomId" value={props.roomId} />
+            <input type="hidden" name="sceneId" value={props.scene.id} />
+            <input type="hidden" name="returnTo" value={props.returnTo} />
+            <label className="flex min-w-[160px] flex-1 flex-col gap-1">
+              <span className="text-[10px] text-white/35">放置玩家 / NPC Token</span>
+              <select name="unitRef" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75" disabled={props.units.length === 0}>
+                {props.units.length === 0 ? <option value="">暂无可放置单位</option> : null}
+                {props.units.map((unit) => (
+                  <option key={unit.ref} value={unit.ref}>
+                    {unit.name}（{unit.kind === "NPC" ? "NPC" : "PC"}）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="submit" disabled={props.units.length === 0} className="rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10 disabled:opacity-40">
+              放置
+            </button>
+          </form>
+        </div>
+      ) : null}
+
+      {props.isKP && props.readOnly === false ? (
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-ink-900/60 p-3">
           <span className="text-[10px] text-white/35">工具</span>
           {(["select", "wall", "light", "fog", "delete"] as const).map((item) => (
@@ -548,7 +612,15 @@ export default function SceneBoard(props: Props) {
           ) : null}
 
           {mode === "delete" ? (
-            <span className="text-[10px] text-white/35">点击墙体或灯光进行删除</span>
+            <span className="flex flex-wrap items-center gap-2 text-[10px] text-white/35">
+              <span>点击墙体或灯光进行删除</span>
+              <button type="button" onClick={clearWalls} className="rounded border border-red-400/30 px-2 py-1 text-red-300 transition hover:bg-red-400/10">
+                清空墙体
+              </button>
+              <button type="button" onClick={clearLights} className="rounded border border-amber-400/30 px-2 py-1 text-amber-300 transition hover:bg-amber-400/10">
+                清空灯光
+              </button>
+            </span>
           ) : null}
 
           <label className="ml-auto flex items-center gap-1 text-[10px] text-white/45">

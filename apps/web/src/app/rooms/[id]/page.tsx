@@ -269,6 +269,19 @@ export default async function RoomPage({
     id: item.characterId,
     name: item.character.name
   }));
+  const sceneNpcCards = await prisma.card.findMany({
+    where: { roomId: room.id, scope: "ROOM", type: "NPC" },
+    select: { id: true, name: true },
+    orderBy: { createdAt: "asc" }
+  });
+  const sceneUnits = [
+    ...(activeGame?.characters ?? []).map((item) => ({
+      ref: "character:" + item.characterId,
+      name: item.character.name,
+      kind: "PLAYER" as const
+    })),
+    ...sceneNpcCards.map((card) => ({ ref: "npc:" + card.id, name: card.name, kind: "NPC" as const }))
+  ];
 
   const combatFeatures = combatFeatureFlags(effective.compiled);
   const attackSkillsByParticipant: Record<string, readonly string[]> = {};
@@ -454,6 +467,9 @@ export default async function RoomPage({
           isKP={isKP}
           currentUserId={session.user.id}
           readOnly={room.status === "ENDED"}
+          returnTo={"/rooms/" + room.id}
+          scenes={dbScenes.map((scene) => ({ id: scene.id, name: scene.name, isActive: scene.isActive }))}
+          units={sceneUnits}
           scene={activeScene}
         />
       )}

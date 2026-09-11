@@ -45,6 +45,13 @@ function scenesPath(roomId: string, query: string): string {
   return "/rooms/" + roomId + "/scenes" + query;
 }
 
+function safeSceneReturnTo(roomId: string, raw: FormDataEntryValue | null, fallback: string): string {
+  const value = String(raw ?? "").trim();
+  if (value.startsWith("/rooms/" + roomId) && value.startsWith("//") === false) return value;
+  return fallback;
+}
+
+
 function revalidateScene(roomId: string): void {
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/scenes");
@@ -93,6 +100,7 @@ export async function activateSceneAction(formData: FormData): Promise<void> {
   if (session === null) redirect("/login");
   const roomId = clean(formData.get("roomId"), 64);
   const sceneId = clean(formData.get("sceneId"), 64);
+  const returnTo = safeSceneReturnTo(roomId, formData.get("returnTo"), scenesPath(roomId, "?saved=active"));
   if ((await requireKp(roomId, session.user.id)) === false) redirect("/rooms/" + roomId + "/prepare");
 
   const scene = await prisma.scene.findUnique({ where: { id: sceneId }, select: { roomId: true } });
@@ -105,7 +113,7 @@ export async function activateSceneAction(formData: FormData): Promise<void> {
 
   revalidateScene(roomId);
   emitSceneUpdate(roomId, sceneId);
-  redirect(scenesPath(roomId, "?saved=active"));
+  redirect(returnTo);
 }
 
 export async function updateSceneAction(formData: FormData): Promise<void> {
@@ -199,6 +207,7 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
   const roomId = clean(formData.get("roomId"), 64);
   const sceneId = clean(formData.get("sceneId"), 64);
   const unitRef = clean(formData.get("unitRef"), 128);
+  const returnTo = safeSceneReturnTo(roomId, formData.get("returnTo"), scenesPath(roomId, "?saved=token"));
   if ((await requireKp(roomId, session.user.id)) === false) redirect("/rooms/" + roomId + "/prepare");
 
   const scene = await prisma.scene.findUnique({
@@ -224,15 +233,28 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
       orderBy: { createdAt: "desc" },
       select: { id: true }
     });
-    if (game === null) redirect(scenesPath(roomId, "?error=no-game"));
-    const gameCharacter = await prisma.gameCharacter.findUnique({
-      where: { gameId_characterId: { gameId: game.id, characterId: id } },
-      include: { character: { select: { name: true } } }
-    });
-    if (gameCharacter === null) redirect(scenesPath(roomId, "?error=unit"));
-    name = gameCharacter.character.name;
-    characterId = id;
-    borderColor = "#38bdf8";
+    if (game !== null) {
+      const gameCharacter = await prisma.gameCharacter.findUnique({
+        where: { gameId_characterId: { gameId: game.id, characterId: id } },
+        include: { character: { select: { name: true } } }
+      });
+      if (gameCharacter !== null) {
+        name = gameCharacter.character.name;
+        characterId = id;
+        borderColor = "#38bdf8";
+      }
+    }
+    if (characterId === null) {
+      // 开局前也允许为已通过审核的角色放置 Token。
+      const entry = await prisma.roomCharacterEntry.findUnique({
+        where: { roomId_characterId: { roomId, characterId: id } },
+        include: { character: { select: { name: true } } }
+      });
+      if (entry === null || entry.status !== "APPROVED") redirect(scenesPath(roomId, "?error=unit"));
+      name = entry.character.name;
+      characterId = id;
+      borderColor = "#38bdf8";
+    }
   } else if (kind === "npc" && id !== undefined) {
     const card = await prisma.card.findUnique({ where: { id } });
     if (card === null || card.roomId !== roomId || card.scope !== "ROOM" || card.type !== "NPC") {
@@ -267,7 +289,7 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
 
   revalidateScene(roomId);
   emitSceneUpdate(roomId, sceneId);
-  redirect(scenesPath(roomId, "?saved=token"));
+  redirect(returnTo);
 }
 
 export async function deleteSceneTokenAction(formData: FormData): Promise<void> {
