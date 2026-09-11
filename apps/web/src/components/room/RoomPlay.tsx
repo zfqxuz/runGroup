@@ -12,6 +12,7 @@ import type {
   JoinAck,
   RoomAdvancementUpdate,
   RoomMemberView,
+  RoomRefresh,
   RoomStateUpdate,
   RoomUpdate
 } from "@/shared/socket";
@@ -90,6 +91,10 @@ export default function RoomPlay(props: Props) {
       if (payload.roomId === props.roomId) router.refresh();
     });
     socket.on("room:update", (payload: RoomUpdate) => {
+      if (cancelled) return;
+      if (payload.roomId === props.roomId) router.refresh();
+    });
+    socket.on("room:refresh", (payload: RoomRefresh) => {
       if (cancelled) return;
       if (payload.roomId === props.roomId) router.refresh();
     });

@@ -6,7 +6,7 @@ import { auth } from "@/server/auth";
 import { createCombatRecord, listSelectableUnits } from "@/server/combat/setup";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
-import { emitCombatStarted } from "@/server/realtime";
+import { emitCombatStarted, emitRoomRefresh } from "@/server/realtime";
 
 function errorUrl(roomId: string, path: string, message: string): string {
   return "/rooms/" + roomId + path + "?error=" + encodeURIComponent(message);
@@ -65,6 +65,7 @@ export async function startCombatAction(formData: FormData): Promise<void> {
       setup: { allies: requested, enemies: [] } as never
     }
   });
+  emitRoomRefresh(room.id, "combat-request");
   revalidatePath("/rooms/" + room.id);
   redirect("/rooms/" + room.id + "?combatRequest=submitted");
 }
@@ -90,6 +91,7 @@ export async function reviewCombatRequestAction(formData: FormData): Promise<voi
       where: { id: request.id },
       data: { status: "REJECTED", reviewedAt: new Date() }
     });
+    emitRoomRefresh(roomId, "combat-request");
     revalidatePath("/rooms/" + roomId);
     redirect("/rooms/" + roomId);
   }

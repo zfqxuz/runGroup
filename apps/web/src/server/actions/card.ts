@@ -5,6 +5,7 @@ import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { emitRoomRefresh } from "@/server/realtime";
 import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema } from "@/shared/card";
 
 export interface SaveCardInput {
@@ -173,7 +174,10 @@ export async function deleteCardAction(formData: FormData): Promise<void> {
   }
 
   await prisma.card.delete({ where: { id: card.id } });
-  if (card.roomId !== null) revalidatePath("/rooms/" + card.roomId);
+  if (card.roomId !== null) {
+    revalidatePath("/rooms/" + card.roomId);
+    emitRoomRefresh(card.roomId, "card-deleted");
+  }
 }
 
 /** 把自己的 COMPENDIUM 卡设置为共享模板，供其他用户复制。 */

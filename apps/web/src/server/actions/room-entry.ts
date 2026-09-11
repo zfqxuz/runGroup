@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { emitRoomRefresh } from "@/server/realtime";
 
 async function membershipOf(roomId: string, userId: string) {
   return prisma.roomMember.findUnique({
@@ -41,6 +42,7 @@ export async function submitCharacterToRoom(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/rooms/" + roomId);
+  emitRoomRefresh(roomId, "character-entry");
 }
 
 /** 把自己库里的一张卡带进房间，等待 KP 审核。 */
@@ -73,6 +75,7 @@ export async function submitCardToRoom(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/rooms/" + roomId);
+  emitRoomRefresh(roomId, "card-entry");
 }
 
 /** 撤回自己的申请。 */
@@ -92,6 +95,7 @@ export async function withdrawEntry(formData: FormData): Promise<void> {
     if (entry === null || entry.character.userId !== session.user.id) return;
     await prisma.roomCharacterEntry.delete({ where: { id: entry.id } });
     revalidatePath("/rooms/" + entry.roomId);
+    emitRoomRefresh(entry.roomId, "entry-withdrawn");
     return;
   }
 
@@ -102,6 +106,7 @@ export async function withdrawEntry(formData: FormData): Promise<void> {
   if (entry === null || entry.card.ownerId !== session.user.id) return;
   await prisma.roomCardEntry.delete({ where: { id: entry.id } });
   revalidatePath("/rooms/" + entry.roomId);
+  emitRoomRefresh(entry.roomId, "entry-withdrawn");
 }
 
 /** KP 审核。approve=1 通过，否则驳回。 */
@@ -128,6 +133,7 @@ export async function reviewEntry(formData: FormData): Promise<void> {
       data: { status, comment: comment.length === 0 ? null : comment, reviewedAt }
     });
     revalidatePath("/rooms/" + entry.roomId);
+    emitRoomRefresh(entry.roomId, "entry-reviewed");
     return;
   }
 
@@ -140,6 +146,7 @@ export async function reviewEntry(formData: FormData): Promise<void> {
     data: { status, comment: comment.length === 0 ? null : comment, reviewedAt }
   });
   revalidatePath("/rooms/" + entry.roomId);
+  emitRoomRefresh(entry.roomId, "entry-reviewed");
 }
 
 /** KP 批量审核卡牌带入申请。 */
@@ -182,4 +189,5 @@ export async function reviewCardEntries(formData: FormData): Promise<void> {
   });
 
   revalidatePath("/rooms/" + roomId);
+  emitRoomRefresh(roomId, "entries-reviewed");
 }

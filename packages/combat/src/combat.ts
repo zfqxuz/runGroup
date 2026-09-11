@@ -262,8 +262,17 @@ export function advanceToNextEvent(
 
   const alive = state.participants.filter((p) => !p.defeated);
   const plan = schedule(alive, state.tickMs);
-  if (!Number.isFinite(plan.ticks) || plan.ticks <= 0) {
+  if (!Number.isFinite(plan.ticks)) {
     return { ticks: 0, ms: 0, readyIds: [] };
+  }
+  if (plan.ticks <= 0) {
+    // 防御：行动消耗为 0 或 ATB 溢出时会得到「ticks=0 且无人就绪」。
+    // 此时至少推进 1 tick，让溢出者进入就绪，避免永久停在 ATB_CHARGING。
+    const advanced = advanceTicks(alive, 1);
+    state.tick += 1;
+    expireTimedEffects(pack, state, 1);
+    state.phase = readyParticipants(state).length > 0 ? "AWAITING_ACTION" : "ATB_CHARGING";
+    return { ticks: 1, ms: state.tickMs, readyIds: advanced.map((participant) => participant.id) };
   }
 
   advanceTicks(alive, plan.ticks);

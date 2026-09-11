@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { computeDerived, PRESET_TIERS, RARITIES, type PresetCharacter } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { emitRoomRefresh } from "@/server/realtime";
 import { loadEffectivePack, type EffectivePack } from "@/server/rules/loader";
 import { NPC_ATTRIBUTE_KEYS, NpcStatsSchema, type NpcStats } from "@/shared/npc";
 
@@ -111,6 +112,7 @@ export async function createPresetNpcAction(formData: FormData): Promise<void> {
   });
   if (cardId === null) redirectError(roomId, "预设角色数据不合法");
   revalidatePath("/rooms/" + room.id);
+  emitRoomRefresh(room.id, "npc");
   redirect("/rooms/" + room.id);
 }
 
@@ -215,6 +217,7 @@ export async function createCustomNpcAction(formData: FormData): Promise<void> {
   });
   if (cardId === null) redirectError(roomId, "NPC 数据不合法");
   revalidatePath("/rooms/" + room.id);
+  emitRoomRefresh(room.id, "npc");
   redirect("/rooms/" + room.id);
 }
 
@@ -241,5 +244,6 @@ export async function setNpcVisibilityAction(formData: FormData): Promise<void> 
 
   await prisma.card.update({ where: { id: card.id }, data: { isPublic } });
   revalidatePath("/rooms/" + roomId);
+  emitRoomRefresh(roomId, "npc-visibility");
   redirect("/rooms/" + roomId);
 }

@@ -51,6 +51,10 @@ export const COC7_BASELINE: RulePackInput = {
     max: "100",
     speed: "2 + dex / 10",
     actionCost: {
+      // COC7 默认也支持 ATB 房间；攻击 / 施法必须有消耗，
+      // 否则 ATB 溢出后会出现「未就绪但已满槽」并永久卡住。
+      DANMAKU: "40",
+      SPELLCARD: "60",
       DEFEND: "30",
       DODGE: "20",
       COUNTER: "50",

@@ -9,7 +9,7 @@ import { ensureModuleRevision } from "@/server/modules/revision";
 import { applyMagicRulesToRoom, disableMagicRulesInRoom } from "@/server/modules/magic";
 import { applyAdvancement, parseAdvancementRows } from "@/server/game/advancement";
 import { resolveGameGrowthChecks } from "@/server/game/growth";
-import { emitAdvancementUpdate, emitRoomUpdate } from "@/server/realtime";
+import { emitAdvancementUpdate, emitRoomRefresh, emitRoomUpdate } from "@/server/realtime";
 import { hasCombatRuntime, loadCombatRuntime } from "@/server/combat/runtime";
 import { saveCombatState } from "@/server/combat/setup";
 
@@ -148,6 +148,7 @@ export async function toggleReadyAction(formData: FormData): Promise<void> {
     data: { ready: membership.ready === false }
   });
   revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "ready");
   redirect("/rooms/" + roomId + "/prepare");
 }
 
@@ -179,6 +180,7 @@ export async function setActiveCharacterAction(formData: FormData): Promise<void
 
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "active-character");
   redirect("/rooms/" + roomId + "/prepare");
 }
 
@@ -196,6 +198,7 @@ export async function setCharacterVisibilityAction(formData: FormData): Promise<
   await prisma.room.update({ where: { id: roomId }, data: { characterVisibility } });
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "visibility");
   const inLobby = membership.room.status === "LOBBY" || membership.room.status === "PAUSED";
   redirect(inLobby ? "/rooms/" + roomId + "/prepare?settings=visibility" : "/rooms/" + roomId);
 }
@@ -215,6 +218,7 @@ export async function setRoomMagicEnabledAction(formData: FormData): Promise<voi
   else await disableMagicRulesInRoom(roomId);
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "magic");
   const inLobby = membership.room.status === "LOBBY" || membership.room.status === "PAUSED";
   redirect(inLobby ? "/rooms/" + roomId + "/prepare?settings=magic" : "/rooms/" + roomId);
 }
@@ -431,6 +435,7 @@ export async function selectRoomModuleAction(formData: FormData): Promise<void> 
     if (applied === 0) await prisma.room.update({ where: { id: roomId }, data: { magicEnabled: false } });
   }
   revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "module");
   redirect("/rooms/" + roomId + "/prepare?module=selected");
 }
 

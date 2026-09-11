@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { emitRoomRefresh } from "@/server/realtime";
 
 function clean(value: FormDataEntryValue | null, maxLength: number): string {
   return String(value ?? "").trim().slice(0, maxLength);
@@ -21,6 +22,7 @@ async function requireMembership(roomId: string, userId: string): Promise<{ role
 function revalidateRoom(roomId: string): void {
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "room-info");
 }
 
 export async function createClueAction(formData: FormData): Promise<void> {

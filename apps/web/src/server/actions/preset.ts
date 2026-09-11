@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { emitRoomRefresh } from "@/server/realtime";
 import { applyModulePresetToRoom } from "@/server/modules/materialize";
 
 function clean(value: FormDataEntryValue | null, maxLength: number): string {
@@ -36,6 +37,7 @@ export async function applyModulePresetAction(formData: FormData): Promise<void>
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
   revalidatePath("/rooms/" + roomId + "/scenes");
+  emitRoomRefresh(roomId, "preset-applied");
 
   const counts = result.counts;
   if (counts === undefined) {

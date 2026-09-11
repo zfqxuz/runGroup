@@ -53,3 +53,8 @@ export function emitSceneMapUpdate(roomId: string, sceneId: string, map: SceneMa
 export function emitSceneFogUpdate(roomId: string, sceneId: string, fogRevealed: readonly string[]): void {
   getSocketServer()?.to(roomChannel(roomId)).emit("scene:fog:updated", { roomId, sceneId, fogRevealed });
 }
+
+/** 房间内任意可见状态变化：通知所有在线成员刷新服务端组件。 */
+export function emitRoomRefresh(roomId: string, reason = "update"): void {
+  getSocketServer()?.to(roomChannel(roomId)).emit("room:refresh", { roomId, reason });
+}

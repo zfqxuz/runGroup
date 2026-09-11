@@ -974,3 +974,52 @@ DEEPSEEK_MODEL="deepseek-flash"
 - `npm run verify:ai-import`：PASS，且 `attempts=1`（修复前经常 2-3 次）。
 - 公网异步导入（同一素材）：POST 202 → 轮询进度 → DONE，module 正确落库，无截断。
 - `npm run typecheck` PASS；生产构建与部署已更新。
+
+## 28. 实时同步与 ATB 多轮卡死修复（本轮）
+
+### Bug 1：KP 操作不同步到 PL
+- 现象：KP 审核带入、准备、应用预设、改房间配置、发线索 / 笔记、创建 / 公开 NPC、发起战斗等操作，PL 端不会自动更新，需要手动刷新。
+- 根因：这些 server action 只调了 `revalidatePath`，没有向 Socket 房间广播；而准备页也没有任何 Socket 客户端，KP↔PL 的刷新信号无人接收。
+- 修复：
+  - `server/realtime.ts` 新增 `emitRoomRefresh(roomId, reason)`，统一广播 `room:refresh`。
+  - `RoomPlay` 增加 `room:refresh` 监听；新增准备页探针组件 `RoomRealtimeRefresh`，订阅 `room:refresh / room:update / room:state:update / room:advancement:update / combat:started / combat:ended / scene:updated` 并 `router.refresh()`。
+  - 为以下动作补发 `emitRoomRefresh`：
+    - 准备 / 当前角色 / 可见性 / 魔法规则 / 团本选择（`actions/room.ts`）
+    - 角色 / 卡牌带入申请与审核（`actions/room-entry.ts`）
+    - NPC 创建与公开（`actions/npc.ts`）
+    - 线索 / 笔记（`actions/room-info.ts`）
+    - 应用团本预设（`actions/preset.ts`）
+    - 战斗申请提交 / 驳回（`actions/combat.ts`）
+    - 删除房间 NPC 卡（`actions/card.ts`）
+- 结果：KP 与 PL 在准备页 / 跑团页 / 战斗页的相互操作都会触发对方刷新；开局、战斗开始等已存在的 `room:update / combat:started` 广播也统一被准备页接收。
+
+### Bug 2：战斗只打一轮就卡死
+- 现象：ATB 房间发起战斗、第一轮攻击后进入 `ATB_CHARGING`，双方永远不再就绪。
+- 根因：COC7 内置包的 `atb.actionCost` 缺少 `DANMAKU / SPELLCARD`：
+  - COC7 攻击实际结算为 0 ATB 消耗；
+  - ATB 溢出值（本次 107 > max 100）在 `isReady=false` 后成为「未就绪但已满槽」；
+  - `schedule` 对其返回 `ticks <= 0` 且空就绪，`advanceToNextEvent` 直接 return，状态永久停在 CHARGING。
+- 修复：
+  - `coc7-baseline` 补齐 `DANMAKU: "40"`、`SPELLCARD: "60"`。
+  - `packages/combat/src/combat.ts` 的 `advanceToNextEvent` 增加防御：当 `ticks <= 0` 且无人就绪时至少推进 1 tick，避免自定义 / 旧规则包再触发同类死锁。
+  - 新增 2 个回归 unit test（零消耗溢出、COC7 行动消耗）。
+- 结果：ATB 攻击可连续推进到第 4 轮；顺序制可连续推进到第 3 轮。
+
+### 新增 E2E
+- `npm run verify:realtime-sync`：
+  - KP 建房（真实 `/rooms/new` action + 预选现有团本）
+  - PL 带入角色 → KP 审核（PL socket 收到 refresh）
+  - PL 准备 → KP 收到 refresh
+  - KP 应用团本预设 → PL 收到 refresh
+  - KP 准备 / 开局 → PL 收到 refresh / room:update PLAYING
+  - KP 发起战斗 → PL 收到 combat:started
+- `npm run verify:combat-rounds`：
+  - ATB：攻击 + 应对，连续推进 ≥ 4 轮；
+  - 顺序制：攻击 + 应对，连续推进 ≥ 3 轮；
+  - 双方 socket 都收到 `combat:update`。
+- 使用现成团本《鬼屋》、`bdmin`（KP）与 `player`（玩家）实际跑通上述流程；`player` 账号已创建（密码见交付说明），`bdmin` 原密码未改动。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（146 tests：formula 48 / rules 61 / combat 37）。
+- 生产构建与本地 3100 部署已更新。

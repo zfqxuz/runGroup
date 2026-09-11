@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
+import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import {
   selectRoomModuleAction,
@@ -241,6 +242,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
+      <RoomRealtimeRefresh roomId={room.id} />
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link href="/" className="text-xs text-white/40 transition hover:text-white/70">

@@ -97,6 +97,11 @@ export interface CombatUpdate {
 export interface CombatJoinAck extends Ack {
   readonly view?: CombatView;
 }
+export interface RoomRefresh {
+  readonly roomId: string;
+  readonly reason?: string;
+}
+
 export interface RoomUpdate {
   readonly roomId: string;
   readonly status: "LOBBY" | "PLAYING" | "PAUSED" | "COMBAT" | "ENDED";

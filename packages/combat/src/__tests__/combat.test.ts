@@ -5,6 +5,7 @@ import {
   computeAtbMax,
   computeBaseSpeed,
   computeDerived,
+  resolveActionCost,
   resolveRulePack,
   type AttributeSet
 } from "@touhou/rules";
@@ -21,6 +22,7 @@ import {
 } from "../index";
 
 const touhou = compileParsedRulePack(resolveRulePack("touhou-ext", builtinRegistry()));
+const coc7 = compileParsedRulePack(resolveRulePack("coc7-baseline", builtinRegistry()));
 
 const attrs: AttributeSet = {
   str: 50, con: 50, siz: 60, dex: 55,
@@ -326,5 +328,25 @@ describe("魔法施放", () => {
     expect(caster.mp).toBe(mpBefore - 3);
     expect(target.hp).toBeLessThan(target.maxHp);
     expect(state.log.some((entry) => entry.text.includes("火球"))).toBe(true);
+  });
+});
+
+describe("ATB 防御性推进", () => {
+  it("行动消耗为 0 时不会把 ATB 卡死在 CHARGING", () => {
+    const { state, a } = makeCombat();
+    // 模拟旧行为：行动消耗 0，ATB 溢出但 isReady 被清掉。
+    state.phase = "ATB_CHARGING";
+    a.isReady = false;
+    a.atbValue = a.atbMax + 9000;
+    const result = advanceToNextEvent(touhou, state);
+    expect(result.ticks).toBeGreaterThan(0);
+    expect(a.isReady).toBe(true);
+    expect(state.phase).toBe("AWAITING_ACTION");
+  });
+
+  it("COC7 的攻击 / 施法行动有 ATB 消耗", () => {
+    expect(resolveActionCost(coc7, "DANMAKU", { dex: 50 })).toBeGreaterThan(0);
+    expect(resolveActionCost(coc7, "SPELLCARD", { dex: 50 })).toBeGreaterThan(0);
+    expect(resolveActionCost(coc7, "PASS", { dex: 50 })).toBeGreaterThan(0);
   });
 });
