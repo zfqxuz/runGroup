@@ -322,3 +322,53 @@ export async function moveSceneTokenAction(formData: FormData): Promise<void> {
   revalidatePath("/rooms/" + roomId);
   redirect("/rooms/" + roomId + "?scene-token-moved=1");
 }
+
+export async function updateSceneTokenAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const tokenId = clean(formData.get("tokenId"), 64);
+  const token = await prisma.token.findUnique({
+    where: { id: tokenId },
+    include: { map: { select: { scene: { select: { roomId: true } } } }, character: { select: { userId: true } } }
+  });
+  if (token === null || token.map.scene.roomId !== roomId) redirect(scenesPath(roomId, "?error=token"));
+
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  const isKP = membership?.role === "KP";
+  const canEdit = isKP || (token.character !== null && token.character.userId === session.user.id);
+  if (canEdit === false) redirect(scenesPath(roomId, "?error=permission"));
+
+  const name = clean(formData.get("name"), 120) || token.name;
+  const borderColor = clean(formData.get("borderColor"), 20) || token.borderColor;
+  const size = Math.max(0.5, Math.min(4, numberOr(formData.get("size"), token.size)));
+  const rotation = numberOr(formData.get("rotation"), token.rotation);
+  const showName = boolOf(formData.get("showName"));
+  const showHpBar = boolOf(formData.get("showHpBar"));
+
+  await prisma.token.update({
+    where: { id: tokenId },
+    data: {
+      name,
+      borderColor,
+      size,
+      rotation,
+      showName,
+      showHpBar,
+      ...(isKP
+        ? {
+            isVisible: boolOf(formData.get("isVisible")),
+            isLocked: boolOf(formData.get("isLocked"))
+          }
+        : {})
+    }
+  });
+
+  const updated = await loadSceneTokenView(tokenId);
+  if (updated !== null) emitSceneTokenUpdate(roomId, updated.token);
+  revalidateScene(roomId);
+  redirect(scenesPath(roomId, "?saved=token-updated"));
+}

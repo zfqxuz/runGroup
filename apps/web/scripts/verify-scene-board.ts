@@ -201,6 +201,24 @@ async function main(): Promise<void> {
     const token = await prisma.token.findFirst({ where: { mapId: scene?.map?.id ?? "" } });
     ensure(token !== null, "应创建角色 Token");
 
+    const pageAfterToken = await call(kpJar, scenesPath);
+    const updateTokenForm = new FormData();
+    updateTokenForm.set(extractActionFieldAround(pageAfterToken.text, "保存 Token"), "");
+    updateTokenForm.set("roomId", room.id);
+    updateTokenForm.set("tokenId", token?.id ?? "");
+    updateTokenForm.set("name", "E2E 改名 Token");
+    updateTokenForm.set("borderColor", "#ff00ff");
+    updateTokenForm.set("size", "1.5");
+    updateTokenForm.set("rotation", "30");
+    updateTokenForm.set("showName", "1");
+    updateTokenForm.set("showHpBar", "0");
+    updateTokenForm.set("isVisible", "1");
+    await submitAction(kpJar, scenesPath, updateTokenForm);
+    const updatedToken = await prisma.token.findUnique({ where: { id: token?.id ?? "" } });
+    expectEqual(updatedToken?.name, "E2E 改名 Token", "Token 名称应更新");
+    expectEqual(updatedToken?.size, 1.5, "Token 尺寸应更新");
+    expectEqual(updatedToken?.rotation, 30, "Token 旋转应更新");
+
     const kpTickets = await call(kpJar, "/api/socket-ticket", { method: "POST" });
     const playerTickets = await call(playerJar, "/api/socket-ticket", { method: "POST" });
     const kpT = JSON.parse(kpTickets.text).ticket as string;

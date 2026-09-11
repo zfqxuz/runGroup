@@ -7,7 +7,8 @@ import {
   createSceneTokenAction,
   deleteSceneAction,
   deleteSceneTokenAction,
-  updateSceneAction
+  updateSceneAction,
+  updateSceneTokenAction
 } from "@/server/actions/scene";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -279,21 +280,85 @@ export default async function SceneManagementPage({
 
           {scene.map === null || scene.map.tokens.length === 0 ? null : (
             <div className="mt-4 border-t border-white/10 pt-4">
-              <p className="text-xs text-white/50">Token 列表（{scene.map.tokens.length}）</p>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <p className="text-xs text-white/50">Token 管理（{scene.map.tokens.length}）</p>
+              <div className="mt-3 grid gap-3 lg:grid-cols-2">
                 {scene.map.tokens.map((token) => {
-                  const canDelete = isKP || token.character?.userId === session.user.id;
+                  const canEdit = isKP || token.character?.userId === session.user.id;
+                  const canDelete = canEdit;
                   return (
-                    <div key={token.id} className="flex items-center gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-                      <span className="text-xs text-white/70">{token.name}</span>
-                      <span className="text-[10px] text-white/30">{Math.round(token.x)},{Math.round(token.y)}</span>
-                      {canDelete ? (
-                        <form action={deleteSceneTokenAction}>
-                          <input type="hidden" name="roomId" value={room.id} />
-                          <input type="hidden" name="tokenId" value={token.id} />
-                          <button type="submit" className="rounded border border-red-400/30 px-1.5 py-0.5 text-[10px] text-red-300 transition hover:bg-red-400/10">删除</button>
-                        </form>
-                      ) : null}
+                    <div key={token.id} className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm text-white/80">{token.name}</p>
+                          <p className="mt-0.5 text-[10px] text-white/30">
+                            {Math.round(token.x)},{Math.round(token.y)} · {token.character === null ? "NPC" : "PC"}
+                          </p>
+                        </div>
+                        {canDelete ? (
+                          <form action={deleteSceneTokenAction}>
+                            <input type="hidden" name="roomId" value={room.id} />
+                            <input type="hidden" name="tokenId" value={token.id} />
+                            <button type="submit" className="rounded border border-red-400/30 px-2 py-1 text-[10px] text-red-300 transition hover:bg-red-400/10">删除</button>
+                          </form>
+                        ) : null}
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap items-start gap-3">
+                        {canEdit ? (
+                          <ImageUpload kind="TOKEN" targetId={token.id} currentUrl={token.asset?.url ?? null} label="上传 Token 图" shape="square" />
+                        ) : token.asset === null ? (
+                          <span className="flex h-20 w-20 items-center justify-center rounded-lg border border-white/10 text-[10px] text-white/25">无图</span>
+                        ) : (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={token.asset.url} alt="" className="h-20 w-20 rounded-lg border border-white/10 object-cover" />
+                        )}
+
+                        {canEdit ? (
+                          <form action={updateSceneTokenAction} className="grid min-w-[220px] flex-1 gap-2 sm:grid-cols-2">
+                            <input type="hidden" name="roomId" value={room.id} />
+                            <input type="hidden" name="tokenId" value={token.id} />
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[10px] text-white/40">名称</span>
+                              <input name="name" defaultValue={token.name} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs outline-none focus:border-sakura-500" />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[10px] text-white/40">边框色</span>
+                              <input name="borderColor" type="color" defaultValue={token.borderColor} className="h-7 w-full rounded border border-white/15 bg-ink-900 px-1" />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[10px] text-white/40">尺寸</span>
+                              <input name="size" type="number" step="0.1" min="0.5" max="4" defaultValue={token.size} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs outline-none focus:border-sakura-500" />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[10px] text-white/40">旋转</span>
+                              <input name="rotation" type="number" step="1" defaultValue={token.rotation} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs outline-none focus:border-sakura-500" />
+                            </label>
+                            <label className="flex items-center gap-2 text-[10px] text-white/55">
+                              <input type="checkbox" name="showName" value="1" defaultChecked={token.showName} className="accent-sakura-500" />
+                              显示名称
+                            </label>
+                            <label className="flex items-center gap-2 text-[10px] text-white/55">
+                              <input type="checkbox" name="showHpBar" value="1" defaultChecked={token.showHpBar} className="accent-sakura-500" />
+                              显示 HP 条
+                            </label>
+                            {isKP ? (
+                              <>
+                                <label className="flex items-center gap-2 text-[10px] text-white/55">
+                                  <input type="checkbox" name="isVisible" value="1" defaultChecked={token.isVisible} className="accent-sakura-500" />
+                                  可见
+                                </label>
+                                <label className="flex items-center gap-2 text-[10px] text-white/55">
+                                  <input type="checkbox" name="isLocked" value="1" defaultChecked={token.isLocked} className="accent-sakura-500" />
+                                  锁定
+                                </label>
+                              </>
+                            ) : null}
+                            <div className="sm:col-span-2">
+                              <button type="submit" className="rounded bg-sakura-500 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-sakura-400">保存 Token</button>
+                            </div>
+                          </form>
+                        ) : null}
+                      </div>
                     </div>
                   );
                 })}

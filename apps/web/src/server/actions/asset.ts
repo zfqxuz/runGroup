@@ -5,7 +5,7 @@ import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
-export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART" | "SCENE_BG" | "MAP";
+export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART" | "SCENE_BG" | "MAP" | "TOKEN";
 
 export interface AttachInput {
   readonly kind: AttachKind;
@@ -38,6 +38,27 @@ export async function attachAssetAction(input: AttachInput): Promise<AttachResul
       data: { imageUrl: asset.url, thumbnailUrl: asset.thumbnailUrl }
     });
     revalidatePath("/cards");
+    return { ok: true, url: asset.url };
+  }
+
+  if (input.kind === "TOKEN") {
+    const token = await prisma.token.findUnique({
+      where: { id: input.targetId },
+      select: { id: true, assetId: true, character: { select: { userId: true } }, map: { select: { scene: { select: { roomId: true } } } } }
+    });
+    if (token === null) return { ok: false, error: "Token 不存在" };
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId: token.map.scene.roomId, userId: session.user.id } },
+      select: { role: true }
+    });
+    const canEdit = membership?.role === "KP" || (token.character !== null && token.character.userId === session.user.id);
+    if (canEdit === false) return { ok: false, error: "你不能修改这个 Token" };
+    await prisma.token.update({ where: { id: token.id }, data: { assetId: asset.id } });
+    if (token.assetId !== null && token.assetId !== asset.id) {
+      await deleteAssetIfOrphan(token.assetId);
+    }
+    revalidatePath("/rooms/" + token.map.scene.roomId + "/scenes");
+    revalidatePath("/rooms/" + token.map.scene.roomId);
     return { ok: true, url: asset.url };
   }
 

@@ -565,6 +565,7 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
   - 编辑地图宽高、格子大小、格子类型、背景色、初始 X/Y/缩放、显示网格 / 迷雾开关。
   - 上传场景背景与地图背景。
   - 从本局 GameCharacter / 本房 NPC 卡添加 Token。
+  - 管理 Token：上传 Token 图、改名、边框色、尺寸、旋转、显示名称 / HP 条，KP 可切换可见与锁定。
   - 删除 Token / 删除场景。
 - 跑团页新增 `SceneBoard`：
   - 渲染当前激活场景的地图、背景、网格、迷雾遮罩和 Token。
@@ -581,7 +582,7 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 ### 验证
 - `npm run typecheck` PASS。
 - `npm test` PASS。
-- 新增 `npm run verify:scene-board`：创建场景 / 添加 Token / 玩家 Socket 拖动 / KP 实时收到广播 PASS。
+- 新增 `npm run verify:scene-board`：创建场景 / 添加 Token / 编辑 Token / 玩家 Socket 拖动 / KP 实时收到广播 PASS。
 - 全量 E2E 13 项在 `http://localhost:3100` PASS。
 
 ### 后续 P2-1 增量
@@ -589,5 +590,4 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - 战争迷雾实际操作（探索区域 / 手动揭示）。
 - 墙体、灯光、视线遮挡。
 - 地图图层与多背景切换。
-- Token 图片上传 / 旋转 / 缩放 / 右键菜单。
 - 场景与团本结构化块的自动绑定。
