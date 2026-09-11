@@ -183,3 +183,45 @@ export async function applyAdvancement(
     data: { characterId, gameId, kind, target, delta, note }
   });
 }
+
+export interface AdvancementSummary {
+  readonly attribute: Record<string, number>;
+  readonly skill: Record<string, number>;
+  readonly san: number;
+  readonly counts: Record<AdvancementKind, number>;
+  readonly total: number;
+}
+
+export interface SummarizableAdvancement {
+  readonly kind: string;
+  readonly target: string | null;
+  readonly delta: number | null;
+}
+
+export function summarizeAdvancements(rows: readonly SummarizableAdvancement[]): AdvancementSummary {
+  const attribute: Record<string, number> = {};
+  const skill: Record<string, number> = {};
+  const counts: Record<AdvancementKind, number> = {
+    ATTRIBUTE: 0,
+    SKILL: 0,
+    SAN: 0,
+    ITEM: 0,
+    RELATIONSHIP: 0,
+    OTHER: 0
+  };
+  let san = 0;
+
+  for (const row of rows) {
+    if (isAdvancementKind(row.kind)) counts[row.kind] += 1;
+    if (row.delta === null) continue;
+    if (row.kind === "ATTRIBUTE" && row.target !== null) {
+      attribute[row.target] = (attribute[row.target] ?? 0) + row.delta;
+    } else if (row.kind === "SKILL" && row.target !== null) {
+      skill[row.target] = (skill[row.target] ?? 0) + row.delta;
+    } else if (row.kind === "SAN") {
+      san += row.delta;
+    }
+  }
+
+  return { attribute, skill, san, counts, total: rows.length };
+}

@@ -13,6 +13,7 @@ import ImageUpload from "@/components/upload/ImageUpload";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { summarizeAdvancements } from "@/server/game/advancement";
 import { advancementView } from "@/server/game/view";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
@@ -88,6 +89,19 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     RELATIONSHIP: "关系",
     OTHER: "其他"
   };
+  const growth = summarizeAdvancements(advancementRows);
+  const growthGroups = new Map<string, { title: string; rows: typeof advancementRows }>();
+  for (const item of advancementRows) {
+    const key = item.gameId ?? "manual";
+    const group = growthGroups.get(key) ?? { title: item.gameTitle ?? "手动 / 其他成长", rows: [] };
+    group.rows.push(item);
+    growthGroups.set(key, group);
+  }
+  function growthLabel(kind: string, target: string | null): string {
+    if (target === null) return "";
+    if (kind === "ATTRIBUTE") return LABELS[target] ?? target;
+    return target;
+  }
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-6 py-12">
@@ -148,18 +162,31 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">属性</h2>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          {ATTRIBUTE_KEYS.map((key) => (
-            <div key={key} className="flex items-center justify-between rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-              <span className="text-xs text-white/50">{LABELS[key]}</span>
-              <span className="font-mono text-sm text-white/80">{effective[key]}</span>
-            </div>
-          ))}
+          {ATTRIBUTE_KEYS.map((key) => {
+            const bonus = growth.attribute[key] ?? 0;
+            return (
+              <div key={key} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+                <span className="text-xs text-white/50">{LABELS[key]}</span>
+                <span className="flex items-center gap-2">
+                  {bonus === 0 ? null : (
+                    <span className="rounded border border-sakura-500/30 px-1.5 py-0.5 font-mono text-[10px] text-sakura-300">
+                      成长 {bonus > 0 ? "+" + bonus : bonus}
+                    </span>
+                  )}
+                  <span className="font-mono text-sm text-white/80">{effective[key]}</span>
+                </span>
+              </div>
+            );
+          })}
         </div>
         <div className="mt-3 grid gap-2 sm:grid-cols-4">
           {(["maxHp", "maxMp", "maxSan", "maxDp"] as const).map((key) => (
             <div key={key} className="rounded-lg border border-spirit-400/20 bg-spirit-400/5 px-3 py-2 text-center">
               <p className="text-[11px] text-white/40">{key}</p>
               <p className="text-lg font-semibold text-spirit-400">{outcome.derived[key]}</p>
+              {key === "maxSan" && growth.san !== 0 ? (
+                <p className="mt-0.5 text-[10px] text-sakura-300">成长 {growth.san > 0 ? "+" + growth.san : growth.san}</p>
+              ) : null}
             </div>
           ))}
         </div>
@@ -171,12 +198,22 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
           <p className="mt-3 text-xs text-white/35">未分配技能</p>
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-3">
-            {skillRows.map((row) => (
-              <div key={row.id} className="flex items-center justify-between rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-                <span className="truncate text-xs text-white/60">{row.name}</span>
-                <span className="font-mono text-sm text-white/80">{row.value}</span>
-              </div>
-            ))}
+            {skillRows.map((row) => {
+              const bonus = growth.skill[row.id] ?? 0;
+              return (
+                <div key={row.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+                  <span className="truncate text-xs text-white/60">{row.name}</span>
+                  <span className="flex items-center gap-2">
+                    {bonus === 0 ? null : (
+                      <span className="rounded border border-sakura-500/30 px-1.5 py-0.5 font-mono text-[10px] text-sakura-300">
+                        成长 {bonus > 0 ? "+" + bonus : bonus}
+                      </span>
+                    )}
+                    <span className="font-mono text-sm text-white/80">{row.value}</span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -186,34 +223,68 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
         {advancementRows.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">还没有成长记录</p>
         ) : (
-          <ul className="mt-4 flex flex-col divide-y divide-white/5">
-            {advancementRows.map((item) => (
-              <li key={item.id} className="py-2.5 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="font-medium text-white/75">{advancementKindLabels[item.kind] ?? item.kind}</span>
-                  {item.target === null ? null : (
-                    <span className="rounded border border-spirit-400/25 px-1.5 py-0.5 font-mono text-[10px] text-spirit-200">
-                      {item.target}
+          <>
+            <div className="mt-4 grid gap-2 sm:grid-cols-4">
+              <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+                <p className="text-[10px] text-white/35">总记录</p>
+                <p className="mt-0.5 font-mono text-sm text-white/80">{growth.total}</p>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+                <p className="text-[10px] text-white/35">属性变化</p>
+                <p className="mt-0.5 font-mono text-sm text-white/80">{Object.keys(growth.attribute).length}</p>
+              </div>
+              <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+                <p className="text-[10px] text-white/35">技能提升</p>
+                <p className="mt-0.5 font-mono text-sm text-white/80">{Object.keys(growth.skill).length}</p>
+              </div>
+              <div className="rounded-lg border border-sakura-500/20 bg-sakura-500/5 px-3 py-2">
+                <p className="text-[10px] text-sakura-300/70">SAN 累计</p>
+                <p className="mt-0.5 font-mono text-sm text-sakura-300">{growth.san > 0 ? "+" + growth.san : growth.san}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-col gap-2">
+              {[...growthGroups.entries()].map(([key, group]) => (
+                <details key={key} open={group.rows.length <= 4} className="rounded-lg border border-white/10 bg-ink-900/50">
+                  <summary className="flex cursor-pointer flex-wrap items-center justify-between gap-2 px-3 py-2 text-xs text-white/70">
+                    <span>
+                      {group.title}
+                      <span className="ml-2 text-[10px] text-white/35">{group.rows.length} 条</span>
                     </span>
-                  )}
-                  {item.delta === null ? null : (
-                    <span className="font-mono text-[11px] text-sakura-300">
-                      {item.delta > 0 ? "+" + item.delta : item.delta}
-                    </span>
-                  )}
-                  <span className="ml-auto text-[10px] text-white/30">
-                    {item.createdAt.slice(0, 10)}
-                  </span>
-                </div>
-                {item.note === null || item.note.length === 0 ? null : (
-                  <p className="mt-1 leading-relaxed text-white/50">{item.note}</p>
-                )}
-                {item.gameTitle === null ? null : (
-                  <p className="mt-0.5 text-[10px] text-white/30">来源：{item.gameTitle}</p>
-                )}
-              </li>
-            ))}
-          </ul>
+                    <span className="text-[10px] text-white/30">展开 / 收起</span>
+                  </summary>
+                  <ul className="flex flex-col divide-y divide-white/5 border-t border-white/5 px-3">
+                    {group.rows.map((item) => (
+                      <li key={item.id} className="py-2.5 text-xs">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-medium text-white/75">{advancementKindLabels[item.kind] ?? item.kind}</span>
+                          {item.target === null ? null : (
+                            <span className="rounded border border-spirit-400/25 px-1.5 py-0.5 font-mono text-[10px] text-spirit-200">
+                              {growthLabel(item.kind, item.target)}
+                            </span>
+                          )}
+                          {item.delta === null ? null : (
+                            <span className="font-mono text-[11px] text-sakura-300">
+                              {item.delta > 0 ? "+" + item.delta : item.delta}
+                            </span>
+                          )}
+                          <span className="ml-auto text-[10px] text-white/30">
+                            {item.createdAt.slice(0, 10)}
+                          </span>
+                        </div>
+                        {item.note === null || item.note.length === 0 ? null : (
+                          <p className="mt-1 leading-relaxed text-white/50">{item.note}</p>
+                        )}
+                        {item.gameTitle === null ? null : (
+                          <p className="mt-0.5 text-[10px] text-white/30">来源：{item.gameTitle}</p>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ))}
+            </div>
+          </>
         )}
       </section>
 
