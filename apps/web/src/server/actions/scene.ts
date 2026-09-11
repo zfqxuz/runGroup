@@ -51,6 +51,10 @@ function safeSceneReturnTo(roomId: string, raw: FormDataEntryValue | null, fallb
   return fallback;
 }
 
+function withQuery(path: string, key: string, value: string): string {
+  return path + (path.includes("?") ? "&" : "?") + encodeURIComponent(key) + "=" + encodeURIComponent(value);
+}
+
 
 function revalidateScene(roomId: string): void {
   revalidatePath("/rooms/" + roomId);
@@ -265,6 +269,17 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
     borderColor = "#ef4444";
   } else {
     redirect(scenesPath(roomId, "?error=unit"));
+  }
+
+  const duplicateToken = await prisma.token.findFirst({
+    where: {
+      mapId: map.id,
+      ...(characterId !== null ? { characterId } : { cardId })
+    },
+    select: { id: true }
+  });
+  if (duplicateToken !== null) {
+    redirect(withQuery(returnTo, "error", "token-exists"));
   }
 
   const maxZ = await prisma.token.aggregate({ where: { mapId: map.id }, _max: { zIndex: true } });

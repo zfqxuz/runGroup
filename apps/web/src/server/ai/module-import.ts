@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
+import { extractImages, extractText, getDocumentProxy } from "unpdf";
 import * as XLSX from "xlsx";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { prisma } from "@/server/db/prisma";
@@ -32,9 +33,17 @@ export interface AiImportResult {
   readonly moduleId: string;
   readonly title: string;
   readonly model: string;
+  /** 本次导入专属的 AI 会话 id；每次导入都会重新生成，不复用旧上下文。 */
+  readonly sessionId: string;
   readonly attempts: number;
   readonly imagesUsed: number;
   readonly warnings: readonly AiImportWarning[];
+}
+
+interface ExtractedImage {
+  readonly filename: string;
+  readonly buffer: Buffer;
+  readonly mime: string;
 }
 
 interface ExtractedSource {
@@ -43,6 +52,7 @@ interface ExtractedSource {
   readonly text: string;
   readonly extension: string;
   readonly buffer: Buffer;
+  readonly embeddedImages?: readonly ExtractedImage[];
 }
 
 interface PreparedImage {
@@ -142,11 +152,48 @@ const TEXT_EXTENSIONS = new Set([
   "text"
 ]);
 
+const IMAGE_EXTENSIONS = new Set([
+  "png",
+  "jpg",
+  "jpeg",
+  "webp",
+  "gif",
+  "avif",
+  "bmp",
+  "tif",
+  "tiff",
+  "heic",
+  "heif",
+  "svg"
+]);
+
 function imageMime(buffer: Buffer): string {
   if (buffer.length > 8 && buffer[0] === 0x89 && buffer[1] === 0x50) return "image/png";
   if (buffer.length > 3 && buffer[0] === 0xff && buffer[1] === 0xd8) return "image/jpeg";
   if (buffer.length > 12 && buffer.subarray(8, 12).toString("ascii") === "WEBP") return "image/webp";
   if (buffer.length > 3 && buffer.subarray(0, 3).toString("ascii") === "GIF") return "image/gif";
+  if (buffer.length > 12 && buffer.subarray(4, 8).toString("ascii") === "ftyp") {
+    const brand = buffer.subarray(8, 12).toString("ascii");
+    if (["heic", "heix", "hevc", "hevx", "mif1", "msf1", "avif", "avis"].includes(brand)) return "image/heif";
+  }
+  if (buffer.length > 3 && buffer[0] === 0x49 && buffer[1] === 0x49 && buffer[2] === 0x2a) return "image/tiff";
+  if (buffer.length > 3 && buffer[0] === 0x4d && buffer[1] === 0x4d && buffer[2] === 0x00) return "image/tiff";
+  return "";
+}
+
+/** 除了常见魔数外，再交给 sharp 兜底识别 HEIC / AVIF / SVG / BMP / TIFF 等。 */
+async function detectImageMime(buffer: Buffer, extension: string): Promise<string> {
+  const direct = imageMime(buffer);
+  if (direct.length > 0) return direct;
+  if (IMAGE_EXTENSIONS.has(extension) === false) return "";
+  try {
+    const metadata = await sharp(buffer, { limitInputPixels: 4096 * 4096 }).metadata();
+    if (typeof metadata.format === "string" && metadata.format.length > 0) {
+      return metadata.format === "jpeg" ? "image/jpeg" : "image/" + metadata.format;
+    }
+  } catch {
+    // 识别失败按普通二进制文件处理
+  }
   return "";
 }
 
@@ -154,10 +201,81 @@ function imageMime(buffer: Buffer): string {
 async function compressForVision(buffer: Buffer): Promise<{ readonly buffer: Buffer; readonly mime: string }> {
   const normalized = await sharp(buffer, { limitInputPixels: 4096 * 4096 })
     .rotate()
+    .flatten({ background: "#ffffff" })
     .resize({ width: 1400, height: 1400, fit: "inside", withoutEnlargement: true })
     .jpeg({ quality: 82, mozjpeg: true })
     .toBuffer();
   return { buffer: normalized, mime: "image/jpeg" };
+}
+
+/**
+ * 解析 PDF 正文与内嵌图片。
+ * 扫描版 PDF 通常没有文字层，此时仍会把内嵌的大图取出来交给 vision 模型。
+ */
+async function readPdf(
+  buffer: Buffer,
+  filename: string,
+  warnings: AiImportWarning[]
+): Promise<{ readonly text: string; readonly images: readonly ExtractedImage[] }> {
+  const data = new Uint8Array(buffer);
+  let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | null = null;
+  try {
+    pdf = await getDocumentProxy(data);
+    const extracted = await extractText(pdf, { mergePages: true });
+    const text = Array.isArray(extracted.text) ? extracted.text.join("\n\n") : extracted.text;
+    const images: ExtractedImage[] = [];
+    if (extracted.totalPages > 0) {
+      for (let pageNumber = 1; pageNumber <= extracted.totalPages; pageNumber += 1) {
+        if (images.length >= MAX_IMAGES) {
+          warnings.push(warning(filename, "PDF 内嵌图片超过 " + MAX_IMAGES + " 张，超出部分已跳过"));
+          break;
+        }
+        let pageImages: Awaited<ReturnType<typeof extractImages>> = [];
+        try {
+          pageImages = await extractImages(pdf, pageNumber);
+        } catch {
+          continue;
+        }
+        for (let index = 0; index < pageImages.length; index += 1) {
+          const image = pageImages[index];
+          if (
+            image === undefined ||
+            !Number.isFinite(image.width) ||
+            !Number.isFinite(image.height) ||
+            image.width < 160 ||
+            image.height < 160
+          ) {
+            continue;
+          }
+          try {
+            const png = await sharp(Buffer.from(image.data), {
+              raw: {
+                width: image.width,
+                height: image.height,
+                channels: image.channels as 1 | 2 | 3 | 4
+              }
+            })
+              .png()
+              .toBuffer();
+            images.push({
+              filename: filename + "（第 " + pageNumber + " 页图 " + (index + 1) + "）",
+              buffer: png,
+              mime: "image/png"
+            });
+          } catch {
+            warnings.push(warning(filename, "PDF 第 " + pageNumber + " 页的图片无法转换，已跳过"));
+          }
+          if (images.length >= MAX_IMAGES) break;
+        }
+      }
+    }
+    return { text, images };
+  } catch (error) {
+    warnings.push(warning(filename, "PDF 解析失败：" + (error instanceof Error ? error.message : "未知错误")));
+    return { text: "", images: [] };
+  } finally {
+    if (pdf !== null) await pdf.loadingTask.destroy().catch(() => undefined);
+  }
 }
 
 async function extractSource(file: File, warnings: AiImportWarning[]): Promise<ExtractedSource | null> {
@@ -181,7 +299,8 @@ async function extractSource(file: File, warnings: AiImportWarning[]): Promise<E
     return { filename: file.name, kind: "XLSX", text: readSpreadsheet(buffer), extension, buffer };
   }
   if (extension === "pdf") {
-    return { filename: file.name, kind: "PDF", text: "", extension, buffer };
+    const parsed = await readPdf(buffer, file.name, warnings);
+    return { filename: file.name, kind: "PDF", text: parsed.text, extension, buffer, embeddedImages: parsed.images };
   }
   return { filename: file.name, kind: "BINARY", text: "", extension, buffer };
 }
@@ -195,7 +314,30 @@ export async function prepareSources(files: readonly File[], warnings: AiImportW
     const source = await extractSource(file, warnings);
     if (source === null) continue;
 
-    const mime = imageMime(source.buffer);
+    let embeddedImagesAdded = false;
+    if (source.embeddedImages !== undefined && source.embeddedImages.length > 0) {
+      for (const embedded of source.embeddedImages) {
+        if (images.length >= MAX_IMAGES) {
+          warnings.push(warning(file.name, "图片数量超过 " + MAX_IMAGES + " 张，PDF 内嵌图片超出部分已跳过"));
+          break;
+        }
+        try {
+          const compressed = await compressForVision(embedded.buffer);
+          images.push({
+            filename: embedded.filename,
+            relativePath: "assets/images/" + safeNameStem(embedded.filename) + ".png",
+            dataUrl: "data:" + compressed.mime + ";base64," + compressed.buffer.toString("base64"),
+            buffer: embedded.buffer,
+            mime: embedded.mime
+          });
+          embeddedImagesAdded = true;
+        } catch {
+          warnings.push(warning(embedded.filename, "PDF 内嵌图片压缩失败，已跳过"));
+        }
+      }
+    }
+
+    const mime = await detectImageMime(source.buffer, source.extension);
     if (mime.length > 0) {
       if (images.length >= MAX_IMAGES) {
         warnings.push(warning(file.name, "图片数量超过 " + MAX_IMAGES + " 张，已跳过"));
@@ -208,6 +350,11 @@ export async function prepareSources(files: readonly File[], warnings: AiImportW
         visionBuffer = compressed.buffer;
         visionMime = compressed.mime;
       } catch {
+        const directlySupported = mime === "image/png" || mime === "image/jpeg" || mime === "image/webp" || mime === "image/gif";
+        if (directlySupported === false) {
+          warnings.push(warning(file.name, "图片格式 " + mime + " 无法转换，已跳过"));
+          continue;
+        }
         warnings.push(warning(file.name, "图片压缩失败，将按原图发送给视觉模型"));
       }
       const relativePath = "assets/images/" + safeNameStem(file.name) + ".png";
@@ -223,7 +370,11 @@ export async function prepareSources(files: readonly File[], warnings: AiImportW
 
     let text = source.text.trim();
     if (text.length === 0) {
-      warnings.push(warning(file.name, kindHint(source.kind) + "没有提取到可用文字，已跳过内容整合"));
+      if (embeddedImagesAdded) {
+        warnings.push(warning(file.name, "PDF 未提取到文字，已改用内嵌图片交给视觉模型"));
+      } else {
+        warnings.push(warning(file.name, kindHint(source.kind) + "没有提取到可用文字，已跳过内容整合"));
+      }
       continue;
     }
     if (text.length > PER_FILE_CHARS) {
@@ -241,7 +392,7 @@ export async function prepareSources(files: readonly File[], warnings: AiImportW
 }
 
 function kindHint(kind: string): string {
-  if (kind === "PDF") return "PDF（当前仅保留文件元数据，未能抽取文字）";
+  if (kind === "PDF") return "PDF（未识别出文字，可能是扫描版，且没有可提取的内嵌图片）";
   if (kind === "BINARY") return "二进制文件";
   return kind;
 }
@@ -385,7 +536,9 @@ function materialPrompt(input: {
 }): string {
   const lines: string[] = [];
   lines.push("你是资深 TRPG 团本编辑。请把下列全部素材整合成一个可直接跑团的中文团本。");
+  lines.push("这是一次全新的独立导入任务，不要引用、假设或延续任何历史对话、此前生成过的团本或上次导入的设定。");
   lines.push("目标系统：" + input.hints.system + "；年代：" + input.hints.era + "。");
+  lines.push("必须严格以本次用户指定的目标系统与年代为准；图片 / PDF 中识别到的国家、城市、年代线索优先于模型默认设定。");
   if (input.hints.instructions.trim().length > 0) {
     lines.push("用户额外要求：" + input.hints.instructions.trim().slice(0, 2000));
   }
@@ -447,16 +600,34 @@ function jsonInstruction(): string {
   ].join("\n");
 }
 
-function repairPrompt(previous: string, errors: readonly string[]): string {
-  return [
-    "你上一条输出的团本 JSON 未通过标准校验（也可能是输出过长被截断），请重新生成完整 JSON。只返回 JSON，不要解释。",
-    "硬性要求：所有 14 个章节 key 必须存在，结构化字段必须齐全；JSON 必须完整闭合。",
+/**
+ * 重试时也不复用上一轮 assistant 上下文。
+ * 这里把上次输出当作“错误样本”放进一条全新的 user 消息里，
+ * 每次请求都只包含 system + user，等价于一个全新的单轮会话。
+ */
+function retryUserContent(
+  original: readonly DeepSeekContentPart[],
+  previous: string,
+  errors: readonly string[]
+): readonly DeepSeekContentPart[] {
+  const lines = [
+    "",
+    "【这是一次全新的独立会话】",
+    "不要延续、引用或假设任何上一轮助手回复；只把下面内容当作错误样本用于定位问题。",
+    "请只依据最初提供的素材，重新生成一个完整、全新的 JSON。",
+    "硬性要求：所有 14 个章节 key 必须存在，结构化字段必须齐全，JSON 必须完整闭合。",
     "如果内容过长，请压缩每章描述，优先保留章节标题与 structured 字段，总长度控制在约 8000 个中文字符以内。",
     "校验错误：",
-    ...errors.slice(0, 20).map((error) => "- " + error),
-    "上次输出片段（可能不完整，仅供对照，不要照抄、不要复述）：",
-    previous.slice(0, 12000)
-  ].join("\n");
+    ...errors.slice(0, 20).map((error) => "- " + error)
+  ];
+  if (previous.length > 0) {
+    lines.push(
+      "上次输出片段（可能不完整；仅用于定位缺失字段，禁止照抄、复述或续写）：",
+      previous.slice(0, 12000)
+    );
+  }
+  lines.push("只返回 JSON，不要解释、不要复述上文。");
+  return [...original, { type: "text", text: lines.join("\n") }];
 }
 
 interface AiGenerateState {
@@ -471,27 +642,30 @@ async function generateDraft(input: {
   readonly images: readonly PreparedImage[];
   readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly author: string; readonly model: string };
   readonly title: string;
+  readonly sessionId: string;
   readonly onProgress?: (message: string) => void;
 }): Promise<{ state: AiGenerateState; attempts: number; rawModels: string[] }> {
+  const sessionLabel = "AI 会话 " + input.sessionId.slice(0, 8);
   const userParts: DeepSeekContentPart[] = [{ type: "text", text: input.materialText + "\n\n" + jsonInstruction() }];
   for (const image of input.images) {
     userParts.push({ type: "image_url", image_url: { url: image.dataUrl } });
   }
+  const systemMessage: DeepSeekMessage = {
+    role: "system",
+    content: "你是严谨的中文 TRPG 团本编辑。每次调用都是完全独立的导入任务，不继承任何历史上下文；输出必须是合法 JSON，且严格遵守用户给定结构。"
+  };
   const messages: DeepSeekMessage[] = [
-    { role: "system", content: "你是严谨的中文 TRPG 团本编辑，输出必须是合法 JSON，且严格遵守用户给定结构。" },
+    systemMessage,
     { role: "user", content: userParts }
   ];
 
   const MAX_OUTPUT_TOKENS = 32768;
-  const RETRY_FALLBACK =
-    "你上一次输出因为过长被截断，没有形成完整 JSON。请重新生成完整 JSON：所有 14 个章节 key 必须存在，" +
-    "结构化字段必须齐全，JSON 必须完整闭合；每章内容精炼，总长度控制在约 8000 个中文字符以内。只返回 JSON。";
 
   let previousRaw = "";
   let lastErrors: readonly string[] = [];
   let truncated = false;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
-    input.onProgress?.("正在调用 DeepSeek（第 " + attempt + "/3 次）…");
+    input.onProgress?.(sessionLabel + "：正在调用 DeepSeek（第 " + attempt + "/3 次）…");
     let raw: string;
     try {
       if (attempt === 1) {
@@ -502,13 +676,15 @@ async function generateDraft(input: {
           temperature: 0.2
         });
       } else {
-        const retryMessages: DeepSeekMessage[] = previousRaw.length > 0
-          ? [
-              ...messages,
-              { role: "assistant", content: previousRaw.slice(0, 16000) },
-              { role: "user", content: repairPrompt(previousRaw, lastErrors) }
-            ]
-          : [...messages, { role: "user", content: RETRY_FALLBACK }];
+        // 重试也必须是一次全新的单轮会话：只发送 system + user，
+        // 不复用上一轮 assistant 消息，避免模型把上一次输出当成持续上下文续写。
+        const retryMessages: DeepSeekMessage[] = [
+          systemMessage,
+          {
+            role: "user",
+            content: retryUserContent(userParts, previousRaw, lastErrors)
+          }
+        ];
         raw = await chatDeepSeek(retryMessages, {
           model: input.hints.model,
           jsonMode: true,
@@ -520,7 +696,7 @@ async function generateDraft(input: {
       if (error instanceof DeepSeekTruncationError) {
         truncated = true;
         lastErrors = [error.message + "；请压缩每章内容，确保 JSON 完整闭合。"];
-        input.onProgress?.("输出被截断，正在压缩后重试…");
+        input.onProgress?.(sessionLabel + "：输出被截断，正在压缩后重试…");
         continue;
       }
       throw error;
@@ -589,6 +765,8 @@ export async function importModuleWithDeepSeek(input: {
 }): Promise<AiImportResult> {
   if (input.files.length === 0) throw new Error("请至少上传一个素材文件");
   if (input.files.length > MAX_FILES) throw new Error("单次最多上传 " + MAX_FILES + " 个文件");
+  const sessionId = randomUUID();
+  input.onProgress?.("已创建独立 AI 会话 " + sessionId.slice(0, 8) + "，本次导入不复用任何历史上下文");
   const warnings: AiImportWarning[] = [];
   const prepared = await prepareSources(input.files, warnings);
   if (prepared.sources.length === 0 && prepared.images.length === 0) {
@@ -596,9 +774,11 @@ export async function importModuleWithDeepSeek(input: {
   }
   input.onProgress?.("已解析 " + prepared.sources.length + " 个文本素材 / " + prepared.images.length + " 张图片");
 
-  const model = input.requestedModel.length > 0
-    ? input.requestedModel
-    : (DEEPSEEK_MODELS.find((item) => item.recommended)?.id ?? "deepseek-flash");
+  const fallbackModel = DEEPSEEK_MODELS.find((item) => item.recommended)?.id ?? "deepseek-flash";
+  const requestedModel = input.requestedModel.length > 0 ? input.requestedModel : fallbackModel;
+  const requestedModelInfo = DEEPSEEK_MODELS.find((item) => item.id === requestedModel);
+  const visionModel = DEEPSEEK_MODELS.find((item) => item.vision && item.recommended)?.id ?? fallbackModel;
+  let model = requestedModel;
   const system: "COC7" | "TOUHOU" =
     input.requestedSystem === "AUTO"
       ? (prepared.sources.some((source) => /东方|touhou|幻想乡/i.test(source.text)) ? "TOUHOU" : "COC7")
@@ -606,8 +786,12 @@ export async function importModuleWithDeepSeek(input: {
   const titleSource = prepared.sources[0]?.filename ?? prepared.images[0]?.filename ?? "AI 团本";
   const title = titleSource.replace(/\.[^.]+$/, "").slice(0, 80) || "AI 团本";
 
-  if (prepared.images.length > 0 && model === "deepseek-v4-pro") {
-    warnings.push({ filename: "全部图片", message: "当前模型 deepseek-v4-pro 不支持视觉，图片素材不会被识别；建议改用 deepseek-flash" });
+  if (prepared.images.length > 0 && requestedModelInfo?.vision === false) {
+    model = visionModel;
+    warnings.push({
+      filename: "全部图片",
+      message: "所选模型 " + requestedModel + " 不支持视觉，已自动改用 " + model + " 解析图片素材"
+    });
   }
 
   const generated = await generateDraft({
@@ -619,6 +803,7 @@ export async function importModuleWithDeepSeek(input: {
     images: prepared.images,
     hints: { system, era: input.requestedEra, author: input.author, model },
     title,
+    sessionId,
     onProgress: input.onProgress
   });
 
@@ -647,6 +832,7 @@ export async function importModuleWithDeepSeek(input: {
       } as never,
       metadata: {
         aiModel: model,
+        aiSessionId: sessionId,
         aiGeneratedAt: new Date().toISOString(),
         sourceFiles: input.files.map((file) => file.name).slice(0, 60),
         instructions: input.instructions
@@ -714,6 +900,7 @@ export async function importModuleWithDeepSeek(input: {
     moduleId: moduleRecord.id,
     title: generated.state.draft.frontMatter.title,
     model,
+    sessionId,
     attempts: generated.attempts,
     imagesUsed: prepared.images.length,
     warnings

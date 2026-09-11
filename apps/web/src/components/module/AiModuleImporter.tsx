@@ -16,6 +16,7 @@ interface ImportResult {
   readonly error?: string;
   readonly title?: string;
   readonly model?: string;
+  readonly sessionId?: string;
   readonly attempts?: number;
   readonly imagesUsed?: number;
   readonly warnings?: readonly { readonly filename: string; readonly message: string }[];
@@ -50,6 +51,9 @@ export default function AiModuleImporter(props: Props) {
         return;
       }
 
+      // 任务已建立并拿到独立 jobId，立刻清空上一次导入留下的文件与表单上下文，
+      // 避免下一次导入误带旧素材、旧年代或旧额外要求。
+      form.reset();
       const jobId = payload.jobId;
       setMessage("任务已创建，正在解析素材…");
       const startedAt = Date.now();
@@ -114,7 +118,7 @@ export default function AiModuleImporter(props: Props) {
             className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-900"
           />
           <span className="text-[10px] leading-4 text-white/30">
-            支持 md / txt / json / yaml / csv / docx / pptx / xlsx / pdf（PDF 目前只保留元信息）/ png / jpg / webp / gif；
+            支持 md / txt / json / yaml / csv / docx / pptx / xlsx / pdf（自动抽取正文与内嵌图片）/ png / jpg / webp / gif / avif / bmp / tiff / heic；
             单文件最大 25MB，最多 40 个。
           </span>
         </label>

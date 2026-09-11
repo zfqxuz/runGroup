@@ -8,6 +8,7 @@ export interface SceneTokenView {
   readonly id: string;
   readonly name: string;
   readonly characterId: string | null;
+  readonly cardId: string | null;
   readonly ownerUserId: string | null;
   readonly imageUrl: string | null;
   readonly x: number;

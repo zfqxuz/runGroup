@@ -867,6 +867,8 @@ model Token {
   character Character? @relation(fields: [characterId], references: [id])
   card      Card?      @relation(fields: [cardId], references: [id], onDelete: SetNull)
 
+  @@unique([mapId, characterId])
+  @@unique([mapId, cardId])
   @@index([mapId])
   @@index([cardId])
 }

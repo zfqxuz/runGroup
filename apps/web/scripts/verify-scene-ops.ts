@@ -219,6 +219,16 @@ async function main(): Promise<void> {
     const pcToken = await prisma.token.findFirst({ where: { map: { sceneId: sceneB.id }, characterId: character.id } });
     if (pcToken === null) throw new Error("PC Token 未创建");
 
+    // 同一角色在同一场景只能放置一次；重复提交应被服务端拒绝。
+    const duplicateTokenForm = new FormData();
+    duplicateTokenForm.set(extractActionFieldAround(pageForToken.text, "添加 Token"), "");
+    duplicateTokenForm.set("roomId", room.id);
+    duplicateTokenForm.set("sceneId", sceneB.id);
+    duplicateTokenForm.set("unitRef", "character:" + character.id);
+    await submitAction(kpJar, scenesPath, duplicateTokenForm);
+    const pcTokenCount = await prisma.token.count({ where: { map: { sceneId: sceneB.id }, characterId: character.id } });
+    expectEqual(pcTokenCount, 1, "同一角色在同一场景不应重复放置 Token");
+
     const npcCard = await prisma.card.findFirst({ where: { roomId: room.id, type: "NPC" }, select: { id: true } });
     if (npcCard === null) throw new Error("NPC 卡不存在");
     const tokenForm2 = new FormData();
@@ -245,7 +255,7 @@ async function main(): Promise<void> {
       throw new Error("跑团页没有渲染当前场景与 Token");
     }
 
-    console.log("PASS 场景操作 E2E：准备阶段切换 / 背景图 / 清空墙灯 / 放置 PC·NPC Token");
+    console.log("PASS 场景操作 E2E：准备阶段切换 / 背景图 / 清空墙灯 / 放置 PC·NPC Token / 重复放置拦截");
     console.log("  room=" + room.id + " scene=" + sceneB.id);
   } finally {
     if (socket !== null) socket.close();

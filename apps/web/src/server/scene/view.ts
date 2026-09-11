@@ -196,6 +196,7 @@ export function tokenView(token: TokenLike, hpByCharacter: SceneHpMap): SceneTok
     id: token.id,
     name: token.name,
     characterId: token.characterId,
+    cardId: token.cardId ?? null,
     ownerUserId: token.character?.userId ?? null,
     imageUrl:
       token.asset?.url ??

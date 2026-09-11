@@ -130,6 +130,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     moduleId: result?.moduleId,
     title: result?.title,
     model: result?.model,
+    sessionId: result?.sessionId,
     attempts: result?.attempts,
     imagesUsed: result?.imagesUsed,
     warnings: result?.warnings ?? []

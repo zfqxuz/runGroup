@@ -86,8 +86,11 @@ async function main(): Promise<void> {
       text?: string;
       structured?: { scenes?: unknown[]; encounters?: unknown[]; chapters?: unknown[]; magic?: unknown[]; npcs?: unknown[]; items?: unknown[]; clues?: unknown[] };
     };
+    const metadata = moduleRecord.metadata as { aiSessionId?: string };
+    ensure(metadata.aiSessionId === result.sessionId, "模块元数据应记录本次导入的 AI 会话 id");
     const text = content.text ?? "";
 
+    ensure(result.sessionId.length > 0, "每次导入都应生成独立的 AI 会话 id");
     ensure(result.attempts >= 1 && result.attempts <= 3, "DeepSeek 尝试次数应在 1-3 之间");
     ensure(result.imagesUsed === 1, "应使用 1 张图片作为视觉素材");
     ensure(DEEPSEEK_MODELS.some((model) => model.id === result.model), "返回模型应在推荐列表中");

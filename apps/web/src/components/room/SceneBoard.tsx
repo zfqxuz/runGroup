@@ -175,6 +175,16 @@ export default function SceneBoard(props: Props) {
     return segments;
   }, [map]);
 
+  const availableUnits = useMemo(() => {
+    return props.units.filter((unit) => {
+      const [kind, id] = unit.ref.split(":", 2);
+      if (id === undefined || id.length === 0) return false;
+      if (kind === "character") return tokens.some((token) => token.characterId === id) === false;
+      if (kind === "npc") return tokens.some((token) => token.cardId === id) === false;
+      return true;
+    });
+  }, [props.units, tokens]);
+
   const viewerToken = useMemo(
     () => tokens.find((token) => token.ownerUserId === props.currentUserId && token.isVisible) ?? null,
     [tokens, props.currentUserId]
@@ -504,16 +514,16 @@ export default function SceneBoard(props: Props) {
             <input type="hidden" name="returnTo" value={props.returnTo} />
             <label className="flex min-w-[160px] flex-1 flex-col gap-1">
               <span className="text-[10px] text-white/35">放置玩家 / NPC Token</span>
-              <select name="unitRef" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75" disabled={props.units.length === 0}>
-                {props.units.length === 0 ? <option value="">暂无可放置单位</option> : null}
-                {props.units.map((unit) => (
+              <select name="unitRef" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75" disabled={availableUnits.length === 0}>
+                {availableUnits.length === 0 ? <option value="">当前场景已放置全部单位</option> : null}
+                {availableUnits.map((unit) => (
                   <option key={unit.ref} value={unit.ref}>
                     {unit.name}（{unit.kind === "NPC" ? "NPC" : "PC"}）
                   </option>
                 ))}
               </select>
             </label>
-            <button type="submit" disabled={props.units.length === 0} className="rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10 disabled:opacity-40">
+            <button type="submit" disabled={availableUnits.length === 0} className="rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10 disabled:opacity-40">
               放置
             </button>
           </form>
