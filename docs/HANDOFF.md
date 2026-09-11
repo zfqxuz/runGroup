@@ -822,3 +822,31 @@ DEEPSEEK_MODEL="deepseek-flash"
 - `npm run build --workspace @touhou/web`：PASS。
 - E2E 共 19 个脚本，本轮回归全部 PASS：
   - 既有 15 个 + `verify:admin-console` / `verify:scene-increments` / `verify:ai-import` / `verify:visibility-magic`。
+
+## 23. 局内状态结构化选择器（本轮完成）
+
+### 第 13 节遗留项
+- 将 `GameState.currentChapterId / currentSceneId / currentEncounterId` 从自由文本升级为基于 `ModuleChapter / Scene / Encounter` 的结构化选择器。
+
+### 服务端
+- 跑团页查询当前局的实际实体：
+  - `ModuleChapter`（按 moduleId，orderIndex）
+  - `Scene`（按 roomId，orderIndex）
+  - `Encounter`（按 roomId，orderIndex）
+- 若团本尚未执行“同步团本场景与遭遇”，回退使用 `ModuleRevision` 里的结构化 `module-chapter / module-scene / module-encounter` 条目 id。
+- `updateGameStateAction` 新增 `activateScene`：
+  - 勾选后，若 `currentSceneId` 对应本房真实 `Scene`，则在保存局内状态的同时切换 `Scene.isActive`，并通过 `scene:updated` Socket 广播给在线玩家；
+  - 战术棋盘会立即切换到该场景。
+
+### 前端
+- `RoomGameStatePanel` 新增 `moduleChapters`：
+  - 章节 / 场景 / 遭遇优先渲染为下拉选择器（显示标题而非裸 id），并兼容旧值。
+  - 场景选择器下新增“保存时将当前场景切换为激活场景（影响战术棋盘）”复选框。
+  - 玩家视图不再显示章节 / 遭遇 id，只显示当前场景名与团内时间；章节 / 遭遇若已设置则显示“KP 掌握”。
+- `RoomGameStatePanel` 的场景选择也承担“切换棋盘场景”的入口，避免 KP 在场景页 / 跑团页来回切换。
+
+### 验证
+- `verify:scene-increments` 扩展覆盖：
+  - `ModuleChapter / Scene / Encounter` 结构化选项写入 `GameState` 的真实数据库 id；
+  - `activateScene` 切换后目标场景 `isActive = true`，旧场景取消激活。
+- 回归：`verify:game-state`、`verify:room-ready`、`verify:visibility-magic`、`npm run typecheck`、`npm test`（144 tests）全部 PASS。

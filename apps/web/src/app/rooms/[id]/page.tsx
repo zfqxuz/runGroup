@@ -131,21 +131,61 @@ export default async function RoomPage({
       : canSeeAllCharacters
         ? activeGame.characters
         : activeGame.characters.filter((item) => item.userId === session.user.id);
+  const [dbChapters, dbScenes, dbEncounters] = activeGame === null
+    ? [[], [], []]
+    : await Promise.all([
+        activeGame.moduleId === null
+          ? Promise.resolve([])
+          : prisma.moduleChapter.findMany({
+              where: { moduleId: activeGame.moduleId },
+              orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
+              select: { id: true, title: true, summary: true }
+            }),
+        prisma.scene.findMany({
+          where: { roomId: room.id },
+          orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
+          select: { id: true, name: true, isActive: true }
+        }),
+        prisma.encounter.findMany({
+          where: { roomId: room.id },
+          orderBy: [{ orderIndex: "asc" }, { id: "asc" }],
+          select: { id: true, title: true, sceneId: true }
+        })
+      ]);
   const moduleSections = isKP ? (gameModule?.sections ?? []) : [];
-  const moduleScenes = isKP
-    ? (gameModule?.structured.scenes ?? []).map((item) => ({
+  const structuredChapters = isKP
+    ? (gameModule?.structured.chapters ?? []).map((item) => ({
         id: item.id,
         title: item.title,
-        detail: typeof item.data.location === "string" ? item.data.location : null
+        detail: typeof item.data.summary === "string" ? item.data.summary : null
       }))
     : [];
-  const moduleEncounters = isKP
+  const structuredScenes = (gameModule?.structured.scenes ?? []).map((item) => ({
+    id: item.id,
+    title: item.title,
+    detail: null
+  }));
+  const structuredEncounters = isKP
     ? (gameModule?.structured.encounters ?? []).map((item) => ({
         id: item.id,
         title: item.title,
         detail: typeof item.data.sceneId === "string" ? "场景 " + item.data.sceneId : null
       }))
     : [];
+  const moduleChapters = dbChapters.length > 0
+    ? dbChapters.map((item) => ({ id: item.id, title: item.title, detail: item.summary }))
+    : structuredChapters;
+  const moduleScenesForView = dbScenes.length > 0
+    ? dbScenes.map((item) => ({ id: item.id, title: item.name, detail: item.isActive ? "当前激活" : null }))
+    : structuredScenes;
+  const dbSceneById = new Map(dbScenes.map((item) => [item.id, item]));
+  const moduleEncounters = dbEncounters.length > 0
+    ? dbEncounters.map((item) => ({
+        id: item.id,
+        title: item.title,
+        detail: item.sceneId === null || item.sceneId === undefined ? null : "场景 " + (dbSceneById.get(item.sceneId)?.name ?? item.sceneId)
+      }))
+    : structuredEncounters;
   const advancements = activeGame === null
     ? []
     : await prisma.characterAdvancement.findMany({
@@ -355,7 +395,8 @@ export default async function RoomPage({
           status={activeGame.status}
           state={gameState}
           moduleSections={moduleSections}
-          moduleScenes={moduleScenes}
+          moduleChapters={moduleChapters}
+          moduleScenes={moduleScenesForView}
           moduleEncounters={moduleEncounters}
           isKP={isKP}
           saved={searchParams.state === "saved"}

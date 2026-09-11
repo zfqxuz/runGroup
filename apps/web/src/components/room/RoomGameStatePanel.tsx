@@ -14,6 +14,7 @@ interface Props {
   readonly status: string;
   readonly state: GameStateView;
   readonly moduleSections: readonly string[];
+  readonly moduleChapters: readonly ModuleStructureOption[];
   readonly moduleScenes: readonly ModuleStructureOption[];
   readonly moduleEncounters: readonly ModuleStructureOption[];
   readonly isKP: boolean;
@@ -23,6 +24,16 @@ interface Props {
 
 function valueOrDash(value: string | null): string {
   return value === null || value.length === 0 ? "未设置" : value;
+}
+
+function labelOf(options: readonly ModuleStructureOption[], id: string | null): string | null {
+  if (id === null || id.length === 0) return null;
+  return options.find((item) => item.id === id)?.title ?? id;
+}
+
+function hasOption(options: readonly ModuleStructureOption[], id: string | null): boolean {
+  if (id === null || id.length === 0) return true;
+  return options.some((item) => item.id === id);
 }
 
 const ERROR_LABELS: Record<string, string> = {
@@ -66,15 +77,25 @@ export default function RoomGameStatePanel(props: Props) {
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
           <p className="text-[10px] text-white/35">当前章节</p>
-          <p className="mt-0.5 truncate text-sm text-white/75">{valueOrDash(props.state.currentChapterId)}</p>
+          <p className="mt-0.5 truncate text-sm text-white/75">
+            {props.isKP || props.state.currentChapterId === null
+              ? valueOrDash(labelOf(props.moduleChapters, props.state.currentChapterId))
+              : "KP 掌握"}
+          </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
           <p className="text-[10px] text-white/35">当前场景</p>
-          <p className="mt-0.5 truncate text-sm text-white/75">{valueOrDash(props.state.currentSceneId)}</p>
+          <p className="mt-0.5 truncate text-sm text-white/75">
+            {valueOrDash(labelOf(props.moduleScenes, props.state.currentSceneId))}
+          </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
           <p className="text-[10px] text-white/35">当前遭遇</p>
-          <p className="mt-0.5 truncate text-sm text-white/75">{valueOrDash(props.state.currentEncounterId)}</p>
+          <p className="mt-0.5 truncate text-sm text-white/75">
+            {props.isKP || props.state.currentEncounterId === null
+              ? valueOrDash(labelOf(props.moduleEncounters, props.state.currentEncounterId))
+              : "KP 掌握"}
+          </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
           <p className="text-[10px] text-white/35">团内时间</p>
@@ -101,10 +122,11 @@ export default function RoomGameStatePanel(props: Props) {
           </datalist>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">当前章节</span>
-              {props.moduleSections.length === 0 ? (
+              <span className="text-[11px] text-white/45">当前章节（ModuleChapter 结构化绑定）</span>
+              {props.moduleChapters.length === 0 ? (
                 <input
                   name="currentChapterId"
+                  list="game-module-sections"
                   defaultValue={props.state.currentChapterId ?? ""}
                   className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
                 />
@@ -115,21 +137,25 @@ export default function RoomGameStatePanel(props: Props) {
                   className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
                 >
                   <option value="">未设置</option>
-                  {props.moduleSections.map((section) => (
-                    <option key={section} value={section}>
-                      {section}
+                  {hasOption(props.moduleChapters, props.state.currentChapterId) ? null : (
+                    <option value={props.state.currentChapterId ?? ""}>{valueOrDash(props.state.currentChapterId)}（旧值）</option>
+                  )}
+                  {props.moduleChapters.map((chapter) => (
+                    <option key={chapter.id} value={chapter.id}>
+                      {chapter.title}
+                      {chapter.detail === null ? "" : " · " + chapter.detail}
                     </option>
                   ))}
                 </select>
               )}
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">当前场景</span>
+              <span className="text-[11px] text-white/45">当前场景（房间 Scene 结构化绑定）</span>
               {props.moduleScenes.length === 0 ? (
                 <input
                   name="currentSceneId"
                   defaultValue={props.state.currentSceneId ?? ""}
-                  placeholder="团本里用 module-scene 块定义场景"
+                  placeholder="先到场景 / 地图页同步团本场景"
                   className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
                 />
               ) : (
@@ -139,6 +165,9 @@ export default function RoomGameStatePanel(props: Props) {
                   className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
                 >
                   <option value="">未设置</option>
+                  {hasOption(props.moduleScenes, props.state.currentSceneId) ? null : (
+                    <option value={props.state.currentSceneId ?? ""}>{valueOrDash(props.state.currentSceneId)}（旧值）</option>
+                  )}
                   {props.moduleScenes.map((scene) => (
                     <option key={scene.id} value={scene.id}>
                       {scene.title}
@@ -147,6 +176,10 @@ export default function RoomGameStatePanel(props: Props) {
                   ))}
                 </select>
               )}
+              <label className="flex items-center gap-1.5 text-[10px] text-white/45">
+                <input type="checkbox" name="activateScene" value="1" className="accent-sakura-500" />
+                保存时将当前场景切换为激活场景（影响战术棋盘）
+              </label>
             </label>
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">当前遭遇</span>
@@ -164,6 +197,9 @@ export default function RoomGameStatePanel(props: Props) {
                   className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
                 >
                   <option value="">未设置</option>
+                  {hasOption(props.moduleEncounters, props.state.currentEncounterId) ? null : (
+                    <option value={props.state.currentEncounterId ?? ""}>{valueOrDash(props.state.currentEncounterId)}（旧值）</option>
+                  )}
                   {props.moduleEncounters.map((encounter) => (
                     <option key={encounter.id} value={encounter.id}>
                       {encounter.title}

@@ -334,8 +334,37 @@ async function main(): Promise<void> {
     const generatedHexMap = await prisma.map.findFirst({ where: { sceneId: createdSceneA?.id ?? "" } });
     expectEqual(generatedHexMap?.gridType, "HEX", "结构化场景网格类型应写入 HEX");
 
+    // 局内状态结构化选择器：章节 / 场景 / 遭遇 使用 DB 实体 id，并联动切换激活场景
+    const chapter = await prisma.moduleChapter.findFirst({ where: { moduleId, title: "第一章" } });
+    ensure(chapter !== null, "团本同步时应创建 ModuleChapter");
+    const roomPage = await call(jar, "/rooms/" + room.id);
+    expectEqual(roomPage.status, 200, "GET 跑团页");
+    const stateForm = new FormData();
+    stateForm.set(extractActionFieldAround(roomPage.text, "保存局内状态"), "");
+    stateForm.set("roomId", room.id);
+    stateForm.set("gameId", game.id);
+    stateForm.set("expectedVersion", "1");
+    stateForm.set("currentChapterId", chapter?.id ?? "");
+    stateForm.set("currentSceneId", createdSceneA?.id ?? "");
+    stateForm.set("currentEncounterId", importedEncounter?.id ?? "");
+    stateForm.set("gameTime", "第 1 天 20:00");
+    stateForm.set("flags", "{}");
+    stateForm.set("counters", "{}");
+    stateForm.set("custom", "{}");
+    stateForm.set("activateScene", "1");
+    await submitAction(jar, "/rooms/" + room.id, stateForm);
+
+    const state = await prisma.gameState.findUnique({ where: { gameId: game.id } });
+    expectEqual(state?.currentChapterId, chapter?.id ?? "", "GameState 章节应保存 ModuleChapter id");
+    expectEqual(state?.currentSceneId, createdSceneA?.id ?? "", "GameState 场景应保存 Scene id");
+    expectEqual(state?.currentEncounterId, importedEncounter?.id ?? "", "GameState 遭遇应保存 Encounter id");
+    const reactivated = await prisma.scene.findUnique({ where: { id: createdSceneA?.id ?? "" } });
+    expectEqual(reactivated?.isActive, true, "保存时勾选同步切换后，目标场景应激活");
+    const oldActive = await prisma.scene.findUnique({ where: { id: scene.id } });
+    expectEqual(oldActive?.isActive, false, "旧场景应取消激活");
+
     verifyGeometry();
-    console.log("PASS 场景棋盘增量 E2E：六边形几何 / 墙面 / 灯光 / 战雾 / 图层 / 团本结构化场景绑定");
+    console.log("PASS 场景棋盘增量 E2E：六边形几何 / 墙面 / 灯光 / 战雾 / 图层 / 团本结构化绑定 / 局内状态选择器");
     console.log("  room=" + room.id + " module=" + moduleId + " scenes=" + String(createdSceneA !== null && createdSceneB !== null));
   } finally {
     socket?.close();

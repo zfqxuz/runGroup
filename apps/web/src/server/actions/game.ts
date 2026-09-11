@@ -6,7 +6,7 @@ import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { applyAdvancement, validateAdvancement } from "@/server/game/advancement";
 import { isActiveGameStatus, gameStateView } from "@/server/game/view";
-import { emitAdvancementUpdate } from "@/server/realtime";
+import { emitAdvancementUpdate, emitSceneUpdate } from "@/server/realtime";
 import { getSocketServer } from "@/server/socket/io";
 
 function clean(value: FormDataEntryValue | null, maxLength: number): string {
@@ -90,6 +90,15 @@ export async function updateGameStateAction(formData: FormData): Promise<void> {
     custom: custom.value as never
   };
 
+  const activateScene = String(formData.get("activateScene") ?? "") === "1";
+  const sceneToActivate =
+    activateScene && data.currentSceneId !== null
+      ? await prisma.scene.findUnique({
+          where: { id: data.currentSceneId },
+          select: { id: true, roomId: true }
+        })
+      : null;
+
   if (existing === null) {
     await prisma.gameState.create({
       data: { gameId, moduleVersion: null, ...data }
@@ -100,6 +109,15 @@ export async function updateGameStateAction(formData: FormData): Promise<void> {
       data: { ...data, version: { increment: 1 } }
     });
     if (result.count === 0) redirect("/rooms/" + roomId + "?error=version");
+  }
+
+  if (sceneToActivate !== null && sceneToActivate.roomId === roomId) {
+    await prisma.$transaction([
+      prisma.scene.updateMany({ where: { roomId }, data: { isActive: false } }),
+      prisma.scene.update({ where: { id: sceneToActivate.id }, data: { isActive: true } })
+    ]);
+    emitSceneUpdate(roomId, sceneToActivate.id);
+    revalidatePath("/rooms/" + roomId + "/scenes");
   }
 
   const updated = await prisma.gameState.findUnique({ where: { gameId } });
