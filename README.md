@@ -73,11 +73,14 @@ npm run typecheck # 全量类型检查
 
 ## 开发路线
 
-后续开发按 [`docs/SPEC.md`](docs/SPEC.md) 与 [`docs/MODULE_FORMAT.md`](docs/MODULE_FORMAT.md) 执行：
+准备页、开局闸门、团本管理、Game / GameState、暂停 / 继续 / 结束、
+跨局成长、重连恢复、团本广场、游戏历史、P0/P1 跑团能力均已完成第一版。
 
-1. 准备页与开局闸门（已完成）
-2. 团本管理、标准格式与 zip 导入（已完成导入 / 编辑 / 保存）
-3. 当前角色、Game / GameState（已完成基础）
-4. 暂停 / 继续 / 结束本局（已完成基础）
-5. 跨局成长与 CharacterAdvancement（下一阶段）
-6. 完整重连恢复与 GameState 编辑（下一阶段）
+后续 P2 计划见 [`docs/HANDOFF.md`](docs/HANDOFF.md) 第 17 节，优先级建议：
+
+1. 战术棋盘 / 场景地图（Scene / Map / Token / Fog / Wall / Light）
+2. 规则内容补全与 RulePack 后台管理
+3. 角色成长系统闭环
+4. 用户 / 房间协作与权限
+5. 部署、CI、备份与可观测性
+6. E2E 全量入 CI、Socket 多实例与性能加固

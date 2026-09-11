@@ -512,3 +512,46 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - `verify-room-ready` 扩展：归档 / 解散房间 PASS。
 - `verify-combat` 扩展：房间频道 `combat:ended` / `room:update` 广播 PASS。
 - 全量 12 个 E2E 在 `http://localhost:3100` PASS。
+
+## 17. 后续开发计划（P2）
+
+当前 P0 / P1 第一版已完成，下面是建议的后续优先级。
+
+### P2-1 战术棋盘 / 场景地图（建议最高优先级）
+现状：`Scene` / `Map` / `MapLayer` / `Token` / `Wall` / `Light` 模型已经存在，但还没有 UI 和 server actions。
+目标：
+- KP 创建 / 编辑 / 切换场景，绑定背景与音乐。
+- 地图上传、网格、图层、初始视野。
+- 角色 / NPC / Boss 绑定 Token，支持拖动和锁定。
+- 战争迷雾、墙体、灯光 MVP。
+- Socket 实时同步 Token 与场景变化。
+- E2E：KP 建场景 → 放 Token → 另一客户端实时看到。
+
+### P2-2 规则内容补全与 RulePack 管理
+- 补全 `touhou-ext` 的完整法术表、特色物品、普通型 / 幻想型进阶效果。
+- RulePack 从代码注册表升级为数据库管理：创建、版本、发布、绑房、导入导出、审计。
+- 规则包管理页面与权限。
+- E2E：自定义规则包建房并生效。
+
+### P2-3 角色成长闭环
+- 角色详情页的成长记录消费 / 展开。
+- 成长点、成长检定、技能提升、SAN 奖励可视化。
+- 跨局 `CharacterAdvancement` 与基础卡的差异标注。
+- E2E：结束一局并确认成长，再开下一局继承。
+
+### P2-4 用户与房间协作
+- 邀请链接 / 申请加入 / 审批加入。
+- KP 转让、成员移出、旁观者管理、角色权限细化。
+- 房间设置、黑名单、操作日志。
+
+### P2-5 部署与运维
+- 完成 `.github/workflows/deploy.yml` 中 SAE AppId / secrets 的接入。
+- 区分 staging / production，自动执行 `prisma migrate deploy` 与必要的 seed。
+- 数据库备份、回滚、健康检查、日志告警。
+- Docker 镜像、CI、localhost:3100 与生产端口文档同步。
+
+### P2-6 质量与性能
+- 全量 E2E 并入 CI。
+- Socket 多实例、断线重连、消息背压与限流。
+- 上传文件安全、资源访问鉴权、慢查询与索引优化。
+- 核心页面加载性能与错误边界。
