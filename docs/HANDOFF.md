@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`94f0ea7 feat(combat,chargen): 修正 max SAN、COC7 闪避反击与 db 伤害加值`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`1cd00e1 feat(chargen): COC7 年龄补正、派生属性与 Excel 职业空位`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -17,8 +17,10 @@
   - CoC7 车卡规则修正已完成：本职 / 分类 / 社交 / 自由技能判定；本职 80 / 兴趣 70 的上限；母语等高基础值不误报且不能再加点。本轮进一步强制：职业固定本职 + 用户自行选中的本职只能用职业点，其余技能只能视为兴趣用兴趣点，同一技能不能混用；技能页支持直接输入数值并按类别分组展示。
   - 通用法术系统已完成（见第 33 节）：RulePack `effects` 指令集（DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN / STATUS / DOT / STUN / CONTROL / CLEANSE）；`targeting` 自动推断；SELF / ONE / ALL；SELF 与 ALLY 可选自己；敌对法术统一进入应对窗口；旧 `damage` 字段兼容；AI 导入提示词已同步。
   - AI 导入会话隔离与 PDF / 图片解析已完成（见第 34 节）：每次导入独立 session；PDF 正文与内嵌图片；HEIC / AVIF / TIFF / BMP / SVG 兜底；图片存在但选了非视觉模型时自动切换 `deepseek-flash`。
+  - CoC7 年龄补正与派生属性已完成（见第 38 节）：年龄空位一次性分配后锁定；车卡页 / 角色页展示 DB、Build、MOV、重伤值，技能显示困难 / 极限成功率；DB 表覆盖 444 以上每 80 点成长。
+  - COC7 Excel 职业空位模型已完成（见第 38 节）：230 个职业从「本职技能」矩阵生成固定本职 + `☆ / ⊙ / ☯ / ※ / 任意特长` 结构化空位；必须先选中空位技能才能使用职业点；TOUHOU 仍走旧文本解析回退。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 157 tests（formula 48 / rules 67 / combat 42）；`apps/web/scripts/verify-*.ts` 共 28 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` PASS；全量 28 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 165 tests（formula 48 / rules 75 / combat 42）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1457,3 +1459,71 @@ MagicEffect =
 - `apps/web/src/server/combat/setup.ts`：PC / NPC 注入 damageBonus。
 - `apps/web/src/server/combat/options.ts`：COC7 应对选项过滤。
 - `apps/web/src/components/room/CombatBoard.tsx`：按钮与应对文案。
+
+## 38. COC7 年龄补正、派生属性与 Excel 职业空位（本轮）
+
+### 年龄补正（官方规则的一次性分配后锁定）
+- `packages/rules/src/coc7.ts` 新增：
+  - `coc7AgeAdjustment(age)`：15-19 / 20-39 / 40-49 / 50-59 / 60-69 / 70-79 / 80+ 各档的 STR/CON/DEX/SIZ 扣减总额、APP 固定减、EDU 成长次数、MOV 减、幸运次数。
+  - `checkCoc7AgeAllocation(age, allocation)`：校验总额与可扣属性。
+  - `applyCoc7AgeAdjustment(attributes, age, allocation)`：把年龄补正应用到属性。
+- `CharacterBuilder`：
+  - 新增年龄输入与「年龄补正」面板。
+  - 玩家在可扣属性间一次性分配扣减总额；未确认前不参与后续技能 / 衍生计算。
+  - 确认后最终属性只读展示；修改年龄会重置分配并重新走流程。
+  - 15-19 / 40+ 的 APP、EDU、MOV、幸运信息只读展示。
+- `saveCharacter` 接收 `age` 与 `ageAllocation`，在基础属性 / 点购校验之后应用年龄补正，再把最终属性、技能基础值和衍生属性落库；分配信息写入 `Character.raceMods` 的 `age / ageAllocation` 字段（无需新迁移，`age` 列本来就有）。
+- 已知未做：EDU 成长判定的实际掷骰、15-19 幸运两次取高的实际随机、年龄扣减超过基础值时仅做 0 下限保护，还没有专门的 UI 提示。
+
+### 派生属性
+- 新增 `coc7Build`、`coc7DamageBonusFromBuild`、`coc7Movement`、`coc7MajorWound`。
+- DB 完整表：`STR+SIZ` 超过 444 后继续每 +80 点让 Build +1、DB +1D6（修掉原先 445 以后固定 5D6 的问题）。
+- MOV：基础 8 + STR/DEX 与 SIZ 的比较修正 - 年龄段减值 - 护甲减值。
+- 重伤值：`ceil(HP / 2)`。
+- 车卡页、角色库详情页、房间角色页都显示 DB / Build / MOV / 重伤值；技能列表显示困难 / 极限值（`floor(总技能值 / 2)` / `floor(总技能值 / 5)`）。
+
+### Excel 职业空位模型
+- 新增 `apps/web/src/shared/data/coc7-occupation-slots.json`：
+  - 从 COC7 空白卡「本职技能」矩阵解析出的 230 个职业 profile。
+  - 每个 profile 包含 `fixed`（固定本职）以及 `slots`（`☆` / `⊙` / `☯` / `※` / `ANY` 任意特长，含 pick 数量和候选）。
+  - 职业 1「魔术师」在 Excel 矩阵里没有独立列（矩阵的 code 1 是自定义职业列），按职业文本手工构造。
+- `apps/web/src/shared/occupation.ts` 新增：
+  - `OccupationSkillProfile` / `OccupationSlot` / `OccupationSlotAssignments` 类型。
+  - `occupationSkillProfile`：按 COC7 + code 取 profile，TOUHOU 返回 null。
+  - `profileOccupationalSkillIds`：固定本职 + 已选中空位技能 = 实际本职。
+  - `occupationSlotCandidates`：`FREE` 空位候选为除克苏鲁神话外的全部技能，其余用 Excel 候选。
+  - `validateOccupationSlotAssignments`：校验空位数量、候选范围、同技能不能占两个空位。
+- `CharacterBuilder` 职业信息区新增空位选择卡：
+  - 每个空位按 `pick` 渲染下拉框；选中技能后该技能才变成「本职」，职业点输入框才允许使用。
+  - 取消空位会清掉该技能身上的职业点；放入空位会清掉该技能身上的兴趣点。
+- `saveCharacter`：
+  - 有 profile 时用结构化空位判定代替旧文本解析：固定本职 + 已选空位 = FIXED，可吃职业点；其余技能 = NONE，只能用兴趣点。
+  - 无 profile（TOUHOU 或旧数据）仍走 `occupationSkillAccess` 文本解析作为回退。
+- 新增 `apps/web/scripts/verify-occupation-slots.ts` 与 `npm run verify:occupation-slots`，覆盖：
+  - 230 个职业 profile 全覆盖。
+  - 建筑师 / 秘书 / 士兵 / 猎人四个代表职业的固定本职与空位候选。
+  - 空位分配范围、重复占用、任意特长排除克苏鲁神话。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（165 tests：formula 48 / rules 75 / combat 42）。
+- `npm run build --workspace @touhou/web` PASS。
+- `npm run verify:occupation-slots` PASS。
+- `npm run verify:chargen-rules` PASS（旧文本解析回退仍正常）。
+
+### 相关文件
+- `packages/rules/src/coc7.ts`：年龄补正、Build / DB / MOV / 重伤值。
+- `packages/rules/src/__tests__/coc7.test.ts`：新增 9 组边界测试。
+- `apps/web/src/shared/data/coc7-occupation-slots.json`：230 职业空位数据。
+- `apps/web/src/shared/occupation.ts`：profile 类型、读取、校验、实际本职判定。
+- `apps/web/src/components/room/CharacterBuilder.tsx`：年龄面板、空位选择、派生属性 / 成功等级展示。
+- `apps/web/src/server/actions/character.ts`：年龄补正应用、空位校验、最终属性落库。
+- `apps/web/src/app/characters/[id]/page.tsx`、`apps/web/src/app/rooms/[id]/characters/[characterId]/page.tsx`：DB / Build / MOV / 重伤值 / 困难极限展示。
+- `apps/web/scripts/verify-occupation-slots.ts`：本轮新增 E2E。
+
+### 留待后续
+- 动态技能 / 专精：多个外语、多个技艺专精目前会映射到同一个技能 id 并去重，尚未支持 `skillId#specialty` 这类独立条目；与 Excel 的“每个空位可选不同语言 / 专精”还没有完全一一对应。
+- Excel 技能行的 `Ω`（现代标记）已忽略，年代仍由房间 / 职业 era 控制。
+- 年龄补正 UI 还没有“一键平均 / 自动填满”辅助；EDU 成长判定与幸运两次取高尚未接随机。
+- 旧角色 `maxSan / MOV / DB` 的批量回填尚未做；新角色不受影响。
+
