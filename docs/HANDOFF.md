@@ -1023,3 +1023,45 @@ DEEPSEEK_MODEL="deepseek-flash"
 - `npm run typecheck` PASS。
 - `npm test` PASS（146 tests：formula 48 / rules 61 / combat 37）。
 - 生产构建与本地 3100 部署已更新。
+
+## 29. 线索定向分享与房间预设内容编辑（本轮）
+
+### 问题
+- 广场团本通过 `Room.selectedModuleId` 关联房间后，`/rooms/[id]/modules/[moduleId]` 因为只允许 `Module.roomId === roomId` 而 404，KP 打不开团本页面。
+- 房间团本页只能改 Markdown 正文，预设物化出来的 NPC 卡、物品 / 证物 / 线索卡、线索、场景没有编辑入口。
+- 线索只能新建时勾选公开，已有线索（尤其是预设生成的隐藏线索）无法再公布；也没有定向分享给某玩家的能力。
+
+### 数据层
+- 新增 `ClueShare`（`clueId + userId` 复合主键，`sharedBy / sharedAt`），迁移 `20260915000000_clue_shares`。
+- 玩家线索可见性：`isPublic` 或 被 `ClueShare` 定向分享 或 自己标记过 `ClueDiscovery`；KP 永远可见全部。
+
+### 服务端
+- `actions/room-info.ts`：
+  - `updateClueAction`：编辑标题 / 正文 / 公开状态。
+  - `setClueVisibilityAction`：一键公布 / 取消公开。
+  - `deleteClueAction`：删除线索。
+  - `shareClueAction`：把线索定向发给指定成员；整体替换分享名单，空名单表示撤回。
+- `actions/npc.ts`：
+  - `updateNpcAction`：编辑 NPC 名称、Tier、稀有度、种族、九项属性、HP/MP/SAN/DP、技能与标签。
+- `actions/card.ts`：
+  - `updateRoomCardAction`：编辑房间预设物化出的物品 / 证物 / 线索卡，名称、描述、稀有度、数量与 stats JSON。
+- 所有动作都会 `emitRoomRefresh`，在线成员自动刷新。
+
+### UI
+- `RoomInfoPanel`：KP 的每条线索下增加「公布给所有人 / 取消公开」「编辑线索」「发给特定玩家（成员多选）」「删除线索」；玩家侧对定向线索显示「发给我」。
+- `RoomNpcPanel`：KP 的每张 NPC 卡增加「编辑 NPC / Boss」表单。
+- 房间团本页 `/rooms/[id]/modules/[moduleId]`：
+  - 权限修复：允许 `Module.roomId === roomId`、房间 `selectedModuleId`、作者本人或已发布团本访问。
+  - 新增 `RoomPresetContentPanel`（KP 可见）：集中编辑当前 ACTIVE 预设的 NPC、线索、物品 / 证物卡；场景给出「编辑场景 / 地图 / 图层 / Token」跳转。
+- `ClueAdminControls` / `NpcEditForm` / `RoomCardEditForm` 为可复用服务端组件。
+
+### 验证
+- 新增 `npm run verify:clue-npc-edit`：
+  - 团本页出现预设内容编辑面板；
+  - 线索定向分享后，PL 跑团页能看到「发给我」；
+  - KP 公布线索后 PL 可见；
+  - 编辑线索 / NPC / 物品卡全部落库；
+  - 场景页编辑表单存在。
+- 回归：`verify:realtime-sync`、`verify:combat-rounds`、`verify-module-gallery`、`verify-room-ready`、`verify-scene-increments` 全部 PASS。
+- `npm run typecheck` PASS；`npm test` PASS（146 tests）。
+- 生产构建与 3100 部署已更新。

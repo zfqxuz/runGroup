@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { Prisma } from "@prisma/client";
 import { z } from "zod";
 import { auth } from "@/server/auth";
@@ -240,4 +241,63 @@ export async function copyCardTemplateAction(formData: FormData): Promise<void> 
   });
 
   revalidatePath("/cards");
+}
+
+function safeCardReturnTo(roomId: string, raw: FormDataEntryValue | null): string {
+  const value = String(raw ?? "").trim();
+  if (value.startsWith("/rooms/" + roomId) && value.startsWith("//") === false) return value;
+  return "/rooms/" + roomId;
+}
+
+/** KP 编辑房间预设物化出来的物品 / 证物 / 线索卡。 */
+export async function updateRoomCardAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const cardId = String(formData.get("cardId") ?? "");
+  if (cardId.length === 0) redirect("/");
+
+  const card = await prisma.card.findUnique({
+    where: { id: cardId },
+    select: { id: true, roomId: true, scope: true, type: true, stats: true }
+  });
+  if (card === null || card.roomId === null || card.scope !== "ROOM") redirect("/");
+  const roomId = card.roomId;
+  const returnTo = safeCardReturnTo(roomId, formData.get("returnTo"));
+  const membership = await requireRoomMember(roomId, session.user.id);
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+
+  const name = String(formData.get("name") ?? "").trim().slice(0, 80);
+  if (name.length === 0) redirect(returnTo + (returnTo.includes("?") ? "&" : "?") + "error=card-name");
+  const statsText = String(formData.get("stats") ?? "").trim();
+  let stats: Record<string, unknown> = {};
+  if (statsText.length > 0) {
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(statsText);
+    } catch {
+      redirect(returnTo + (returnTo.includes("?") ? "&" : "?") + "error=card-stats");
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      redirect(returnTo + (returnTo.includes("?") ? "&" : "?") + "error=card-stats");
+    }
+    stats = parsed as Record<string, unknown>;
+  }
+
+  const rarityRaw = String(formData.get("rarity") ?? "COMMON");
+  const quantity = Number(String(formData.get("quantity") ?? "1"));
+  await prisma.card.update({
+    where: { id: card.id },
+    data: {
+      name,
+      subtitle: String(formData.get("subtitle") ?? "").trim().slice(0, 80) || null,
+      description: String(formData.get("description") ?? "").trim().slice(0, 2000) || null,
+      rarity: rarityRaw as never,
+      quantity: Number.isFinite(quantity) && quantity >= 0 ? Math.floor(quantity) : 1,
+      stats: stats as never
+    }
+  });
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "room-card-updated");
+  redirect(returnTo);
 }

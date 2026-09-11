@@ -1,3 +1,4 @@
+import ClueAdminControls, { type ClueMemberOption } from "@/components/room/ClueAdminControls";
 import { createClueAction, createNoteAction, discoverClueAction } from "@/server/actions/room-info";
 
 export interface RoomClueView {
@@ -7,6 +8,8 @@ export interface RoomClueView {
   readonly isPublic: boolean;
   readonly discoveredByMe: boolean;
   readonly discoveredCount: number;
+  readonly sharedWithIds: readonly string[];
+  readonly sharedWithMe: boolean;
 }
 
 export interface RoomNoteView {
@@ -28,6 +31,7 @@ interface Props {
   readonly isKP: boolean;
   readonly readOnly: boolean;
   readonly clues: readonly RoomClueView[];
+  readonly members: readonly ClueMemberOption[];
   readonly notes: readonly RoomNoteView[];
   readonly handouts: readonly RoomHandoutView[];
   readonly clueStatus: string | null;
@@ -75,6 +79,11 @@ export default function RoomInfoPanel(props: Props) {
                     <span className="rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-200">
                       已发现 {clue.discoveredCount}
                     </span>
+                    {clue.sharedWithMe ? (
+                      <span className="rounded border border-sakura-500/30 px-1.5 py-0.5 text-[10px] text-sakura-300">
+                        发给我
+                      </span>
+                    ) : null}
                     {clue.discoveredByMe ? (
                       <span className="rounded border border-emerald-400/30 px-1.5 py-0.5 text-[10px] text-emerald-300">
                         我已发现
@@ -82,6 +91,15 @@ export default function RoomInfoPanel(props: Props) {
                     ) : null}
                   </div>
                   <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
+                  {props.isKP && props.readOnly === false ? (
+                    <ClueAdminControls
+                      roomId={props.roomId}
+                      clue={{ id: clue.id, title: clue.title, content: clue.content, isPublic: clue.isPublic }}
+                      members={props.members}
+                      sharedUserIds={clue.sharedWithIds}
+                      returnTo={"/rooms/" + props.roomId + "?clue=updated#room-info"}
+                    />
+                  ) : null}
                   {props.readOnly || clue.discoveredByMe ? null : (
                     <form action={discoverClueAction} className="mt-2">
                       <input type="hidden" name="roomId" value={props.roomId} />

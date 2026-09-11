@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ModuleActions from "@/components/module/ModuleActions";
+import RoomPresetContentPanel from "@/components/module/RoomPresetContentPanel";
 import ModuleAssetActions from "@/components/module/ModuleAssetActions";
 import ModuleMarkdown from "@/components/module/ModuleMarkdown";
 import { saveModuleAction } from "@/server/actions/module";
@@ -31,16 +32,26 @@ export default async function ModuleDetailPage({
   });
   if (membership === null) notFound();
 
-  const moduleRecord = await prisma.module.findUnique({
-    where: { id: params.moduleId },
-    include: {
-      assets: {
-        include: { asset: true },
-        orderBy: { orderIndex: "asc" }
+  const [moduleRecord, roomLink] = await Promise.all([
+    prisma.module.findUnique({
+      where: { id: params.moduleId },
+      include: {
+        assets: {
+          include: { asset: true },
+          orderBy: { orderIndex: "asc" }
+        }
       }
-    }
-  });
-  if (moduleRecord === null || moduleRecord.roomId !== params.id) notFound();
+    }),
+    prisma.room.findUnique({ where: { id: params.id }, select: { selectedModuleId: true } })
+  ]);
+  if (moduleRecord === null) notFound();
+  // 广场团本通过 Room.selectedModuleId 关联到房间；作者 / 已发布团本也允许房间成员查看。
+  const linkedToRoom =
+    moduleRecord.roomId === params.id ||
+    moduleRecord.ownerId === session.user.id ||
+    moduleRecord.isPublished ||
+    roomLink?.selectedModuleId === moduleRecord.id;
+  if (linkedToRoom === false) notFound();
 
   const isKP = membership.role === "KP";
   const canEdit = moduleRecord.ownerId === session.user.id;
@@ -170,6 +181,8 @@ export default async function ModuleDetailPage({
           </div>
         </form>
       ) : null}
+
+      {isKP ? <RoomPresetContentPanel roomId={params.id} moduleId={moduleRecord.id} /> : null}
 
       {canViewFull ? (
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

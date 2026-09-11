@@ -247,3 +247,90 @@ export async function setNpcVisibilityAction(formData: FormData): Promise<void> 
   emitRoomRefresh(roomId, "npc-visibility");
   redirect("/rooms/" + roomId);
 }
+
+function safeNpcReturnTo(roomId: string, raw: FormDataEntryValue | null): string {
+  const value = String(raw ?? "").trim();
+  if (value.startsWith("/rooms/" + roomId) && value.startsWith("//") === false) return value;
+  return "/rooms/" + roomId;
+}
+
+/** KP 编辑已有 NPC / Boss 卡的名称、属性、技能与公开数值。 */
+export async function updateNpcAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const cardId = String(formData.get("cardId") ?? "");
+  const returnTo = safeNpcReturnTo(roomId, formData.get("returnTo"));
+  const room = await requireKp(roomId, session.user.id);
+  if (room === null) redirect("/rooms/" + roomId);
+
+  const card = await prisma.card.findUnique({
+    where: { id: cardId },
+    select: { id: true, roomId: true, scope: true, type: true, stats: true, subtitle: true }
+  });
+  if (card === null || card.roomId !== roomId || card.scope !== "ROOM" || card.type !== "NPC") {
+    redirect(returnTo);
+  }
+
+  const name = String(formData.get("name") ?? "").trim().slice(0, 50);
+  if (name.length === 0) redirectError(roomId, "请填写名字");
+  const attributes = parseAttributes(formData);
+  if (attributes === null) redirectError(roomId, "属性必须是数字");
+  const maxHp = numberField(formData, "maxHp");
+  const maxMp = numberField(formData, "maxMp");
+  const maxSan = numberField(formData, "maxSan");
+  const maxDp = numberField(formData, "maxDp");
+  if (maxHp === null || maxMp === null || maxSan === null || maxDp === null) {
+    redirectError(roomId, "HP/MP/SAN/DP 必须是数字");
+  }
+
+  const effective = await loadEffectivePack({
+    id: room.id,
+    system: room.system,
+    rulePackVersionId: room.rulePackVersionId,
+    ruleOverride: room.ruleOverride
+  });
+  const skillsResult = parseSkills(formData, effective);
+  if (typeof skillsResult === "string") redirectError(roomId, skillsResult);
+
+  const existingParsed = NpcStatsSchema.safeParse(card.stats);
+  const existing = existingParsed.success ? existingParsed.data : null;
+  const tierRaw = String(formData.get("tier") ?? existing?.tier ?? "STANDARD");
+  const knownTiers = PRESET_TIERS as readonly string[];
+  const tier = knownTiers.includes(tierRaw) ? tierRaw : "STANDARD";
+  const rarityRaw = String(formData.get("rarity") ?? existing?.rarity ?? "COMMON");
+  const raceRaw = String(formData.get("race") ?? "").trim();
+  const parsed = NpcStatsSchema.safeParse({
+    presetId: existing?.presetId ?? null,
+    tier,
+    rarity: rarityRaw,
+    race: raceRaw.length === 0 ? null : raceRaw,
+    attributes,
+    skills: skillsResult.skills,
+    maxHp,
+    maxMp,
+    maxSan,
+    maxDp,
+    tags: parseTags(formData)
+  });
+  if (parsed.success === false) {
+    redirectError(roomId, parsed.error.issues[0]?.message ?? "NPC 数据不合法");
+  }
+  const bad = validateAgainstPack(parsed.data, effective);
+  if (bad !== null) redirectError(roomId, bad);
+
+  await prisma.card.update({
+    where: { id: card.id },
+    data: {
+      name,
+      subtitle: String(formData.get("subtitle") ?? "").trim().slice(0, 60) || null,
+      description: String(formData.get("description") ?? "").trim().slice(0, 500) || null,
+      rarity: parsed.data.rarity as never,
+      stats: { ...parsed.data } as never
+    }
+  });
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "npc-updated");
+  redirect(returnTo);
+}

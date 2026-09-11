@@ -32,6 +32,7 @@
     "verify:growth-checks": "tsx --env-file=.env scripts/verify-growth-checks.ts",
     "verify:combat-rounds": "tsx --env-file=.env scripts/verify-combat-rounds.ts",
     "verify:realtime-sync": "tsx --env-file=.env scripts/verify-realtime-sync.ts",
+    "verify:clue-npc-edit": "tsx --env-file=.env scripts/verify-clue-npc-edit.ts",
     "verify:admin-console": "tsx --env-file=.env scripts/verify-admin-console.ts",
     "verify:scene-increments": "tsx --env-file=.env scripts/verify-scene-increments.ts",
     "verify:ai-import": "tsx --env-file=.env scripts/verify-ai-import.ts",

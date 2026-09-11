@@ -194,6 +194,7 @@ model User {
   notes       Note[]
   ownedCards  Card[]              @relation("CardOwner")
   clueFinds   ClueDiscovery[]
+  clueShares ClueShare[]
   rulePacks   RulePack[]
   diceRolls   DiceRoll[]
   ownedRooms  Room[]              @relation("RoomOwner")
@@ -1017,6 +1018,7 @@ model Clue {
   room         Room            @relation(fields: [roomId], references: [id], onDelete: Cascade)
   asset        Asset?          @relation(fields: [assetId], references: [id])
   discoveredBy ClueDiscovery[]
+  shares       ClueShare[]
 
   @@index([roomId])
 }
@@ -1030,6 +1032,20 @@ model ClueDiscovery {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@id([clueId, userId])
+}
+
+/// KP 定向把线索发给指定成员；玩家可见性 = isPublic / 被分享 / 已发现。
+model ClueShare {
+  clueId   String
+  userId   String
+  sharedBy String?
+  sharedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  clue Clue @relation(fields: [clueId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([clueId, userId])
+  @@index([userId])
 }
 
 model Note {

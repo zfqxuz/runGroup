@@ -105,3 +105,108 @@ export async function createNoteAction(formData: FormData): Promise<void> {
   revalidateRoom(roomId);
   redirect("/rooms/" + roomId + "?note=created#room-info");
 }
+
+function safeClueReturnTo(roomId: string, raw: FormDataEntryValue | null, fallback: string): string {
+  const value = String(raw ?? "").trim();
+  if (value.startsWith("/rooms/" + roomId) && value.startsWith("//") === false) return value;
+  return fallback;
+}
+
+async function requireKpAndClue(roomId: string, clueId: string, userId: string) {
+  const membership = await requireMembership(roomId, userId);
+  if (membership === null || membership.role !== "KP") return null;
+  const clue = await prisma.clue.findUnique({ where: { id: clueId }, select: { id: true, roomId: true } });
+  if (clue === null || clue.roomId !== roomId) return null;
+  return clue;
+}
+
+/** KP 编辑线索标题 / 正文 / 公开状态。 */
+export async function updateClueAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const clueId = clean(formData.get("clueId"), 64);
+  const title = clean(formData.get("title"), 120);
+  const content = clean(formData.get("content"), 20000);
+  const isPublic = String(formData.get("isPublic") ?? "0") === "1";
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=updated#room-info");
+  if (roomId.length === 0 || clueId.length === 0 || title.length === 0 || content.length === 0) {
+    redirect(returnTo);
+  }
+  const clue = await requireKpAndClue(roomId, clueId, session.user.id);
+  if (clue === null) redirect("/rooms/" + roomId);
+  await prisma.clue.update({
+    where: { id: clue.id },
+    data: { title, content, isPublic }
+  });
+  revalidateRoom(roomId);
+  redirect(returnTo);
+}
+
+/** KP 一键公开 / 隐藏线索。 */
+export async function setClueVisibilityAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const clueId = clean(formData.get("clueId"), 64);
+  const isPublic = String(formData.get("isPublic") ?? "0") === "1";
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=published#room-info");
+  const clue = await requireKpAndClue(roomId, clueId, session.user.id);
+  if (clue === null) redirect("/rooms/" + roomId);
+  await prisma.clue.update({ where: { id: clue.id }, data: { isPublic } });
+  revalidateRoom(roomId);
+  redirect(returnTo);
+}
+
+/** KP 删除线索及其分享 / 发现记录。 */
+export async function deleteClueAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const clueId = clean(formData.get("clueId"), 64);
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=deleted#room-info");
+  const clue = await requireKpAndClue(roomId, clueId, session.user.id);
+  if (clue === null) redirect("/rooms/" + roomId);
+  await prisma.clue.delete({ where: { id: clue.id } });
+  revalidateRoom(roomId);
+  redirect(returnTo);
+}
+
+/**
+ * KP 把线索定向发给指定成员。
+ * 用本次提交的 targetUserIds 整体替换分享名单；传空数组表示取消全部定向分享。
+ */
+export async function shareClueAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const clueId = clean(formData.get("clueId"), 64);
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=shared#room-info");
+  const clue = await requireKpAndClue(roomId, clueId, session.user.id);
+  if (clue === null) redirect("/rooms/" + roomId);
+
+  const requested = formData
+    .getAll("targetUserIds")
+    .map((value) => String(value))
+    .filter((value) => value.length > 0)
+    .slice(0, 100);
+  const members = requested.length === 0
+    ? []
+    : await prisma.roomMember.findMany({
+        where: { roomId, userId: { in: requested }, role: { not: "KP" } },
+        select: { userId: true }
+      });
+  const targetIds = members.map((member) => member.userId);
+
+  await prisma.$transaction(async (tx) => {
+    await tx.clueShare.deleteMany({ where: { clueId: clue.id } });
+    if (targetIds.length > 0) {
+      await tx.clueShare.createMany({
+        data: targetIds.map((userId) => ({ clueId: clue.id, userId, sharedBy: session.user.id }))
+      });
+    }
+  });
+
+  revalidateRoom(roomId);
+  redirect(returnTo);
+}

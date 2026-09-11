@@ -1,4 +1,5 @@
 import Link from "next/link";
+import NpcEditForm from "@/components/room/NpcEditForm";
 import { deleteCardAction } from "@/server/actions/card";
 import { setNpcVisibilityAction } from "@/server/actions/npc";
 import { prisma } from "@/server/db/prisma";
@@ -104,6 +105,9 @@ export default async function RoomNpcPanel(props: Props) {
                     )}
                   </>
                 )}
+                {props.isKP ? (
+                  <NpcEditForm roomId={props.roomId} card={card} returnTo={"/rooms/" + props.roomId + "/prepare"} />
+                ) : null}
                 {props.isKP ? (
                   <div className="mt-3 flex flex-wrap items-center gap-2">
                     <form action={setNpcVisibilityAction}>

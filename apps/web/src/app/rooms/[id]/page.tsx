@@ -239,11 +239,16 @@ export default async function RoomPage({
       ? { roomId: room.id }
       : {
           roomId: room.id,
-          OR: [{ isPublic: true }, { discoveredBy: { some: { userId: session.user.id } } }]
+          OR: [
+            { isPublic: true },
+            { discoveredBy: { some: { userId: session.user.id } } },
+            { shares: { some: { userId: session.user.id } } }
+          ]
         },
     include: {
       _count: { select: { discoveredBy: true } },
-      discoveredBy: { where: { userId: session.user.id }, select: { userId: true } }
+      discoveredBy: { where: { userId: session.user.id }, select: { userId: true } },
+      shares: { select: { userId: true } }
     },
     orderBy: { createdAt: "asc" }
   });
@@ -463,8 +468,17 @@ export default async function RoomPage({
           content: clue.content,
           isPublic: clue.isPublic,
           discoveredByMe: clue.discoveredBy.length > 0,
-          discoveredCount: clue._count.discoveredBy
+          discoveredCount: clue._count.discoveredBy,
+          sharedWithIds: clue.shares.map((share) => share.userId),
+          sharedWithMe: clue.shares.some((share) => share.userId === session.user.id)
         }))}
+        members={room.members
+          .filter((member) => member.role !== "KP")
+          .map((member) => ({
+            userId: member.userId,
+            displayName: member.user.displayName ?? member.user.username,
+            role: member.role
+          }))}
         notes={notes.map((note) => ({
           id: note.id,
           title: note.title,
