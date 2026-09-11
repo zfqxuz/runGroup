@@ -6,6 +6,8 @@ export interface OccupationView {
   readonly code: number;
   readonly name: string;
   readonly era: string;
+  readonly creditMin: number | null;
+  readonly creditMax: number | null;
   readonly creditText: string | null;
   readonly pointsText: string | null;
   readonly pointsFormula: string;
@@ -64,6 +66,8 @@ export function profileOccupationalSkillIds(
       if (typeof skillId === "string" && skillId.length > 0) ids.add(skillId);
     }
   }
+  // 信用评级是 COC7 每个职业都有的特殊本职技能，但不在 Excel「本职技能」矩阵行里。
+  ids.add("CREDIT_RATING");
   return ids;
 }
 
@@ -333,6 +337,8 @@ export function toOccupationView(row: {
   readonly code: number;
   readonly name: string;
   readonly era: string;
+  readonly creditMin: number | null;
+  readonly creditMax: number | null;
   readonly creditText: string | null;
   readonly pointsText: string | null;
   readonly pointsFormula: string;

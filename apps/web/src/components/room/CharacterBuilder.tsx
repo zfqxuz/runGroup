@@ -269,6 +269,18 @@ export default function CharacterBuilder(props: Props) {
     [interestAdded]
   );
   const occupationFreeChoice = selectedOccupation === null ? false : hasFreeSkillChoice(selectedOccupation);
+  const creditRatingValue =
+    (skillBases.CREDIT_RATING ?? 0) +
+    (occupationAdded.CREDIT_RATING ?? 0) +
+    (interestAdded.CREDIT_RATING ?? 0);
+  const creditIssue =
+    selectedOccupation === null ||
+    (selectedOccupation.creditMin === null && selectedOccupation.creditMax === null)
+      ? null
+      : creditRatingValue < (selectedOccupation.creditMin ?? 0) ||
+          creditRatingValue > (selectedOccupation.creditMax ?? 99)
+        ? "信用评级必须在 " + (selectedOccupation.creditMin ?? 0) + "~" + (selectedOccupation.creditMax ?? 99) + " 之间（当前 " + creditRatingValue + "）"
+        : null;
   const remainingOccupationPoints = Math.max(0, skillPool.occupation - usedOccupationPoints);
   const remainingInterestPoints = Math.max(0, skillPool.interest - usedInterestPoints);
 
@@ -550,6 +562,10 @@ export default function CharacterBuilder(props: Props) {
       setMessage("请先完成并确认年龄补正。");
       return;
     }
+    if (creditIssue !== null) {
+      setMessage(creditIssue);
+      return;
+    }
     setBusy(true);
     setMessage(null);
 
@@ -648,6 +664,13 @@ export default function CharacterBuilder(props: Props) {
                 <p className="mt-1 text-[11px] leading-relaxed text-white/40">
                   本职与可选：{selectedOccupation.skillsText}
                 </p>
+                {selectedOccupation.creditMin === null && selectedOccupation.creditMax === null ? null : (
+                  <p className={"mt-1 text-[11px] " + (creditIssue === null ? "text-emerald-300/80" : "text-amber-300")}>
+                    信用评级范围 {selectedOccupation.creditText ?? (selectedOccupation.creditMin ?? 0) + "-" + (selectedOccupation.creditMax ?? 99)}
+                    {" · 当前 " + creditRatingValue}
+                    {creditIssue === null ? "" : "（未满足，保存前必须调整）"}
+                  </p>
+                )}
                 {selectedProfile === null ? (
                   <>
                     {choiceLimits === null ? null : (
@@ -1277,7 +1300,7 @@ export default function CharacterBuilder(props: Props) {
         </div>
         <button
           type="button"
-          disabled={[busy, name.trim().length === 0, attributesValid === false].includes(true)}
+          disabled={[busy, name.trim().length === 0, attributesValid === false, creditIssue !== null].includes(true)}
           onClick={submit}
           className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
         >

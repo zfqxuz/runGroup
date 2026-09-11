@@ -21,6 +21,7 @@ import {
   isSkillCreationWithinCap,
   occupationChoiceLimits,
   occupationSkillAccess,
+  profileOccupationalSkillIds,
   skillPointUsageIssue,
   toOccupationView,
   validateOccupationSlotAssignments,
@@ -254,8 +255,7 @@ export async function saveCharacter(
       if (slotCheck.ok === false) {
         return { ok: false, error: "本职空位不合法：" + slotCheck.errors.join("；") };
       }
-      profileOccupational = new Set(slotCheck.assignedSkillIds);
-      for (const item of skillProfile.fixed) profileOccupational.add(item.skillId);
+      profileOccupational = profileOccupationalSkillIds(skillProfile, normalizedSlots);
     }
     const limits = occupationView === null || skillProfile !== null
       ? { free: 0, social: 0, categories: {} as Record<string, number> }
@@ -338,6 +338,19 @@ export async function saveCharacter(
       }
     }
     skillAllocation = { occupation: occupationAdded, interest: interestAdded, slots: normalizedSlots };
+  }
+
+  // 信用评级必须落在职业规定的范围内。没有显式填写的技能按 0 处理。
+  if (occupation !== null && (occupation.creditMin !== null || occupation.creditMax !== null)) {
+    const credit = skills.CREDIT_RATING ?? 0;
+    const creditMin = occupation.creditMin ?? 0;
+    const creditMax = occupation.creditMax ?? 99;
+    if (credit < creditMin || credit > creditMax) {
+      return {
+        ok: false,
+        error: "信用评级必须在 " + creditMin + "~" + creditMax + " 之间（当前 " + credit + "）"
+      };
+    }
   }
 
   // 技能会影响 maxSan（CTHULHU_MYTHOS），所以等技能确定后再算一次最终衍生值。

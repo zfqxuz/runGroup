@@ -7,6 +7,7 @@
  */
 import { builtinRegistry, compileParsedRulePack, resolveRulePack } from "@touhou/rules";
 import profiles from "../src/shared/data/coc7-occupation-slots.json";
+import occupations from "../prisma/data/occupations.json";
 import {
   occupationSlotCandidates,
   profileOccupationalSkillIds,
@@ -53,6 +54,11 @@ ensure(validateOccupationSlotAssignments(architect, { "choice-1": ["STEALTH"] },
 const architectOccupational = profileOccupationalSkillIds(architect, { "choice-1": ["COMPUTER_USE"] });
 ensure(architectOccupational.has("COMPUTER_USE"), "空位选中的计算机使用应变为实际本职");
 ensure(architectOccupational.has("ACCOUNTING"), "固定本职会计应始终为实际本职");
+ensure(architectOccupational.has("CREDIT_RATING"), "信用评级应始终视为 COC7 本职技能");
+const architectRow = (occupations as readonly { readonly system: string; readonly code: number; readonly creditMin: number | null; readonly creditMax: number | null }[]).find(
+  (item) => item.system === "COC7" && item.code === 12
+);
+ensure(architectRow?.creditMin === 30 && architectRow?.creditMax === 70, "建筑师信用评级范围应为 30~70");
 
 const secretary = profile("102");
 ensure(slotOf(secretary, "☆").candidates.some((item) => item.skillId === "技艺（打字）"), "秘书 ☆ 应包含技艺（打字）");
@@ -77,6 +83,6 @@ ensure(hunter.fixed.some((item) => item.skillId === "植物学"), "猎人固定�
 ensure(slotOf(hunter, "☆").candidates.some((item) => item.skillId === "LISTEN"), "猎人 ☆ 应包含聆听");
 ensure(slotOf(hunter, "⊙").candidates.some((item) => item.skillId === "SURVIVAL"), "猎人 ⊙ 应包含生存");
 
-console.log("PASS 职业空位数据 E2E：230 职业 / 固定本职 / ☆ / ⊙ / ☯ / ※ / 任意特长 / 重复占用校验");
+console.log("PASS 职业空位数据 E2E：230 职业 / 固定本职 / ☆ / ⊙ / ☯ / ※ / 任意特长 / 重复占用 / 信用评级本职");
 console.log("  建筑师 ☆=" + architectChoice.candidates.map((item) => item.label).join(" / "));
 console.log("  秘书 ☆=" + slotOf(secretary, "☆").candidates.map((item) => item.label).join(" / "));
