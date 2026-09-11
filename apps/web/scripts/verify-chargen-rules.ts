@@ -13,6 +13,7 @@ import {
   occupationSkillAccess,
   skillCreationCap,
   skillCreationTotal,
+  skillPointUsageIssue,
   toOccupationView
 } from "../src/shared/occupation";
 
@@ -59,6 +60,33 @@ async function main(): Promise<void> {
   ensure(isSkillCreationWithinCap({ base: 85, occupation: 0, interest: 5, occupationMax: 80, interestMax: 70 }) === false, "母语基础 85 时不应再加兴趣点");
   expectEqual(skillCreationTotal({ base: 85, occupation: 0, interest: 0 }), 85, "总技能值计算");
 
+  // 4. 加点规则：本职只能用职业点；非本职只能用兴趣点；同一技能不能混用。
+  expectEqual(
+    skillPointUsageIssue({ access: occupationSkillAccess(architect, "法律"), occupation: 0, interest: 10 }),
+    "INTEREST_NOT_ALLOWED",
+    "本职技能不能用兴趣点"
+  );
+  expectEqual(
+    skillPointUsageIssue({ access: occupationSkillAccess(architect, "潜行"), occupation: 10, interest: 0 }),
+    "OCCUPATION_NOT_ALLOWED",
+    "非本职不能使用职业点"
+  );
+  expectEqual(
+    skillPointUsageIssue({ access: occupationSkillAccess(magician, "潜行"), occupation: 10, interest: 10 }),
+    "MIXED_POINTS",
+    "同一技能不能同时用职业点和兴趣点"
+  );
+  expectEqual(
+    skillPointUsageIssue({ access: occupationSkillAccess(magician, "潜行"), occupation: 10, interest: 0 }),
+    null,
+    "自选本职技能应允许职业点"
+  );
+  expectEqual(
+    skillPointUsageIssue({ access: occupationSkillAccess(magician, "潜行"), occupation: 0, interest: 10 }),
+    null,
+    "未选为本职的技能应允许兴趣点"
+  );
+
   // 4. 规则包默认上限为 80 / 70。
   const pack = resolveRulePack("coc7-baseline", builtinRegistry());
   const compiled = compileParsedRulePack(pack);
@@ -69,7 +97,7 @@ async function main(): Promise<void> {
   expectEqual(occupationMax, 80, "规则包本职上限默认应为 80");
   expectEqual(interestMax, 70, "规则包兴趣上限默认应为 70");
 
-  console.log("PASS 车卡规则 E2E：本职判定 / 本职 80 / 兴趣 70 / 母语基础值");
+  console.log("PASS 车卡规则 E2E：本职判定 / 本职 80 / 兴趣 70 / 母语基础值 / 职业点与兴趣点互斥");
   console.log("  建筑师=潜行 NONE，魔术师=潜行 FREE，社交上限 " + magicianLimits.social + "，任意上限 " + magicianLimits.free);
 }
 

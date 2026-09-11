@@ -18,6 +18,7 @@ import {
   isSkillCreationWithinCap,
   occupationChoiceLimits,
   occupationSkillAccess,
+  skillPointUsageIssue,
   toOccupationView,
   type OccupationSkillAccess
 } from "@/shared/occupation";
@@ -216,10 +217,18 @@ export async function saveCharacter(
       const interest = interestAdded[skill.id] ?? 0;
       const access = accessBySkill.get(skill.id) ?? { kind: "NONE", group: null };
 
+      const pointIssue = skillPointUsageIssue({ access, occupation: occ, interest });
+      if (pointIssue !== null) {
+        const detail =
+          pointIssue === "OCCUPATION_NOT_ALLOWED"
+            ? "不是本职业的本职或可选技能，不能用职业点"
+            : pointIssue === "INTEREST_NOT_ALLOWED"
+              ? "是本职技能，只能用职业点加点"
+              : "不能同时使用职业点和兴趣点";
+        return { ok: false, error: skill.name + "：" + detail };
+      }
+
       if (occ > 0) {
-        if (access.kind === "NONE") {
-          return { ok: false, error: skill.name + " 不是本职业的本职或可选技能" };
-        }
         if (access.kind === "SOCIAL" && choiceCounts.social.has(skill.id) === false) {
           if (choiceCounts.social.size >= limits.social) {
             return { ok: false, error: "本职业最多只能选择 " + limits.social + " 项社交技能" };

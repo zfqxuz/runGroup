@@ -18,7 +18,6 @@ import { saveCharacter, type SaveCharacterResult } from "@/server/actions/charac
 import {
   ERA_LABELS,
   hasFreeSkillChoice,
-  isSkillCreationWithinCap,
   occupationChoiceLimits,
   occupationSkillAccess,
   type OccupationSkillAccess,
@@ -53,8 +52,20 @@ const DERIVED_LABELS: Record<string, string> = {
   maxDp: "骰池 DP"
 };
 
+const SKILL_CATEGORY_ORDER = ["COMBAT", "PHYSICAL", "KNOWLEDGE", "SOCIAL", "TECH", "MAGIC", "OTHER"] as const;
+
+const SKILL_CATEGORY_LABELS: Record<string, string> = {
+  COMBAT: "战斗",
+  PHYSICAL: "身体",
+  KNOWLEDGE: "知识",
+  SOCIAL: "社交",
+  TECH: "技术",
+  MAGIC: "法术",
+  OTHER: "其他"
+};
+
 const inputClass =
-  "w-full rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500";
+  "w-full rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white outline-none placeholder:text-white/25 focus:border-sakura-500";
 
 function emptyAttributes(): AttributeSet {
   const base: Record<string, number> = {};
@@ -74,6 +85,9 @@ export default function CharacterBuilder(props: Props) {
   const [interestAdded, setInterestAdded] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [skillQuery, setSkillQuery] = useState("");
+  const [skillCategory, setSkillCategory] = useState<string>("ALL");
+  const [skillFilter, setSkillFilter] = useState<"ALL" | "OCCUPATION" | "ALLOCATED">("ALL");
 
   const compiled = useMemo(() => compileParsedRulePack(props.pack), [props.pack]);
 
@@ -110,6 +124,17 @@ export default function CharacterBuilder(props: Props) {
     () => props.occupations.find((item) => item.id === occupationId) ?? null,
     [props.occupations, occupationId]
   );
+
+  const accessBySkillId = useMemo(() => {
+    const map = new Map<string, OccupationSkillAccess>();
+    for (const skill of compiled.skills) {
+      map.set(
+        skill.id,
+        selectedOccupation === null ? { kind: "NONE", group: null } : occupationSkillAccess(selectedOccupation, skill.name)
+      );
+    }
+    return map;
+  }, [compiled.skills, selectedOccupation]);
 
   const raceInterest = useMemo(() => {
     if (race === null) return compiled.skillPoints.interest;
@@ -153,6 +178,38 @@ export default function CharacterBuilder(props: Props) {
     [interestAdded]
   );
   const occupationFreeChoice = selectedOccupation === null ? false : hasFreeSkillChoice(selectedOccupation);
+  const remainingOccupationPoints = Math.max(0, skillPool.occupation - usedOccupationPoints);
+  const remainingInterestPoints = Math.max(0, skillPool.interest - usedInterestPoints);
+
+  const filteredSkills = useMemo(() => {
+    const query = skillQuery.trim().toLowerCase();
+    return compiled.skills.filter((skill) => {
+      if (
+        query.length > 0 &&
+        skill.name.toLowerCase().includes(query) === false &&
+        skill.id.toLowerCase().includes(query) === false
+      ) {
+        return false;
+      }
+      if (skillCategory !== "ALL" && skill.category !== skillCategory) return false;
+      const access = accessBySkillId.get(skill.id) ?? { kind: "NONE" as const, group: null };
+      const occupation = occupationAdded[skill.id] ?? 0;
+      const interest = interestAdded[skill.id] ?? 0;
+      if (skillFilter === "OCCUPATION" && access.kind === "NONE") return false;
+      if (skillFilter === "ALLOCATED" && occupation === 0 && interest === 0) return false;
+      return true;
+    });
+  }, [accessBySkillId, compiled.skills, interestAdded, occupationAdded, skillCategory, skillFilter, skillQuery]);
+
+  const groupedSkills = useMemo(
+    () =>
+      SKILL_CATEGORY_ORDER.map((category) => ({
+        key: category,
+        label: SKILL_CATEGORY_LABELS[category] ?? category,
+        skills: filteredSkills.filter((skill) => skill.category === category)
+      })).filter((group) => group.skills.length > 0),
+    [filteredSkills]
+  );
 
   const raceOptions = Object.entries(props.pack.races);
   const raceInfo = race === null ? null : props.pack.races[race];
@@ -160,7 +217,12 @@ export default function CharacterBuilder(props: Props) {
   const pointValid = pointCheck === null || pointCheck.valid;
 
   function updateAttribute(key: AttributeKey, value: number): void {
-    setAttributes((prev) => ({ ...prev, [key]: value }) as AttributeSet);
+    const numeric = Math.floor(Number(value));
+    if (Number.isFinite(numeric) === false) return;
+    setAttributes((prev) => ({
+      ...prev,
+      [key]: Math.max(props.pack.attributes.min, Math.min(props.pack.attributes.max, numeric))
+    }) as AttributeSet);
   }
 
   function rollDestiny(): void {
@@ -179,13 +241,10 @@ export default function CharacterBuilder(props: Props) {
   }
 
   function accessOf(skillId: string): OccupationSkillAccess {
-    if (selectedOccupation === null) return { kind: "NONE", group: null };
-    const skill = compiled.skills.find((item) => item.id === skillId);
-    if (skill === undefined) return { kind: "NONE", group: null };
-    return occupationSkillAccess(selectedOccupation, skill.name);
+    return accessBySkillId.get(skillId) ?? { kind: "NONE", group: null };
   }
 
-  function currentChoiceCounts(): {
+  function currentChoiceCounts(allocation: Record<string, number> = occupationAdded): {
     readonly social: Set<string>;
     readonly free: Set<string>;
     readonly categories: Map<string, Set<string>>;
@@ -195,8 +254,8 @@ export default function CharacterBuilder(props: Props) {
     const categories = new Map<string, Set<string>>();
     if (selectedOccupation === null) return { social, free, categories };
     for (const skill of compiled.skills) {
-      if ((occupationAdded[skill.id] ?? 0) <= 0) continue;
-      const access = occupationSkillAccess(selectedOccupation, skill.name);
+      if ((allocation[skill.id] ?? 0) <= 0) continue;
+      const access = accessBySkillId.get(skill.id) ?? { kind: "NONE", group: null };
       if (access.kind === "SOCIAL") social.add(skill.id);
       else if (access.kind === "FREE") free.add(skill.id);
       else if (access.kind === "CATEGORY" && access.group !== null) {
@@ -208,14 +267,18 @@ export default function CharacterBuilder(props: Props) {
     return { social, free, categories };
   }
 
-  function canAddOccupationChoice(skillId: string, access: OccupationSkillAccess): boolean {
+  function canAddOccupationChoice(
+    skillId: string,
+    access: OccupationSkillAccess,
+    allocation: Record<string, number> = occupationAdded
+  ): boolean {
     if (access.kind === "NONE") return false;
-    if ((occupationAdded[skillId] ?? 0) > 0) return true;
+    if ((allocation[skillId] ?? 0) > 0) return true;
     if (access.kind === "FIXED") return true;
     const limits = selectedOccupation === null
       ? { free: 0, social: 0, categories: {} as Record<string, number> }
       : occupationChoiceLimits(selectedOccupation);
-    const counts = currentChoiceCounts();
+    const counts = currentChoiceCounts(allocation);
     if (access.kind === "SOCIAL") return counts.social.size < limits.social;
     if (access.kind === "FREE") return limits.free > 0 && counts.free.size < limits.free;
     if (access.kind === "CATEGORY" && access.group !== null) {
@@ -224,40 +287,75 @@ export default function CharacterBuilder(props: Props) {
     return true;
   }
 
-  function canUseOccupation(skillId: string): boolean {
-    if (selectedOccupation === null) return false;
+  function setOccupationValue(skillId: string, raw: number): void {
+    const desired = Math.max(0, Math.floor(Number(raw) || 0));
     const access = accessOf(skillId);
-    if (access.kind === "NONE") return false;
-    return canAddOccupationChoice(skillId, access);
+    if (access.kind === "NONE") return;
+    if ((interestAdded[skillId] ?? 0) > 0) return;
+
+    setOccupationAdded((prev) => {
+      const current = prev[skillId] ?? 0;
+      if (desired > current && canAddOccupationChoice(skillId, access, prev) === false) return prev;
+      const used = Object.values(prev).reduce((sum, value) => sum + value, 0);
+      const poolLimit = Math.max(0, skillPool.occupation - (used - current));
+      const capLimit = Math.max(0, skillPool.occupationMax - (skillBases[skillId] ?? 0));
+      const next = Math.min(desired, poolLimit, capLimit);
+      const copy = { ...prev };
+      if (next > 0) copy[skillId] = next;
+      else delete copy[skillId];
+      return copy;
+    });
   }
 
-  function adjustSkill(skillId: string, field: "occupation" | "interest", delta: number): void {
-    const base = skillBases[skillId] ?? 0;
-    const currentOccupation = occupationAdded[skillId] ?? 0;
-    const currentInterest = interestAdded[skillId] ?? 0;
-    const nextOccupation = field === "occupation" ? currentOccupation + delta : currentOccupation;
-    const nextInterest = field === "interest" ? currentInterest + delta : currentInterest;
-    if (nextOccupation < 0 || nextInterest < 0) return;
-    // 车卡上限：本职点可到 80，兴趣点可到 70；基础值本身超过上限时保留基础值，不再额外加点。
-    const withinCap = isSkillCreationWithinCap({
-      base,
-      occupation: nextOccupation,
-      interest: nextInterest,
-      occupationMax: skillPool.occupationMax,
-      interestMax: skillPool.interestMax
+  function setInterestValue(skillId: string, raw: number): void {
+    const desired = Math.max(0, Math.floor(Number(raw) || 0));
+    const access = accessOf(skillId);
+    if (access.kind === "FIXED") return;
+
+    setInterestAdded((prev) => {
+      if ((occupationAdded[skillId] ?? 0) > 0) return prev;
+      const current = prev[skillId] ?? 0;
+      const used = Object.values(prev).reduce((sum, value) => sum + value, 0);
+      const poolLimit = Math.max(0, skillPool.interest - (used - current));
+      const capLimit = Math.max(0, skillPool.interestMax - (skillBases[skillId] ?? 0));
+      const next = Math.min(desired, poolLimit, capLimit);
+      const copy = { ...prev };
+      if (next > 0) copy[skillId] = next;
+      else delete copy[skillId];
+      return copy;
     });
-    if (withinCap === false) return;
-    if (field === "occupation") {
-      if (delta > 0) {
-        const access = accessOf(skillId);
-        if (canAddOccupationChoice(skillId, access) === false) return;
-        if (usedOccupationPoints + delta > skillPool.occupation) return;
+  }
+
+  function clearSkillAllocation(skillId: string): void {
+    setOccupationAdded((prev) => {
+      if (prev[skillId] === undefined) return prev;
+      const copy = { ...prev };
+      delete copy[skillId];
+      return copy;
+    });
+    setInterestAdded((prev) => {
+      if (prev[skillId] === undefined) return prev;
+      const copy = { ...prev };
+      delete copy[skillId];
+      return copy;
+    });
+  }
+
+  function changeOccupation(nextId: string): void {
+    setOccupationId(nextId);
+    setOccupationAdded({});
+    setMessage(null);
+    const nextOccupation = props.occupations.find((item) => item.id === nextId) ?? null;
+    if (nextOccupation === null) return;
+    // 新职业固定为本职的技能不能再保留兴趣点；其余“可选本职”保持“先填哪边算哪类”。
+    setInterestAdded((prev) => {
+      const copy = { ...prev };
+      for (const skill of compiled.skills) {
+        const access = occupationSkillAccess(nextOccupation, skill.name);
+        if (access.kind === "FIXED") delete copy[skill.id];
       }
-      setOccupationAdded((prev) => ({ ...prev, [skillId]: nextOccupation }));
-      return;
-    }
-    if (delta > 0 && usedInterestPoints + delta > skillPool.interest) return;
-    setInterestAdded((prev) => ({ ...prev, [skillId]: nextInterest }));
+      return copy;
+    });
   }
 
   async function submit(): Promise<void> {
@@ -296,7 +394,10 @@ export default function CharacterBuilder(props: Props) {
   }
 
   const stepButton =
-    "h-8 w-8 rounded-md border border-white/15 text-white/60 transition hover:border-white/35 hover:text-white";
+    "h-8 min-w-8 rounded-md border border-white/15 px-1.5 text-[11px] text-white/60 transition hover:border-white/35 hover:text-white";
+
+  const choiceLimits = selectedOccupation === null ? null : occupationChoiceLimits(selectedOccupation);
+  const choiceCounts = currentChoiceCounts();
 
   return (
     <div className="flex flex-col gap-6">
@@ -332,10 +433,7 @@ export default function CharacterBuilder(props: Props) {
               <span className="text-xs text-white/50">职业</span>
               <select
                 value={occupationId}
-                onChange={(event) => {
-                  setOccupationId(event.target.value);
-                  setOccupationAdded({});
-                }}
+                onChange={(event) => changeOccupation(event.target.value)}
                 className={inputClass}
               >
                 <option value="">（未选择职业）</option>
@@ -358,6 +456,19 @@ export default function CharacterBuilder(props: Props) {
                 <p className="mt-1 text-[11px] leading-relaxed text-white/40">
                   本职与可选：{selectedOccupation.skillsText}
                 </p>
+                {choiceLimits === null ? null : (
+                  <div className="mt-1.5 flex flex-wrap gap-2 font-mono text-[10px] text-white/45">
+                    {choiceLimits.free > 0 ? (
+                      <span>任意可选 {choiceCounts.free.size}/{choiceLimits.free}</span>
+                    ) : null}
+                    {choiceLimits.social > 0 ? (
+                      <span>社交可选 {choiceCounts.social.size}/{choiceLimits.social}</span>
+                    ) : null}
+                    {Object.entries(choiceLimits.categories).map(([group, limit]) => (
+                      <span key={group}>{group}可选 {choiceCounts.categories.get(group)?.size ?? 0}/{limit}</span>
+                    ))}
+                  </div>
+                )}
                 {occupationFreeChoice ? (
                   <p className="mt-1 text-[10px] text-amber-300/80">含自选技能位，自选部分请按 KP 审核意见分配。</p>
                 ) : null}
@@ -402,31 +513,21 @@ export default function CharacterBuilder(props: Props) {
             const effective = outcome.attributes[key];
             return (
               <div key={key} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-                <p className="text-xs text-white/40">{ATTRIBUTE_LABELS[key]}</p>
-                <div className="mt-1.5 flex items-center gap-2">
-                  <button
-                    type="button"
-                    className={stepButton}
-                    onClick={() => updateAttribute(key, Math.max(props.pack.attributes.min, raw - 5))}
-                  >
-                    −
-                  </button>
+                <p className="text-xs text-white/50">{ATTRIBUTE_LABELS[key]}</p>
+                <div className="mt-2 flex items-center justify-center gap-1">
+                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw - 5)}>−5</button>
+                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw - 1)}>−1</button>
                   <input
                     type="number"
                     value={raw}
                     onChange={(event) => updateAttribute(key, Number(event.target.value) || 0)}
-                    className="w-full rounded-md border border-white/15 bg-ink-900 px-2 py-1 text-center font-mono text-sm outline-none focus:border-sakura-500"
+                    className="h-9 w-16 rounded-md border border-white/20 bg-ink-900 px-1 text-center font-mono text-lg font-semibold text-white outline-none focus:border-sakura-500"
                   />
-                  <button
-                    type="button"
-                    className={stepButton}
-                    onClick={() => updateAttribute(key, Math.min(props.pack.attributes.max, raw + 5))}
-                  >
-                    +
-                  </button>
+                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw + 1)}>+1</button>
+                  <button type="button" className={stepButton} onClick={() => updateAttribute(key, raw + 5)}>+5</button>
                 </div>
                 {effective === raw ? null : (
-                  <p className="mt-1 text-[11px] text-sakura-400">种族修正后 {effective}</p>
+                  <p className="mt-1 text-[11px] text-sakura-300">种族修正后 {effective}</p>
                 )}
               </div>
             );
@@ -509,50 +610,203 @@ export default function CharacterBuilder(props: Props) {
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-medium text-white/80">技能 · {compiled.skills.length} 项</h2>
-          <span className="rounded-full border border-white/15 px-3 py-1 font-mono text-xs text-white/60">
-            职业 {usedOccupationPoints}/{skillPool.occupation} · 兴趣 {usedInterestPoints}/{skillPool.interest} · 本职上限 {skillPool.occupationMax} · 兴趣上限 {skillPool.interestMax}
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <div className="min-w-[260px] flex-1">
+            <h2 className="text-base font-semibold text-white/90">技能分配</h2>
+            <p className="mt-1 text-xs leading-relaxed text-white/50">
+              职业写明的本职 + 你自行选中的本职只能用职业点；其余技能都视为兴趣，只能用兴趣点。同一技能不能混用两种点数；填了一边后另一边会锁定，点右侧「清空」可改。
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-lg border border-sakura-500/35 bg-sakura-500/10 px-3 py-2 font-mono text-xs text-sakura-200">
+              职业点剩余 <span className="text-lg font-semibold text-sakura-300">{remainingOccupationPoints}</span> / {skillPool.occupation}
+            </span>
+            <span className="rounded-lg border border-sky-400/35 bg-sky-400/10 px-3 py-2 font-mono text-xs text-sky-200">
+              兴趣点剩余 <span className="text-lg font-semibold text-sky-300">{remainingInterestPoints}</span> / {skillPool.interest}
+            </span>
+          </div>
+        </div>
+
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-[11px] text-white/40">
+          <span>本职上限 {skillPool.occupationMax}</span>
+          <span className="text-white/15">|</span>
+          <span>兴趣上限 {skillPool.interestMax}</span>
+          <span className="text-white/15">|</span>
+          <span>已加点 {Object.keys(occupationAdded).length + Object.keys(interestAdded).length} 项</span>
+        </div>
+
+        {selectedOccupation === null ? (
+          <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
+            还没选择职业。当前所有技能加点都按兴趣点计算，不能使用职业点。
+          </p>
+        ) : null}
+
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-ink-900/60 p-3">
+          <input
+            value={skillQuery}
+            onChange={(event) => setSkillQuery(event.target.value)}
+            placeholder="搜索技能名 / ID"
+            className="h-9 min-w-[180px] flex-1 rounded-lg border border-white/15 bg-ink-900 px-3 text-sm text-white/80 outline-none placeholder:text-white/25 focus:border-sakura-500"
+          />
+          <select
+            value={skillCategory}
+            onChange={(event) => setSkillCategory(event.target.value)}
+            className="h-9 rounded-lg border border-white/15 bg-ink-900 px-3 text-xs text-white/75 outline-none focus:border-sakura-500"
+          >
+            <option value="ALL">全部类别</option>
+            {SKILL_CATEGORY_ORDER.map((category) => (
+              <option key={category} value={category}>{SKILL_CATEGORY_LABELS[category] ?? category}</option>
+            ))}
+          </select>
+          <div className="flex items-center gap-1 rounded-lg border border-white/10 bg-black/20 p-1">
+            {([
+              ["ALL", "全部"],
+              ["OCCUPATION", "本职 / 可选"],
+              ["ALLOCATED", "已加点"]
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setSkillFilter(value)}
+                className={
+                  "rounded-md px-2.5 py-1 text-[11px] transition " +
+                  (skillFilter === value ? "bg-white/15 text-white" : "text-white/45 hover:text-white/80")
+                }
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <span className="ml-auto font-mono text-[11px] text-white/35">
+            {filteredSkills.length} / {compiled.skills.length} 项
           </span>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          {compiled.skills.map((skill) => {
-            const base = skillBases[skill.id] ?? 0;
-            const occupation = occupationAdded[skill.id] ?? 0;
-            const interest = interestAdded[skill.id] ?? 0;
-            const total = base + occupation + interest;
-            const access = accessOf(skill.id);
-            const occupationEnabled = selectedOccupation === null ? false : canUseOccupation(skill.id);
-            const accessLabel = access.kind === "FREE" ? "可选" : access.kind === "NONE" ? null : "本职";
-            return (
-              <div key={skill.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-                <div className="min-w-0">
-                  <p className="flex items-center gap-1 truncate text-xs text-white/70">
-                    <span className="truncate">{skill.name}</span>
-                    {accessLabel === null || (accessLabel === "可选" && occupationEnabled === false) ? null : (
-                      <span className={"shrink-0 rounded border px-1 text-[9px] " + (accessLabel === "本职" ? "border-sakura-500/40 text-sakura-400" : "border-white/20 text-white/45")}>{accessLabel}</span>
-                    )}
-                  </p>
-                  <p className="font-mono text-[10px] text-white/30">
-                    {base} + 职{occupation} + 趣{interest} = {total}
-                  </p>
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                  <div className="flex items-center gap-0.5">
-                    <span className="text-[9px] text-white/35">职</span>
-                    <button type="button" disabled={occupationEnabled === false || occupation <= 0} className="h-5 w-5 rounded border border-white/15 text-white/50 transition enabled:hover:border-white/35 enabled:hover:text-white disabled:opacity-20" onClick={() => adjustSkill(skill.id, "occupation", -5)}>−</button>
-                    <button type="button" disabled={occupationEnabled === false} className="h-5 w-5 rounded border border-white/15 text-white/50 transition enabled:hover:border-white/35 enabled:hover:text-white disabled:opacity-20" onClick={() => adjustSkill(skill.id, "occupation", 5)}>+</button>
-                  </div>
-                  <div className="flex items-center gap-0.5">
-                    <span className="text-[9px] text-white/35">趣</span>
-                    <button type="button" disabled={interest <= 0} className="h-5 w-5 rounded border border-white/15 text-white/50 transition enabled:hover:border-white/35 enabled:hover:text-white disabled:opacity-20" onClick={() => adjustSkill(skill.id, "interest", -5)}>−</button>
-                    <button type="button" className="h-5 w-5 rounded border border-white/15 text-white/50 transition hover:border-white/35 hover:text-white" onClick={() => adjustSkill(skill.id, "interest", 5)}>+</button>
-                  </div>
-                </div>
+        <div className="mt-4 flex flex-col gap-5">
+          {groupedSkills.length === 0 ? (
+            <p className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-6 text-center text-xs text-white/35">
+              没有匹配的技能
+            </p>
+          ) : null}
+          {groupedSkills.map((group) => (
+            <div key={group.key}>
+              <div className="mb-2 flex items-center gap-2">
+                <h3 className="text-xs font-semibold tracking-wide text-white/60">{group.label}</h3>
+                <span className="font-mono text-[10px] text-white/25">{group.skills.length} 项</span>
               </div>
-            );
-          })}
+              <div className="grid gap-2 xl:grid-cols-2">
+                {group.skills.map((skill) => {
+                  const base = skillBases[skill.id] ?? 0;
+                  const occupation = occupationAdded[skill.id] ?? 0;
+                  const interest = interestAdded[skill.id] ?? 0;
+                  const total = base + occupation + interest;
+                  const access = accessOf(skill.id);
+                  const isFixed = access.kind === "FIXED";
+                  const isPotential = access.kind !== "NONE";
+                  const maxOccupationAdd = Math.max(0, skillPool.occupationMax - base);
+                  const maxInterestAdd = Math.max(0, skillPool.interestMax - base);
+                  const choiceAllowed = isPotential && canAddOccupationChoice(skill.id, access);
+                  const occupationEnabled =
+                    isPotential &&
+                    interest === 0 &&
+                    (occupation > 0 || (choiceAllowed && remainingOccupationPoints > 0 && maxOccupationAdd > 0));
+                  const interestEnabled =
+                    isFixed === false &&
+                    occupation === 0 &&
+                    (interest > 0 || (remainingInterestPoints > 0 && maxInterestAdd > 0));
+                  const badge =
+                    isFixed || occupation > 0
+                      ? "本职"
+                      : isPotential
+                        ? (interest > 0 ? "兴趣" : "可选本职")
+                        : interest > 0
+                          ? "兴趣"
+                          : null;
+
+                  return (
+                    <div key={skill.id} className="rounded-xl border border-white/10 bg-ink-900/70 p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="truncate text-sm font-medium text-white/90">{skill.name}</span>
+                            {badge === null ? null : (
+                              <span
+                                className={
+                                  "shrink-0 rounded border px-1.5 py-0.5 text-[10px] " +
+                                  (badge === "本职"
+                                    ? "border-sakura-500/50 bg-sakura-500/10 text-sakura-300"
+                                    : badge === "可选本职"
+                                      ? "border-spirit-400/45 bg-spirit-400/10 text-spirit-300"
+                                      : "border-sky-400/40 bg-sky-400/10 text-sky-200")
+                                }
+                              >
+                                {badge}
+                              </span>
+                            )}
+                          </div>
+                          <p className="mt-0.5 text-[11px] text-white/40">
+                            基础 <span className="font-mono text-white/70">{base}</span>
+                          </p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-[10px] text-white/40">总计</p>
+                          <p className="font-mono text-xl font-semibold text-amber-300">{total}</p>
+                        </div>
+                      </div>
+
+                      <div className="mt-3 grid grid-cols-2 gap-2">
+                        <label className="flex flex-col gap-1">
+                          <span className="flex items-center justify-between text-[10px] text-sakura-300/90">
+                            <span>本职加点</span>
+                            <span className="font-mono text-white/30">上限 {maxOccupationAdd + base}</span>
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={occupation}
+                            disabled={occupationEnabled === false}
+                            onChange={(event) => setOccupationValue(skill.id, Number(event.target.value))}
+                            className="h-9 rounded-lg border border-sakura-500/30 bg-ink-900 px-2 text-center font-mono text-sm text-sakura-100 outline-none focus:border-sakura-400 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black/20 disabled:text-white/25"
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1">
+                          <span className="flex items-center justify-between text-[10px] text-sky-300/90">
+                            <span>兴趣加点</span>
+                            <span className="font-mono text-white/30">上限 {maxInterestAdd + base}</span>
+                          </span>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={interest}
+                            disabled={interestEnabled === false}
+                            onChange={(event) => setInterestValue(skill.id, Number(event.target.value))}
+                            className="h-9 rounded-lg border border-sky-400/30 bg-ink-900 px-2 text-center font-mono text-sm text-sky-100 outline-none focus:border-sky-300 disabled:cursor-not-allowed disabled:border-white/10 disabled:bg-black/20 disabled:text-white/25"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="mt-2 flex items-center justify-between gap-2">
+                        <p className="font-mono text-[11px] text-white/45">
+                          基础 {base} + 职 <span className="text-sakura-300">{occupation}</span> + 趣 <span className="text-sky-300">{interest}</span> = <span className="text-white/80">{total}</span>
+                        </p>
+                        {occupation > 0 || interest > 0 ? (
+                          <button
+                            type="button"
+                            onClick={() => clearSkillAllocation(skill.id)}
+                            className="text-[10px] text-white/30 transition hover:text-white/70"
+                          >
+                            清空
+                          </button>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
       </section>
 

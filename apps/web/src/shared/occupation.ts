@@ -175,6 +175,28 @@ export function isOccupationSkill(
   return access.kind !== "NONE" && access.kind !== "FREE";
 }
 
+export type SkillPointUsageIssue =
+  | "OCCUPATION_NOT_ALLOWED"
+  | "INTEREST_NOT_ALLOWED"
+  | "MIXED_POINTS";
+
+/**
+ * 车卡加点规则：
+ * - 职业固定本职 + 用户自行选中的本职（分类 / 社交 / 任意）只能用职业点；
+ * - 其余技能一律视为兴趣，只能用兴趣点；
+ * - 同一技能不能同时使用职业点和兴趣点。
+ */
+export function skillPointUsageIssue(input: {
+  readonly access: OccupationSkillAccess;
+  readonly occupation: number;
+  readonly interest: number;
+}): SkillPointUsageIssue | null {
+  if (input.occupation > 0 && input.access.kind === "NONE") return "OCCUPATION_NOT_ALLOWED";
+  if (input.interest > 0 && input.access.kind === "FIXED") return "INTEREST_NOT_ALLOWED";
+  if (input.occupation > 0 && input.interest > 0) return "MIXED_POINTS";
+  return null;
+}
+
 export function hasFreeSkillChoice(
   occupation: Pick<OccupationView, "skillNames">
 ): boolean {
