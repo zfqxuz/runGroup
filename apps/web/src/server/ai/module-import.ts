@@ -11,6 +11,7 @@ import { syncModuleTemplatesFromModule } from "@/server/modules/templates";
 import {
   chatDeepSeek,
   extractJsonObject,
+  DeepSeekTruncationError,
   type DeepSeekContentPart,
   type DeepSeekMessage,
   DEEPSEEK_MODELS
@@ -439,17 +440,20 @@ function jsonInstruction(): string {
     "- 素材中出现的线索、手书、照片、文件都要整理成 clues；没有图片则 image 留空，不要编造资源路径。",
     "- 如果素材涉及魔法 / 法术 / 咒文 / 仪式 / 超自然能力，必须整理成 structured.magic 数组并尽量给出可结算数值（技能、消耗、伤害、目标）；没有魔法则给空数组 []。",
     "- 若素材提供了图片，请在相关章节使用 markdown 图片语法，路径必须严格使用上面给出的引用路径。",
-    "- 总篇幅控制在约 12000 字以内，保证返回 JSON 完整。"
+    "- JSON 必须一次性完整闭合，严禁被截断；若素材很多，请优先保留全部 14 个章节标题和所有结构化字段，压缩描述性文字。",
+    "- 总篇幅尽量控制在约 9000 个中文字符以内，单章描述 2-4 段即可。"
   ].join("\n");
 }
 
 function repairPrompt(previous: string, errors: readonly string[]): string {
   return [
-    "你上一条输出的团本 JSON 未通过标准校验，请修正。只返回修正后的完整 JSON，不要解释。",
+    "你上一条输出的团本 JSON 未通过标准校验（也可能是输出过长被截断），请重新生成完整 JSON。只返回 JSON，不要解释。",
+    "硬性要求：所有 14 个章节 key 必须存在，结构化字段必须齐全；JSON 必须完整闭合。",
+    "如果内容过长，请压缩每章描述，优先保留章节标题与 structured 字段，总长度控制在约 8000 个中文字符以内。",
     "校验错误：",
     ...errors.slice(0, 20).map((error) => "- " + error),
-    "上次 JSON：",
-    previous.slice(0, 60000)
+    "上次输出片段（可能不完整，仅供对照，不要照抄、不要复述）：",
+    previous.slice(0, 12000)
   ].join("\n");
 }
 
@@ -476,20 +480,50 @@ async function generateDraft(input: {
     { role: "user", content: userParts }
   ];
 
+  const MAX_OUTPUT_TOKENS = 32768;
+  const RETRY_FALLBACK =
+    "你上一次输出因为过长被截断，没有形成完整 JSON。请重新生成完整 JSON：所有 14 个章节 key 必须存在，" +
+    "结构化字段必须齐全，JSON 必须完整闭合；每章内容精炼，总长度控制在约 8000 个中文字符以内。只返回 JSON。";
+
   let previousRaw = "";
   let lastErrors: readonly string[] = [];
+  let truncated = false;
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     input.onProgress?.("正在调用 DeepSeek（第 " + attempt + "/3 次）…");
-    const raw = attempt === 1
-      ? await chatDeepSeek(messages, { model: input.hints.model, jsonMode: true, maxTokens: 8192, temperature: 0.2 })
-      : await chatDeepSeek(
-          [
-            ...messages,
-            { role: "assistant", content: previousRaw },
-            { role: "user", content: repairPrompt(previousRaw, lastErrors) }
-          ],
-          { model: input.hints.model, jsonMode: true, maxTokens: 8192, temperature: 0.1 }
-        );
+    let raw: string;
+    try {
+      if (attempt === 1) {
+        raw = await chatDeepSeek(messages, {
+          model: input.hints.model,
+          jsonMode: true,
+          maxTokens: MAX_OUTPUT_TOKENS,
+          temperature: 0.2
+        });
+      } else {
+        const retryMessages: DeepSeekMessage[] = previousRaw.length > 0
+          ? [
+              ...messages,
+              { role: "assistant", content: previousRaw.slice(0, 16000) },
+              { role: "user", content: repairPrompt(previousRaw, lastErrors) }
+            ]
+          : [...messages, { role: "user", content: RETRY_FALLBACK }];
+        raw = await chatDeepSeek(retryMessages, {
+          model: input.hints.model,
+          jsonMode: true,
+          maxTokens: MAX_OUTPUT_TOKENS,
+          temperature: 0.1
+        });
+      }
+    } catch (error) {
+      if (error instanceof DeepSeekTruncationError) {
+        truncated = true;
+        lastErrors = [error.message + "；请压缩每章内容，确保 JSON 完整闭合。"];
+        input.onProgress?.("输出被截断，正在压缩后重试…");
+        continue;
+      }
+      throw error;
+    }
+
     previousRaw = raw;
     input.onProgress?.("已收到 DeepSeek 回复，正在校验结构…");
     let parsed: unknown;
@@ -521,7 +555,13 @@ async function generateDraft(input: {
       };
     }
   }
-  throw new Error("DeepSeek 整合结果未通过标准校验：" + lastErrors.slice(0, 5).join("；"));
+
+  const reason = lastErrors.slice(0, 3).join("；");
+  throw new Error(
+    "DeepSeek 连续 3 次未返回完整、合法的 JSON：" +
+      reason +
+      (truncated ? "。输出多次触达长度上限，建议减少单次素材量或拆分文件后重试。" : "")
+  );
 }
 
 async function uniqueSlug(roomId: string | null, base: string): Promise<string> {

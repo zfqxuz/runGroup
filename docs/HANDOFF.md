@@ -950,3 +950,27 @@ DEEPSEEK_MODEL="deepseek-flash"
   - 轮询状态依次经过“解析素材 → DeepSeek 第 1/3 次 → … → 团本生成完成”；
   - 约 100 秒后拿到 `DONE` 与 moduleId，模块与只读模板均正确落库。
 - 直连 localhost 同步服务调用（`verify:ai-import` 与脚本直调）仍正常，不受影响。
+
+## 27. DeepSeek 长 JSON 输出截断修复
+
+### 问题
+- 导入较大素材时 DeepSeek 返回的 JSON 在约 12703 字符处被截断，报：
+  `Expected ',' or '}' after property value in JSON at position 12703`。
+- 根因：`max_tokens` 原为 8192。8192 是 token 而不是汉字数；14 章正文 + structured 里的
+  chapters / scenes / encounters / npcs / items / clues / endings / rewards / magic 很容易超过该上限，
+  输出在 JSON 中途被 `finish_reason=length` 掐断。
+
+### 方案
+- `apps/web/src/server/ai/deepseek.ts`：
+  - 新增 `DeepSeekTruncationError`，`finish_reason === "length"` 时明确抛出，不再伪装成 JSON 校验失败。
+- `apps/web/src/server/ai/module-import.ts`：
+  - `MAX_OUTPUT_TOKENS` 从 8192 提高到 32768（实测模型可稳定输出 14227 个中文字符 / 11825 completion tokens）。
+  - 捕获截断错误后重试，重试提示明确要求压缩到约 8000 中文字符并保证 JSON 完整闭合。
+  - 首次提示词目标从约 12000 字降到约 9000 字，优先保留 14 个章节和全部 structured 字段。
+  - 3 次仍失败时给出可操作提示：减少单次素材量或拆分文件。
+
+### 验证
+- 模型长输出实测：`finish_reason=stop`，content 14227 字符，`completion_tokens=11825`（含 reasoning 1655）。
+- `npm run verify:ai-import`：PASS，且 `attempts=1`（修复前经常 2-3 次）。
+- 公网异步导入（同一素材）：POST 202 → 轮询进度 → DONE，module 正确落库，无截断。
+- `npm run typecheck` PASS；生产构建与部署已更新。

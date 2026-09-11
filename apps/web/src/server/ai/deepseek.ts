@@ -69,6 +69,14 @@ interface ChatCompletionResponse {
   readonly error?: { readonly message?: string };
 }
 
+/** DeepSeek 因 max_tokens 上限截断输出；调用方应压缩素材或提高上限后重试。 */
+export class DeepSeekTruncationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "DeepSeekTruncationError";
+  }
+}
+
 async function callOnce(messages: readonly DeepSeekMessage[], model: string, options: DeepSeekChatOptions): Promise<string> {
   const body: Record<string, unknown> = {
     model,
@@ -109,6 +117,11 @@ async function callOnce(messages: readonly DeepSeekMessage[], model: string, opt
     throw new Error("DeepSeek 调用失败（HTTP " + response.status + "）：" + (payload.error?.message ?? text.slice(0, 300)));
   }
   const choice = payload.choices?.[0];
+  if (choice?.finish_reason === "length") {
+    throw new DeepSeekTruncationError(
+      "DeepSeek 输出达到 max_tokens 上限被截断（finish_reason=length）；请压缩素材或调高输出上限"
+    );
+  }
   const content = choice?.message?.content;
   if (typeof content === "string" && content.trim().length > 0) return content;
   const reasoning = choice?.message?.reasoning_content;
