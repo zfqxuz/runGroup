@@ -1,9 +1,11 @@
 import type { CharacterAdvancement, Game, GameState } from "@prisma/client";
 import type {
   AdvancementKind,
+  AdvancementSource,
   CharacterAdvancementView,
   GameStateView,
-  GameView
+  GameView,
+  GrowthCheckView
 } from "@/shared/game";
 
 function jsonRecord(value: unknown): Record<string, unknown> {
@@ -54,6 +56,19 @@ export function isAdvancementKind(value: string): value is AdvancementKind {
   return (ADVANCEMENT_KINDS as readonly string[]).includes(value);
 }
 
+const ADVANCEMENT_SOURCES: readonly AdvancementSource[] = [
+  "MANUAL",
+  "END_REWARD",
+  "GROWTH_CHECK",
+  "MODULE",
+  "IMPORT",
+  "OTHER"
+];
+
+export function isAdvancementSource(value: string): value is AdvancementSource {
+  return (ADVANCEMENT_SOURCES as readonly string[]).includes(value);
+}
+
 export function advancementView(
   row: CharacterAdvancement & {
     character?: { name: string } | null;
@@ -70,6 +85,48 @@ export function advancementView(
     target: row.target,
     delta: row.delta,
     note: row.note,
+    source: (isAdvancementSource(row.source) ? row.source : "OTHER") as AdvancementSource,
+    metadata: jsonRecord(row.metadata),
+    editedAt: row.editedAt === null ? null : row.editedAt.toISOString(),
+    revertedAt: row.revertedAt === null ? null : row.revertedAt.toISOString(),
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
+export function growthCheckView(
+  row: {
+    readonly id: string;
+    readonly gameId: string;
+    readonly characterId: string;
+    readonly skillId: string;
+    readonly skillName: string | null;
+    readonly state: string;
+    readonly beforeValue: number;
+    readonly roll: number | null;
+    readonly gain: number | null;
+    readonly note: string | null;
+    readonly resolvedAt: Date | null;
+    readonly createdAt: Date;
+    readonly character?: { name: string } | null;
+  }
+): GrowthCheckView {
+  const state =
+    row.state === "PENDING" || row.state === "PASSED" || row.state === "FAILED" || row.state === "CANCELLED"
+      ? row.state
+      : "PENDING";
+  return {
+    id: row.id,
+    gameId: row.gameId,
+    characterId: row.characterId,
+    characterName: row.character?.name ?? "未知角色",
+    skillId: row.skillId,
+    skillName: row.skillName,
+    state,
+    beforeValue: row.beforeValue,
+    roll: row.roll,
+    gain: row.gain,
+    note: row.note,
+    resolvedAt: row.resolvedAt === null ? null : row.resolvedAt.toISOString(),
     createdAt: row.createdAt.toISOString()
   };
 }

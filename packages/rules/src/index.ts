@@ -101,3 +101,6 @@ export type { PackRegistry } from "./merge";
 export { builtinRegistry, COC7_BASELINE, TOUHOU_EXT } from "./packs";
 export { attributeTotal, checkPointBuy, rollAttributeSets } from "./attributes";
 export type { AttributeSetOption, PointBuyCheck } from "./attributes";
+
+export { isGrowthCheckPassed, resolveGrowthChecks } from "./growth";
+export type { GrowthCheckInput, GrowthCheckResult } from "./growth";

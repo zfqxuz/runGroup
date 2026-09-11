@@ -357,6 +357,7 @@ model Character {
   tokens       Token[]
   gameCharacters GameCharacter[]
   advancements   CharacterAdvancement[]
+  growthChecks   GrowthCheck[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt
@@ -408,6 +409,7 @@ model Game {
   state          GameState?
   characters     GameCharacter[]
   advancements   CharacterAdvancement[]
+  growthChecks   GrowthCheck[]
 
   @@index([roomId, status])
   @@index([moduleRevisionId])
@@ -461,11 +463,49 @@ model CharacterAdvancement {
   target      String?
   delta       Int?
   note        String?
+  /// 来源：MANUAL / END_REWARD / GROWTH_CHECK / MODULE / IMPORT / OTHER
+  source      String   @default("MANUAL")
+  /// 记录人；旧数据可能为空。
+  createdBy   String?
+  /// 规则细节快照，例如成长检定的 before / roll / gain。
+  metadata    Json     @default("{}")
+  editedAt    DateTime? @db.Timestamptz(3)
+  revertedAt  DateTime? @db.Timestamptz(3)
+  revertedBy  String?
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
 
   character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
   game      Game?     @relation(fields: [gameId], references: [id])
 
+  @@index([characterId, createdAt])
+  @@index([characterId, revertedAt])
+}
+
+model GrowthCheck {
+  id          String   @id @default(cuid())
+  gameId      String
+  characterId String
+  skillId     String
+  skillName   String?
+  /// PENDING / PASSED / FAILED / CANCELLED
+  state       String   @default("PENDING")
+  beforeValue Int
+  roll        Int?
+  gain        Int?
+  note        String?
+  createdBy   String?
+  resolvedBy  String?
+  resolvedAt  DateTime? @db.Timestamptz(3)
+  /// 检定成功时生成的成长记录。
+  advancementId String? @unique
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt
+
+  game      Game      @relation(fields: [gameId], references: [id], onDelete: Cascade)
+  character Character @relation(fields: [characterId], references: [id], onDelete: Cascade)
+
+  @@unique([gameId, characterId, skillId])
+  @@index([gameId, state])
   @@index([characterId, createdAt])
 }
 

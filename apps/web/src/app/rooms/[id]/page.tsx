@@ -16,7 +16,8 @@ import { loadGameModuleView } from "@/server/modules/revision";
 import { loadSceneView } from "@/server/scene/load";
 import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
 import { prisma } from "@/server/db/prisma";
-import { advancementView, gameStateView } from "@/server/game/view";
+import { advancementView, gameStateView, growthCheckView } from "@/server/game/view";
+import { buildEffectiveSkills } from "@/server/character/skills";
 import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +33,7 @@ export default async function RoomPage({
   searchParams
 }: {
   params: { id: string };
-  searchParams: { state?: string; advancement?: string; error?: string; clue?: string; note?: string };
+  searchParams: { state?: string; advancement?: string; growth?: string; error?: string; clue?: string; note?: string };
 }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -115,7 +116,7 @@ export default async function RoomPage({
     include: {
       state: true,
       characters: {
-        include: { character: { select: { id: true, name: true } } },
+        include: { character: true },
         orderBy: { id: "asc" }
       }
     }
@@ -145,6 +146,26 @@ export default async function RoomPage({
         orderBy: { createdAt: "desc" }
       });
   const advancementRows = advancements.map((item) => advancementView(item));
+  const growthCheckRows = activeGame === null
+    ? []
+    : await prisma.growthCheck.findMany({
+        where: { gameId: activeGame.id, state: "PENDING" },
+        include: { character: { select: { name: true } } },
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }]
+      });
+  const growthChecks = growthCheckRows.map((item) => growthCheckView(item));
+  const skillNameById = new Map<string, string>();
+  for (const skill of effective.compiled.skills) skillNameById.set(skill.id, skill.name);
+  const characterSkills = activeGame === null
+    ? []
+    : activeGame.characters.map((item) => {
+        const values = buildEffectiveSkills(effective.compiled, item.character);
+        const rows = Object.entries(values)
+          .map(([id, value]) => ({ id, name: skillNameById.get(id) ?? id, value }))
+          .filter((row) => row.value > 0)
+          .sort((a, b) => b.value - a.value);
+        return { characterId: item.characterId, characterName: item.character.name, skills: rows };
+      });
 
   const clues = await prisma.clue.findMany({
     where: isKP
@@ -327,8 +348,12 @@ export default async function RoomPage({
           isKP={isKP}
           characters={gameCharacterOptions}
           advancements={advancementRows}
+          growthChecks={growthChecks}
+          characterSkills={characterSkills}
           skillOptions={skillOptions}
           saved={searchParams.advancement === "saved"}
+          notice={searchParams.growth ?? null}
+          error={searchParams.error ?? null}
         />
       )}
 

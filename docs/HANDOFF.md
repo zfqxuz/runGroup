@@ -9,16 +9,14 @@
 - P2 当前进度：
   - P2-1 战术棋盘 MVP 第一版已完成：场景、地图、Token、拖动、实时同步。
   - P2-1 增量已完成：Token 图片、名称、边框色、尺寸、旋转、显示名称/HP、KP 可见/锁定。
-  - P2-3 角色成长闭环基础已完成：成长汇总、差异标注、跨局继承。
-- 测试基线：`npm run typecheck`、`npm test`、全量 14 个 E2E 均通过。
+  - P2-3 角色成长闭环已完成：
+    - 基础：成长汇总、差异标注、跨局继承。
+    - 增量：CoC 幕间成长检定（成长点 / 技能成长掷骰）、成长记录编辑 / 撤销 / 来源标注、角色页筛选与 CSV 导出、结束本局成长确认页与角色卡预览。
+- 测试基线：`npm run typecheck`、`npm test`（141 tests）、全量 15 个 E2E 均通过。
 
 ### 下一步开发顺序（用户已确认）
-1. **继续 P2-3**
-   - CoC 幕间成长检定（成长点 / 技能成长掷骰）。
-   - 成长记录编辑 / 撤销 / 来源标注补全。
-   - 角色页成长历史筛选与导出。
-   - KP 结束本局前的成长确认页与角色卡预览。
-2. **P2-1 战术棋盘后续增量**（P2-3 完成后，再按用户指示）
+1. ~~继续 P2-3~~ **已完成（见第 20 节）**。若用户没有新指示，转入 P2-1。
+2. **P2-1 战术棋盘后续增量**
    - 六边形网格与网格吸附。
    - 战争迷雾实际操作、墙体、灯光、视线遮挡。
    - 地图图层与多背景。
@@ -31,10 +29,13 @@
 - P2-6 质量与性能：除必要回归外 hold。
 
 ### P2-3 关键文件
-- `apps/web/src/server/game/advancement.ts`：成长校验、应用、汇总。
-- `apps/web/src/app/characters/[id]/page.tsx`：角色页成长展示。
-- `apps/web/src/app/rooms/[id]/end/page.tsx` + `apps/web/src/components/room/EndGamePanel.tsx`：结束与批量成长。
-- `apps/web/scripts/verify-growth-inheritance.ts`：成长闭环 E2E。
+- `apps/web/src/server/game/advancement.ts`：成长校验、应用、反向回退、汇总。
+- `apps/web/src/server/game/growth.ts`：CoC 幕间成长检定（事务内结算与成长记录写入）。
+- `apps/web/src/server/actions/advancement.ts`：标记 / 取消成长点、成长掷骰、成长记录编辑 / 撤销。
+- `apps/web/src/app/characters/[id]/page.tsx`：角色页成长展示、筛选、编辑 / 撤销。
+- `apps/web/src/app/characters/[id]/growth/export/route.ts`：成长记录 CSV 导出。
+- `apps/web/src/app/rooms/[id]/end/page.tsx` + `apps/web/src/components/room/EndGamePanel.tsx`：结束确认、成长点结算与角色卡预览。
+- `apps/web/scripts/verify-growth-inheritance.ts`、`apps/web/scripts/verify-growth-checks.ts`：成长闭环 E2E。
 
 ### 重要约束
 - 反代 / 隧道配置、token、`frpc.ini` 不得提交 Git；仓库内目前没有相关文件。
@@ -660,3 +661,55 @@ d4d0d73 feat(combat): 战斗事件分派器按 defaultEnabled 生效
 - 成长记录编辑 / 撤销 / 来源标注补全。
 - 角色页成长历史筛选与导出。
 - KP 结束本局前的成长确认页与角色卡预览。
+
+## 20. P2-3 角色成长闭环（本轮增量完成）
+
+### 数据层
+- 迁移 `20260911000000_advancement_source_and_growth_checks`。
+- `CharacterAdvancement` 新增：
+  - `source`：`MANUAL / END_REWARD / GROWTH_CHECK / MODULE / IMPORT / OTHER`，旧记录默认 `MANUAL`。
+  - `createdBy`、`metadata`（规则细节快照）、`editedAt`、`revertedAt`、`revertedBy`。
+- 新增 `GrowthCheck`：
+  - 一个 `gameId + characterId + skillId` 唯一，状态 `PENDING / PASSED / FAILED / CANCELLED`。
+  - 保存 `beforeValue / roll / gain / advancementId`，成功时关联生成的成长记录。
+
+### CoC 幕间成长检定
+- 规则：对每个待检定技能掷 1d100；结果大于当前技能值，或落在 96-100 时，技能 +1d10。
+- 纯规则实现：`packages/rules/src/growth.ts` 的 `resolveGrowthChecks`，已加 4 个 unit tests。
+- 服务端：`apps/web/src/server/game/growth.ts` 的 `resolveGameGrowthChecks`：
+  - 事务内读取待检定成长点，按规则包补全当前技能值。
+  - 成功时写 `CharacterAdvancement(source = GROWTH_CHECK)`、同步角色技能、关联 `GrowthCheck.advancementId`。
+- UI：
+  - 跑团页 KP 可标记 / 取消成长点（角色 + 技能选择）。
+  - 结束页可一键进行成长检定；结束本局表单可勾选“结束前自动结算”。
+  - 成长点当前值来自规则包基线 + 角色分配 + 种族 / 派生加成（与战斗初始化同一口径）。
+
+### 成长记录编辑 / 撤销 / 来源标注
+- `server/actions/advancement.ts`：
+  - `updateAdvancementAction`：先反向回退旧数值，再应用新数值，更新目标 / 数值 / 备注 / 来源，并写 `editedAt`。
+  - `revertAdvancementAction`：回退数值并写 `revertedAt / revertedBy`，记录保留用于追溯。
+- `summarizeAdvancements` 会跳过已撤销记录；角色页属性 / 技能 / SAN 的“成长 +N”只统计有效记录。
+- 角色页与结束页都显示来源标签（成长检定 / 结束奖励 / 手动记录等）与“已撤销 / 已编辑”状态。
+
+### 角色页筛选与导出
+- 角色页支持按成长类型、来源、来源局筛选；筛选状态通过 query string 保留。
+- 新增 `GET /characters/[id]/growth/export`，按同样的筛选条件导出 UTF-8 BOM CSV。
+- 导出列：日期、角色、成长类型、目标、变化、来源、来源局、备注、状态。
+
+### 结束本局成长确认页
+- `/rooms/[id]/end` 增加：
+  - 成长点确认区：待检定列表、取消、一键成长检定。
+  - 角色卡预览：HP / MP / SAN / DP、九项属性、有效技能列表；待检定技能高亮。
+  - 已有成长记录列表与 KP 撤销入口。
+- `EndGamePanel` 在有待检定成长点时默认勾选“结束前自动结算”，与批量奖励同一事务写入。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（141 tests：formula 48 / rules 61 / combat 32）。
+- 全量 15 个 E2E 在新建的临时生产服务 `http://localhost:3101`（独立 `.next-e2e` 构建）PASS。
+- 新增 `npm run verify:growth-checks`：标记 / 掷骰 / 来源 / 编辑 / 撤销 / 筛选导出 / 结束确认 / 自动结算 PASS。
+- 既有 `verify:growth-inheritance`、`verify:room-ready`、`verify-game-state`、`verify-game-history`、`verify-module-gallery`、`verify-combat`、`verify-combat-options`、`verify-room-setup`、`verify-card-library`、`verify-character-import`、`verify-join-room`、`verify-module-import`、`verify-module-revision`、`verify-scene-board` 全部 PASS。
+
+### 备注
+- 若需要用独立构建目录跑 E2E，可临时在 `apps/web/next.config.mjs` 加 `distDir: process.env.NEXT_DIST_DIR ?? ".next"`，避免与 3100 的 dev server 共用 `.next`；本轮验证后已还原，不进入提交。
+- 成长点目前由 KP 标记 / 结算；后续如需玩家自助标记自己的技能，可在权限上扩展。

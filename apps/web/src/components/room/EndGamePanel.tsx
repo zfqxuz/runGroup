@@ -20,6 +20,7 @@ interface Props {
   readonly roomId: string;
   readonly gameId: string;
   readonly characters: readonly CharacterOption[];
+  readonly pendingGrowthCount: number;
 }
 
 interface RowState {
@@ -51,7 +52,7 @@ const TARGET_PLACEHOLDER: Record<AdvancementKind, string> = {
 const inputClass =
   "rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500";
 
-export default function EndGamePanel({ roomId, gameId, characters }: Props) {
+export default function EndGamePanel({ roomId, gameId, characters, pendingGrowthCount }: Props) {
   const firstCharacterId = characters[0]?.id ?? "";
   const [rows, setRows] = useState<RowState[]>([]);
 
@@ -83,6 +84,14 @@ export default function EndGamePanel({ roomId, gameId, characters }: Props) {
       <input type="hidden" name="roomId" value={roomId} />
       <input type="hidden" name="gameId" value={gameId} />
       <input type="hidden" name="rows" value={JSON.stringify(payload)} />
+      {pendingGrowthCount === 0 ? null : (
+        <label className="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs text-amber-100">
+          <input type="checkbox" name="resolveGrowth" value="1" defaultChecked className="mt-0.5" />
+          <span>
+            结束前自动进行 {pendingGrowthCount} 个待检定成长点（CoC 幕间：d100 大于技能值或 96-100 时 +1d10）。
+          </span>
+        </label>
+      )}
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>

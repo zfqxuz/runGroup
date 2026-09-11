@@ -45,6 +45,14 @@ export interface GameView {
   readonly endedAt: string | null;
 }
 
+export type AdvancementSource =
+  | "MANUAL"
+  | "END_REWARD"
+  | "GROWTH_CHECK"
+  | "MODULE"
+  | "IMPORT"
+  | "OTHER";
+
 export interface CharacterAdvancementView {
   readonly id: string;
   readonly characterId: string;
@@ -55,5 +63,25 @@ export interface CharacterAdvancementView {
   readonly target: string | null;
   readonly delta: number | null;
   readonly note: string | null;
+  readonly source: AdvancementSource;
+  readonly metadata: Record<string, unknown>;
+  readonly editedAt: string | null;
+  readonly revertedAt: string | null;
+  readonly createdAt: string;
+}
+
+export interface GrowthCheckView {
+  readonly id: string;
+  readonly gameId: string;
+  readonly characterId: string;
+  readonly characterName: string;
+  readonly skillId: string;
+  readonly skillName: string | null;
+  readonly state: "PENDING" | "PASSED" | "FAILED" | "CANCELLED";
+  readonly beforeValue: number;
+  readonly roll: number | null;
+  readonly gain: number | null;
+  readonly note: string | null;
+  readonly resolvedAt: string | null;
   readonly createdAt: string;
 }

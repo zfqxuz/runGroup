@@ -6,6 +6,7 @@ import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { applyAdvancement, validateAdvancement } from "@/server/game/advancement";
 import { isActiveGameStatus, gameStateView } from "@/server/game/view";
+import { emitAdvancementUpdate } from "@/server/realtime";
 import { getSocketServer } from "@/server/socket/io";
 
 function clean(value: FormDataEntryValue | null, maxLength: number): string {
@@ -158,15 +159,12 @@ export async function recordAdvancementAction(formData: FormData): Promise<void>
       gameId,
       characterId,
       gameCharacter.character as unknown as Record<string, unknown>,
-      validation.value
+      validation.value,
+      { source: "MANUAL", createdBy: session.user.id }
     );
   });
 
-  getSocketServer()?.to("room:" + roomId).emit("room:advancement:update", {
-    roomId,
-    gameId,
-    characterId
-  });
+  emitAdvancementUpdate(roomId, gameId, characterId);
 
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");

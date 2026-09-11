@@ -1,6 +1,22 @@
 import { ATTRIBUTE_KEYS } from "@touhou/rules";
-import type { Prisma } from "@prisma/client";
-import type { AdvancementKind } from "@/shared/game";
+import type { CharacterAdvancement, Prisma } from "@prisma/client";
+import type { AdvancementKind, AdvancementSource } from "@/shared/game";
+
+export const ADVANCEMENT_SOURCE_LABELS: Record<AdvancementSource, string> = {
+  MANUAL: "手动记录",
+  END_REWARD: "结束奖励",
+  GROWTH_CHECK: "成长检定",
+  MODULE: "团本奖励",
+  IMPORT: "导入",
+  OTHER: "其他"
+};
+
+export interface AdvancementWriteOptions {
+  readonly source?: AdvancementSource;
+  readonly createdBy?: string | null;
+  readonly metadata?: Record<string, unknown>;
+  readonly note?: string | null;
+}
 
 export const ADVANCEMENT_KINDS: readonly AdvancementKind[] = [
   "ATTRIBUTE",
@@ -144,14 +160,13 @@ export interface AdvancementCharacter {
   readonly [key: string]: unknown;
 }
 
-export async function applyAdvancement(
+export async function applyAdvancementEffect(
   tx: Prisma.TransactionClient,
-  gameId: string,
   characterId: string,
   character: AdvancementCharacter,
-  input: ValidatedAdvancement
+  input: Pick<ValidatedAdvancement, "kind" | "target" | "delta">
 ): Promise<void> {
-  const { kind, target, delta, note } = input;
+  const { kind, target, delta } = input;
 
   if (kind === "ATTRIBUTE" && target !== null && delta !== null) {
     const current = Number(character[target] ?? 0);
@@ -178,10 +193,79 @@ export async function applyAdvancement(
       data: { maxSan: nextMax, san: nextCurrent }
     });
   }
+}
 
-  await tx.characterAdvancement.create({
-    data: { characterId, gameId, kind, target, delta, note }
+export async function applyAdvancement(
+  tx: Prisma.TransactionClient,
+  gameId: string | null,
+  characterId: string,
+  character: AdvancementCharacter,
+  input: ValidatedAdvancement,
+  options: AdvancementWriteOptions = {}
+): Promise<CharacterAdvancement> {
+  const note = options.note === undefined ? input.note : options.note;
+
+  await applyAdvancementEffect(tx, characterId, character, input);
+
+  return tx.characterAdvancement.create({
+    data: {
+      characterId,
+      gameId,
+      kind: input.kind,
+      target: input.target,
+      delta: input.delta,
+      note,
+      source: options.source ?? "MANUAL",
+      createdBy: options.createdBy ?? null,
+      metadata: (options.metadata ?? {}) as never
+    }
   });
+}
+
+/**
+ * 反向应用一条成长记录的数值效果（不含记录本身的删除 / 标记）。
+ * 用于编辑、撤销，以及成长检定的回退。
+ */
+export async function reverseAdvancementEffect(
+  tx: Prisma.TransactionClient,
+  characterId: string,
+  character: AdvancementCharacter,
+  row: Pick<CharacterAdvancement, "kind" | "target" | "delta">
+): Promise<void> {
+  const delta = row.delta;
+  if (delta === null) return;
+
+  if (row.kind === "ATTRIBUTE" && row.target !== null) {
+    const current = Number(character[row.target] ?? 0);
+    const next = Math.max(0, Math.min(999, current - delta));
+    await tx.character.update({
+      where: { id: characterId },
+      data: { [row.target]: next } as never
+    });
+    return;
+  }
+
+  if (row.kind === "SKILL" && row.target !== null) {
+    const skills = (character.skills ?? {}) as Record<string, number>;
+    const current = Number(skills[row.target] ?? 0);
+    const next = Math.max(0, Math.min(999, current - delta));
+    await tx.character.update({
+      where: { id: characterId },
+      data: { skills: { ...skills, [row.target]: next } as never }
+    });
+    return;
+  }
+
+  if (row.kind === "SAN") {
+    const maxSan = Number(character.maxSan ?? 0);
+    const san = Number(character.san ?? 0);
+    const nextMax = Math.max(0, maxSan - delta);
+    const nextCurrent = Math.max(0, Math.min(nextMax, san - delta));
+    await tx.character.update({
+      where: { id: characterId },
+      data: { maxSan: nextMax, san: nextCurrent }
+    });
+  }
 }
 
 export interface AdvancementSummary {
@@ -196,6 +280,7 @@ export interface SummarizableAdvancement {
   readonly kind: string;
   readonly target: string | null;
   readonly delta: number | null;
+  readonly revertedAt?: string | Date | null;
 }
 
 export function summarizeAdvancements(rows: readonly SummarizableAdvancement[]): AdvancementSummary {
@@ -212,6 +297,7 @@ export function summarizeAdvancements(rows: readonly SummarizableAdvancement[]):
   let san = 0;
 
   for (const row of rows) {
+    if (row.revertedAt !== null && row.revertedAt !== undefined) continue;
     if (isAdvancementKind(row.kind)) counts[row.kind] += 1;
     if (row.delta === null) continue;
     if (row.kind === "ATTRIBUTE" && row.target !== null) {
@@ -223,5 +309,11 @@ export function summarizeAdvancements(rows: readonly SummarizableAdvancement[]):
     }
   }
 
-  return { attribute, skill, san, counts, total: rows.length };
+  let total = 0;
+  for (const row of rows) {
+    if (row.revertedAt !== null && row.revertedAt !== undefined) continue;
+    total += 1;
+  }
+
+  return { attribute, skill, san, counts, total };
 }

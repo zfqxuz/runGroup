@@ -11,10 +11,12 @@ import {
 } from "@touhou/rules";
 import ImageUpload from "@/components/upload/ImageUpload";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
+import { revertAdvancementAction, updateAdvancementAction } from "@/server/actions/advancement";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
-import { summarizeAdvancements } from "@/server/game/advancement";
+import { ADVANCEMENT_SOURCE_LABELS, summarizeAdvancements } from "@/server/game/advancement";
 import { advancementView } from "@/server/game/view";
+import type { AdvancementSource } from "@/shared/game";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +26,13 @@ const LABELS: Record<string, string> = {
   app: "外貌", int: "智力", pow: "意志", edu: "教育", luck: "幸运"
 };
 
-export default async function CharacterDetailPage({ params }: { params: { id: string } }) {
+export default async function CharacterDetailPage({
+  params,
+  searchParams
+}: {
+  params: { id: string };
+  searchParams: { gkind?: string; gsource?: string; ggame?: string; advancement?: string };
+}) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -78,7 +86,7 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     .map(([id, value]) => ({ id, name: skillNameById.get(id) ?? id, value }))
     .filter((row) => typeof row.value === "number" && row.value > 0)
     .sort((a, b) => b.value - a.value);
-  const advancementRows = character.advancements.map((item) =>
+  const allAdvancementRows = character.advancements.map((item) =>
     advancementView({ ...item, character: { name: character.name } })
   );
   const advancementKindLabels: Record<string, string> = {
@@ -89,7 +97,30 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     RELATIONSHIP: "关系",
     OTHER: "其他"
   };
-  const growth = summarizeAdvancements(advancementRows);
+  const growth = summarizeAdvancements(allAdvancementRows);
+  const kindFilter = searchParams.gkind ?? "ALL";
+  const sourceFilter = searchParams.gsource ?? "ALL";
+  const gameFilter = searchParams.ggame ?? "ALL";
+  const filterParams = new URLSearchParams();
+  if (kindFilter !== "ALL") filterParams.set("gkind", kindFilter);
+  if (sourceFilter !== "ALL") filterParams.set("gsource", sourceFilter);
+  if (gameFilter !== "ALL") filterParams.set("ggame", gameFilter);
+  const filterQuery = filterParams.toString();
+  const filterSuffix = filterQuery.length === 0 ? "" : "?" + filterQuery;
+  const returnTo = "/characters/" + character.id + filterSuffix;
+  const advancementRows = allAdvancementRows.filter((item) => {
+    if (kindFilter !== "ALL" && item.kind !== kindFilter) return false;
+    if (sourceFilter !== "ALL" && item.source !== sourceFilter) return false;
+    if (gameFilter === "manual" && item.gameId !== null) return false;
+    if (gameFilter !== "ALL" && gameFilter !== "manual" && item.gameId !== gameFilter) return false;
+    return true;
+  });
+  const filteredSummary = summarizeAdvancements(advancementRows);
+  const gameOptions = [...new Map(
+    character.advancements
+      .filter((item) => item.gameId !== null)
+      .map((item) => [item.gameId as string, item.game?.title ?? "未知局"] as const)
+  ).entries()];
   const growthGroups = new Map<string, { title: string; rows: typeof advancementRows }>();
   for (const item of advancementRows) {
     const key = item.gameId ?? "manual";
@@ -102,6 +133,8 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
     if (kind === "ATTRIBUTE") return LABELS[target] ?? target;
     return target;
   }
+  const advancementNotice = searchParams.advancement;
+  const sourceOptions: readonly AdvancementSource[] = ["MANUAL", "END_REWARD", "GROWTH_CHECK", "MODULE", "IMPORT", "OTHER"];
 
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-6 py-12">
@@ -219,27 +252,116 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">成长记录（{advancementRows.length}）</h2>
-        {advancementRows.length === 0 ? (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">
+              成长记录（{advancementRows.length}/{allAdvancementRows.length}）
+            </h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              可按类型、来源与局筛选；属性 / 技能 / SAN 记录支持编辑或撤销，撤销后不再计入成长汇总。
+            </p>
+          </div>
+          <Link
+            href={"/characters/" + character.id + "/growth/export" + filterSuffix}
+            className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-300 transition hover:bg-spirit-400/10"
+          >
+            导出 CSV（当前筛选）
+          </Link>
+        </div>
+
+        <form method="get" className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-white/10 bg-ink-900/40 p-3">
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] text-white/35">类型</span>
+            <select
+              name="gkind"
+              defaultValue={kindFilter}
+              className="rounded-lg border border-white/15 bg-ink-900 px-2 py-1.5 text-xs text-white/70"
+            >
+              <option value="ALL">全部</option>
+              {Object.entries(advancementKindLabels).map(([value, label]) => (
+                <option key={value} value={value}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] text-white/35">来源</span>
+            <select
+              name="gsource"
+              defaultValue={sourceFilter}
+              className="rounded-lg border border-white/15 bg-ink-900 px-2 py-1.5 text-xs text-white/70"
+            >
+              <option value="ALL">全部</option>
+              {sourceOptions.map((value) => (
+                <option key={value} value={value}>{ADVANCEMENT_SOURCE_LABELS[value]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="text-[10px] text-white/35">来源局</span>
+            <select
+              name="ggame"
+              defaultValue={gameFilter}
+              className="rounded-lg border border-white/15 bg-ink-900 px-2 py-1.5 text-xs text-white/70"
+            >
+              <option value="ALL">全部</option>
+              <option value="manual">手动 / 无来源局</option>
+              {gameOptions.map(([gameId, title]) => (
+                <option key={gameId} value={gameId}>{title}</option>
+              ))}
+            </select>
+          </label>
+          <button
+            type="submit"
+            className="rounded-lg bg-spirit-400 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-spirit-300"
+          >
+            筛选
+          </button>
+          <Link href={"/characters/" + character.id} className="px-2 py-1.5 text-xs text-white/40 transition hover:text-white/70">
+            重置
+          </Link>
+        </form>
+
+        {advancementNotice === undefined ? null : (
+          <p
+            className={
+              "mt-3 rounded-lg border px-3 py-2 text-[11px] " +
+              (advancementNotice === "error" || advancementNotice === "locked"
+                ? "border-red-400/30 bg-red-400/10 text-red-200"
+                : "border-emerald-400/30 bg-emerald-400/10 text-emerald-200")
+            }
+          >
+            {advancementNotice === "updated"
+              ? "成长记录已更新。"
+              : advancementNotice === "reverted"
+                ? "成长记录已撤销，角色卡数值已回退。"
+                : advancementNotice === "locked"
+                  ? "该记录已撤销，不能再次操作。"
+                  : "操作失败，请检查目标与数值。"}
+          </p>
+        )}
+
+        {allAdvancementRows.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">还没有成长记录</p>
+        ) : advancementRows.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">没有符合当前筛选条件的成长记录。</p>
         ) : (
           <>
             <div className="mt-4 grid gap-2 sm:grid-cols-4">
               <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-                <p className="text-[10px] text-white/35">总记录</p>
-                <p className="mt-0.5 font-mono text-sm text-white/80">{growth.total}</p>
+                <p className="text-[10px] text-white/35">筛选记录</p>
+                <p className="mt-0.5 font-mono text-sm text-white/80">{filteredSummary.total}</p>
               </div>
               <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                 <p className="text-[10px] text-white/35">属性变化</p>
-                <p className="mt-0.5 font-mono text-sm text-white/80">{Object.keys(growth.attribute).length}</p>
+                <p className="mt-0.5 font-mono text-sm text-white/80">{Object.keys(filteredSummary.attribute).length}</p>
               </div>
               <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                 <p className="text-[10px] text-white/35">技能提升</p>
-                <p className="mt-0.5 font-mono text-sm text-white/80">{Object.keys(growth.skill).length}</p>
+                <p className="mt-0.5 font-mono text-sm text-white/80">{Object.keys(filteredSummary.skill).length}</p>
               </div>
               <div className="rounded-lg border border-sakura-500/20 bg-sakura-500/5 px-3 py-2">
                 <p className="text-[10px] text-sakura-300/70">SAN 累计</p>
-                <p className="mt-0.5 font-mono text-sm text-sakura-300">{growth.san > 0 ? "+" + growth.san : growth.san}</p>
+                <p className="mt-0.5 font-mono text-sm text-sakura-300">{filteredSummary.san > 0 ? "+" + filteredSummary.san : filteredSummary.san}</p>
               </div>
             </div>
 
@@ -258,6 +380,9 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
                       <li key={item.id} className="py-2.5 text-xs">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-white/75">{advancementKindLabels[item.kind] ?? item.kind}</span>
+                          <span className="rounded border border-spirit-400/25 px-1.5 py-0.5 text-[10px] text-spirit-200">
+                            {ADVANCEMENT_SOURCE_LABELS[item.source]}
+                          </span>
                           {item.target === null ? null : (
                             <span className="rounded border border-spirit-400/25 px-1.5 py-0.5 font-mono text-[10px] text-spirit-200">
                               {growthLabel(item.kind, item.target)}
@@ -267,6 +392,12 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
                             <span className="font-mono text-[11px] text-sakura-300">
                               {item.delta > 0 ? "+" + item.delta : item.delta}
                             </span>
+                          )}
+                          {item.editedAt === null ? null : (
+                            <span className="rounded border border-white/10 px-1.5 py-0.5 text-[10px] text-white/35">已编辑</span>
+                          )}
+                          {item.revertedAt === null ? null : (
+                            <span className="rounded border border-red-400/30 px-1.5 py-0.5 text-[10px] text-red-300">已撤销</span>
                           )}
                           <span className="ml-auto text-[10px] text-white/30">
                             {item.createdAt.slice(0, 10)}
@@ -278,6 +409,70 @@ export default async function CharacterDetailPage({ params }: { params: { id: st
                         {item.gameTitle === null ? null : (
                           <p className="mt-0.5 text-[10px] text-white/30">来源：{item.gameTitle}</p>
                         )}
+                        {item.revertedAt === null ? (
+                          <div className="mt-2 flex flex-wrap items-start gap-2">
+                            <details className="min-w-[16rem] flex-1 rounded border border-white/10 bg-ink-900/40 p-2">
+                              <summary className="cursor-pointer text-[10px] text-white/40">编辑记录</summary>
+                              <form action={updateAdvancementAction} className="mt-2 grid gap-2 sm:grid-cols-4">
+                                <input type="hidden" name="advancementId" value={item.id} />
+                                <input type="hidden" name="returnTo" value={returnTo} />
+                                <label className="flex flex-col gap-1">
+                                  <span className="text-[10px] text-white/35">目标</span>
+                                  <input
+                                    name="target"
+                                    defaultValue={item.target ?? ""}
+                                    className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/70"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                  <span className="text-[10px] text-white/35">数值变化</span>
+                                  <input
+                                    name="delta"
+                                    type="number"
+                                    defaultValue={item.delta ?? ""}
+                                    className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/70"
+                                  />
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                  <span className="text-[10px] text-white/35">来源</span>
+                                  <select
+                                    name="source"
+                                    defaultValue={item.source}
+                                    className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/70"
+                                  >
+                                    {sourceOptions.map((value) => (
+                                      <option key={value} value={value}>{ADVANCEMENT_SOURCE_LABELS[value]}</option>
+                                    ))}
+                                  </select>
+                                </label>
+                                <label className="flex flex-col gap-1">
+                                  <span className="text-[10px] text-white/35">备注</span>
+                                  <input
+                                    name="note"
+                                    defaultValue={item.note ?? ""}
+                                    className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/70"
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  className="rounded border border-spirit-400/40 px-3 py-1 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10 sm:col-span-4"
+                                >
+                                  保存修改
+                                </button>
+                              </form>
+                            </details>
+                            <form action={revertAdvancementAction} className="pt-2">
+                              <input type="hidden" name="advancementId" value={item.id} />
+                              <input type="hidden" name="returnTo" value={returnTo} />
+                              <button
+                                type="submit"
+                                className="rounded border border-red-400/30 px-3 py-1 text-[11px] text-red-300 transition hover:bg-red-400/10"
+                              >
+                                撤销并回退数值
+                              </button>
+                            </form>
+                          </div>
+                        ) : null}
                       </li>
                     ))}
                   </ul>

@@ -7,7 +7,8 @@ import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { ensureModuleRevision } from "@/server/modules/revision";
 import { applyAdvancement, parseAdvancementRows } from "@/server/game/advancement";
-import { emitRoomUpdate } from "@/server/realtime";
+import { resolveGameGrowthChecks } from "@/server/game/growth";
+import { emitAdvancementUpdate, emitRoomUpdate } from "@/server/realtime";
 import { hasCombatRuntime, loadCombatRuntime } from "@/server/combat/runtime";
 import { saveCombatState } from "@/server/combat/setup";
 
@@ -427,6 +428,8 @@ export async function endGameWithAdvancementsAction(formData: FormData): Promise
   if (parsedRows.ok === false) {
     redirect("/rooms/" + roomId + "/end?error=advancement");
   }
+  const resolveGrowth = String(formData.get("resolveGrowth") ?? "") === "1";
+  const growthSeed = String(formData.get("growthSeed") ?? "").trim().slice(0, 120);
 
   const activeGame = await prisma.game.findFirst({
     where: {
@@ -476,15 +479,24 @@ export async function endGameWithAdvancementsAction(formData: FormData): Promise
     targets.push({ row, gameCharacter });
   }
 
+  const touchedCharacters = new Set<string>();
   await prisma.$transaction(async (tx) => {
+    if (resolveGrowth) {
+      const outcome = await resolveGameGrowthChecks(tx, {
+        gameId: activeGame.id,
+        actorId: session.user.id,
+        seed: growthSeed.length === 0 ? null : growthSeed
+      });
+      for (const result of outcome.results) touchedCharacters.add(result.characterId);
+    }
     for (const item of targets) {
-      await applyAdvancement(
-        tx,
-        activeGame.id,
-        item.row.characterId,
-        item.gameCharacter.character as unknown as Record<string, unknown>,
-        item.row
-      );
+      const fresh = await tx.character.findUnique({ where: { id: item.row.characterId } });
+      if (fresh === null) continue;
+      await applyAdvancement(tx, activeGame.id, item.row.characterId, fresh, item.row, {
+        source: "END_REWARD",
+        createdBy: session.user.id
+      });
+      touchedCharacters.add(item.row.characterId);
     }
     await tx.game.update({
       where: { id: activeGame.id },
@@ -513,11 +525,17 @@ export async function endGameWithAdvancementsAction(formData: FormData): Promise
     where: { roomId, role: { not: "SPECTATOR" } },
     data: { ready: false }
   });
+  for (const characterId of touchedCharacters) {
+    emitAdvancementUpdate(roomId, activeGame.id, characterId);
+  }
   emitRoomUpdate(roomId, "LOBBY");
 
   revalidatePath("/rooms/" + roomId);
   revalidatePath("/rooms/" + roomId + "/prepare");
   revalidatePath("/rooms/" + roomId + "/end");
+  for (const characterId of touchedCharacters) {
+    revalidatePath("/characters/" + characterId);
+  }
   redirect("/rooms/" + roomId + "/prepare?ended=1");
 }
 

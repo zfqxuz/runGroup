@@ -37,3 +37,11 @@ export function emitSceneUpdate(roomId: string, sceneId: string | null): void {
 export function emitSceneTokenUpdate(roomId: string, token: SceneTokenView): void {
   getSocketServer()?.to(roomChannel(roomId)).emit("scene:token:updated", { roomId, token });
 }
+
+export function emitAdvancementUpdate(roomId: string, gameId: string, characterId: string | null): void {
+  getSocketServer()?.to(roomChannel(roomId)).emit("room:advancement:update", {
+    roomId,
+    gameId,
+    characterId
+  });
+}
