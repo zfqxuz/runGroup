@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`8191a74 feat(chargen): 按本职/兴趣筛选并调整属性生成方式`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`94f0ea7 feat(combat,chargen): 修正 max SAN、COC7 闪避反击与 db 伤害加值`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -18,7 +18,7 @@
   - 通用法术系统已完成（见第 33 节）：RulePack `effects` 指令集（DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN / STATUS / DOT / STUN / CONTROL / CLEANSE）；`targeting` 自动推断；SELF / ONE / ALL；SELF 与 ALLY 可选自己；敌对法术统一进入应对窗口；旧 `damage` 字段兼容；AI 导入提示词已同步。
   - AI 导入会话隔离与 PDF / 图片解析已完成（见第 34 节）：每次导入独立 session；PDF 正文与内嵌图片；HEIC / AVIF / TIFF / BMP / SVG 兜底；图片存在但选了非视觉模型时自动切换 `deepseek-flash`。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 153 tests（formula 48 / rules 65 / combat 40）；`apps/web/scripts/verify-*.ts` 共 28 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-ai-pdf-parse`、`verify-ai-import`、`verify-scene-ops` PASS；全量 28 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 157 tests（formula 48 / rules 67 / combat 42）；`apps/web/scripts/verify-*.ts` 共 28 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` PASS；全量 28 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1401,3 +1401,59 @@ MagicEffect =
 - `apps/web/src/shared/occupation.ts`：`isActualOccupationSkill`。
 - `apps/web/src/components/room/CharacterBuilder.tsx`：组合筛选、属性生成 UI、单次掷天命。
 - `apps/web/scripts/verify-chargen-rules.ts`：本职分类与互斥规则回归。
+
+## 37. 最大 SAN、COC7 闪避 / 反击与 db 伤害加值（本轮）
+
+### 最大 SAN = 99 - 克苏鲁神话
+- COC7 规则包的 `derived.maxSan` 从 `pow` 改为 `99 - CTHULHU_MYTHOS`。
+- `computeDerived` 的输入新增 `skills`，衍生公式可以读取技能值；编译阶段也允许技能 ID 出现在 derived 表达式里。
+- 角色创建 / xlsx 导入 / 战斗初始化都会把最终技能带入计算。
+- 初始 SAN 仍然是 `min(POW, maxSan)`。
+- 角色详情页、房间角色页显示数据库里的最终 `Character.maxSan`（已包含成长调整）。
+- 注意：修复前已经创建并保存的旧角色，数据库里的 `maxSan` 仍是旧公式值；需要重新保存 / 重新导入，或后续做数据回填。新创建的角色不受影响。
+
+### COC7 应对：闪避 + 反击，没有防御
+- `coc7-baseline` 新增 `COUNTER` 事件，显示名为「反击」。
+- `allowedReactionTypes` 对 COC7 返回 `PASS / DODGE / COUNTER`，不再返回 `DEFEND`；东方仍保留 `DEFEND` 与「消弹对抗」。
+- CombatBoard：
+  - COC7 不再显示「防御姿态」按钮；
+  - 显示「闪避姿态」和「反击姿态」；
+  - 应对下拉里 COC7 显示「闪避 / 反击」，东方显示「闪避 / 擦弹」「消弹对抗」。
+- 战斗日志中 COC7 使用「闪避判定 / 反击」，东方使用「擦弹判定 / 消弹对抗」。
+- 当前 COC7「反击」仍复用通用应对对抗逻辑：对抗成功可化解本次攻击；完整的“反击命中和反击伤害”如需更细的 CoC7 规则，可后续继续扩展。
+
+### 伤害表达式支持 db
+- 新增 `coc7DamageBonus(str + siz)` 查表：
+  - `<=64` → `-2`
+  - `65~84` → `-1`
+  - `85~124` → `0`
+  - `125~164` → `1d4`
+  - `165~204` → `1d6`
+  - `205~284` → `2d6`
+  - `285~364` → `3d6`
+  - `365~444` → `4d6`
+  - `>=445` → `5d6`
+- 战斗参与单位新增 `damageBonus` 字段；PC 和 NPC 在战斗初始化时自动带上自己的 DB。
+- 攻击伤害表达式里的 `db` 会被替换成该单位的 DB，例如：
+  - `1d4+db`
+  - `1d10+DB`
+- `expandDamageBonus` 不区分大小写，支持 `1d4+db` 这类写法；CardBuilder / 战斗界面已加使用提示。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（157 tests：formula 48 / rules 67 / combat 42）。
+- `npm run build --workspace @touhou/web` PASS。
+- `npm run verify:combat-options` PASS：确认 COC7 应对为不应对 / 闪避 / 反击，不包含防御。
+- `npm run verify:combat`、`verify:combat-rounds`、`verify:magic-effects` PASS。
+- 新增单元测试：
+  - `coc7.test.ts`：DB 区间查表。
+  - `damage-bonus.test.ts`：`1d4+db` 展开。
+
+### 相关文件
+- `packages/rules/src/coc7.ts`：DB 查表。
+- `packages/rules/src/engine.ts`、`compile.ts`：衍生公式支持 skills。
+- `packages/rules/src/packs/coc7-baseline.ts`：maxSan 公式与反击事件。
+- `packages/combat/src/combat.ts`：伤害表达式 db 展开、COC7 反击 / 闪避日志。
+- `apps/web/src/server/combat/setup.ts`：PC / NPC 注入 damageBonus。
+- `apps/web/src/server/combat/options.ts`：COC7 应对选项过滤。
+- `apps/web/src/components/room/CombatBoard.tsx`：按钮与应对文案。
