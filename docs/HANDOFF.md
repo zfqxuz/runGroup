@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`6f485d2 fix(ai,scene): 隔离 AI 导入会话并支持 PDF/图片解析，限制 Token 重复放置`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`3344716 feat(chargen): 优化车卡技能页并强制本职/兴趣点互斥`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -14,7 +14,7 @@
   - DeepSeek 智能团本导入已完成：任意数量 md / txt / json / docx / pptx / xlsx / pdf（正文 + 内嵌图片）/ png / jpg / webp / gif / avif / bmp / tiff / heic 多文件上传；默认 `deepseek-flash`；异步后台任务 + 轮询进度；每次导入生成独立 `aiSessionId` 且不继承历史会话；整合为 `touhou-module/v1`。失败断点重试尚未实现。
   - 隐藏信息规则已完成：NPC / Boss 默认隐藏、KP 可公开；玩家互见由房间配置（默认公开）；隐藏 Boss 战斗仅展示伤害；模组魔法可在准备阶段启用并在战斗施放。
   - 团本模板 / 物化已完成：`module-*` 结构化块与 `characters/npcs.yaml` 解析为只读模板；KP 在准备页「应用团本预设」可克隆出房间 NPC / Boss 卡、武器 / 物品 / 证物卡、场景地图、线索、遭遇与魔法；换预设整批替换。
-  - CoC7 车卡规则修正已完成：本职 / 分类 / 社交 / 自由技能判定；本职 80 / 兴趣 70 的上限；母语等高基础值不误报且不能再加点。
+  - CoC7 车卡规则修正已完成：本职 / 分类 / 社交 / 自由技能判定；本职 80 / 兴趣 70 的上限；母语等高基础值不误报且不能再加点。本轮进一步强制：职业固定本职 + 用户自行选中的本职只能用职业点，其余技能只能视为兴趣用兴趣点，同一技能不能混用；技能页支持直接输入数值并按类别分组展示。
   - 通用法术系统已完成（见第 33 节）：RulePack `effects` 指令集（DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN / STATUS / DOT / STUN / CONTROL / CLEANSE）；`targeting` 自动推断；SELF / ONE / ALL；SELF 与 ALLY 可选自己；敌对法术统一进入应对窗口；旧 `damage` 字段兼容；AI 导入提示词已同步。
   - AI 导入会话隔离与 PDF / 图片解析已完成（见第 34 节）：每次导入独立 session；PDF 正文与内嵌图片；HEIC / AVIF / TIFF / BMP / SVG 兜底；图片存在但选了非视觉模型时自动切换 `deepseek-flash`。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
@@ -1314,3 +1314,40 @@ MagicEffect =
 - `unpdf@1.8.1` 声明 Node >= 22；当前开发机使用 Node 24，部署环境需要同步。
 - 新环境需要执行 `npx prisma migrate deploy`，让 Token 唯一约束和重复数据清理生效。
 - `apps/web/scripts/verify-ai-pdf-parse.ts` 已注册为 `npm run verify:ai-pdf-parse`。
+
+## 35. 车卡页布局优化与本职 / 兴趣点互斥（本轮）
+
+### 规则变更
+- 只有两类技能算“本职”：
+  1. 用户体验职业数据里明确写出的固定本职技能（FIXED）；
+  2. 用户自己在分类 / 社交 / 任意可选位中选中并投入职业点的技能。
+- 其余所有技能在车卡时一律视为兴趣技能。
+- 本职技能只能用职业点增加；兴趣技能只能用兴趣点增加；同一技能不能同时使用两种点数。
+- 服务端新增 `skillPointUsageIssue` 共享校验：
+  - `FIXED` + 兴趣点 → 拒绝；
+  - `NONE` + 职业点 → 拒绝；
+  - 同一技能同时有职业点和兴趣点 → 拒绝。
+- 规则实现位于 `apps/web/src/shared/occupation.ts`，客户端 `CharacterBuilder` 与服务端 `saveCharacter` 共用。
+
+### UI 变更
+- 技能区从“小字号、暗色、每次只能 ±5”改为：
+  - 技能按类别分组（战斗 / 身体 / 知识 / 社交 / 技术 / 法术 / 其他）；
+  - 支持按技能名 / ID 搜索、按类别筛选、按“本职可选 / 已加点”筛选；
+  - 每个技能显示基础值、总计值、分类标签，总计值用高对比大字号；
+  - 提供“本职加点”“兴趣加点”两个数字输入框，可以直接输入任意整数；
+  - 填了职业点的技能不能再填兴趣点，反之亦然；卡片右侧「清空」可重置后切换类别；
+  - 顶部实时显示职业点剩余 / 兴趣点剩余 / 各类别可选名额。
+- 属性区也增加了 `−5 / −1 / +1 / +5` 按钮和可直接输入的大号字体输入框。
+- 职业选择后会实时显示“任意可选 / 社交可选 / 分类可选”的已用数量与上限。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm run build --workspace @touhou/web` PASS。
+- `npm run verify:chargen-rules` PASS：新增固定本职不可用兴趣点、非本职不可用职业点、同一技能不可混用三种断言。
+- 既有限制仍然保留：本职上限 80、兴趣上限 70、基础值天然超过上限时不报错且不能再加点。
+
+### 相关文件
+- `apps/web/src/components/room/CharacterBuilder.tsx`：搜索 / 分组 / 双输入框与实时名额提示。
+- `apps/web/src/shared/occupation.ts`：`skillPointUsageIssue`。
+- `apps/web/src/server/actions/character.ts`：服务端强制校验。
+- `apps/web/scripts/verify-chargen-rules.ts`：回归断言。
