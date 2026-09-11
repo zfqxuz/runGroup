@@ -139,7 +139,9 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
   const attributeVars: readonly string[] = [...ATTRIBUTE_KEYS];
   const baseVars: readonly string[] = [...ATTRIBUTE_KEYS, ...DERIVED_KEYS];
   const derivedKeys = Object.keys(pack.derived);
-  const derivedVars: readonly string[] = [...ATTRIBUTE_KEYS, ...derivedKeys];
+  // 衍生公式可以读取技能（例如 maxSan = 99 - CTHULHU_MYTHOS）。
+  const skillVars: readonly string[] = pack.skills.map((skill) => skill.id);
+  const derivedVars: readonly string[] = [...ATTRIBUTE_KEYS, ...derivedKeys, ...skillVars];
   const combatVars: readonly string[] = [...ATTRIBUTE_KEYS, ...DERIVED_KEYS, "atbMax"];
   const checkVars: readonly string[] = ["target", "roll"];
 

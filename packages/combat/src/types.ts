@@ -60,6 +60,8 @@ export interface CombatParticipantState {
   attributes: AttributeSet;
   derived: DerivedStats;
   skills: Record<string, number>;
+  /** 伤害表达式里 `db` 的替换值，例如 "1d4" / "-2" / "0"。 */
+  damageBonus: string;
   /** 公式求值作用域：attributes + derived + atbMax。 */
   vars: Record<string, number>;
 

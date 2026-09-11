@@ -135,7 +135,7 @@ function ItemForm(props: { moduleId: string; entry: StructuredModuleEntry | null
       </div>
       <label className={labelClass}><span className={captionClass}>描述</span><textarea name="description" rows={2} defaultValue={textOf(data, "description")} className={inputClass} /></label>
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
-        <label className={labelClass}><span className={captionClass}>伤害</span><input name="damage" defaultValue={textOf(data, "damage")} className={inputClass} /></label>
+        <label className={labelClass}><span className={captionClass}>伤害（近战可用 db）</span><input name="damage" defaultValue={textOf(data, "damage")} className={inputClass} /></label>
         <label className={labelClass}><span className={captionClass}>射程</span><input name="range" defaultValue={textOf(data, "range")} className={inputClass} /></label>
         <label className={labelClass}><span className={captionClass}>技能 ID</span><input name="skillId" defaultValue={textOf(data, "skillId")} className={inputClass} /></label>
         <label className={labelClass}><span className={captionClass}>命中修正</span><input name="accuracyMod" type="number" defaultValue={numberOf(data, "accuracyMod", 0)} className={inputClass} /></label>

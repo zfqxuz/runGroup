@@ -39,6 +39,11 @@ import type {
 
 export const DEFAULT_ATB_SCALE = 1000;
 
+/** 把伤害表达式里的 `db` 替换成单位的伤害加值表达式。 */
+export function expandDamageBonus(source: string, damageBonus: string): string {
+  return source.replace(/\bdb\b/gi, damageBonus.length > 0 ? damageBonus : "0");
+}
+
 export function nextSeq(state: CombatState): number {
   state.seq += 1;
   return state.seq;
@@ -96,6 +101,8 @@ export interface ParticipantInit {
   readonly attributes: AttributeSet;
   readonly derived: DerivedStats;
   readonly skills?: Record<string, number>;
+  /** 伤害表达式里 `db` 的替换值，例如 "1d4" / "-2" / "0"。 */
+  readonly damageBonus?: string;
   /** 单位 1/ATB_SCALE。 */
   readonly atbMax: number;
   readonly speed: number;
@@ -135,6 +142,7 @@ export function addParticipant(
     attributes: init.attributes,
     derived: init.derived,
     skills: init.skills ?? {},
+    damageBonus: init.damageBonus ?? "0",
     vars,
     statusEffects: [],
     declaration: null,
@@ -331,7 +339,7 @@ function disabledReactionFor(pack: CompiledRulePack, defense: DefenseType): stri
   }
   if (defense === "COUNTER") {
     const event = pack.pack.combat.events.COUNTER;
-    if (event && event.defaultEnabled === false) return "消弹";
+    if (event && event.defaultEnabled === false) return pack.system === "COC7" ? "反击" : "消弹";
   }
   return null;
 }
@@ -457,6 +465,8 @@ function resolveAttack(
   }
   let defenseSuccess = false;
 
+  const isCoc7 = ctx.pack.system === "COC7";
+  const counterLabel = isCoc7 ? "反击" : "消弹对抗";
   if (reaction.type === "DODGE") {
     const dodgeTarget = skillValueOf(defender, reaction.skill ?? "DODGE", defender.attributes.dex);
     const dodgeRoll = rollDie(rng, 100);
@@ -466,11 +476,15 @@ function resolveAttack(
       kind: "CHECK",
       actorId: defender.id,
       targetId: actor.id,
-      text: `${defender.name} 擦弹判定 ${dodgeRoll}/${dodgeTarget} → ${dodgeCheck.result}`,
+      text: `${defender.name} ${isCoc7 ? "闪避" : "擦弹"}判定 ${dodgeRoll}/${dodgeTarget} → ${dodgeCheck.result}`,
       data: { roll: dodgeRoll, target: dodgeTarget, result: dodgeCheck.result }
     });
   } else if (reaction.type === "COUNTER") {
-    const counterTarget = skillValueOf(defender, reaction.skill ?? "DANMAKU", defender.attributes.dex);
+    const counterTarget = skillValueOf(
+      defender,
+      reaction.skill ?? (isCoc7 ? "FIGHTING_BRAWL" : "DANMAKU"),
+      defender.attributes.dex
+    );
     const counterRoll = rollDie(rng, 100);
     const opposed = resolveOpposed(
       ctx.pack,
@@ -482,12 +496,13 @@ function resolveAttack(
       kind: "CHECK",
       actorId: defender.id,
       targetId: actor.id,
-      text: `${defender.name} 消弹对抗 ${counterRoll}/${counterTarget} → ${defenseSuccess ? "成功" : "失败"}`,
+      text: `${defender.name} ${counterLabel} ${counterRoll}/${counterTarget} → ${defenseSuccess ? "成功" : "失败"}`,
       data: { roll: counterRoll, target: counterTarget, success: defenseSuccess }
     });
   }
 
-  const damageRoll = rollDice(parseDice(submission.damage ?? "0"), rng);
+  const damageSource = expandDamageBonus(submission.damage ?? "0", actor.damageBonus);
+  const damageRoll = rollDice(parseDice(damageSource), rng);
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
 
   const outcome = applyDamagePipeline(ctx.pack, {

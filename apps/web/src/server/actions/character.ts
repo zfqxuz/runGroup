@@ -270,6 +270,16 @@ export async function saveCharacter(
     skillAllocation = { occupation: occupationAdded, interest: interestAdded };
   }
 
+  // 技能会影响 maxSan（CTHULHU_MYTHOS），所以等技能确定后再算一次最终衍生值。
+  const finalOutcome = computeDerived(compiled, {
+    attributes,
+    race: input.race,
+    skills
+  });
+  const maxSan = finalOutcome.derived.maxSan;
+  // 初始 SAN = POW，但不能超过 maxSan。
+  const san = Math.max(0, Math.min(attributes.pow, maxSan));
+
   const character = await prisma.character.create({
     data: {
       userId: session.user.id,
@@ -293,14 +303,14 @@ export async function saveCharacter(
       raceMods: { method: input.chargenMethod, flags: [...outcome.flags] },
       skills,
       skillAllocation: skillAllocation as never,
-      hp: outcome.derived.maxHp,
-      maxHp: outcome.derived.maxHp,
-      mp: outcome.derived.maxMp,
-      maxMp: outcome.derived.maxMp,
-      san: outcome.derived.maxSan,
-      maxSan: outcome.derived.maxSan,
-      dp: outcome.derived.maxDp,
-      maxDp: outcome.derived.maxDp
+      hp: finalOutcome.derived.maxHp,
+      maxHp: finalOutcome.derived.maxHp,
+      mp: finalOutcome.derived.maxMp,
+      maxMp: finalOutcome.derived.maxMp,
+      san,
+      maxSan,
+      dp: finalOutcome.derived.maxDp,
+      maxDp: finalOutcome.derived.maxDp
     },
     select: { id: true }
   });

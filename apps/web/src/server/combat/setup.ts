@@ -8,6 +8,7 @@ import {
   type ParticipantInit
 } from "@touhou/combat";
 import {
+  coc7DamageBonus,
   computeAtbMax,
   computeBaseSpeed,
   computeDerived,
@@ -121,8 +122,12 @@ function buildCharacterInit(pack: CompiledRulePack, character: Character, factio
     edu: character.edu,
     luck: character.luck
   };
-  const outcome = computeDerived(pack, { attributes, race: character.race ?? null });
   const skills = buildEffectiveSkills(pack, character);
+  const outcome = computeDerived(pack, {
+    attributes,
+    race: character.race ?? null,
+    skills
+  });
   const vars: Record<string, number> = { ...outcome.attributes, ...outcome.derived };
   return {
     id: character.id,
@@ -133,6 +138,7 @@ function buildCharacterInit(pack: CompiledRulePack, character: Character, factio
     attributes: outcome.attributes,
     derived: outcome.derived,
     skills,
+    damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",
     atbMax: computeAtbMax(pack, vars),
     speed: computeBaseSpeed(pack, vars)
   };
@@ -162,6 +168,7 @@ function buildNpcInit(pack: CompiledRulePack, card: Card, faction: string): Part
     attributes,
     derived,
     skills: { ...parsed.data.skills },
+    damageBonus: pack.system === "COC7" ? coc7DamageBonus(attributes.str + attributes.siz) : "0",
     atbMax: computeAtbMax(pack, vars),
     speed: computeBaseSpeed(pack, vars),
     isIdentified: false,

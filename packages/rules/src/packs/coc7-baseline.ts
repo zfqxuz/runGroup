@@ -34,7 +34,7 @@ export const COC7_BASELINE: RulePackInput = {
   derived: {
     maxHp: "floor((con + siz) / 10)",
     maxMp: "floor(pow / 5)",
-    maxSan: "pow",
+    maxSan: "99 - CTHULHU_MYTHOS",
     maxDp: "floor(pow / 5)"
   },
   check: {
@@ -83,6 +83,10 @@ export const COC7_BASELINE: RulePackInput = {
     mode: "INITIATIVE",
     initiative: { key: "dex", tieBreak: "KP", kpAdjustsOrder: true },
     events: {
+      COUNTER: {
+        label: "反击",
+        description: "近战被攻击时进行反击，与攻击方进行对抗；反击成功时化解本次攻击"
+      },
       DEATH_AT_ZERO_HP: {
         label: "倒地判定",
         description: "HP 归零即失去战斗能力"

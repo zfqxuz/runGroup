@@ -42,7 +42,15 @@ describe("衍生属性", () => {
     const result = computeDerived(coc7, { attributes: attrs });
     expect(result.derived.maxHp).toBe(11);
     expect(result.derived.maxMp).toBe(8);
-    expect(result.derived.maxSan).toBe(40);
+    expect(result.derived.maxSan).toBe(99);
+  });
+
+  it("COC7 最大 SAN 为 99 - 克苏鲁神话", () => {
+    const result = computeDerived(coc7, {
+      attributes: attrs,
+      skills: { CTHULHU_MYTHOS: 23 }
+    });
+    expect(result.derived.maxSan).toBe(76);
   });
 
   it("东方扩展公式与常量", () => {

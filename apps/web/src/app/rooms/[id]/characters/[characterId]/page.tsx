@@ -137,7 +137,7 @@ export default async function CharacterPage({
           {([
             ["生命 HP", outcome.derived.maxHp],
             ["灵力 MP", outcome.derived.maxMp],
-            ["理智 SAN", outcome.derived.maxSan],
+            ["理智 SAN", character.maxSan],
             ["骰池 DP", outcome.derived.maxDp]
           ] as const).map(([label, value]) => (
             <div

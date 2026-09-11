@@ -120,8 +120,8 @@ export default function CharacterBuilder(props: Props) {
     [props.pack, props.chargenMethod]
   );
 
-  const outcome = useMemo(
-    () => computeDerived(compiled, { attributes, race }),
+  const baseOutcome = useMemo(
+    () => computeDerived(compiled, { attributes, race, skills: { CTHULHU_MYTHOS: 0 } }),
     [compiled, attributes, race]
   );
 
@@ -130,7 +130,7 @@ export default function CharacterBuilder(props: Props) {
     [method, attributes]
   );
 
-  const effectiveVars = outcome.attributes as unknown as Record<string, number>;
+  const effectiveVars = baseOutcome.attributes as unknown as Record<string, number>;
 
   const skillBases = useMemo(() => {
     const map: Record<string, number> = {};
@@ -141,6 +141,19 @@ export default function CharacterBuilder(props: Props) {
     }
     return map;
   }, [compiled, effectiveVars, props.pack.const]);
+
+  const mythosTotal = useMemo(() => {
+    const base = skillBases.CTHULHU_MYTHOS ?? 0;
+    const raceBonus = baseOutcome.skillBonuses.CTHULHU_MYTHOS ?? 0;
+    const allocated = (occupationAdded.CTHULHU_MYTHOS ?? 0) + (interestAdded.CTHULHU_MYTHOS ?? 0);
+    return Math.max(0, base + raceBonus + allocated);
+  }, [baseOutcome.skillBonuses.CTHULHU_MYTHOS, interestAdded.CTHULHU_MYTHOS, occupationAdded.CTHULHU_MYTHOS, skillBases.CTHULHU_MYTHOS]);
+
+  // 重新计算一次，让 maxSan 读取到当前的 CTHULHU_MYTHOS。
+  const outcome = useMemo(
+    () => computeDerived(compiled, { attributes, race, skills: { CTHULHU_MYTHOS: mythosTotal } }),
+    [compiled, attributes, mythosTotal, race]
+  );
 
   const selectedOccupation = useMemo(
     () => props.occupations.find((item) => item.id === occupationId) ?? null,

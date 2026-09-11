@@ -49,9 +49,10 @@ function main(): void {
   expectIds(axe, ["FIGHTING_AXE"], "COC 近战斧应映射到斧");
 
   const cocFlags = combatFeatureFlags(coc);
-  ensure(cocFlags.canCounter === false, "纯 COC 不应显示消弹");
+  ensure(cocFlags.canCounter === true, "COC7 应支持反击");
   ensure(cocFlags.canOutOfRule === false, "纯 COC 不应显示规则外施法");
-  expectIds([...allowedReactionTypes(coc)], ["PASS", "DEFEND", "DODGE"], "COC 应对选项");
+  expectIds([...allowedReactionTypes(coc)], ["PASS", "DODGE", "COUNTER"], "COC 应对选项应为不应对 / 闪避 / 反击");
+  ensure(allowedReactionTypes(coc).includes("DEFEND") === false, "COC7 不应出现防御姿态");
 
   const touhouAttack = allowedAttackSkills(touhou, touhouPlayer, []);
   ensure(touhouAttack.includes("DANMAKU"), "东方无武器应保留弹幕/近战等战斗技能");
@@ -100,7 +101,7 @@ function main(): void {
     actorId: "coc-pc",
     kind: "COUNTER"
   });
-  ensure(typeof counterError === "string", "COC 服务端应拒绝消弹姿态");
+  ensure(counterError === null, "COC 服务端应允许反击姿态");
 
   const outOfRuleError = validateCombatAction(cocActionContext, {
     actorId: "coc-pc",
@@ -126,7 +127,7 @@ function main(): void {
   });
   ensure(brawlError === null, "COC 斗殴攻击应被允许");
 
-  console.log("PASS 战斗选项：COC 斗殴/武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
+  console.log("PASS 战斗选项：COC 闪避/反击与无防御、斗殴/武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
 }
 
 main();

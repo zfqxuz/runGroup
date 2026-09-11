@@ -216,7 +216,9 @@ export default async function CharacterDetailPage({
           {(["maxHp", "maxMp", "maxSan", "maxDp"] as const).map((key) => (
             <div key={key} className="rounded-lg border border-spirit-400/20 bg-spirit-400/5 px-3 py-2 text-center">
               <p className="text-[11px] text-white/40">{key}</p>
-              <p className="text-lg font-semibold text-spirit-400">{outcome.derived[key]}</p>
+              <p className="text-lg font-semibold text-spirit-400">
+                {key === "maxSan" ? character.maxSan : outcome.derived[key]}
+              </p>
               {key === "maxSan" && growth.san !== 0 ? (
                 <p className="mt-0.5 text-[10px] text-sakura-300">成长 {growth.san > 0 ? "+" + growth.san : growth.san}</p>
               ) : null}

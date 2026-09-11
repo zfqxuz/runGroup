@@ -73,8 +73,6 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
   for (const key of ATTRIBUTE_KEYS as readonly AttributeKey[]) {
     attributes[key] = Math.max(pack.attributes.min, Math.min(pack.attributes.max, parsed.attributes[key]));
   }
-  const outcome = computeDerived(compiled, { attributes, race: null });
-
   const occupation =
     parsed.occupationCode === null
       ? null
@@ -99,6 +97,10 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
     if (skill.interest > 0) allocation.interest[skillId] = (allocation.interest[skillId] ?? 0) + skill.interest;
     if (skill.growth > 0) allocation.growth[skillId] = (allocation.growth[skillId] ?? 0) + skill.growth;
   }
+
+  const finalOutcome = computeDerived(compiled, { attributes, race: null, skills });
+  const maxSan = finalOutcome.derived.maxSan;
+  const san = Math.max(0, Math.min(attributes.pow, maxSan));
 
   const character = await prisma.character.create({
     data: {
@@ -133,14 +135,14 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
         skills: parsed.skills,
         weapons: parsed.weapons
       } as never,
-      hp: outcome.derived.maxHp,
-      maxHp: outcome.derived.maxHp,
-      mp: outcome.derived.maxMp,
-      maxMp: outcome.derived.maxMp,
-      san: outcome.derived.maxSan,
-      maxSan: outcome.derived.maxSan,
-      dp: outcome.derived.maxDp,
-      maxDp: outcome.derived.maxDp
+      hp: finalOutcome.derived.maxHp,
+      maxHp: finalOutcome.derived.maxHp,
+      mp: finalOutcome.derived.maxMp,
+      maxMp: finalOutcome.derived.maxMp,
+      san,
+      maxSan,
+      dp: finalOutcome.derived.maxDp,
+      maxDp: finalOutcome.derived.maxDp
     },
     select: { id: true }
   });

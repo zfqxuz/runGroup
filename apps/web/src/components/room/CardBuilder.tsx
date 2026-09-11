@@ -212,7 +212,7 @@ export default function CardBuilder(props: Props) {
           <h2 className="text-sm font-medium text-white/80">武器</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">伤害骰（如 2d6+3）</span>
+              <span className="text-xs text-white/50">伤害骰（如 2d6+3；近战可用 1d4+db，自动加伤害加值）</span>
               <input value={damage} onChange={(event) => setDamage(event.target.value)} className={inputClass + " font-mono"} />
             </label>
             <label className="flex flex-col gap-1.5">

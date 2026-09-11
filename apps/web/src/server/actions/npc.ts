@@ -25,7 +25,8 @@ async function requireKp(roomId: string, userId: string) {
 function materializePreset(preset: PresetCharacter, effective: EffectivePack): NpcStats {
   const fallback = computeDerived(effective.compiled, {
     attributes: preset.attributes,
-    race: null
+    race: null,
+    skills: preset.skills
   });
   return {
     presetId: preset.id,

@@ -12,6 +12,7 @@ export {
   setInitiativeOrder,
   createCombat,
   endCombat,
+  expandDamageBonus,
   findParticipant,
   nextRollRng,
   readyParticipants,

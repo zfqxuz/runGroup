@@ -131,8 +131,14 @@ export async function loadAttackSkillsByParticipant(
 }
 
 export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatReactionType[] {
-  const types: CombatReactionType[] = ["PASS", "DEFEND", "DODGE"];
   const counter = pack.combat.events.COUNTER;
+  if (pack.system === "COC7") {
+    // COC7：闪避或反击，没有「防御姿态」。
+    const types: CombatReactionType[] = ["PASS", "DODGE"];
+    if (counter !== undefined && counter.defaultEnabled === true) types.push("COUNTER");
+    return types;
+  }
+  const types: CombatReactionType[] = ["PASS", "DEFEND", "DODGE"];
   if (counter === undefined) return types;
   if (counter.defaultEnabled === true) types.push("COUNTER");
   return types;
@@ -221,7 +227,9 @@ export function validateCombatAction(
   }
   if (action.kind === "COUNTER") {
     const event = events.COUNTER;
-    if (event === undefined || event.defaultEnabled === false) return "本规则包不支持消弹";
+    if (event === undefined || event.defaultEnabled === false) {
+      return context.pack.system === "COC7" ? "本规则包不支持反击" : "本规则包不支持消弹";
+    }
   }
   if (action.kind === "DANMAKU") {
     const targetId = action.targetId ?? null;

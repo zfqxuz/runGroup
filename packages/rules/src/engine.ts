@@ -13,6 +13,12 @@ import {
 export interface DerivedInput {
   readonly attributes: AttributeSet;
   readonly race?: string | null;
+  /**
+   * 用于衍生公式的技能值。
+   * 目前 COC7 的 maxSan = 99 - CTHULHU_MYTHOS 会读取 CTHULHU_MYTHOS；
+   * 未传时默认视为 0，保证旧调用方仍可工作。
+   */
+  readonly skills?: Readonly<Record<string, number>>;
 }
 
 export interface DerivedOutcome {
@@ -72,15 +78,20 @@ export function computeDerived(
     }
   }
 
+  const skillVars: Record<string, number> = {
+    CTHULHU_MYTHOS: 0,
+    ...(input.skills ?? {})
+  };
+
   const derived: Record<string, number> = {};
   for (const key of pack.derivedOrder) {
     const expression = pack.derived[key];
     if (expression === undefined) continue;
-    derived[key] = evalIn(pack, expression, { ...attrs, ...derived });
+    derived[key] = evalIn(pack, expression, { ...skillVars, ...attrs, ...derived });
   }
 
   if (race !== null) {
-    const base: Record<string, number> = { ...attrs, ...derived };
+    const base: Record<string, number> = { ...skillVars, ...attrs, ...derived };
     for (const [key, expression] of Object.entries(race.derivedOverrides)) {
       derived[key] = (derived[key] ?? 0) + evalIn(pack, expression, base);
     }

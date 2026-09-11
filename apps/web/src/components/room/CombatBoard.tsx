@@ -46,7 +46,7 @@ const REACTION_LABELS: Record<CombatReactionPayload["type"], string> = {
   PASS: "不应对",
   DEFEND: "防御",
   DODGE: "闪避",
-  COUNTER: "消弹对抗"
+  COUNTER: "反击"
 };
 
 type ConnState = "connecting" | "online" | "offline";
@@ -200,7 +200,16 @@ export default function CombatBoard(props: Props) {
     ? reactionSkill
     : (reactionSkillOptions[0]?.id ?? "");
   const reactionTypeOptions: readonly CombatReactionPayload["type"][] =
-    reaction === null ? ["PASS", "DEFEND", "DODGE"] : reaction.options;
+    reaction === null
+      ? props.system === "COC7"
+        ? ["PASS", "DODGE"]
+        : ["PASS", "DEFEND", "DODGE"]
+      : reaction.options;
+
+  function reactionLabel(type: CombatReactionPayload["type"]): string {
+    if (type === "COUNTER") return props.system === "TOUHOU" ? "消弹对抗" : "反击";
+    return REACTION_LABELS[type];
+  }
 
   function emitAction(action: CombatActionPayload): void {
     const socket = socketRef.current;
@@ -410,7 +419,7 @@ export default function CombatBoard(props: Props) {
                 </label>
                 <label className="flex flex-col gap-1.5 sm:col-span-2">
                   <span className="text-[11px] text-white/40">伤害表达式</span>
-                  <input value={damage} onChange={(event) => setDamage(event.target.value)} placeholder="2d6+3" className={inputClass + " font-mono"} />
+                  <input value={damage} onChange={(event) => setDamage(event.target.value)} placeholder="2d6+3 / 1d4+db" className={inputClass + " font-mono"} />
                 </label>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -422,10 +431,16 @@ export default function CombatBoard(props: Props) {
                 >
                   攻击
                 </button>
-                <button type="button" onClick={() => emitAction({ kind: "DEFEND" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">防御姿态</button>
-                <button type="button" onClick={() => emitAction({ kind: "DODGE" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">闪避姿态</button>
+                {props.system === "TOUHOU" ? (
+                  <button type="button" onClick={() => emitAction({ kind: "DEFEND" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">防御姿态</button>
+                ) : null}
+                <button type="button" onClick={() => emitAction({ kind: "DODGE" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
+                  {props.system === "COC7" ? "闪避姿态" : "闪避 / 擦弹姿态"}
+                </button>
                 {props.canCounter ? (
-                  <button type="button" onClick={() => emitAction({ kind: "COUNTER" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">消弹姿态</button>
+                  <button type="button" onClick={() => emitAction({ kind: "COUNTER" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
+                    {props.system === "COC7" ? "反击姿态" : "消弹姿态"}
+                  </button>
                 ) : null}
                 <button type="button" onClick={() => emitAction({ kind: "PASS" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">跳过</button>
               </div>
@@ -497,7 +512,7 @@ export default function CombatBoard(props: Props) {
                 <select value={reactionType} onChange={(event) => setReactionType(event.target.value as CombatReactionPayload["type"])} className={inputClass}>
                   {reactionTypeOptions.map((type) => (
                     <option key={type} value={type}>
-                      {REACTION_LABELS[type]}{type === "DODGE" && props.system === "TOUHOU" ? " / 擦弹" : ""}
+                      {reactionLabel(type)}{type === "DODGE" && props.system === "TOUHOU" ? " / 擦弹" : ""}
                     </option>
                   ))}
                 </select>
