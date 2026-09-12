@@ -3,6 +3,7 @@ import {
   createSeededRng,
   diceBounds,
   FormulaError,
+  normalizeDiceExpression,
   parseDice,
   rollDie,
   rollDice,
@@ -26,6 +27,21 @@ function take(rng: Rng, count: number): number[] {
   for (let i = 0; i < count; i += 1) out.push(rng.nextUint32());
   return out;
 }
+
+describe("骰子表达式归一化", () => {
+  it("全角数字 / d / 加减号转换成 ASCII", () => {
+    expect(normalizeDiceExpression("１ｄ１００")).toBe("1d100");
+    expect(normalizeDiceExpression("２Ｄ６＋３")).toBe("2d6+3");
+    expect(normalizeDiceExpression("２ｄ６－１")).toBe("2d6-1");
+  });
+
+  it("归一化后可以正常解析", () => {
+    expect(parseDice(normalizeDiceExpression("１ｄ１００")).terms).toEqual([
+      { kind: "dice", sign: 1, count: 1, sides: 100 }
+    ]);
+    expect(diceBounds(parseDice(normalizeDiceExpression("２ｄ６＋３")))).toEqual({ min: 5, max: 15 });
+  });
+});
 
 describe("骰子表达式解析", () => {
   it("2d6+3 拆成两个项", () => {

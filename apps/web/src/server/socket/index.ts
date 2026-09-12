@@ -1,6 +1,6 @@
 import type { Server as HttpServer } from "node:http";
 import { Server as SocketServer, type Socket } from "socket.io";
-import { cryptoRng, parseDice, rollDice } from "@touhou/formula";
+import { cryptoRng, normalizeDiceExpression, parseDice, rollDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
 import { gameStateView } from "@/server/game/view";
 import { registerCombatHandlers } from "./combat";
@@ -251,6 +251,13 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
     });
 
     socket.on("dice:roll", async (payload: unknown, ack: (result: Ack) => void) => {
+      let replied = false;
+      const reply = (result: Ack): void => {
+        if (replied) return;
+        replied = true;
+        ack(result);
+      };
+      try {
       const input = payload as {
         roomId?: unknown;
         expression?: unknown;
@@ -258,21 +265,25 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         visibility?: unknown;
       };
       if (typeof input?.roomId !== "string" || typeof input.expression !== "string") {
-        ack({ ok: false, error: "参数不合法" });
+        reply({ ok: false, error: "参数不合法" });
         return;
       }
       const roomId = input.roomId;
-      const expression = input.expression;
+      const expression = normalizeDiceExpression(input.expression).slice(0, 120);
+      if (expression.length === 0) {
+        reply({ ok: false, error: "请输入骰子表达式，例如 1d100" });
+        return;
+      }
       const visibility: DiceVisibility =
         input.visibility === "DARK" || input.visibility === "SECRET" ? input.visibility : "PUBLIC";
 
       const membership = await loadMembership(roomId, me.userId);
       if (membership === null) {
-        ack({ ok: false, error: "你不在这个房间里" });
+        reply({ ok: false, error: "你不在这个房间里" });
         return;
       }
       if (membership.room.status === "LOBBY" || membership.room.status === "ENDED") {
-        ack({ ok: false, error: membership.room.status === "ENDED" ? "房间已归档，不能发言或掷骰" : "准备阶段不能发言或掷骰" });
+        reply({ ok: false, error: membership.room.status === "ENDED" ? "房间已归档，不能发言或掷骰" : "准备阶段不能发言或掷骰" });
         return;
       }
 
@@ -296,7 +307,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
           max: result.max
         };
       } catch {
-        ack({ ok: false, error: "骰子表达式不合法，例如 2d6+3" });
+        reply({ ok: false, error: "骰子表达式不合法，例如 2d6+3" });
         return;
       }
 
@@ -349,7 +360,11 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
       } else {
         io.to(roomChannel(roomId)).emit("chat:message", message);
       }
-      ack({ ok: true });
+      reply({ ok: true });
+      } catch (error) {
+        console.error("dice:roll failed", error);
+        reply({ ok: false, error: "掷骰失败，请重试" });
+      }
     });
   });
 

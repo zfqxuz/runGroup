@@ -41,6 +41,45 @@ export const DICE_LIMITS = {
 const DICE_PATTERN = /^(\d*)d(\d+)$/i;
 const FLAT_PATTERN = /^\d+$/;
 
+const FULL_WIDTH_DIGITS: Readonly<Record<string, string>> = {
+  "０": "0",
+  "１": "1",
+  "２": "2",
+  "３": "3",
+  "４": "4",
+  "５": "5",
+  "６": "6",
+  "７": "7",
+  "８": "8",
+  "９": "9"
+};
+
+/** 把常见中文全角输入归一化成骰子表达式可解析的 ASCII 形式。 */
+export function normalizeDiceExpression(source: string): string {
+  let normalized = "";
+  for (const ch of source) {
+    const digit = FULL_WIDTH_DIGITS[ch];
+    if (digit !== undefined) {
+      normalized += digit;
+      continue;
+    }
+    if (ch === "ｄ" || ch === "Ｄ") {
+      normalized += "d";
+      continue;
+    }
+    if (ch === "＋") {
+      normalized += "+";
+      continue;
+    }
+    if (ch === "－" || ch === "−" || ch === "—" || ch === "–") {
+      normalized += "-";
+      continue;
+    }
+    normalized += ch;
+  }
+  return normalized.trim();
+}
+
 export function parseDice(source: string): DiceExpression {
   const compact = source.replace(/\s+/g, "");
   if (compact.length === 0) {

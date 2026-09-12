@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
+import { normalizeDiceExpression } from "@touhou/formula";
 import type {
   Ack,
   ChatChannel,
@@ -153,12 +154,25 @@ export default function RoomPlay(props: Props) {
 
   function roll(): void {
     const socket = socketRef.current;
-    if (socket === null) return;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    const expression = normalizeDiceExpression(diceExpr).slice(0, 120);
+    if (expression.length === 0) {
+      setError("请输入骰子表达式，例如 1d100");
+      return;
+    }
+    setError(null);
     socket.emit(
       "dice:roll",
-      { roomId: props.roomId, expression: diceExpr, visibility: diceVisibility },
+      { roomId: props.roomId, expression, visibility: diceVisibility },
       (result: Ack) => {
-        if (result.ok === false) setError(result.error ?? "掷骰失败");
+        if (result.ok === false) {
+          setError(result.error ?? "掷骰失败");
+        } else {
+          setError(null);
+        }
       }
     );
   }
@@ -273,8 +287,14 @@ export default function RoomPlay(props: Props) {
           <div className="mt-2 flex gap-2">
             <input
               value={diceExpr}
-              onChange={(event) => setDiceExpr(event.target.value)}
-              placeholder="1d100  2d6+3"
+              onChange={(event) => {
+                setDiceExpr(event.target.value);
+                if (error !== null) setError(null);
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") roll();
+              }}
+              placeholder="1d100  2d6+3（回车也可掷骰）"
               className="flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
             />
             <select
@@ -289,7 +309,8 @@ export default function RoomPlay(props: Props) {
             <button
               type="button"
               onClick={roll}
-              className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
+              disabled={conn !== "online"}
+              className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10 disabled:cursor-not-allowed disabled:opacity-40"
             >
               掷骰
             </button>

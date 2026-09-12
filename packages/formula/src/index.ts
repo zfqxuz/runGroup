@@ -12,6 +12,6 @@ export { BUILTIN_FUNCTIONS, LAZY_FUNCTIONS, FormulaDomainError } from "./functio
 export type { FunctionDef } from "./functions";
 export { createSeededRng, cryptoRng, randomSeed, rollDie } from "./rng";
 export type { Rng } from "./rng";
-export { parseDice, rollDice, diceBounds, DICE_LIMITS } from "./dice";
+export { parseDice, rollDice, diceBounds, normalizeDiceExpression, DICE_LIMITS } from "./dice";
 export type { DiceExpression, DiceTerm, DiceRollResult, DiceRollDetail } from "./dice";
 export type { Node, BinaryOp } from "./ast";
