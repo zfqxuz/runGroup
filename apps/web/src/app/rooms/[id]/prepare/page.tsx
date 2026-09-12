@@ -756,6 +756,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <span className="text-xs text-white/50">从我的角色库选择已有角色</span>
               <select
                 name="characterId"
+                required
                 defaultValue=""
                 className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white/80 outline-none focus:border-spirit-400/60"
               >
@@ -871,6 +872,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <span className="text-xs text-white/50">从我的卡牌库选择已有卡牌</span>
               <select
                 name="cardId"
+                required
                 defaultValue=""
                 className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white/80 outline-none focus:border-spirit-400/60"
               >
