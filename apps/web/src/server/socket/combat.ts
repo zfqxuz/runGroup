@@ -6,6 +6,7 @@ import {
   chaseCurrentActorId,
   chaseEndTurn,
   chaseMove,
+  chaseWithdraw,
   currentActorId,
   endCombat,
   endTurn,
@@ -409,6 +410,52 @@ async function handleChaseMove(
   ack({ ok: true });
 }
 
+async function handleChaseWithdraw(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as { combatId?: unknown; actorId?: unknown; reason?: unknown };
+  if (userId === null || typeof input.combatId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.chaseAttack !== null) {
+    ack({ ok: false, error: "追逐攻击正在等待目标应对，请先完成结算" });
+    return;
+  }
+  const chase = runtime.state.chase;
+  const actorId =
+    typeof input.actorId === "string"
+      ? input.actorId
+      : chase === null
+        ? null
+        : chaseCurrentActorId(chase);
+  if (actorId === null) {
+    ack({ ok: false, error: "当前没有可放弃追逐的单位" });
+    return;
+  }
+  if (canControl(runtime, userId, actorId) === false) {
+    ack({ ok: false, error: "你不能操控这个单位" });
+    return;
+  }
+  const reason = typeof input.reason === "string" ? input.reason : undefined;
+  const result = chaseWithdraw(runtime.state, actorId, reason);
+  if (result.ok === false) {
+    ack({ ok: false, error: result.error ?? "放弃追逐失败" });
+    return;
+  }
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
 async function handleChaseEndTurn(
   io: SocketServer,
   socket: Socket,
@@ -637,6 +684,9 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:chase-attack", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleChaseAttack(io, socket, payload, ack);
+  });
+  socket.on("combat:chase-withdraw", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleChaseWithdraw(io, socket, payload, ack);
   });
   socket.on("combat:force-resolve", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleForceResolve(io, socket, payload, ack);

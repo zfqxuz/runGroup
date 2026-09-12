@@ -45,7 +45,8 @@ export async function startCombatAction(formData: FormData): Promise<void> {
     }
     emitCombatStarted(room.id, result.combatId);
     revalidatePath("/rooms/" + room.id);
-    redirect("/rooms/" + room.id);
+    revalidatePath("/rooms/" + room.id + "/combat/" + result.combatId);
+    redirect("/rooms/" + room.id + "/combat/" + result.combatId);
   }
 
   if (room.allowPlayerCombatRequest === false) {
@@ -57,12 +58,17 @@ export async function startCombatAction(formData: FormData): Promise<void> {
   if (requested.length === 0) {
     redirect(errorUrl(room.id, "/combat/new", "请至少选择一个你能操控的角色"));
   }
+  const opponentTokenId = String(formData.get("opponentTokenId") ?? "").trim();
   await prisma.combatRequest.create({
     data: {
       roomId: room.id,
       initiatorId: session.user.id,
       status: "PENDING_REVIEW",
-      setup: { allies: requested, enemies: [] } as never
+      setup: {
+        allies: requested,
+        enemies: [],
+        opponentTokenId: opponentTokenId.length === 0 ? null : opponentTokenId
+      } as never
     }
   });
   emitRoomRefresh(room.id, "combat-request");
@@ -115,5 +121,6 @@ export async function reviewCombatRequestAction(formData: FormData): Promise<voi
     data: { status: "APPROVED", reviewedAt: new Date() }
   });
   revalidatePath("/rooms/" + roomId);
-  redirect("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/combat/" + result.combatId);
+  redirect("/rooms/" + roomId + "/combat/" + result.combatId);
 }

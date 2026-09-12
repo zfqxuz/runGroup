@@ -3,6 +3,7 @@ import { Server as SocketServer, type Socket } from "socket.io";
 import { cryptoRng, normalizeDiceExpression, parseDice, rollDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
 import { gameStateView } from "@/server/game/view";
+import { loadRoomMemberViews } from "@/server/room/member-view";
 import { registerCombatHandlers } from "./combat";
 import { registerSceneHandlers } from "./scene";
 import { verifyTicket } from "./ticket";
@@ -13,8 +14,7 @@ import type {
   ChatMessage,
   DiceRollView,
   DiceVisibility,
-  JoinAck,
-  RoomMemberView
+  JoinAck
 } from "@/shared/socket";
 
 interface SocketAuth {
@@ -69,7 +69,7 @@ function toChatMessage(row: MessageRow): ChatMessage {
 async function loadMembership(roomId: string, userId: string) {
   return prisma.roomMember.findUnique({
     where: { roomId_userId: { roomId, userId } },
-    select: { role: true, room: { select: { status: true } } }
+    select: { role: true, room: { select: { status: true, characterVisibility: true } } }
   });
 }
 
@@ -144,10 +144,11 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         take: HISTORY_LIMIT
       });
 
-      const members = await prisma.roomMember.findMany({
-        where: { roomId },
-        include: { user: { select: { username: true, displayName: true } } },
-        orderBy: { joinedAt: "asc" }
+      const members = await loadRoomMemberViews({
+        roomId,
+        viewerUserId: me.userId,
+        isKP: membership.role === "KP",
+        roomVisibility: membership.room.characterVisibility
       });
       const activeGame = await prisma.game.findFirst({
         where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
@@ -166,12 +167,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
       ack({
         ok: true,
         messages: rows.slice().reverse().map((row) => toChatMessage(row as MessageRow)),
-        members: members.map((member): RoomMemberView => ({
-          userId: member.userId,
-          username: member.user.username,
-          displayName: member.user.displayName ?? member.user.username,
-          role: member.role
-        })),
+        members,
         gameState: activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state),
         activeCombatId: activeCombat?.id ?? null,
         activeCharacter: member?.activeCharacter ?? null

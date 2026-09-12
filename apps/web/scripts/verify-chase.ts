@@ -385,7 +385,88 @@ async function main(): Promise<void> {
     const roomAfter = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
     assert(roomAfter?.status === "PLAYING", "追逐结束后房间应回到 PLAYING");
 
-    console.log("PASS 追逐 E2E：FLEE → 速度检定 → 地点 / 行动点 → 接近 → 同地点攻击 / 应对 / 掉血 → 移动 → 逃离 → 战斗结束");
+    // 第二阶段扩展：追方主动放弃追逐，最后一名追方退出时逃方 ESCAPED。
+    const secondCreated = await createCombatRecord(
+      room.id,
+      effective,
+      [characterRef(character.id)],
+      [npcRef(npc.id)]
+    );
+    const secondCombatId = secondCreated.combatId;
+    assert(secondCreated.ok === true, secondCreated.error ?? "创建第二场战斗失败");
+    assert(typeof secondCombatId === "string", "第二场战斗缺少 id");
+
+    const secondJoin = await emitAck<CombatJoinAck>(socket, "combat:join", secondCombatId);
+    assert(secondJoin.ok === true, secondJoin.error ?? "加入第二场战斗失败");
+    if (secondJoin.view === undefined) throw new Error("第二场战斗缺少视图");
+    const secondInitial = secondJoin.view;
+    const secondActor = secondInitial.participants.find(
+      (item) => item.isReady && item.defeated === false
+    );
+    if (secondActor === undefined) throw new Error("第二场战斗缺少可行动的玩家单位");
+
+    const secondChaseStarted = waitForView(socket, secondCombatId, (update) => {
+      return update.view.chase?.status === "ACTIVE";
+    });
+    const secondFleeAck = await emitAck<Ack>(socket, "combat:action", {
+      combatId: secondCombatId,
+      actorId: secondActor.id,
+      action: { kind: "FLEE" }
+    });
+    assert(secondFleeAck.ok === true, secondFleeAck.error ?? "第二场逃跑失败");
+
+    let secondUpdate = await secondChaseStarted;
+    let withdrawGuard = 0;
+    while (withdrawGuard < 10) {
+      withdrawGuard += 1;
+      const activeChase = secondUpdate.view.chase;
+      if (activeChase === null) break;
+      if ((activeChase.status === "ACTIVE") === false) break;
+      const activeId = activeChase.activeActorId;
+      if (activeId === null) break;
+      const activeEntry = activeChase.participants.find((item) => item.id === activeId);
+      if (activeEntry === undefined) break;
+      if (activeEntry.side === "CHASER") break;
+
+      const nextUpdate = waitForView(socket, secondCombatId, (update) => {
+        const current = update.view.chase?.activeActorId;
+        return current === activeId ? false : true;
+      });
+      const endAck = await emitAck<Ack>(socket, "combat:chase-end-turn", {
+        combatId: secondCombatId,
+        actorId: activeId
+      });
+      assert(endAck.ok === true, endAck.error ?? "第二场结束追逐回合失败");
+      secondUpdate = await nextUpdate;
+    }
+
+    const secondChase = secondUpdate.view.chase;
+    if (secondChase === null) throw new Error("第二场追逐状态丢失");
+    assert(secondChase.status === "ACTIVE", "第二场追逐应仍在进行");
+    const secondCurrentId = secondChase.activeActorId;
+    if (secondCurrentId === null) throw new Error("第二场缺少当前行动者");
+    const secondCurrent = secondChase.participants.find((item) => item.id === secondCurrentId);
+    if (secondCurrent === undefined) throw new Error("第二场缺少当前行动单位");
+    assert(secondCurrent.side === "CHASER", "第二场当前应当是追逐者行动");
+
+    const secondWithdrawnUpdate = waitForView(socket, secondCombatId, (update) => {
+      return update.view.chase?.status === "ESCAPED";
+    });
+    const withdrawAck = await emitAck<Ack>(socket, "combat:chase-withdraw", {
+      combatId: secondCombatId,
+      actorId: secondCurrent.id,
+      reason: "E2E 验证放弃追逐"
+    });
+    assert(withdrawAck.ok === true, withdrawAck.error ?? "放弃追逐失败");
+    const secondFinalUpdate = await secondWithdrawnUpdate;
+    assert(secondFinalUpdate.view.phase === "ENDED", "追方放弃后战斗应结束");
+    const secondRoomAfter = await prisma.room.findUnique({
+      where: { id: room.id },
+      select: { status: true }
+    });
+    assert(secondRoomAfter?.status === "PLAYING", "第二场战斗后房间应回到 PLAYING");
+
+    console.log("PASS 追逐 E2E：FLEE → 追逐 → 攻击 / 应对 / 掉血 → 终点脱身 → 主动放弃追逐 → ESCAPED");
     console.log("  初始地点数 " + chase.trackLength + "，逃离者 MOV " + prey.mov + "，追逐者 MOV " + chaser.mov);
   } finally {
     if (socket !== null) socket.close();

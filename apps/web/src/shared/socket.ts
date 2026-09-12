@@ -27,11 +27,50 @@ export interface ChatMessage {
 
 export type DiceVisibility = "PUBLIC" | "DARK" | "SECRET";
 
+export interface RoomMemberSkillView {
+  readonly id: string;
+  /** 未公开时服务端不会下发真实值。 */
+  readonly value: number | null;
+}
+
+export interface RoomMemberCharacterView {
+  readonly id: string;
+  readonly name: string;
+  readonly occupation: string | null;
+  readonly portraitUrl: string | null;
+  /** 当前查看者可见的数值是否被隐藏；隐藏时统一显示 ???。 */
+  readonly statsHidden: boolean;
+  /** 成员本人是否选择了公开角色信息（与房间默认可见性无关）。 */
+  readonly statsPublic: boolean;
+  readonly hp: number | null;
+  readonly maxHp: number | null;
+  readonly mp: number | null;
+  readonly maxMp: number | null;
+  readonly san: number | null;
+  readonly maxSan: number | null;
+  readonly attributes: Readonly<Record<string, number | null>>;
+  readonly skills: readonly RoomMemberSkillView[];
+}
+
 export interface RoomMemberView {
   readonly userId: string;
   readonly username: string;
   readonly displayName: string;
   readonly role: "KP" | "PLAYER" | "SPECTATOR";
+  readonly avatarUrl: string | null;
+  readonly character: RoomMemberCharacterView | null;
+}
+
+export interface TradeOfferSummary {
+  readonly id: string;
+  readonly direction: "INCOMING" | "OUTGOING";
+  readonly counterpartId: string;
+  readonly counterpartName: string;
+  readonly cardName: string;
+  readonly cardSubtitle: string | null;
+  readonly note: string | null;
+  readonly status: "PENDING" | "ACCEPTED" | "REJECTED" | "CANCELLED";
+  readonly createdAt: string;
 }
 
 export interface Ack {
@@ -89,6 +128,12 @@ export interface CombatChaseMovePayload {
 export interface CombatChaseEndTurnPayload {
   readonly combatId: string;
   readonly actorId?: string;
+}
+
+export interface CombatChaseWithdrawPayload {
+  readonly combatId: string;
+  readonly actorId?: string;
+  readonly reason?: string;
 }
 
 export interface CombatChaseAttackPayload {

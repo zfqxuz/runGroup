@@ -136,6 +136,8 @@ export interface ChaseParticipantState {
   readonly maxActionPoints: number;
   readonly speedRoll: number;
   readonly speedResult: CheckResult;
+  /** 主动退出追逐：仍在名单中供视图展示，但不再行动。 */
+  withdrawn: boolean;
 }
 
 export interface ChaseState {

@@ -48,6 +48,7 @@ export interface ChaseParticipantView {
   readonly actionPoints: number;
   readonly maxActionPoints: number;
   readonly speedResult: string;
+  readonly withdrawn: boolean;
 }
 
 export interface ChaseView {
@@ -185,7 +186,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
               mov: participant.mov,
               actionPoints: participant.actionPoints,
               maxActionPoints: participant.maxActionPoints,
-              speedResult: participant.speedResult
+              speedResult: participant.speedResult,
+              withdrawn: participant.withdrawn === true
             }))
           }
   };

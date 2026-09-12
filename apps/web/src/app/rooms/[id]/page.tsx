@@ -1,26 +1,21 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
-import type { CombatState } from "@touhou/combat";
-import CombatBoard from "@/components/room/CombatBoard";
-import RoomCombatPanel from "@/components/room/RoomCombatPanel";
-import RoomConfigPanel from "@/components/room/RoomConfigPanel";
-import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
+import KpPrepPanel from "@/components/room/KpPrepPanel";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
+import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomInfoPanel from "@/components/room/RoomInfoPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import SceneBoard from "@/components/room/SceneBoard";
 import { pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
-import { loadEffectivePack } from "@/server/rules/loader";
-import { loadGameModuleView } from "@/server/modules/revision";
-import { loadSceneView } from "@/server/scene/load";
-import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
+import { buildEffectiveSkills } from "@/server/character/skills";
 import { prisma } from "@/server/db/prisma";
 import { advancementView, gameStateView, growthCheckView } from "@/server/game/view";
-import { buildEffectiveSkills } from "@/server/character/skills";
-import { spellTargeting } from "@touhou/rules";
-import { magicSpellEffectLabels } from "@/shared/magic";
-import type { ChatChannel, ChatKind, ChatMessage, RoomMemberView } from "@/shared/socket";
+import { loadGameModuleView } from "@/server/modules/revision";
+import { loadRoomMemberViews } from "@/server/room/member-view";
+import { loadEffectivePack } from "@/server/rules/loader";
+import { loadSceneView } from "@/server/scene/load";
+import type { ChatChannel, ChatKind, ChatMessage, TradeOfferSummary } from "@/shared/socket";
 
 export const dynamic = "force-dynamic";
 
@@ -44,14 +39,7 @@ export default async function RoomPage({
     where: { roomId_userId: { roomId: params.id, userId: session.user.id } },
     include: {
       activeCharacter: { select: { id: true, name: true, race: true } },
-      room: {
-        include: {
-          members: {
-            include: { user: { select: { username: true, displayName: true } } },
-            orderBy: { joinedAt: "asc" }
-          }
-        }
-      }
+      room: true
     }
   });
   if (membership === null) notFound();
@@ -93,12 +81,21 @@ export default async function RoomPage({
       };
     });
 
-  const initialMembers: RoomMemberView[] = room.members.map((member) => ({
-    userId: member.userId,
-    username: member.user.username,
-    displayName: member.user.displayName ?? member.user.username,
-    role: member.role
-  }));
+  const initialMembers = await loadRoomMemberViews({
+    roomId: room.id,
+    viewerUserId: session.user.id,
+    isKP,
+    roomVisibility: room.characterVisibility
+  });
+  // 右侧“房间视角”始终按普通玩家可见性渲染，即使观看者是 KP。
+  const playerInitialMembers = isKP
+    ? await loadRoomMemberViews({
+        roomId: room.id,
+        viewerUserId: session.user.id,
+        isKP: false,
+        roomVisibility: room.characterVisibility
+      })
+    : initialMembers;
 
   const effective = await loadEffectivePack({
     id: room.id,
@@ -125,7 +122,7 @@ export default async function RoomPage({
   });
   const gameState = activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state);
   const gameModule = await loadGameModuleView(activeGame);
-  const activeScene = await loadSceneView(room.id);
+  const activeScene = await loadSceneView(room.id, undefined, { userId: session.user.id, isKP });
   const canSeeAllCharacters = isKP || room.characterVisibility !== "PRIVATE";
   const visibleGameCharacters =
     activeGame === null
@@ -276,46 +273,311 @@ export default async function RoomPage({
     select: { id: true, name: true },
     orderBy: { createdAt: "asc" }
   });
-  const sceneUnits = [
-    ...(activeGame?.characters ?? []).map((item) => ({
-      ref: "character:" + item.characterId,
-      name: item.character.name,
-      kind: "PLAYER" as const
-    })),
-    ...sceneNpcCards.map((card) => ({ ref: "npc:" + card.id, name: card.name, kind: "NPC" as const }))
+  const gameCharacterUnits = (activeGame?.characters ?? []).map((item) => ({
+    ref: "character:" + item.characterId,
+    name: item.character.name,
+    kind: "PLAYER" as const,
+    userId: item.userId
+  }));
+  const approvedEntriesForUnits = await prisma.roomCharacterEntry.findMany({
+    where: { roomId: room.id, status: "APPROVED" },
+    include: { character: { select: { name: true, userId: true } } },
+    orderBy: { submittedAt: "asc" }
+  });
+  const allCharacterUnits = gameCharacterUnits.length > 0
+    ? gameCharacterUnits
+    : approvedEntriesForUnits.map((entry) => ({
+        ref: "character:" + entry.characterId,
+        name: entry.character.name,
+        kind: "PLAYER" as const,
+        userId: entry.character.userId
+      }));
+  const npcUnits = sceneNpcCards.map((card) => ({
+    ref: "npc:" + card.id,
+    name: card.name,
+    kind: "NPC" as const,
+    userId: null
+  }));
+  const ownCharacterUnits = allCharacterUnits.filter((item) => item.userId === session.user.id);
+  const placeableSceneUnits = isKP ? [...allCharacterUnits, ...npcUnits] : ownCharacterUnits;
+
+  const visionShareRows = await prisma.roomVisionShare.findMany({
+    where: { roomId: room.id },
+    select: { userId: true, targetUserId: true }
+  });
+  const sharedUserIds = visionShareRows
+    .filter((row) => row.userId === session.user.id || row.targetUserId === session.user.id)
+    .map((row) => (row.userId === session.user.id ? row.targetUserId : row.userId))
+    .filter((userId) => userId !== session.user.id);
+  const backgroundAssets = [
+    ...(gameModule?.assets ?? [])
+      .filter((asset) => asset.assetId !== null && /[.](?:png|jpe?g|webp|gif|avif|bmp|tiff?)$/i.test(asset.relativePath))
+      .map((asset) => ({
+        id: asset.assetId as string,
+        label: asset.originalName ?? asset.relativePath,
+        url: asset.url
+      })),
+    ...(await prisma.asset.findMany({
+      where: { roomId: room.id, type: { in: ["MAP", "SCENE_BG"] } },
+      orderBy: { createdAt: "desc" },
+      select: { id: true, originalName: true, url: true }
+    })).map((asset) => ({ id: asset.id, label: asset.originalName, url: asset.url }))
   ];
 
-  const combatFeatures = combatFeatureFlags(effective.compiled);
-  const attackSkillsByParticipant: Record<string, readonly string[]> = {};
-  if (activeCombat === null) {
-    // 没有进行中的战斗时保持空表。
-  } else {
-    const snapshot = await prisma.combatSnapshot.findFirst({
-      where: { combatId: activeCombat.id },
-      orderBy: { seq: "desc" },
-      select: { state: true }
-    });
-    if (snapshot === null) {
-      // 快照缺失时保持空表。
-    } else {
-      const state = snapshot.state as unknown as CombatState;
-      const attackSkills = await loadAttackSkillsByParticipant(
-        effective.compiled,
-        state.participants.map((participant) => ({
-          id: participant.id,
-          kind: participant.kind,
-          characterId: participant.characterId,
-          skills: participant.skills
-        }))
-      );
-      for (const [participantId, skillIds] of attackSkills) {
-        attackSkillsByParticipant[participantId] = skillIds;
-      }
-    }
-  }
+  const playerOwnCharacterIds = new Set(
+    (activeGame?.characters ?? [])
+      .filter((item) => item.userId === session.user.id)
+      .map((item) => item.characterId)
+  );
+  const playerAdvancementRows = advancementRows.filter((row) => playerOwnCharacterIds.has(row.characterId));
+  const playerGrowthChecks = growthChecks.filter((row) => playerOwnCharacterIds.has(row.characterId));
+  const playerCharacterSkills = characterSkills.filter((row) => playerOwnCharacterIds.has(row.characterId));
+  const playerGameCharacterOptions = gameCharacterOptions.filter((row) => playerOwnCharacterIds.has(row.id));
+  const playerClues = isKP
+    ? clues.filter(
+        (clue) =>
+          clue.isPublic ||
+          clue.discoveredBy.length > 0 ||
+          clue.shares.some((share) => share.userId === session.user.id)
+      )
+    : clues;
+  const playerNotes = notes.filter((note) => note.userId === session.user.id);
+  const playerHandouts = handoutAssets.filter(() => false);
+
+  const myTradeCards =
+    membership.activeCharacterId === null
+      ? []
+      : await prisma.card.findMany({
+          where: {
+            ownerId: session.user.id,
+            characterId: membership.activeCharacterId
+          },
+          select: { id: true, name: true, type: true },
+          orderBy: { createdAt: "asc" }
+        });
+
+  const tradeRows = await prisma.tradeOffer.findMany({
+    where: {
+      roomId: room.id,
+      status: "PENDING",
+      OR: [{ fromUserId: session.user.id }, { toUserId: session.user.id }]
+    },
+    include: {
+      from: { select: { username: true, displayName: true } },
+      to: { select: { username: true, displayName: true } },
+      card: { select: { name: true, subtitle: true } }
+    },
+    orderBy: { createdAt: "desc" }
+  });
+  const initialTrades: TradeOfferSummary[] = tradeRows.map((row) => {
+    const incoming = row.toUserId === session.user.id;
+    const counterpart = incoming ? row.from : row.to;
+    return {
+      id: row.id,
+      direction: incoming ? "INCOMING" : "OUTGOING",
+      counterpartId: incoming ? row.fromUserId : row.toUserId,
+      counterpartName: counterpart.displayName ?? counterpart.username,
+      cardName: row.card.name,
+      cardSubtitle: row.card.subtitle,
+      note: row.note,
+      status: row.status,
+      createdAt: row.createdAt.toISOString()
+    };
+  });
+
+  const shareableClues = playerClues.map((clue) => ({
+    id: clue.id,
+    title: clue.title,
+    isPublic: clue.isPublic
+  }));
+  const clueMemberOptions = initialMembers
+    .filter((member) => member.role !== "KP")
+    .map((member) => ({ userId: member.userId, displayName: member.displayName, role: member.role }));
+  const kpChapterTitle = gameState?.currentChapterId === null || gameState?.currentChapterId === undefined
+    ? null
+    : moduleChapters.find((item) => item.id === gameState.currentChapterId)?.title ?? gameState.currentChapterId;
+  const kpEncounterTitle = gameState?.currentEncounterId === null || gameState?.currentEncounterId === undefined
+    ? null
+    : moduleEncounters.find((item) => item.id === gameState.currentEncounterId)?.title ?? gameState.currentEncounterId;
+  const kpPrepClues = clues.map((clue) => ({
+    id: clue.id,
+    title: clue.title,
+    content: clue.content,
+    isPublic: clue.isPublic,
+    discoveredCount: clue._count.discoveredBy,
+    sharedWithIds: clue.shares.map((share) => share.userId)
+  }));
+
+
+  const playerContent = (
+    <div className="flex min-w-0 flex-col gap-6">
+      {activeCombat === null ? null : (
+        <section className="mx-auto w-full max-w-4xl rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-medium text-amber-200">战斗进行中</h2>
+            <Link
+              href={"/rooms/" + room.id + "/combat/" + activeCombat.id}
+              className="rounded-lg bg-amber-400 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-amber-300"
+            >
+              进入战斗页面
+            </Link>
+          </div>
+        </section>
+      )}
+
+      {gameState === null || activeGame === null ? null : (
+        <RoomGameStatePanel
+          roomId={room.id}
+          gameId={activeGame.id}
+          gameTitle={activeGame.title}
+          status={activeGame.status}
+          state={gameState}
+          moduleSections={moduleSections}
+          moduleChapters={moduleChapters}
+          moduleScenes={moduleScenesForView}
+          moduleEncounters={moduleEncounters}
+          isKP={false}
+          saved={searchParams.state === "saved"}
+          error={searchParams.error ?? null}
+        />
+      )}
+
+      {activeGame === null ? null : (
+        <RoomAdvancementPanel
+          roomId={room.id}
+          gameId={activeGame.id}
+          isKP={false}
+          characters={playerGameCharacterOptions}
+          advancements={playerAdvancementRows}
+          growthChecks={playerGrowthChecks}
+          characterSkills={playerCharacterSkills}
+          skillOptions={skillOptions}
+          saved={searchParams.advancement === "saved"}
+          notice={searchParams.growth ?? null}
+          error={searchParams.error ?? null}
+        />
+      )}
+
+      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)] lg:items-stretch">
+      {activeScene === null ? null : (
+        <SceneBoard
+          roomId={room.id}
+          isKP={false}
+          currentUserId={session.user.id}
+          readOnly={room.status === "ENDED"}
+          returnTo={"/rooms/" + room.id}
+          scenes={dbScenes.map((scene) => ({ id: scene.id, name: scene.name, isActive: scene.isActive }))}
+          units={isKP ? [] : placeableSceneUnits}
+          canControlAll={isKP}
+          allowPlayerCombatRequest={room.allowPlayerCombatRequest}
+          activeCombatId={activeCombat?.id ?? null}
+          members={playerInitialMembers}
+          sharedUserIds={sharedUserIds}
+          backgroundAssets={backgroundAssets}
+          tradeCards={myTradeCards.map((card) => ({ id: card.id, name: card.name, type: card.type }))}
+          shareableClues={shareableClues}
+          fill
+          scene={activeScene}
+        />
+      )}
+
+
+      <RoomPlay
+        roomId={room.id}
+        currentUserId={session.user.id}
+        isKP={false}
+        initialMembers={playerInitialMembers}
+        initialMessages={initialMessages}
+        initialGameStateVersion={gameState?.version ?? 0}
+        initialCombatId={activeCombat?.id ?? null}
+        roomStatus={room.status}
+        characterVisibility={room.characterVisibility}
+        allowPlayerCombatRequest={room.allowPlayerCombatRequest}
+        initialTrades={initialTrades}
+        tradeCards={myTradeCards.map((card) => ({ id: card.id, name: card.name, type: card.type }))}
+        shareableClues={shareableClues}
+        playerPerspective={isKP}
+      />
+
+      </section>
+
+      <RoomInfoPanel
+        roomId={room.id}
+        isKP={false}
+        readOnly={room.status === "ENDED"}
+        clues={playerClues.map((clue) => ({
+          id: clue.id,
+          title: clue.title,
+          content: clue.content,
+          isPublic: clue.isPublic,
+          discoveredByMe: clue.discoveredBy.length > 0,
+          discoveredCount: clue._count.discoveredBy,
+          sharedWithIds: clue.shares.map((share) => share.userId),
+          sharedWithMe: clue.shares.some((share) => share.userId === session.user.id)
+        }))}
+        members={clueMemberOptions}
+        notes={playerNotes.map((note) => ({
+          id: note.id,
+          title: note.title,
+          content: note.content,
+          isKPOnly: note.isKPOnly,
+          isMine: note.userId === session.user.id
+        }))}
+        handouts={playerHandouts}
+        clueStatus={searchParams.clue ?? null}
+        noteStatus={searchParams.note ?? null}
+      />
+
+    </div>
+  );
+
+  const kpActionPanel = isKP ? (
+    <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
+      <div>
+        <p className="text-sm text-white/80">
+          {activeGame === null ? "房间状态异常" : "本局：" + activeGame.title}
+        </p>
+        <p className="mt-0.5 text-[11px] text-white/35">
+          {activeGame === null
+            ? "当前没有进行中的局，但房间状态不是 LOBBY。可以结束并重置房间。"
+            : "暂停会保存当前状态并返回准备页；继续时全员需要重新准备。"}
+        </p>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {activeGame === null ? (
+          <Link
+            href={"/rooms/" + room.id + "/end"}
+            className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
+          >
+            结束并重置房间
+          </Link>
+        ) : (
+          <>
+            <form action={pauseGameAction}>
+              <input type="hidden" name="roomId" value={room.id} />
+              <button
+                type="submit"
+                className="rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-300 transition hover:bg-amber-400/10"
+              >
+                暂停本局
+              </button>
+            </form>
+            <Link
+              href={"/rooms/" + room.id + "/end"}
+              className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
+            >
+              结束本局
+            </Link>
+          </>
+        )}
+      </div>
+    </section>
+  ) : null;
+
+  const isKpSplit = isKP && (room.status === "PLAYING" || room.status === "COMBAT");
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
+    <main className="mx-auto flex min-h-screen w-full max-w-[1600px] flex-col gap-6 px-6 py-12">
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <Link href="/" className="text-xs text-white/40 transition hover:text-white/70">
@@ -333,18 +595,14 @@ export default async function RoomPage({
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href={"/rooms/" + room.id + "/modules"}
-            className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
-          >
-            团本管理
-          </Link>
-          <Link
-            href={"/rooms/" + room.id + "/scenes"}
-            className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
-          >
-            场景 / 地图
-          </Link>
+          {isKP ? (
+            <Link
+              href={"/rooms/" + room.id + "/modules"}
+              className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
+            >
+              团本编辑与素材
+            </Link>
+          ) : null}
           <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
             我的身份：{membership.role}
           </span>
@@ -357,205 +615,53 @@ export default async function RoomPage({
         </p>
       ) : null}
 
-      <RoomConfigPanel
-        roomId={room.id}
-        system={room.system}
-        era={room.era}
-        chargenMethod={room.chargenMethod}
-        rulePackVersionId={room.rulePackVersionId}
-        ruleOverride={room.ruleOverride}
-        status={room.status}
-        inviteCode={room.inviteCode}
-        allowPlayerCombatRequest={room.allowPlayerCombatRequest}
-        isKP={isKP}
-        characterVisibility={room.characterVisibility}
-        magicEnabled={room.magicEnabled}
-        magicSpellCount={effective.compiled.pack.magic?.spells.length ?? 0}
-      />
-
-      {isKP ? (
-        <section className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
-          <div>
-            <p className="text-sm text-white/80">
-              {activeGame === null ? "房间状态异常" : "本局：" + activeGame.title}
-            </p>
-            <p className="mt-0.5 text-[11px] text-white/35">
-              {activeGame === null
-                ? "当前没有进行中的局，但房间状态不是 LOBBY。可以结束并重置房间。"
-                : "暂停会保存当前状态并返回准备页；继续时全员需要重新准备。"}
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {activeGame === null ? (
-              <Link
-                href={"/rooms/" + room.id + "/end"}
-                className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
-              >
-                结束并重置房间
-              </Link>
-            ) : (
-              <>
-                <form action={pauseGameAction}>
-                  <input type="hidden" name="roomId" value={room.id} />
-                  <button
-                    type="submit"
-                    className="rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-300 transition hover:bg-amber-400/10"
-                  >
-                    暂停本局
-                  </button>
-                </form>
-                <Link
-                  href={"/rooms/" + room.id + "/end"}
-                  className="rounded-lg border border-red-400/40 px-4 py-2 text-sm text-red-300 transition hover:bg-red-400/10"
-                >
-                  结束本局
-                </Link>
-              </>
-            )}
-          </div>
-        </section>
-      ) : null}
-
-      {gameState === null || activeGame === null ? null : (
-        <RoomGameStatePanel
-          roomId={room.id}
-          gameId={activeGame.id}
-          gameTitle={activeGame.title}
-          status={activeGame.status}
-          state={gameState}
-          moduleSections={moduleSections}
-          moduleChapters={moduleChapters}
-          moduleScenes={moduleScenesForView}
-          moduleEncounters={moduleEncounters}
-          isKP={isKP}
-          saved={searchParams.state === "saved"}
-          error={searchParams.error ?? null}
-        />
-      )}
-
-      {activeGame === null ? null : (
-        <RoomAdvancementPanel
-          roomId={room.id}
-          gameId={activeGame.id}
-          isKP={isKP}
-          characters={gameCharacterOptions}
-          advancements={advancementRows}
-          growthChecks={growthChecks}
-          characterSkills={characterSkills}
-          skillOptions={skillOptions}
-          saved={searchParams.advancement === "saved"}
-          notice={searchParams.growth ?? null}
-          error={searchParams.error ?? null}
-        />
-      )}
-
-      {activeScene === null ? (
-        isKP && room.status !== "ENDED" ? (
-          <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h2 className="text-sm font-medium text-white/80">战术棋盘</h2>
-                <p className="mt-1 text-[11px] text-white/35">还没有激活的场景，先到场景 / 地图页面创建并切换。</p>
+      {isKpSplit ? (
+        <div className="flex flex-col gap-4">
+          <p className="rounded-xl border border-sakura-500/30 bg-sakura-500/5 px-4 py-2 text-xs text-sakura-200">
+            KP 分屏模式：左侧为准备区（场景切换、线索公布），右侧为玩家实际看到的房间视角。
+          </p>
+          <div className="grid items-start gap-6 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+            <aside className="flex flex-col gap-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-1">
+              {kpActionPanel}
+              {activeGame === null || gameState === null ? (
+                <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5 text-xs text-white/50">
+                  当前没有可用的局内状态，暂时无法进入 KP 准备区。
+                </section>
+              ) : (
+                <KpPrepPanel
+                  roomId={room.id}
+                  gameId={activeGame.id}
+                  gameTitle={activeGame.title}
+                  state={gameState}
+                  sceneOptions={moduleScenesForView.map((scene) => ({ id: scene.id, title: scene.title, detail: scene.detail }))}
+                  sections={moduleSections}
+                  chapterOptions={moduleChapters.map((chapter) => ({ id: chapter.id, title: chapter.title, detail: chapter.detail }))}
+                  encounterOptions={moduleEncounters.map((encounter) => ({ id: encounter.id, title: encounter.title, detail: encounter.detail }))}
+                  chapterTitle={kpChapterTitle}
+                  encounterTitle={kpEncounterTitle}
+                  clues={kpPrepClues}
+                  members={clueMemberOptions}
+                  sceneId={activeScene?.id ?? null}
+                  mapId={activeScene?.map?.id ?? null}
+                  mapBackgroundUrl={activeScene?.map?.backgroundUrl ?? null}
+                  fogEnabled={activeScene?.map?.showFog ?? false}
+                  backgroundAssets={backgroundAssets}
+                  units={placeableSceneUnits}
+                />
+              )}
+            </aside>
+            <section className="min-w-0">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-spirit-400/25 bg-spirit-400/5 px-4 py-2">
+                <h2 className="text-sm font-medium text-spirit-200">房间视角（与普通玩家一致）</h2>
+                <span className="text-[10px] text-white/35">此区域不包含 KP 专属控件</span>
               </div>
-              <Link href={"/rooms/" + room.id + "/scenes"} className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400">
-                去创建场景
-              </Link>
-            </div>
-          </section>
-        ) : null
-      ) : (
-        <SceneBoard
-          roomId={room.id}
-          isKP={isKP}
-          currentUserId={session.user.id}
-          readOnly={room.status === "ENDED"}
-          returnTo={"/rooms/" + room.id}
-          scenes={dbScenes.map((scene) => ({ id: scene.id, name: scene.name, isActive: scene.isActive }))}
-          units={sceneUnits}
-          scene={activeScene}
-        />
-      )}
-
-      <RoomInfoPanel
-        roomId={room.id}
-        isKP={isKP}
-        readOnly={room.status === "ENDED"}
-        clues={clues.map((clue) => ({
-          id: clue.id,
-          title: clue.title,
-          content: clue.content,
-          isPublic: clue.isPublic,
-          discoveredByMe: clue.discoveredBy.length > 0,
-          discoveredCount: clue._count.discoveredBy,
-          sharedWithIds: clue.shares.map((share) => share.userId),
-          sharedWithMe: clue.shares.some((share) => share.userId === session.user.id)
-        }))}
-        members={room.members
-          .filter((member) => member.role !== "KP")
-          .map((member) => ({
-            userId: member.userId,
-            displayName: member.user.displayName ?? member.user.username,
-            role: member.role
-          }))}
-        notes={notes.map((note) => ({
-          id: note.id,
-          title: note.title,
-          content: note.content,
-          isKPOnly: note.isKPOnly,
-          isMine: note.userId === session.user.id
-        }))}
-        handouts={handoutAssets}
-        clueStatus={searchParams.clue ?? null}
-        noteStatus={searchParams.note ?? null}
-      />
-
-      {activeCombat === null ? (
-        <RoomCombatPanel
-          roomId={room.id}
-          isKP={isKP}
-          allowPlayerCombatRequest={room.allowPlayerCombatRequest}
-        />
-      ) : (
-        <section id="combat" className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="text-sm font-medium text-white/80">战斗进行中</h2>
-            <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">
-              {room.status}
-            </span>
+              {playerContent}
+            </section>
           </div>
-          <CombatBoard
-            combatId={activeCombat.id}
-            isKP={isKP}
-            skillOptions={skillOptions}
-            system={room.system}
-            canCounter={combatFeatures.canCounter}
-            canOutOfRule={combatFeatures.canOutOfRule}
-            canCastMagic={combatFeatures.canCastMagic}
-            magicSpells={(effective.compiled.pack.magic?.spells ?? []).map((spell) => ({
-              id: spell.id,
-              name: spell.name,
-              description: spell.description,
-              mpCost: spell.mpCost,
-              sanCost: spell.sanCost,
-              damage: spell.damage,
-              target: spell.target,
-              targeting: spellTargeting(spell),
-              effects: magicSpellEffectLabels(spell)
-            }))}
-            attackSkillsByParticipant={attackSkillsByParticipant}
-          />
-        </section>
+        </div>
+      ) : (
+        playerContent
       )}
-
-      <RoomPlay
-        roomId={room.id}
-        currentUserId={session.user.id}
-        isKP={isKP}
-        initialMembers={initialMembers}
-        initialMessages={initialMessages}
-        initialGameStateVersion={gameState?.version ?? 0}
-        initialCombatId={activeCombat?.id ?? null}
-      />
     </main>
   );
 }

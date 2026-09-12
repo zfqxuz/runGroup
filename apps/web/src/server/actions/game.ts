@@ -134,6 +134,73 @@ export async function updateGameStateAction(formData: FormData): Promise<void> {
   redirect("/rooms/" + roomId + "?state=saved");
 }
 
+function safeRoomReturnTo(roomId: string, raw: FormDataEntryValue | null, fallback: string): string {
+  const value = clean(raw, 300);
+  if (value.startsWith("/rooms/" + roomId) && value.startsWith("//") === false) return value;
+  return fallback;
+}
+
+/** KP 准备区：只切换局内当前场景，并同步 Scene.isActive，不覆盖其他 GameState 字段。 */
+export async function setGameSceneAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+
+  const roomId = clean(formData.get("roomId"), 64);
+  const gameId = clean(formData.get("gameId"), 64);
+  const sceneId = optionalClean(formData.get("sceneId"), 200);
+  const returnTo = safeRoomReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId);
+  if (roomId.length === 0 || gameId.length === 0) redirect("/rooms/" + roomId);
+  if ((await requireKP(roomId, session.user.id)) === false) redirect("/rooms/" + roomId);
+
+  const game = await prisma.game.findUnique({ where: { id: gameId }, select: { roomId: true, status: true } });
+  if (game === null || game.roomId !== roomId || isActiveGameStatus(game.status) === false) {
+    redirect("/rooms/" + roomId + "?error=game");
+  }
+
+  // 结构化场景可能尚未物化成房间 Scene；此时仍允许写入 state.currentSceneId，
+  // 只有真实存在的房间 Scene 才会同步 Scene.isActive / 战术棋盘。
+  let sceneToActivate: { id: string } | null = null;
+  if (sceneId !== null) {
+    const scene = await prisma.scene.findUnique({ where: { id: sceneId }, select: { id: true, roomId: true } });
+    if (scene !== null) {
+      if (scene.roomId !== roomId) redirect("/rooms/" + roomId + "?error=scene");
+      sceneToActivate = { id: scene.id };
+    }
+  }
+
+  const existing = await prisma.gameState.findUnique({ where: { gameId } });
+  if (existing === null) {
+    await prisma.gameState.create({
+      data: { gameId, currentSceneId: sceneId }
+    });
+  } else {
+    await prisma.gameState.update({
+      where: { gameId },
+      data: { currentSceneId: sceneId, version: { increment: 1 } }
+    });
+  }
+
+  if (sceneToActivate !== null) {
+    await prisma.$transaction([
+      prisma.scene.updateMany({ where: { roomId }, data: { isActive: false } }),
+      prisma.scene.update({ where: { id: sceneToActivate.id }, data: { isActive: true } })
+    ]);
+    emitSceneUpdate(roomId, sceneToActivate.id);
+  }
+
+  const updated = await prisma.gameState.findUnique({ where: { gameId } });
+  if (updated !== null) {
+    getSocketServer()?.to("room:" + roomId).emit("room:state:update", {
+      roomId,
+      gameId,
+      state: gameStateView(updated)
+    });
+  }
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/scenes");
+  redirect(returnTo);
+}
+
 export async function recordAdvancementAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");

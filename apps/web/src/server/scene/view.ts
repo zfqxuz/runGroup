@@ -78,6 +78,7 @@ interface MapLike {
   readonly bgColor: string;
   readonly showGrid: boolean;
   readonly showFog: boolean;
+  readonly visionRadius: number;
   readonly fogRevealed: unknown;
   readonly initialX: number;
   readonly initialY: number;
@@ -231,6 +232,7 @@ export function mapView(map: MapLike, hpByCharacter: SceneHpMap): SceneMapView {
     bgColor: map.bgColor,
     showGrid: map.showGrid,
     showFog: map.showFog,
+    visionRadius: map.visionRadius,
     initialX: map.initialX,
     initialY: map.initialY,
     initialZoom: map.initialZoom,

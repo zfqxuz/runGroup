@@ -56,6 +56,10 @@ export default async function SceneManagementPage({
   if (membership === null) notFound();
   const isKP = membership.role === "KP";
   const room = membership.room;
+  // 跑团中不再开放复杂的场景/地图编辑器；准备内容应在团本编辑器中完成。
+  if (room.status === "PLAYING" || room.status === "COMBAT" || room.status === "ENDED") {
+    redirect("/rooms/" + room.id);
+  }
 
   const scenes = await prisma.scene.findMany({
     where: { roomId: room.id },

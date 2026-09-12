@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 
 interface SetupShape {
   readonly allies?: unknown;
+  readonly opponentTokenId?: unknown;
 }
 
 export default async function CombatRequestPage({
@@ -39,6 +40,23 @@ export default async function CombatRequestPage({
   const setup = (request.setup ?? {}) as SetupShape;
   const requestedRefs = Array.isArray(setup.allies) ? setup.allies.map((value) => String(value)) : [];
   const requestedUnits = selectable.filter((unit) => requestedRefs.includes(unit.ref));
+  const opponentTokenId = typeof setup.opponentTokenId === "string" ? setup.opponentTokenId : null;
+  const opponentToken = opponentTokenId === null
+    ? null
+    : await prisma.token.findFirst({
+        where: { id: opponentTokenId, roomId: params.id },
+        include: {
+          character: { select: { name: true } },
+          card: { select: { name: true } }
+        }
+      });
+  const opponentRef = opponentToken === null
+    ? null
+    : opponentToken.characterId !== null
+      ? "character:" + opponentToken.characterId
+      : opponentToken.cardId !== null
+        ? "npc:" + opponentToken.cardId
+        : null;
   const enemyCandidates = selectable.filter((unit) => requestedRefs.includes(unit.ref) === false);
   const error = searchParams?.error;
 
@@ -75,8 +93,16 @@ export default async function CombatRequestPage({
         )}
       </section>
 
+      {opponentToken === null ? null : (
+        <p className="rounded-lg border border-red-400/30 bg-red-400/5 px-4 py-3 text-sm text-red-200">
+          玩家指定的对手：{opponentToken.name}
+          {opponentToken.character === null && opponentToken.card === null ? "" : "（" + String(opponentToken.character?.name ?? opponentToken.card?.name ?? "") + "）"}
+          ，已为你预选；如对方不在候选里，请确认 Token 是否仍在场。
+        </p>
+      )}
+
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">选择敌方单位</h2>
+        <h2 className="text-sm font-medium text-white/80">确认敌方单位</h2>
         {enemyCandidates.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">没有可选的敌方单位，请先在房间中准备 NPC/Boss。</p>
         ) : (
@@ -96,7 +122,13 @@ export default async function CombatRequestPage({
                       {unit.kind === "NPC" ? "NPC" : "PLAYER"} · HP {unit.hp}
                     </span>
                   </span>
-                  <input type="checkbox" name="enemies" value={unit.ref} className="h-4 w-4 accent-red-400" />
+                  <input
+                    type="checkbox"
+                    name="enemies"
+                    value={unit.ref}
+                    defaultChecked={opponentRef !== null && unit.ref === opponentRef}
+                    className="h-4 w-4 accent-red-400"
+                  />
                 </label>
               ))}
             </div>

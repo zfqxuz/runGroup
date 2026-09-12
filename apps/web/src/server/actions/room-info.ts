@@ -33,6 +33,7 @@ export async function createClueAction(formData: FormData): Promise<void> {
   const title = clean(formData.get("title"), 120);
   const content = clean(formData.get("content"), 5000);
   const isPublic = String(formData.get("isPublic") ?? "0") === "1";
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=created#room-info");
   if (roomId.length === 0 || title.length === 0 || content.length === 0) {
     redirect("/rooms/" + roomId + "?clue=invalid");
   }
@@ -46,7 +47,7 @@ export async function createClueAction(formData: FormData): Promise<void> {
     data: { roomId, title, content, isPublic }
   });
   revalidateRoom(roomId);
-  redirect("/rooms/" + roomId + "?clue=created#room-info");
+  redirect(returnTo);
 }
 
 export async function discoverClueAction(formData: FormData): Promise<void> {
@@ -207,6 +208,62 @@ export async function shareClueAction(formData: FormData): Promise<void> {
     }
   });
 
+  revalidateRoom(roomId);
+  redirect(returnTo);
+}
+
+/**
+ * 玩家把一条自己已知的线索定向分享给同房间的其他成员。
+ * 分享人必须能看到该线索：KP 可分享任意线索；玩家只能分享公开 / 自己发现 / 别人分享给自己的线索。
+ */
+export async function shareClueWithMemberAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const clueId = clean(formData.get("clueId"), 64);
+  const targetUserId = clean(formData.get("targetUserId"), 64);
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=shared#room-info");
+  if (roomId.length === 0 || clueId.length === 0 || targetUserId.length === 0 || targetUserId === session.user.id) {
+    redirect("/rooms/" + roomId);
+  }
+
+  const [membership, target] = await Promise.all([
+    requireMembership(roomId, session.user.id),
+    requireMembership(roomId, targetUserId)
+  ]);
+  if (membership === null || target === null) redirect("/rooms/" + roomId);
+
+  const clue = await prisma.clue.findUnique({
+    where: { id: clueId },
+    select: {
+      id: true,
+      roomId: true,
+      isPublic: true,
+      discoveredBy: { where: { userId: session.user.id }, select: { userId: true } },
+      shares: { where: { userId: session.user.id }, select: { userId: true } }
+    }
+  });
+  if (clue === null || clue.roomId !== roomId) redirect(returnTo);
+  const known = membership.role === "KP" || clue.isPublic || clue.discoveredBy.length > 0 || clue.shares.length > 0;
+  if (known === false) redirect(returnTo);
+
+  await prisma.clueShare.upsert({
+    where: { clueId_userId: { clueId: clue.id, userId: targetUserId } },
+    update: {},
+    create: { clueId: clue.id, userId: targetUserId, sharedBy: session.user.id }
+  });
+  revalidateRoom(roomId);
+  redirect(returnTo);
+}
+/** KP 一键把本房间所有公开线索改为仅 KP 可见。 */
+export async function setAllCluesPrivateAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const returnTo = safeClueReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?clue=updated#room-info");
+  const membership = await requireMembership(roomId, session.user.id);
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+  await prisma.clue.updateMany({ where: { roomId, isPublic: true }, data: { isPublic: false } });
   revalidateRoom(roomId);
   redirect(returnTo);
 }

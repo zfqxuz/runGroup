@@ -64,6 +64,7 @@ export interface SceneMapView {
   readonly bgColor: string;
   readonly showGrid: boolean;
   readonly showFog: boolean;
+  readonly visionRadius: number;
   readonly fogRevealed: readonly string[];
   readonly initialX: number;
   readonly initialY: number;
@@ -101,6 +102,12 @@ export interface SceneMapUpdated {
   readonly roomId: string;
   readonly sceneId: string;
   readonly map: SceneMapView;
+}
+
+export interface SceneVisibilityUpdated {
+  readonly roomId: string;
+  readonly sceneId: string;
+  readonly tokens: readonly SceneTokenView[];
 }
 
 export interface SceneFogUpdated {

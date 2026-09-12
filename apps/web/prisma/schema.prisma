@@ -200,6 +200,10 @@ model User {
   ownedRooms  Room[]              @relation("RoomOwner")
   ruleAudits  RuleOverrideAudit[]
   combatRequests CombatRequest[] @relation("CombatRequestInitiator")
+  tradeOffersSent     TradeOffer[] @relation("TradeOffersSent")
+  tradeOffersReceived TradeOffer[] @relation("TradeOffersReceived")
+  visionSharesOwned    RoomVisionShare[] @relation("VisionShareOwner")
+  visionSharesTargeted RoomVisionShare[] @relation("VisionShareTarget")
   modules     Module[]
   adminAuditLogs AdminAuditLog[]
 }
@@ -299,6 +303,9 @@ model Room {
   cardEntries      RoomCardEntry[]
   ruleAudits RuleOverrideAudit[]
   combatRequests   CombatRequest[]
+  tradeOffers      TradeOffer[]
+  tokens           Token[]
+  visionShares     RoomVisionShare[]
   encounters Encounter[]
   roomChapters RoomChapter[]
   presetApplications RoomPresetApplication[]
@@ -317,6 +324,8 @@ model RoomMember {
   activeCharacterId String?
   /// 准备页中的“已准备”状态；KP 开始跑团前要求所有非旁观成员已准备。
   ready             Boolean    @default(false)
+  /// 房间开启“玩家互不可见”时，本人是否主动公开角色数值。
+  statsPublic       Boolean    @default(false)
   joinedAt          DateTime   @default(now()) @db.Timestamptz(3)
 
   room            Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
@@ -581,6 +590,7 @@ model Card {
   template  Card?      @relation("CardTemplate", fields: [templateId], references: [id])
   instances Card[]     @relation("CardTemplate")
   roomEntries RoomCardEntry[]
+  tradeOffers TradeOffer[]
   tokens      Token[]
 
   createdAt DateTime @default(now()) @db.Timestamptz(3)
@@ -812,6 +822,8 @@ model Map {
   bgColor      String   @default("#1a1a2e")
   showGrid     Boolean  @default(true)
   showFog      Boolean  @default(true)
+  /// 玩家视野半径（格）：2 = 5×5，3 = 7×7，5 = 11×11。
+  visionRadius Int      @default(2)
   fogRevealed  Json     @default("[]")
   initialX     Float    @default(0)
   initialY     Float    @default(0)
@@ -845,6 +857,7 @@ model MapLayer {
 
 model Token {
   id          String  @id @default(cuid())
+  roomId      String
   mapId       String
   assetId     String?
   characterId String?
@@ -862,15 +875,37 @@ model Token {
   isVisible   Boolean @default(true)
   isLocked    Boolean @default(false)
 
+  room      Room       @relation(fields: [roomId], references: [id], onDelete: Cascade)
   map       Map        @relation(fields: [mapId], references: [id], onDelete: Cascade)
   asset     Asset?     @relation(fields: [assetId], references: [id])
   character Character? @relation(fields: [characterId], references: [id])
   card      Card?      @relation(fields: [cardId], references: [id], onDelete: SetNull)
 
+  /// 同一角色 / NPC 在整个房间只能有一个 Token，跨场景也是唯一的。
+  @@unique([roomId, characterId])
+  @@unique([roomId, cardId])
   @@unique([mapId, characterId])
   @@unique([mapId, cardId])
+  @@index([roomId])
   @@index([mapId])
   @@index([cardId])
+}
+
+/// 房间级共享战争视野；A -> B 表示 A 选择与 B 共享，计算视野时按双向并集处理。
+model RoomVisionShare {
+  id           String   @id @default(cuid())
+  roomId       String
+  userId       String
+  targetUserId String
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+
+  room   Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  user   User @relation("VisionShareOwner", fields: [userId], references: [id], onDelete: Cascade)
+  target User @relation("VisionShareTarget", fields: [targetUserId], references: [id], onDelete: Cascade)
+
+  @@unique([roomId, userId, targetUserId])
+  @@index([roomId])
+  @@index([targetUserId])
 }
 
 model Wall {
@@ -1121,6 +1156,35 @@ model CombatRequest {
   initiator User @relation("CombatRequestInitiator", fields: [initiatorId], references: [id], onDelete: Cascade)
 
   @@index([roomId, status])
+}
+
+enum TradeStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+/// 房间内的物品交易请求：玩家把角色身上的一件卡牌转交给另一名成员。
+model TradeOffer {
+  id          String      @id @default(cuid())
+  roomId      String
+  fromUserId  String
+  toUserId    String
+  cardId      String
+  note        String?
+  status      TradeStatus @default(PENDING)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  respondedAt DateTime?   @db.Timestamptz(3)
+
+  room Room @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  from User @relation("TradeOffersSent", fields: [fromUserId], references: [id], onDelete: Cascade)
+  to   User @relation("TradeOffersReceived", fields: [toUserId], references: [id], onDelete: Cascade)
+  card Card @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([roomId, status])
+  @@index([toUserId, status])
+  @@index([fromUserId, status])
 }
 
 /// 管理员操作审计日志。

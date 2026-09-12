@@ -412,6 +412,7 @@ export async function applyModulePresetToRoom(input: {
           const tokenImageId = resolveAssetId(moduleAssets, tokenPath, warnings, "场景 Token");
           await tx.token.create({
             data: {
+              roomId: room.id,
               mapId,
               assetId: tokenImageId,
               name: typeof token.name === "string" ? token.name.slice(0, 80) : "Token",

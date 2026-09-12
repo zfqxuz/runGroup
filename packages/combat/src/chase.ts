@@ -195,7 +195,8 @@ export function startChase(
       actionPoints: maxActionPoints,
       maxActionPoints,
       speedRoll: row.roll,
-      speedResult: row.result
+      speedResult: row.result,
+      withdrawn: false
     };
   });
 
@@ -250,6 +251,16 @@ export function findChaseParticipant(
   return chase.participants.find((participant) => participant.id === id);
 }
 
+function isChaseParticipantActive(
+  state: CombatState,
+  participant: ChaseParticipantState
+): boolean {
+  if (participant.withdrawn === true) return false;
+  const combat = findParticipant(state, participant.id);
+  if (combat === undefined) return false;
+  return combat.defeated === false;
+}
+
 /**
  * 追逐中的同地点攻击校验。
  *
@@ -271,8 +282,10 @@ export function chaseAttackIssue(
   const target = findChaseParticipant(chase, targetId);
   if (target === undefined) return "目标不在这场追逐中";
   const actorCombat = findParticipant(state, actorId);
+  if (actor.withdrawn === true) return "行动单位已退出追逐";
   if (actorCombat === undefined || actorCombat.defeated) return "行动单位已失去战斗能力";
   const targetCombat = findParticipant(state, targetId);
+  if (target.withdrawn === true) return "目标已退出追逐";
   if (targetCombat === undefined || targetCombat.defeated) return "目标已失去战斗能力";
   if (actor.side === target.side) return "只能攻击敌对阵营的单位";
   if (actor.position !== target.position) return "只能攻击同一地点的单位";
@@ -357,9 +370,10 @@ export function resolveChaseAttack(
   let combatEnded = false;
   if (chase.status === "ACTIVE") {
     const aliveOnSide = (side: ChaseSide): boolean =>
-      chase.participants
-        .filter((participant) => participant.side === side)
-        .some((participant) => findParticipant(state, participant.id)?.defeated === false);
+      chase.participants.some(
+        (participant) =>
+          participant.side === side && isChaseParticipantActive(state, participant)
+      );
     if (targetDefeated && aliveOnSide("PREY") === false) {
       chase.status = "CAUGHT";
       chase.ending = targetName + " 被制服，追逐结束";
@@ -427,6 +441,7 @@ export function chaseMove(state: CombatState, actorId: string, rawSteps: number)
   }
   const actor = findChaseParticipant(chase, actorId);
   if (actor === undefined) return { ok: false, error: "该单位不在这场追逐中" };
+  if (actor.withdrawn === true) return { ok: false, error: "该单位已退出追逐" };
   const steps = Math.floor(rawSteps);
   if (steps === 0) return { ok: false, error: "移动格数必须大于 0" };
   const from = actor.position;
@@ -501,8 +516,10 @@ function nextAliveChaseIndex(state: CombatState, chase: ChaseState, start: numbe
     const index = (start + step) % chase.order.length;
     const id = chase.order[index];
     if (id === undefined) continue;
-    const participant = findParticipant(state, id);
-    if (participant !== undefined && participant.defeated === false) return index;
+    const entry = findChaseParticipant(chase, id);
+    if (entry === undefined) continue;
+    if (isChaseParticipantActive(state, entry) === false) continue;
+    return index;
   }
   return null;
 }
@@ -546,6 +563,107 @@ export function chaseEndTurn(state: CombatState): ChaseTurnResult {
   const fallback = nextAliveChaseIndex(state, chase, 0);
   if (fallback !== null) chase.activeIndex = fallback;
   return { ok: true, nextActorId: chaseCurrentActorId(chase) };
+}
+
+export function chaseWithdrawIssue(state: CombatState, actorId: string): string | null {
+  const chase = state.chase;
+  if (chase === null || chase.status !== "ACTIVE") return "当前没有进行中的追逐";
+  const currentId = chaseCurrentActorId(chase);
+  if (currentId === null) return "当前没有可行动的单位";
+  if (currentId === actorId) {
+    const actor = findChaseParticipant(chase, actorId);
+    if (actor === undefined) return "该单位不在这场追逐中";
+    if (actor.withdrawn === true) return "该单位已退出追逐";
+    const combat = findParticipant(state, actorId);
+    if (combat === undefined || combat.defeated) return "行动单位已失去战斗能力";
+    return null;
+  }
+  return "只能在自己的回合放弃追逐";
+}
+
+export interface ChaseWithdrawResult {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly withdrawn?: boolean;
+  readonly escaped?: boolean;
+  readonly caught?: boolean;
+  readonly chaseEnded?: boolean;
+  readonly combatEnded?: boolean;
+  readonly nextActorId?: string | null;
+  readonly newRound?: boolean;
+}
+
+/**
+ * COC7 标准追逐退出：
+ * - 逃方放弃 = 被追上，追逐以 CAUGHT 结束；
+ * - 追方放弃 = 从追逐名单中退出；最后一名追方退出时，逃方以 ESCAPED 脱身；
+ * - 仍有同伙继续追时，退出只消耗当前回合，轮转由 chaseEndTurn 处理。
+ */
+export function chaseWithdraw(
+  state: CombatState,
+  actorId: string,
+  reason?: string
+): ChaseWithdrawResult {
+  const issue = chaseWithdrawIssue(state, actorId);
+  if (issue) return { ok: false, error: issue };
+  const chase = state.chase;
+  if (chase === null) return { ok: false, error: "当前没有进行中的追逐" };
+  const actor = findChaseParticipant(chase, actorId);
+  if (actor === undefined) return { ok: false, error: "该单位不在这场追逐中" };
+
+  actor.withdrawn = true;
+  const actorName = findParticipant(state, actorId)?.name ?? actor.name;
+  const actionLabel = actor.side === "PREY" ? "放弃逃跑" : "放弃追逐";
+  const note = reason === undefined || reason.length === 0 ? "" : "（" + reason + "）";
+  pushLog(state, {
+    kind: "ACTION",
+    actorId,
+    targetId: null,
+    text: actorName + " " + actionLabel + note + "。",
+    data: { rollType: "CHASE_WITHDRAW", side: actor.side }
+  });
+
+  const activeFighters = (side: ChaseSide): boolean =>
+    chase.participants.some((participant) => {
+      if (participant.side === side) return isChaseParticipantActive(state, participant);
+      return false;
+    });
+
+  if (actor.side === "PREY") {
+    chase.status = "CAUGHT";
+    chase.ending = actorName + "放弃逃跑，被追上。";
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId,
+      targetId: null,
+      text: chase.ending,
+      data: { rollType: "CHASE_CAUGHT" }
+    });
+    endCombat(state, "追逐结束：逃离者放弃逃跑");
+    return { ok: true, withdrawn: true, caught: true, chaseEnded: true, combatEnded: true, nextActorId: null };
+  }
+
+  if (activeFighters("CHASER") === false) {
+    chase.status = "ESCAPED";
+    chase.ending = "所有追逐者都已放弃，逃离者成功脱身。";
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId,
+      targetId: null,
+      text: chase.ending,
+      data: { rollType: "CHASE_ESCAPED" }
+    });
+    endCombat(state, "追逐结束：所有追逐者放弃");
+    return { ok: true, withdrawn: true, escaped: true, chaseEnded: true, combatEnded: true, nextActorId: null };
+  }
+
+  const turned = chaseEndTurn(state);
+  return {
+    ok: true,
+    withdrawn: true,
+    nextActorId: turned.nextActorId ?? null,
+    newRound: turned.newRound
+  };
 }
 
 export function endChase(state: CombatState, reason: string): void {

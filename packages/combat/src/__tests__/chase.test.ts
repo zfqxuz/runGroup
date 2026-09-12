@@ -9,8 +9,11 @@ import {
 import {
   addParticipant,
   chaseAttackIssue,
+  chaseCurrentActorId,
   chaseEndTurn,
   chaseMove,
+  chaseWithdraw,
+  chaseWithdrawIssue,
   createCombat,
   resolveChaseAttack,
   startChase
@@ -222,5 +225,88 @@ describe("COC7 追逐", () => {
     expect(result.combatEnded).toBe(true);
     expect(chase.status).toBe("CAUGHT");
     expect(state.phase).toBe("ENDED");
+  });
+
+  it("最后一名追逐者放弃追逐时判定 ESCAPED 并结束战斗", () => {
+    const { state, chaser, chase, chaserEntry } = makeContactChase();
+    const result = chaseWithdraw(state, chaser.id, "前方是邪教据点");
+    expect(result.ok).toBe(true);
+    expect(result.escaped).toBe(true);
+    expect(result.chaseEnded).toBe(true);
+    expect(result.combatEnded).toBe(true);
+    expect(chaserEntry.withdrawn).toBe(true);
+    expect(chase.status).toBe("ESCAPED");
+    expect(state.phase).toBe("ENDED");
+  });
+
+  it("仍有同伙继续追时，追方放弃只退出名单并轮转到下一个行动者", () => {
+    const { state, prey, chaser } = makeChaseState();
+    const derived = computeDerived(coc7, {
+      attributes: { ...baseAttrs, dex: 30 }
+    }).derived;
+    const chaser2 = addParticipant(state, {
+      id: "chaser-2",
+      name: "农夫乙",
+      kind: "NPC",
+      characterId: null,
+      faction: "NPC",
+      attributes: { ...baseAttrs, dex: 30 },
+      derived,
+      skills: {},
+      atbMax: 0,
+      speed: 0
+    });
+    const started = startChase(coc7, state, {
+      preyId: prey.id,
+      chaserIds: [chaser.id, chaser2.id],
+      trackLength: 10,
+      speedRolls: { prey: 60, chaser: 50, "chaser-2": 60 }
+    });
+    expect(started.ok).toBe(true);
+    const chase = state.chase;
+    if (chase === null) throw new Error("missing chase");
+    const chaserEntry = chase.participants.find((item) => item.id === chaser.id);
+    if (chaserEntry === undefined) throw new Error("missing chaser");
+    chase.activeIndex = chase.order.indexOf(chaser.id);
+    expect(chaseCurrentActorId(chase)).toBe(chaser.id);
+
+    const result = chaseWithdraw(state, chaser.id, "去追另一个目标");
+    expect(result.ok).toBe(true);
+    expect(result.escaped).toBeUndefined();
+    expect(result.chaseEnded).toBeUndefined();
+    expect(chaserEntry.withdrawn).toBe(true);
+    expect(chase.status).toBe("ACTIVE");
+    expect(chaseCurrentActorId(chase)).toBe(chaser2.id);
+    expect(state.phase).not.toBe("ENDED");
+  });
+
+  it("逃方放弃逃跑时判定 CAUGHT 并结束战斗", () => {
+    const { state, prey, chaser } = makeChaseState();
+    startChase(coc7, state, {
+      preyId: prey.id,
+      chaserIds: [chaser.id],
+      trackLength: 10,
+      speedRolls: { prey: 60, chaser: 50 }
+    });
+    const chase = state.chase;
+    if (chase === null) throw new Error("missing chase");
+    expect(chaseCurrentActorId(chase)).toBe(prey.id);
+    const result = chaseWithdraw(state, prey.id);
+    expect(result.ok).toBe(true);
+    expect(result.caught).toBe(true);
+    expect(chase.status).toBe("CAUGHT");
+    expect(state.phase).toBe("ENDED");
+  });
+
+  it("非当前行动者不能放弃追逐，退出后不能继续移动", () => {
+    const { state, prey, chaser, chase, chaserEntry } = makeContactChase();
+    expect(chaseWithdrawIssue(state, prey.id)).toContain("只能在自己的回合");
+    const result = chaseWithdraw(state, chaser.id);
+    expect(result.ok).toBe(true);
+    expect(chase.status).toBe("ESCAPED");
+    expect(chaserEntry.withdrawn).toBe(true);
+    const move = chaseMove(state, chaser.id, 1);
+    expect(move.ok).toBe(false);
+    expect(move.error).toContain("没有进行中的追逐");
   });
 });

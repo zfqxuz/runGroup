@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { deleteAssetIfOrphan } from "@/server/assets/cleanup";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { emitSceneUpdate } from "@/server/realtime";
 
 export type AttachKind = "PORTRAIT" | "AVATAR" | "CARD_ART" | "SCENE_BG" | "MAP" | "MAP_LAYER" | "TOKEN";
 
@@ -116,7 +117,7 @@ export async function attachAssetAction(input: AttachInput): Promise<AttachResul
   if (input.kind === "MAP") {
     const map = await prisma.map.findUnique({
       where: { id: input.targetId },
-      select: { id: true, backgroundId: true, scene: { select: { roomId: true } } }
+      select: { id: true, backgroundId: true, scene: { select: { id: true, roomId: true } } }
     });
     if (map === null) return { ok: false, error: "地图不存在" };
     const membership = await prisma.roomMember.findUnique({
@@ -135,6 +136,7 @@ export async function attachAssetAction(input: AttachInput): Promise<AttachResul
     }
     revalidatePath("/rooms/" + map.scene.roomId + "/scenes");
     revalidatePath("/rooms/" + map.scene.roomId);
+    emitSceneUpdate(map.scene.roomId, map.scene.id);
     return { ok: true, url: asset.url };
   }
 

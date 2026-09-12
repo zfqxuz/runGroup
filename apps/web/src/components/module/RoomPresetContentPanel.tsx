@@ -151,9 +151,9 @@ export default async function RoomPresetContentPanel({ roomId, moduleId }: Props
                   {scene.name}
                   {scene.isActive ? <span className="ml-2 rounded border border-emerald-400/30 px-1.5 py-0.5 text-[10px] text-emerald-300">当前</span> : null}
                 </span>
-                <Link href={"/rooms/" + roomId + "/scenes"} className="rounded border border-spirit-400/40 px-2 py-1 text-[11px] text-spirit-300">
-                  编辑场景 / 地图 / 图层 / Token
-                </Link>
+                <span className="rounded border border-white/10 px-2 py-1 text-[11px] text-white/35">
+                  场景背景与结构请在团本编辑器中维护
+                </span>
               </li>
             ))}
           </ul>

@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import { normalizeDiceExpression } from "@touhou/formula";
+import RoomMemberRoster, {
+  type RosterCardOption,
+  type RosterClueOption
+} from "@/components/room/RoomMemberRoster";
 import type {
   Ack,
   ChatChannel,
@@ -15,7 +19,8 @@ import type {
   RoomMemberView,
   RoomRefresh,
   RoomStateUpdate,
-  RoomUpdate
+  RoomUpdate,
+  TradeOfferSummary
 } from "@/shared/socket";
 
 interface Props {
@@ -26,12 +31,24 @@ interface Props {
   initialMessages: readonly ChatMessage[];
   initialGameStateVersion: number;
   initialCombatId: string | null;
+  readonly roomStatus: string;
+  readonly characterVisibility: string;
+  readonly allowPlayerCombatRequest: boolean;
+  readonly initialTrades: readonly TradeOfferSummary[];
+  readonly tradeCards: readonly RosterCardOption[];
+  readonly shareableClues: readonly RosterClueOption[];
+  /** KP 分屏右侧固定使用玩家可见性，忽略 socket 返回的 KP 视角成员列表。 */
+  readonly playerPerspective: boolean;
 }
 
 type ConnState = "connecting" | "online" | "offline";
 
 export default function RoomPlay(props: Props) {
-  const [messages, setMessages] = useState<ChatMessage[]>([...props.initialMessages]);
+  const [messages, setMessages] = useState<ChatMessage[]>(() =>
+    props.playerPerspective
+      ? props.initialMessages.filter((message) => message.channel !== "KP_ONLY")
+      : [...props.initialMessages]
+  );
   const [members, setMembers] = useState<RoomMemberView[]>([...props.initialMembers]);
   const [channel, setChannel] = useState<ChatChannel>("OOC");
   const [whisperTargetId, setWhisperTargetId] = useState("");
@@ -40,6 +57,7 @@ export default function RoomPlay(props: Props) {
   const [diceVisibility, setDiceVisibility] = useState<DiceVisibility>("PUBLIC");
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
+  const [membersOpen, setMembersOpen] = useState(false);
   const socketRef = useRef<Socket | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const messageCountRef = useRef(messages.length);
@@ -72,8 +90,16 @@ export default function RoomPlay(props: Props) {
           setError(result.error ?? "加入房间失败");
           return;
         }
-        if (result.messages !== undefined) setMessages([...result.messages]);
-        if (result.members !== undefined) setMembers([...result.members]);
+        if (result.messages !== undefined) {
+          setMessages(
+            props.playerPerspective
+              ? result.messages.filter((message) => message.channel !== "KP_ONLY")
+              : [...result.messages]
+          );
+        }
+        if (result.members !== undefined && props.playerPerspective === false) {
+          setMembers([...result.members]);
+        }
         const stateVersion = result.gameState?.version ?? null;
         if (stateVersion !== props.initialGameStateVersion) router.refresh();
         if ((result.activeCombatId ?? null) !== props.initialCombatId) router.refresh();
@@ -81,6 +107,7 @@ export default function RoomPlay(props: Props) {
     });
 
     socket.on("chat:message", (message: ChatMessage) => {
+      if (props.playerPerspective && message.channel === "KP_ONLY") return;
       setMessages((prev) => [...prev, message]);
     });
 
@@ -102,7 +129,9 @@ export default function RoomPlay(props: Props) {
     });
     socket.on("combat:started", (payload: CombatLifecycle) => {
       if (cancelled) return;
-      if (payload.roomId === props.roomId) router.refresh();
+      if (payload.roomId !== props.roomId) return;
+      // 开战统一进入独立战斗页面，不再在原房间页内嵌战斗板。
+      router.push("/rooms/" + payload.roomId + "/combat/" + payload.combatId);
     });
     socket.on("combat:ended", (payload: CombatLifecycle) => {
       if (cancelled) return;
@@ -124,20 +153,20 @@ export default function RoomPlay(props: Props) {
       socket.removeAllListeners();
       socket.close();
     };
-  }, [props.roomId, props.initialGameStateVersion, props.initialCombatId, router]);
+  }, [props.roomId, props.initialGameStateVersion, props.initialCombatId, props.playerPerspective, router]);
 
-  // 首次挂载：日志滚到底部，但不移动窗口位置。
   useEffect(() => {
     const list = listRef.current;
-    if (list !== null) list.scrollTop = list.scrollHeight;
+    if (list === null) return;
+    list.scrollTop = list.scrollHeight;
   }, []);
 
-  // 只在新消息到达时滚日志容器；不再用 scrollIntoView 让整页跳动。
   useEffect(() => {
     if (messageCountRef.current === messages.length) return;
     messageCountRef.current = messages.length;
     const list = listRef.current;
-    if (list !== null) list.scrollTop = list.scrollHeight;
+    if (list === null) return;
+    list.scrollTop = list.scrollHeight;
   }, [messages.length]);
 
   function send(): void {
@@ -195,21 +224,30 @@ export default function RoomPlay(props: Props) {
       : conn === "connecting"
         ? "border-white/20 text-white/50"
         : "border-red-400/40 text-red-300";
-
   const inputClass =
     "rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-sm outline-none focus:border-sakura-500";
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_240px]">
-      <section className="flex h-[560px] flex-col rounded-xl border border-white/10 bg-ink-800/50">
+    <>
+      <section className="relative flex h-[420px] min-h-0 flex-col rounded-xl border border-white/10 bg-ink-800/50 lg:h-full">
         <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <h2 className="text-sm font-medium text-white/80">跑团日志</h2>
-          <span className={"rounded-full border px-2 py-0.5 text-[11px] " + connClass}>
-            {connLabel}
-          </span>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMembersOpen((value) => value === false)}
+              className={
+                "rounded-full border px-2.5 py-0.5 text-[11px] transition " +
+                (membersOpen ? "border-spirit-400/50 text-spirit-300" : "border-white/15 text-white/50 hover:border-white/35")
+              }
+            >
+              成员 {members.length}
+            </button>
+            <span className={"rounded-full border px-2 py-0.5 text-[11px] " + connClass}>{connLabel}</span>
+          </div>
         </header>
 
-        <ul ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <ul ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {messages.length === 0 ? (
             <li className="py-10 text-center text-sm text-white/30">还没有消息，说点什么吧</li>
           ) : (
@@ -218,18 +256,12 @@ export default function RoomPlay(props: Props) {
                 <div className="flex items-baseline gap-2">
                   <span className="font-medium text-white/80">{message.displayName}</span>
                   {message.channel === "KP_ONLY" ? (
-                    <span className="rounded border border-sakura-500/40 px-1 text-[10px] text-sakura-400">
-                      KP
-                    </span>
+                    <span className="rounded border border-sakura-500/40 px-1 text-[10px] text-sakura-400">KP</span>
                   ) : null}
                   {message.channel === "WHISPER" ? (
-                    <span className="rounded border border-spirit-400/40 px-1 text-[10px] text-spirit-300">
-                      悄悄话
-                    </span>
+                    <span className="rounded border border-spirit-400/40 px-1 text-[10px] text-spirit-300">悄悄话</span>
                   ) : null}
-                  <span className="font-mono text-[10px] text-white/25">
-                    {message.createdAt.slice(11, 19)}
-                  </span>
+                  <span className="font-mono text-[10px] text-white/25">{message.createdAt.slice(11, 19)}</span>
                 </div>
                 {message.kind === "DICE" && message.dice !== null ? (
                   <div className="mt-1 rounded-lg border border-spirit-400/25 bg-spirit-400/5 px-3 py-2">
@@ -246,113 +278,114 @@ export default function RoomPlay(props: Props) {
           )}
         </ul>
 
-        {error === null ? null : (
-          <p className="border-t border-red-400/20 bg-red-400/5 px-4 py-2 text-xs text-red-300">{error}</p>
-        )}
-
-        <div className="border-t border-white/10 p-3">
-          <div className="flex gap-2">
-            <select
-              value={channel}
-              onChange={(event) => setChannel(event.target.value as ChatChannel)}
-              className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
-            >
-              <option value="OOC">OOC</option>
-              <option value="IC">IC</option>
-              <option value="WHISPER">悄悄话</option>
-              {props.isKP ? <option value="KP_ONLY">KP</option> : null}
-            </select>
-            {channel === "WHISPER" ? (
-              <select
-                value={whisperTargetId}
-                onChange={(event) => setWhisperTargetId(event.target.value)}
-                className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+        {membersOpen ? (
+          <div className="absolute right-0 top-0 z-30 flex h-full w-72 flex-col border-l border-white/10 bg-ink-900/95 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-white/10 px-3 py-2">
+              <span className="text-xs text-white/60">房间成员</span>
+              <button
+                type="button"
+                onClick={() => setMembersOpen(false)}
+                className="rounded border border-white/15 px-2 py-0.5 text-[10px] text-white/45 transition hover:border-white/35"
               >
-                <option value="">选择对象</option>
-                {members
-                  .filter((member) => member.userId !== props.currentUserId)
-                  .map((member) => (
-                    <option key={member.userId} value={member.userId}>
-                      {member.displayName}
-                    </option>
-                  ))}
-              </select>
-            ) : null}
-            <input
-              value={text}
-              onChange={(event) => setText(event.target.value)}
-              onKeyDown={(event) => { if (event.key === "Enter") send(); }}
-              placeholder="说点什么（回车发送）"
-              className={inputClass + " flex-1"}
-            />
-            <button
-              type="button"
-              onClick={send}
-              className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
-            >
-              发送
-            </button>
+                收起
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              <RoomMemberRoster
+                roomId={props.roomId}
+                currentUserId={props.currentUserId}
+                isKP={props.isKP}
+                roomStatus={props.roomStatus}
+                characterVisibility={props.characterVisibility}
+                allowPlayerCombatRequest={props.allowPlayerCombatRequest}
+                activeCombatId={props.initialCombatId}
+                members={members}
+                tradeCards={props.tradeCards}
+                shareableClues={props.shareableClues}
+                trades={props.initialTrades}
+                onWhisper={(userId) => {
+                  setChannel("WHISPER");
+                  setWhisperTargetId(userId);
+                }}
+              />
+            </div>
           </div>
-
-          <div className="mt-2 flex gap-2">
-            <input
-              value={diceExpr}
-              onChange={(event) => {
-                setDiceExpr(event.target.value);
-                if (error !== null) setError(null);
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") roll();
-              }}
-              placeholder="1d100  2d6+3（回车也可掷骰）"
-              className="flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
-            />
-            <select
-              value={diceVisibility}
-              onChange={(event) => setDiceVisibility(event.target.value as DiceVisibility)}
-              className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
-            >
-              <option value="PUBLIC">公开</option>
-              <option value="DARK">暗骰（发送者 + KP）</option>
-              <option value="SECRET">仅自己</option>
-            </select>
-            <button
-              type="button"
-              onClick={roll}
-              disabled={conn !== "online"}
-              className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10 disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              掷骰
-            </button>
-          </div>
-        </div>
+        ) : null}
       </section>
 
-      <aside className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
-        <h2 className="text-sm font-medium text-white/80">成员（{members.length}）</h2>
-        <ul className="mt-3 space-y-2">
-          {members.map((member) => (
-            <li key={member.userId} className="flex items-center justify-between gap-2 text-sm">
-              <span className="min-w-0 truncate text-white/70">{member.displayName}</span>
-              <span className="flex items-center gap-2">
-                <span className="text-[10px] text-white/35">{member.role}</span>
-                {member.userId === props.currentUserId ? null : (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setChannel("WHISPER");
-                      setWhisperTargetId(member.userId);
-                    }}
-                    className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/45 transition hover:border-spirit-400/50 hover:text-spirit-300"
-                  >
-                    私聊
-                  </button>
-                )}
-              </span>
-            </li>
-          ))}
-        </ul>
-      </aside>
-    </div>
+      <div className="rounded-xl border border-white/10 bg-ink-800/50 p-3 lg:col-span-2">
+        {error === null ? null : <p className="mb-2 text-xs text-red-300">{error}</p>}
+        <div className="flex flex-wrap gap-2">
+          <select
+            value={channel}
+            onChange={(event) => setChannel(event.target.value as ChatChannel)}
+            className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+          >
+            <option value="OOC">OOC</option>
+            <option value="IC">IC</option>
+            <option value="WHISPER">悄悄话</option>
+            {props.isKP ? <option value="KP_ONLY">KP</option> : null}
+          </select>
+          {channel === "WHISPER" ? (
+            <select
+              value={whisperTargetId}
+              onChange={(event) => setWhisperTargetId(event.target.value)}
+              className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+            >
+              <option value="">选择对象</option>
+              {members
+                .filter((member) => member.userId === props.currentUserId ? false : true)
+                .map((member) => (
+                  <option key={member.userId} value={member.userId}>{member.displayName}</option>
+                ))}
+            </select>
+          ) : null}
+          <input
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            onKeyDown={(event) => { if (event.key === "Enter") send(); }}
+            placeholder="说点什么（回车发送）"
+            className={inputClass + " min-w-[200px] flex-1"}
+          />
+          <button
+            type="button"
+            onClick={send}
+            className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+          >
+            发送
+          </button>
+        </div>
+
+        <div className="mt-2 flex flex-wrap gap-2">
+          <input
+            value={diceExpr}
+            onChange={(event) => {
+              setDiceExpr(event.target.value);
+              if (error !== null) setError(null);
+            }}
+            onKeyDown={(event) => { if (event.key === "Enter") roll(); }}
+            placeholder="1d100  2d6+3（回车也可掷骰）"
+            className="min-w-[200px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
+          />
+          <select
+            value={diceVisibility}
+            onChange={(event) => setDiceVisibility(event.target.value as DiceVisibility)}
+            className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+          >
+            <option value="PUBLIC">公开</option>
+            <option value="DARK">暗骰（发送者 + KP）</option>
+            <option value="SECRET">仅自己</option>
+          </select>
+          <button
+            type="button"
+            onClick={roll}
+            disabled={conn === "online" ? false : true}
+            className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            掷骰
+          </button>
+        </div>
+      </div>
+    </>
   );
 }

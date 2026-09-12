@@ -80,8 +80,12 @@ export default async function RoomConfigPanel(props: Props) {
         <span>玩家战斗申请：{props.allowPlayerCombatRequest ? "允许" : "禁止"}</span>
         <span>·</span>
         <span>玩家互见角色属性：{props.characterVisibility === "PRIVATE" ? "仅自己" : "公开（默认）"}</span>
-        <span>·</span>
-        <span>模组魔法：{props.magicSpellCount > 0 ? (props.magicEnabled ? "已启用 " + String(props.magicSpellCount) + " 条" : "检测到 " + String(props.magicSpellCount) + " 条，未启用") : "无"}</span>
+        {props.isKP ? (
+          <>
+            <span>·</span>
+            <span>模组魔法：{props.magicSpellCount > 0 ? (props.magicEnabled ? "已启用 " + String(props.magicSpellCount) + " 条" : "检测到 " + String(props.magicSpellCount) + " 条，未启用") : "无"}</span>
+          </>
+        ) : null}
       </div>
 
       {props.isKP ? (

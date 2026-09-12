@@ -183,7 +183,7 @@ function SceneForm(props: { moduleId: string; entry: StructuredModuleEntry | nul
         <label className={labelClass}><span className={captionClass}>网格类型</span><select name="gridType" defaultValue={textOf(data, "gridType", "SQUARE")} className={inputClass}>{["SQUARE", "HEX", "NONE"].map((value) => <option key={value} value={value}>{value}</option>)}</select></label>
         <label className={labelClass}><span className={captionClass}>背景色</span><input name="bgColor" defaultValue={textOf(data, "bgColor", "#1a1a2e")} className={inputClass} /></label>
         <label className="flex items-center gap-2 text-[11px] text-white/55"><input type="checkbox" name="showGrid" value="1" defaultChecked={boolOf(data, "showGrid", true)} />显示网格</label>
-        <label className="flex items-center gap-2 text-[11px] text-white/55"><input type="checkbox" name="showFog" value="1" defaultChecked={boolOf(data, "showFog", false)} />启用迷雾</label>
+        <label className="flex items-center gap-2 text-[11px] text-white/55"><input type="checkbox" name="showFog" value="1" defaultChecked={boolOf(data, "showFog", true)} />启用迷雾</label>
       </div>
       <label className={labelClass}><span className={captionClass}>场景描述</span><textarea name="description" rows={2} defaultValue={textOf(data, "description")} className={inputClass} /></label>
       <label className={labelClass}><span className={captionClass}>旁白</span><textarea name="narration" rows={2} defaultValue={textOf(data, "narration")} className={inputClass} /></label>

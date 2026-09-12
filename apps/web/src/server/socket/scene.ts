@@ -1,10 +1,12 @@
 import type { Server as SocketServer, Socket } from "socket.io";
 import { prisma } from "@/server/db/prisma";
 import { emitSceneFogUpdate, emitSceneMapUpdate } from "@/server/realtime";
-import { loadSceneMapView, loadSceneTokenView } from "@/server/scene/load";
+import { loadSceneMapView, loadSceneTokenView, loadSceneView } from "@/server/scene/load";
+import { findFreeTokenPosition } from "@/server/scene/placement";
 import type { Ack } from "@/shared/socket";
 
 const roomChannel = (roomId: string): string => "room:" + roomId;
+const userChannel = (userId: string): string => "user:" + userId;
 
 function userIdOf(socket: Socket): string | null {
   const id = (socket.data as { userId?: unknown }).userId;
@@ -73,11 +75,36 @@ async function sceneWithMap(roomId: string, sceneId: string): Promise<{ readonly
       gridSize: 70,
       bgColor: "#1a1a2e",
       showGrid: true,
-      showFog: false
+      showFog: true
     },
     select: { id: true }
   });
   return { sceneId: scene.id, mapId: map.id };
+}
+
+async function broadcastSceneVisibility(
+  io: SocketServer,
+  roomId: string,
+  sceneId: string
+): Promise<void> {
+  const members = await prisma.roomMember.findMany({
+    where: { roomId },
+    select: { userId: true, role: true }
+  });
+  await Promise.all(
+    members.map(async (member) => {
+      const view = await loadSceneView(roomId, sceneId, {
+        userId: member.userId,
+        isKP: member.role === "KP"
+      });
+      if (view === null || view.map === null) return;
+      io.to(userChannel(member.userId)).emit("scene:visibility:updated", {
+        roomId,
+        sceneId,
+        tokens: view.map.tokens
+      });
+    })
+  );
 }
 
 async function broadcastMap(io: SocketServer, roomId: string, sceneId: string): Promise<void> {
@@ -117,7 +144,7 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
     const token = await prisma.token.findUnique({
       where: { id: input.tokenId },
       include: {
-        map: { select: { width: true, height: true, scene: { select: { roomId: true } } } },
+        map: { select: { id: true, width: true, height: true, gridSize: true, gridType: true, scene: { select: { id: true, roomId: true } } } },
         character: { select: { userId: true } }
       }
     });
@@ -132,17 +159,24 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
       return;
     }
 
+    const freePoint = await findFreeTokenPosition(
+      { id: token.map.id, width: token.map.width, height: token.map.height, gridSize: token.map.gridSize, gridType: token.map.gridType },
+      { x: Math.max(0, Math.min(token.map.width, x)), y: Math.max(0, Math.min(token.map.height, y)) },
+      token.id
+    );
+    if (freePoint === null) {
+      ack({ ok: false, error: "附近没有空闲格子" });
+      return;
+    }
     await prisma.token.update({
       where: { id: token.id },
-      data: {
-        x: Math.max(0, Math.min(token.map.width, x)),
-        y: Math.max(0, Math.min(token.map.height, y))
-      }
+      data: { x: freePoint.x, y: freePoint.y }
     });
     const updated = await loadSceneTokenView(token.id);
     if (updated !== null) {
       io.to(roomChannel(input.roomId)).emit("scene:token:updated", { roomId: input.roomId, token: updated.token });
     }
+    await broadcastSceneVisibility(io, input.roomId, token.map.scene.id);
     ack({ ok: true });
   });
 

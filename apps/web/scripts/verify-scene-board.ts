@@ -5,7 +5,7 @@
 import { PrismaClient } from "@prisma/client";
 import { io, type Socket } from "socket.io-client";
 import type { Ack } from "../src/shared/socket";
-import type { SceneTokenUpdate } from "../src/shared/scene";
+import type { SceneTokenUpdate, SceneVisibilityUpdated } from "../src/shared/scene";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const prisma = new PrismaClient();
@@ -141,7 +141,7 @@ async function main(): Promise<void> {
         system: "COC7",
         ownerId: kpId,
         inviteCode: "SCN" + suffix.toUpperCase().slice(0, 6),
-        status: "PLAYING",
+        status: "LOBBY",
         members: { create: [{ userId: kpId, role: "KP" }, { userId: playerId, role: "PLAYER", ready: true }] }
       },
       select: { id: true }
@@ -240,14 +240,51 @@ async function main(): Promise<void> {
     const update = await updatePromise;
     expectEqual(update.roomId, room.id, "更新事件房间 ID");
     expectEqual(update.token.id, token?.id ?? "", "更新 Token ID");
-    expectEqual(Math.round(update.token.x), 321, "广播 Token X");
-    expectEqual(Math.round(update.token.y), 222, "广播 Token Y");
+    ensure(Math.abs(update.token.x - 321) <= 70, "广播 Token X 应落在请求位置所在格");
+    ensure(Math.abs(update.token.y - 222) <= 70, "广播 Token Y 应落在请求位置所在格");
 
     const moved = await prisma.token.findUnique({ where: { id: token?.id ?? "" } });
-    expectEqual(Math.round(moved?.x ?? 0), 321, "数据库 Token X");
-    expectEqual(Math.round(moved?.y ?? 0), 222, "数据库 Token Y");
+    expectEqual(Math.round(moved?.x ?? 0), Math.round(update.token.x), "数据库 Token X");
+    expectEqual(Math.round(moved?.y ?? 0), Math.round(update.token.y), "数据库 Token Y");
 
-    console.log("PASS 场景棋盘 E2E：创建场景 / 添加 Token / 玩家拖动 / 实时广播");
+    // 视野外对象：玩家只移动自己的 Token，也应收到服务器按视野重算后的可见 Token 列表。
+    const hiddenToken = await prisma.token.create({
+      data: {
+        roomId: room.id,
+        mapId: scene?.map?.id ?? "",
+        name: "E2E 视野外对象",
+        x: 500,
+        y: 500,
+        size: 1,
+        rotation: 0,
+        zIndex: 1,
+        borderColor: "#ffffff",
+        showName: true,
+        showHpBar: false,
+        isVisible: true,
+        isLocked: false
+      }
+    });
+    const visibilityPromise = waitEvent<SceneVisibilityUpdated>(playerSocket, "scene:visibility:updated");
+    const moveToHiddenAck = await emitAck<Ack>(playerSocket, "scene:token:move", {
+      roomId: room.id,
+      tokenId: token?.id ?? "",
+      x: 500,
+      y: 500
+    });
+    ensure(moveToHiddenAck.ok, moveToHiddenAck.error ?? "移动 Token 至视野外对象位置失败");
+    const visibility = await visibilityPromise;
+    expectEqual(visibility.roomId, room.id, "可见性同步房间 ID");
+    ensure(
+      visibility.tokens.some((item) => item.id === hiddenToken.id),
+      "玩家移动视野后应收到视野外对象的可见性同步"
+    );
+    ensure(
+      visibility.tokens.some((item) => item.id === (token?.id ?? "")),
+      "可见性同步应包含玩家自己的 Token"
+    );
+
+    console.log("PASS 场景棋盘 E2E：创建场景 / 添加 Token / 玩家拖动 / 实时广播 / 视野外对象进入视野");
     console.log("  scene " + scene?.id + " token " + token?.id);
   } finally {
     kpSocket?.close();

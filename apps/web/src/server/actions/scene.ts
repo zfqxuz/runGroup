@@ -7,6 +7,7 @@ import { prisma } from "@/server/db/prisma";
 import { emitSceneTokenUpdate, emitSceneUpdate } from "@/server/realtime";
 import { loadGameModuleView } from "@/server/modules/revision";
 import { loadSceneTokenView } from "@/server/scene/load";
+import { findFreeTokenPosition } from "@/server/scene/placement";
 import { snapPointToGrid } from "@/shared/scene-geometry";
 
 function clean(value: FormDataEntryValue | null, maxLength: number): string {
@@ -89,7 +90,7 @@ export async function createSceneAction(formData: FormData): Promise<void> {
           gridType: "SQUARE",
           bgColor: "#1a1a2e",
           showGrid: true,
-          showFog: false
+          showFog: true
         }
       }
     }
@@ -212,85 +213,108 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
   const roomId = clean(formData.get("roomId"), 64);
   const sceneId = clean(formData.get("sceneId"), 64);
   const unitRef = clean(formData.get("unitRef"), 128);
-  const returnTo = safeSceneReturnTo(roomId, formData.get("returnTo"), scenesPath(roomId, "?saved=token"));
-  if ((await requireKp(roomId, session.user.id)) === false) redirect("/rooms/" + roomId + "/prepare");
+  const returnTo = safeSceneReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId + "?scene-token=placed");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { role: true }
+  });
+  if (membership === null) redirect("/rooms/" + roomId);
 
   const scene = await prisma.scene.findUnique({
     where: { id: sceneId },
-    include: { map: { select: { id: true, width: true, height: true, gridSize: true, gridType: true } } }
+    include: {
+      map: { select: { id: true, width: true, height: true, gridSize: true, gridType: true } }
+    }
   });
-  if (scene === null || scene.roomId !== roomId) redirect(scenesPath(roomId, "?error=scene"));
+  if (scene === null || scene.roomId !== roomId) redirect(withQuery(returnTo, "error", "scene"));
 
   const map = scene.map ?? (await prisma.map.create({
-    data: { sceneId, name: scene.name, width: 1600, height: 1000, gridSize: 70, bgColor: "#1a1a2e", showGrid: true, showFog: false },
+    data: {
+      sceneId,
+      name: scene.name,
+      width: 1600,
+      height: 1000,
+      gridSize: 70,
+      bgColor: "#1a1a2e",
+      showGrid: true,
+      showFog: true
+    },
     select: { id: true, width: true, height: true, gridSize: true, gridType: true }
   }));
 
   const [kind, id] = unitRef.split(":", 2);
+  if (id === undefined || id.length === 0) redirect(withQuery(returnTo, "error", "unit"));
+
+  const isKP = membership.role === "KP";
   let name = "";
   let characterId: string | null = null;
   let cardId: string | null = null;
   let borderColor = "#ffffff";
 
-  if (kind === "character" && id !== undefined) {
-    const game = await prisma.game.findFirst({
-      where: { roomId, status: { in: ["PLAYING", "COMBAT"] } },
-      orderBy: { createdAt: "desc" },
-      select: { id: true }
+  if (kind === "character") {
+    const entry = await prisma.roomCharacterEntry.findUnique({
+      where: { roomId_characterId: { roomId, characterId: id } },
+      include: { character: { select: { name: true, userId: true } } }
     });
-    if (game !== null) {
-      const gameCharacter = await prisma.gameCharacter.findUnique({
-        where: { gameId_characterId: { gameId: game.id, characterId: id } },
-        include: { character: { select: { name: true } } }
-      });
-      if (gameCharacter !== null) {
-        name = gameCharacter.character.name;
-        characterId = id;
-        borderColor = "#38bdf8";
-      }
+    if (entry === null || entry.status !== "APPROVED") {
+      redirect(withQuery(returnTo, "error", "unit"));
     }
-    if (characterId === null) {
-      // 开局前也允许为已通过审核的角色放置 Token。
-      const entry = await prisma.roomCharacterEntry.findUnique({
-        where: { roomId_characterId: { roomId, characterId: id } },
-        include: { character: { select: { name: true } } }
-      });
-      if (entry === null || entry.status !== "APPROVED") redirect(scenesPath(roomId, "?error=unit"));
-      name = entry.character.name;
-      characterId = id;
-      borderColor = "#38bdf8";
+    if (isKP === false && entry.character.userId !== session.user.id) {
+      redirect(withQuery(returnTo, "error", "permission"));
     }
-  } else if (kind === "npc" && id !== undefined) {
+    name = entry.character.name;
+    characterId = id;
+    borderColor = "#38bdf8";
+  } else if (kind === "npc") {
+    if (isKP === false) redirect(withQuery(returnTo, "error", "permission"));
     const card = await prisma.card.findUnique({ where: { id } });
     if (card === null || card.roomId !== roomId || card.scope !== "ROOM" || card.type !== "NPC") {
-      redirect(scenesPath(roomId, "?error=unit"));
+      redirect(withQuery(returnTo, "error", "unit"));
     }
     name = card.name;
     cardId = card.id;
     borderColor = "#ef4444";
   } else {
-    redirect(scenesPath(roomId, "?error=unit"));
+    redirect(withQuery(returnTo, "error", "unit"));
   }
 
-  const duplicateToken = await prisma.token.findFirst({
+  // 同一角色 / NPC 在整个房间只允许存在一个 Token；手动放到新场景时移动旧 Token，不复制。
+  const existing = await prisma.token.findFirst({
     where: {
-      mapId: map.id,
-      ...(characterId !== null ? { characterId } : { cardId })
+      roomId,
+      ...(characterId === null ? { cardId } : { characterId })
     },
-    select: { id: true }
+    include: { map: { select: { sceneId: true } } }
   });
-  if (duplicateToken !== null) {
-    redirect(withQuery(returnTo, "error", "token-exists"));
-  }
-
   const maxZ = await prisma.token.aggregate({ where: { mapId: map.id }, _max: { zIndex: true } });
-  const spawn = snapPointToGrid(
+  const preferred = snapPointToGrid(
     { width: map.width, height: map.height, gridSize: map.gridSize, gridType: map.gridType },
     map.width / 2,
     map.height / 2
   );
+  const spawn = await findFreeTokenPosition(
+    { id: map.id, width: map.width, height: map.height, gridSize: map.gridSize, gridType: map.gridType },
+    preferred,
+    existing?.id
+  );
+  if (spawn === null) redirect(withQuery(returnTo, "error", "space"));
+  const zIndex = (maxZ._max.zIndex ?? 0) + 1;
+
+  if (existing !== null) {
+    const oldSceneId = existing.map.sceneId;
+    await prisma.token.update({
+      where: { id: existing.id },
+      data: { roomId, mapId: map.id, x: spawn.x, y: spawn.y, zIndex, isVisible: true }
+    });
+    revalidateScene(roomId);
+    if (oldSceneId !== sceneId) emitSceneUpdate(roomId, oldSceneId);
+    emitSceneUpdate(roomId, sceneId);
+    redirect(withQuery(returnTo, "scene-token", "moved"));
+  }
+
   await prisma.token.create({
     data: {
+      roomId,
       mapId: map.id,
       characterId,
       cardId,
@@ -298,14 +322,14 @@ export async function createSceneTokenAction(formData: FormData): Promise<void> 
       x: spawn.x,
       y: spawn.y,
       size: 1,
-      zIndex: (maxZ._max.zIndex ?? 0) + 1,
+      zIndex,
       borderColor
     }
   });
 
   revalidateScene(roomId);
   emitSceneUpdate(roomId, sceneId);
-  redirect(returnTo);
+  redirect(withQuery(returnTo, "scene-token", "placed"));
 }
 
 export async function deleteSceneTokenAction(formData: FormData): Promise<void> {
@@ -342,7 +366,7 @@ export async function moveSceneTokenAction(formData: FormData): Promise<void> {
   const token = await prisma.token.findUnique({
     where: { id: tokenId },
     include: {
-      map: { select: { width: true, height: true, scene: { select: { roomId: true } } } },
+      map: { select: { id: true, width: true, height: true, gridSize: true, gridType: true, scene: { select: { roomId: true } } } },
       character: { select: { userId: true } }
     }
   });
@@ -355,12 +379,15 @@ export async function moveSceneTokenAction(formData: FormData): Promise<void> {
   const canMove = membership?.role === "KP" || (token.character !== null && token.character.userId === session.user.id);
   if (canMove === false) redirect("/rooms/" + roomId);
 
+  const freePoint = await findFreeTokenPosition(
+    { id: token.map.id, width: token.map.width, height: token.map.height, gridSize: token.map.gridSize, gridType: token.map.gridType },
+    { x: Math.max(0, Math.min(token.map.width, x)), y: Math.max(0, Math.min(token.map.height, y)) },
+    tokenId
+  );
+  if (freePoint === null) redirect(withQuery("/rooms/" + roomId, "error", "space"));
   await prisma.token.update({
     where: { id: tokenId },
-    data: {
-      x: Math.max(0, Math.min(token.map.width, x)),
-      y: Math.max(0, Math.min(token.map.height, y))
-    }
+    data: { x: freePoint.x, y: freePoint.y }
   });
   const updated = await loadSceneTokenView(tokenId);
   if (updated !== null) emitSceneTokenUpdate(roomId, updated.token);
@@ -532,11 +559,11 @@ function dataText(data: Record<string, unknown>, keys: readonly string[], fallba
   return fallback;
 }
 
-function dataBool(data: Record<string, unknown>, keys: readonly string[]): boolean {
+function dataBool(data: Record<string, unknown>, keys: readonly string[], fallback = false): boolean {
   for (const key of keys) {
     if (data[key] === true || data[key] === "true" || data[key] === "1") return true;
   }
-  return false;
+  return fallback;
 }
 
 function dataInteger(data: Record<string, unknown>, keys: readonly string[], fallback: number, min: number, max: number): number {
@@ -619,7 +646,7 @@ export async function importModuleScenesAction(formData: FormData): Promise<void
     const gridRaw = dataText(scene.data, ["gridType", "grid"], "SQUARE").toUpperCase();
     const gridType = gridRaw === "HEX" || gridRaw === "NONE" ? gridRaw : "SQUARE";
     const bgColor = dataText(scene.data, ["bgColor", "backgroundColor"], "#1a1a2e").slice(0, 20);
-    const showFog = dataBool(scene.data, ["showFog", "fog"]);
+    const showFog = dataBool(scene.data, ["showFog", "fog"], true);
     const backgroundPath = dataText(scene.data, ["background", "backgroundPath", "map", "image"], "");
     const asset = backgroundPath.length === 0
       ? null
@@ -692,4 +719,107 @@ export async function importModuleScenesAction(formData: FormData): Promise<void
   revalidateScene(roomId);
   emitSceneUpdate(roomId, createdSceneIds[0] ?? null);
   redirect(scenesPath(roomId, "?saved=module-scenes&scenes=" + String(createdSceneIds.length) + "&encounters=" + String(encounterCount)));
+}
+
+
+
+/** KP 场景配置：开关当前场景战争迷雾。 */
+export async function setSceneFogAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const sceneId = clean(formData.get("sceneId"), 64);
+  const enabled = String(formData.get("enabled") ?? "0") === "1";
+  const returnTo = safeSceneReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId);
+  if ((await requireKp(roomId, session.user.id)) === false) redirect("/rooms/" + roomId);
+
+  const scene = await prisma.scene.findUnique({
+    where: { id: sceneId },
+    include: { map: { select: { id: true } } }
+  });
+  if (scene === null || scene.roomId !== roomId) redirect(withQuery(returnTo, "error", "scene"));
+
+  if (scene.map === null) {
+    await prisma.map.create({
+      data: {
+        sceneId: scene.id,
+        name: scene.name,
+        width: 1600,
+        height: 1000,
+        gridSize: 70,
+        bgColor: "#1a1a2e",
+        showGrid: true,
+        showFog: enabled
+      }
+    });
+  } else {
+    await prisma.map.update({ where: { id: scene.map.id }, data: { showFog: enabled } });
+  }
+
+  revalidateScene(roomId);
+  emitSceneUpdate(roomId, sceneId);
+  redirect(withReturn(returnTo));
+}
+
+function withReturn(path: string): string {
+  return path;
+}
+
+/** 游戏内 KP 唯一允许修改的地图属性：背景图（来自团本素材或房间素材）。 */
+export async function applyMapBackgroundAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = clean(formData.get("roomId"), 64);
+  const sceneId = clean(formData.get("sceneId"), 64);
+  const assetId = clean(formData.get("assetId"), 64);
+  const returnTo = safeSceneReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId);
+  if ((await requireKp(roomId, session.user.id)) === false) redirect("/rooms/" + roomId);
+
+  const scene = await prisma.scene.findUnique({
+    where: { id: sceneId },
+    include: { map: { select: { id: true } } }
+  });
+  if (scene === null || scene.roomId !== roomId) redirect(withQuery(returnTo, "error", "scene"));
+
+  const asset = await prisma.asset.findUnique({
+    where: { id: assetId },
+    select: { id: true, roomId: true, ownerId: true, type: true }
+  });
+  if (asset === null) redirect(withQuery(returnTo, "error", "asset"));
+
+  let allowed = asset.roomId === roomId;
+  if (allowed === false) {
+    const activeGame = await prisma.game.findFirst({
+      where: { roomId, status: { in: ["PLAYING", "COMBAT"] } },
+      orderBy: { createdAt: "desc" },
+      select: { moduleId: true, moduleRevisionId: true }
+    });
+    const view = await loadGameModuleView(activeGame);
+    allowed = view !== null && view.assets.some((item) => item.assetId === asset.id);
+  }
+  if (allowed === false) redirect(withQuery(returnTo, "error", "permission"));
+
+  const mapId = scene.map === null
+    ? (await prisma.map.create({
+        data: {
+          sceneId: scene.id,
+          name: scene.name,
+          width: 1600,
+          height: 1000,
+          gridSize: 70,
+          bgColor: "#1a1a2e",
+          showGrid: true,
+          showFog: true,
+          backgroundId: asset.id
+        },
+        select: { id: true }
+      })).id
+    : scene.map.id;
+  if (scene.map !== null) {
+    await prisma.map.update({ where: { id: mapId }, data: { backgroundId: asset.id } });
+  }
+
+  revalidateScene(roomId);
+  emitSceneUpdate(roomId, sceneId);
+  redirect(withQuery(returnTo, "scene-bg", "saved"));
 }

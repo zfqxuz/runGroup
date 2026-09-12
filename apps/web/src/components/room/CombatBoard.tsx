@@ -30,6 +30,7 @@ interface MagicSpellOption {
 }
 
 interface Props {
+  readonly roomId: string;
   readonly combatId: string;
   readonly isKP: boolean;
   readonly skillOptions: readonly SkillOption[];
@@ -39,6 +40,8 @@ interface Props {
   readonly canCastMagic: boolean;
   readonly magicSpells: readonly MagicSpellOption[];
   readonly attackSkillsByParticipant: Readonly<Record<string, readonly string[]>>;
+  /** combatParticipant.id -> 立绘 / 头像 URL。 */
+  readonly portraits: Readonly<Record<string, string>>;
 }
 
 const REACTION_LABELS: Record<CombatReactionPayload["type"], string> = {
@@ -127,10 +130,10 @@ export default function CombatBoard(props: Props) {
       });
     });
     socket.on("combat:aborted", () => {
-      if (cancelled === false) router.refresh();
+      if (cancelled === false) router.push("/rooms/" + props.roomId + "?combat=aborted");
     });
     socket.on("combat:ended", () => {
-      if (cancelled === false) router.refresh();
+      if (cancelled === false) router.push("/rooms/" + props.roomId + "?combat=ended");
     });
     socket.on("disconnect", () => {
       if (cancelled === false) setConn("offline");
@@ -149,11 +152,11 @@ export default function CombatBoard(props: Props) {
 
   useEffect(() => {
     if (view?.phase === "ENDED") {
-      const timer = setTimeout(() => router.refresh(), 1200);
+      const timer = setTimeout(() => router.push("/rooms/" + props.roomId + "?combat=ended"), 1200);
       return () => clearTimeout(timer);
     }
     return undefined;
-  }, [view?.phase, router]);
+  }, [view?.phase, router, props.roomId]);
 
   const participants = view?.participants ?? [];
   const alive = participants.filter((item) => item.defeated === false);
@@ -226,6 +229,7 @@ export default function CombatBoard(props: Props) {
       : chase.participants.filter((item) => {
           if (item.id === chaseActiveParticipant.id) return false;
           if (item.side === chaseActiveParticipant.side) return false;
+          if (item.withdrawn) return false;
           if (item.position !== chaseActiveParticipant.position) return false;
           const combat = participants.find((participant) => participant.id === item.id);
           return combat !== undefined && combat.defeated === false;
@@ -335,6 +339,24 @@ export default function CombatBoard(props: Props) {
       { combatId: props.combatId, actorId: actorIdForTurn },
       (result: Ack) => {
         if (result.ok === false) setError(result.error ?? "结束追逐回合失败");
+      }
+    );
+  }
+
+  function emitChaseWithdraw(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    const actorIdForWithdraw = chase?.activeActorId ?? null;
+    if (actorIdForWithdraw === null) return;
+    setError(null);
+    socket.emit(
+      "combat:chase-withdraw",
+      { combatId: props.combatId, actorId: actorIdForWithdraw },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "放弃追逐失败");
       }
     );
   }
@@ -510,12 +532,14 @@ export default function CombatBoard(props: Props) {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <h3 className="text-sm font-medium text-emerald-200">追逐 · 第 {chase.round} 轮</h3>
               <span className="text-[11px] text-white/45">
-                地点 {chase.trackLength} 格 · 逃离者到达最后一格即脱身
+                地点 {chase.trackLength} 格 · 逃离者到达最后一格，或追方全部放弃即脱身
               </span>
             </div>
             <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
               {Array.from({ length: chase.trackLength }).map((_, position) => {
-                const here = chase.participants.filter((item) => item.position === position);
+                const here = chase.participants.filter(
+                  (item) => item.withdrawn === false && item.position === position
+                );
                 return (
                   <div
                     key={position}
@@ -551,6 +575,15 @@ export default function CombatBoard(props: Props) {
                 );
               })}
             </div>
+            {chase.participants.some((item) => item.withdrawn) ? (
+              <p className="mt-1 text-[11px] text-white/45">
+                已退出：
+                {chase.participants
+                  .filter((item) => item.withdrawn)
+                  .map((item) => item.name)
+                  .join("、")}
+              </p>
+            ) : null}
             {chase.status === "ACTIVE" ? (
               chaseActiveParticipant === null ? null : (
                 <div className="mt-2">
@@ -586,6 +619,13 @@ export default function CombatBoard(props: Props) {
                           className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
                         >
                           结束回合
+                        </button>
+                        <button
+                          type="button"
+                          onClick={emitChaseWithdraw}
+                          className="rounded-lg border border-red-400/40 px-3 py-1.5 text-xs text-red-200 transition hover:border-red-300"
+                        >
+                          {chaseActiveParticipant.side === "PREY" ? "放弃逃跑 / 投降" : "放弃追逐"}
                         </button>
                       </>
                     ) : (
@@ -671,14 +711,26 @@ export default function CombatBoard(props: Props) {
 
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
           <h3 className="text-sm font-medium text-white/80">参战单位</h3>
-          <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
+          <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
             {participants.map((item) => {
               const controlled = isControlled(item);
               const awaiting = pendingTargetIds.has(item.id);
               const canActNow = chaseActive === false && controlled && item.isReady;
               const current = chaseActive === false && (activeActorId === item.id || (view?.mode === "ATB" && item.isReady));
+              const hiddenStats = item.kind === "PLAYER" && item.isSelf === false && item.hp === null;
+              const portrait = props.portraits[item.id];
               return (
-                <div key={item.id} className={"rounded-xl border px-3 py-3 transition " + cardClass(item)}>
+                <div
+                  key={item.id}
+                  className={"w-[250px] shrink-0 rounded-xl border px-3 py-3 transition " + cardClass(item)}
+                >
+                  {portrait === undefined ? (
+                    <div className="mb-3 flex h-32 w-full items-center justify-center rounded-lg border border-white/10 bg-ink-900/70 text-2xl font-semibold text-white/25">
+                      {item.name.slice(0, 1)}
+                    </div>
+                  ) : (
+                    <img src={portrait} alt={item.name} className="mb-3 h-32 w-full rounded-lg border border-white/15 object-cover" />
+                  )}
                   <div className="flex items-start justify-between gap-2">
                     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
                       <span className="truncate text-sm font-medium text-white/85">{item.name}</span>
@@ -704,7 +756,9 @@ export default function CombatBoard(props: Props) {
                   </div>
                   <div className="mt-2">
                     {item.hp === null ? (
-                      <p className="text-[11px] text-white/45">HP {item.hpText ?? "情报未知"}</p>
+                      <p className="text-[11px] text-white/45">
+                        {hiddenStats ? "HP ？？？ · 数值未公开" : "HP " + (item.hpText ?? "情报未知")}
+                      </p>
                     ) : (
                       <>
                         <div className="h-1.5 overflow-hidden rounded-full bg-white/10">
@@ -741,9 +795,9 @@ export default function CombatBoard(props: Props) {
                     ))}
                   </div>
                   <p className="mt-2 text-[10px] text-white/30">
-                    速度 {(item.speed / 1000).toFixed(2)}
+                    {hiddenStats ? "速度 ？？？" : "速度 " + (item.speed / 1000).toFixed(2)}
                     {item.faction === null ? "" : " · 阵营 " + item.faction}
-                    {item.hasDeclaration ? " · 符卡展开" + (item.declarationHp === null ? "" : " HP " + item.declarationHp) : ""}
+                    {item.hasDeclaration ? " · 符卡展开" + (hiddenStats || item.declarationHp === null ? " HP ？？？" : " HP " + item.declarationHp) : ""}
                   </p>
                 </div>
               );

@@ -6,6 +6,8 @@ export {
   chaseEndTurn,
   chaseMove,
   chaseSpeedCheckTarget,
+  chaseWithdraw,
+  chaseWithdrawIssue,
   endChase,
   findChaseParticipant,
   resolveChaseAttack,
@@ -16,6 +18,7 @@ export type {
   ChaseAttackResolution,
   ChaseMoveResult,
   ChaseTurnResult,
+  ChaseWithdrawResult,
   StartChaseOptions,
   StartChaseResult
 } from "./chase";

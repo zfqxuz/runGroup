@@ -231,13 +231,13 @@ async function main(): Promise<void> {
     const card = await prisma.card.create({ data: { scope: "ROOM", roomId: room.id, ownerId: userId, type: "NPC", name: "有图 NPC", rarity: "COMMON", system: "COC7", imageUrl: "/uploads/e2e-token.png", stats: {} as never } });
     if (scene.map === null) throw new Error("场景缺少地图");
     const mapId = scene.map.id;
-    const tokenWithCard = await prisma.token.create({ data: { mapId, cardId: card.id, name: "有图 NPC", x: 100, y: 100 } });
+    const tokenWithCard = await prisma.token.create({ data: { roomId: room.id, mapId, cardId: card.id, name: "有图 NPC", x: 100, y: 100 } });
     const loadedWithCard = await prisma.token.findUnique({ where: { id: tokenWithCard.id }, include: tokenInclude });
     if (loadedWithCard === null) throw new Error("Token 查询失败");
     const viewWithCard = tokenView(loadedWithCard, new Map());
     expectEqual(viewWithCard.imageUrl, "/uploads/e2e-token.png", "Token 应自动取来源卡图片");
 
-    const tokenWithoutImage = await prisma.token.create({ data: { mapId, name: "无图 NPC", x: 200, y: 200 } });
+    const tokenWithoutImage = await prisma.token.create({ data: { roomId: room.id, mapId, name: "无图 NPC", x: 200, y: 200 } });
     const loadedWithout = await prisma.token.findUnique({ where: { id: tokenWithoutImage.id }, include: tokenInclude });
     if (loadedWithout === null) throw new Error("Token 查询失败");
     const viewWithout = tokenView(loadedWithout, new Map());

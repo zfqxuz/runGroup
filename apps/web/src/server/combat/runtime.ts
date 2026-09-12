@@ -20,6 +20,8 @@ export interface CombatRuntime {
   readonly controllers: Map<string, string[]>;
   readonly roles: Map<string, RuntimeRole>;
   readonly partyStatsVisible: boolean;
+  /** 房间 PRIVATE 时，主动公开角色数值的玩家角色 id。 */
+  readonly publicCharacterIds: ReadonlySet<string>;
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
   pendingReactions: Map<string, string>;
   reactions: Record<string, DefenseReaction>;
@@ -46,7 +48,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       room: {
         select: {
           characterVisibility: true,
-          members: { select: { userId: true, role: true } }
+          members: { select: { userId: true, role: true, statsPublic: true, activeCharacterId: true } }
         }
       }
     }
@@ -102,6 +104,12 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       skills: participant.skills
     }))
   );
+  const publicCharacterIds = new Set<string>();
+  for (const member of members) {
+    if (member.statsPublic && member.activeCharacterId !== null) {
+      publicCharacterIds.add(member.activeCharacterId);
+    }
+  }
   const runtime: CombatRuntime = {
     combatId,
     roomId: combat.roomId,
@@ -110,6 +118,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     controllers,
     roles,
     partyStatsVisible: combat.room.characterVisibility !== "PRIVATE",
+    publicCharacterIds,
     attackSkills,
     pendingReactions: new Map(),
     reactions: {},
@@ -136,7 +145,20 @@ export function controlledCharacterIds(runtime: CombatRuntime, userId: string): 
 
 export function viewForUser(runtime: CombatRuntime, userId: string): CombatView {
   const role = runtime.roles.get(userId) ?? "SPECTATOR";
-  const view = filterCombatForViewer(runtime.state, {
+  // 房间 PRIVATE 时，主动公开的玩家角色按 participant.isPublic 处理；
+  // 只对 view 副本做标记，不改动运行时真实状态。
+  const visibleState =
+    runtime.publicCharacterIds.size === 0
+      ? runtime.state
+      : {
+          ...runtime.state,
+          participants: runtime.state.participants.map((participant) =>
+            participant.characterId !== null && runtime.publicCharacterIds.has(participant.characterId)
+              ? { ...participant, isPublic: true }
+              : participant
+          )
+        };
+  const view = filterCombatForViewer(visibleState, {
     userId,
     role,
     characterId: null,

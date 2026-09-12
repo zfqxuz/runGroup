@@ -10,7 +10,7 @@ import { applyMagicRulesToRoom, disableMagicRulesInRoom } from "@/server/modules
 import { applyAdvancement, parseAdvancementRows } from "@/server/game/advancement";
 import { resolveGameGrowthChecks } from "@/server/game/growth";
 import { emitAdvancementUpdate, emitRoomRefresh, emitRoomUpdate } from "@/server/realtime";
-import { hasCombatRuntime, loadCombatRuntime } from "@/server/combat/runtime";
+import { clearCombatRuntime, hasCombatRuntime, loadCombatRuntime } from "@/server/combat/runtime";
 import { saveCombatState } from "@/server/combat/setup";
 
 function generateInviteCode(): string {
@@ -201,6 +201,32 @@ export async function setCharacterVisibilityAction(formData: FormData): Promise<
   emitRoomRefresh(roomId, "visibility");
   const inLobby = membership.room.status === "LOBBY" || membership.room.status === "PAUSED";
   redirect(inLobby ? "/rooms/" + roomId + "/prepare?settings=visibility" : "/rooms/" + roomId);
+}
+
+/** 玩家主动公开 / 隐藏自己的角色数值（仅影响 PRIVATE 房间中的其他玩家）。 */
+export async function setStatsPublicAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const enabled = String(formData.get("enabled") ?? "0") === "1";
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: { id: true, room: { select: { status: true } } }
+  });
+  if (membership === null) redirect("/rooms/" + roomId);
+  await prisma.roomMember.update({
+    where: { id: membership.id },
+    data: { statsPublic: enabled }
+  });
+  // 正在进行的战斗 view 有运行时缓存，必须清掉才能立即反映公开状态。
+  const activeCombat = await prisma.combat.findFirst({
+    where: { roomId, endedAt: null },
+    select: { id: true }
+  });
+  if (activeCombat !== null) clearCombatRuntime(activeCombat.id);
+  revalidatePath("/rooms/" + roomId);
+  emitRoomRefresh(roomId, "stats-public");
+  redirect("/rooms/" + roomId);
 }
 
 export async function setRoomMagicEnabledAction(formData: FormData): Promise<void> {

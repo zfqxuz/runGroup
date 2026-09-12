@@ -5,6 +5,7 @@ import { extractImages, extractText, getDocumentProxy, renderPageAsImage } from 
 import * as XLSX from "xlsx";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { prisma } from "@/server/db/prisma";
+import { decodeTextBuffer, readDocx } from "@/server/ai/docx";
 import { storeImage, publicPath } from "@/server/assets/storage";
 import { REQUIRED_MODULE_SECTIONS, parseModuleMarkdown, slugifyModuleId } from "@/server/modules/format";
 import { parseStructuredBlocks } from "@/server/modules/structure";
@@ -41,8 +42,8 @@ const MAX_TOTAL_SOURCE_CHARS = 900000;
 /** PDF 图片候选上限：先收集，再按信息量排序选中 MAX_IMAGES 张。 */
 const MAX_IMAGE_CANDIDATES = 80;
 const MAX_RENDERED_PAGES = 24;
-const MAX_CHUNK_OUTPUT_TOKENS = 12288;
-const MAX_IMAGE_OUTPUT_TOKENS = 12288;
+const MAX_CHUNK_OUTPUT_TOKENS = 8192;
+const MAX_IMAGE_OUTPUT_TOKENS = 8192;
 
 export interface AiImportWarning {
   readonly filename: string;
@@ -134,13 +135,6 @@ function stripXml(xml: string): string {
     .replace(/[ \t]+/g, " ")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
-}
-
-function readDocx(buffer: Buffer): string {
-  const zip = new AdmZip(buffer);
-  const entry = zip.getEntry("word/document.xml");
-  if (entry === null) return "";
-  return stripXml(entry.getData().toString("utf8"));
 }
 
 function readPptx(buffer: Buffer): string {
@@ -372,10 +366,21 @@ async function extractSource(file: File, warnings: AiImportWarning[]): Promise<E
   }
 
   if (TEXT_EXTENSIONS.has(extension)) {
-    return { filename: file.name, kind: "TEXT", text: buffer.toString("utf8"), extension, buffer };
+    const decoded = decodeTextBuffer(buffer);
+    if (decoded.encoding !== "utf-8") {
+      warnings.push(
+        warning(file.name, "检测到 " + decoded.encoding + " 编码，已自动转码；如果内容仍异常请另存为 UTF-8 后重试")
+      );
+    }
+    if (decoded.replacementCount > 0) {
+      warnings.push(warning(file.name, "文本包含 " + String(decoded.replacementCount) + " 个无法解码的字符"));
+    }
+    return { filename: file.name, kind: "TEXT", text: decoded.text, extension, buffer };
   }
   if (extension === "docx") {
-    return { filename: file.name, kind: "DOCX", text: readDocx(buffer), extension, buffer };
+    const parsed = readDocx({ buffer, filename: file.name });
+    for (const item of parsed.warnings) warnings.push(warning(file.name, item));
+    return { filename: file.name, kind: "DOCX", text: parsed.text, extension, buffer, embeddedImages: parsed.images };
   }
   if (extension === "pptx") {
     return { filename: file.name, kind: "PPTX", text: readPptx(buffer), extension, buffer };
@@ -482,6 +487,13 @@ export async function prepareSources(files: readonly File[], warnings: AiImportW
       } else {
         warnings.push(warning(file.name, kindHint(source.kind) + "没有提取到可用文字，已跳过内容整合"));
       }
+      continue;
+    }
+    const replacementCount = (text.match(/\uFFFD/g) ?? []).length;
+    if (text.length >= 200 && replacementCount / text.length > 0.08) {
+      warnings.push(
+        warning(file.name, "文本乱码比例过高（" + String(Math.round((replacementCount / text.length) * 100)) + "%），已跳过该文件；请确认文件编码或另存为 UTF-8 后重试")
+      );
       continue;
     }
     totalChars += text.length;
@@ -658,7 +670,7 @@ const IMAGE_SYSTEM_MESSAGE: DeepSeekMessage = {
 
 function structuredSchemaHint(): string {
   return [
-    "structured 可用字段（只输出本段中出现的，没有就省略）：",
+    "structured 可用字段（只输出本段中出现的，没有就省略）。注意：下面的值只是字段格式示例，禁止把示例值当成素材内容照抄；未知字段一律省略。",
     '{"chapters":[{"id":"ch1","name":"章节名","summary":"..."}],',
     '"scenes":[{"id":"scene1","name":"场景名","description":"...","width":1600,"height":1000,"gridType":"SQUARE 或 HEX","bgColor":"#1a1a2e","background":"assets/images/xxx.png 或留空"}],',
     '"encounters":[{"id":"enc1","name":"遭遇名","sceneId":"scene1","sceneName":"场景名","chapterId":"ch1","chapterName":"章节名","trigger":"...","setup":{}}],',
@@ -689,6 +701,9 @@ function chunkExtractionPrompt(chunk: TextChunk, hints: {
   );
   lines.push("要求：");
   lines.push("- 只提取本段明确出现的事实、剧情、NPC、场景、线索、道具、法术；没有的字段直接省略，不要编造，也不要输出其他段落的内容。");
+  lines.push("- 如果本段出现大量乱码、替换字符或明显编码损坏，不要猜测原文内容；meta.title 填来源文件名，sections 只写一条「本段原文不可读，未生成结构化数据」说明，structured 留空。");
+  lines.push("- JSON 示例里的 50、1d6、场景名、NPC 名等都只是格式示例，不是素材内容；任何字段没有在原文中明确出现就不要输出，禁止用默认值 / 猜测值补全。");
+  lines.push("- NPC 的属性、技能、HP / MP / SAN 等数值只有原文明确给出时才输出对应字段；原文没写就省略，系统会按规则包处理，不要自行编数值。");
   lines.push("- 原文中的标题、编号 / 标记、专有名词、NPC / 场景 / 道具 / 技能 / 法术名、数字与判定值必须原样保留；压缩时只能压缩形容词，不能删除任何条目。");
   lines.push("- 叙事 / 设定按语义归入 sections 中最贴切的标准章节；实在无法归类就放入 附录。只要本段有正文，就至少输出一个 sections 字段，并尽量保留所有小节标题。");
   lines.push("- 结构化实体放入 structured；字段 id 用 slug，同一实体在不同段落请用同名 / 同 id，方便合并。");
@@ -1148,6 +1163,13 @@ async function uniqueSlug(roomId: string | null, base: string): Promise<string> 
   return slug;
 }
 
+function cleanGeneratedTitle(raw: string, fallback: string): string {
+  const withoutSegment = raw.replace(/[（(]?\s*第\s*\d+\s*\/\s*\d+\s*段\s*[）)]?/g, " ").trim();
+  const withoutExtension = withoutSegment.replace(/\.(?:docx|doc|pptx?|xlsx?|pdf|md|txt)\b/gi, "").trim();
+  const collapsed = withoutExtension.replace(/\s{2,}/g, " ").replace(/[\-_:：]+$/g, "").trim();
+  return collapsed.length > 0 ? collapsed.slice(0, 80) : fallback;
+}
+
 export async function importModuleWithDeepSeek(input: {
   readonly files: readonly File[];
   readonly roomId: string;
@@ -1228,13 +1250,14 @@ export async function importModuleWithDeepSeek(input: {
   });
 
   input.onProgress?.("分块结果合并、结构校验通过，正在写入团本…");
-  const slug = await uniqueSlug(input.roomId.length === 0 ? null : input.roomId, generated.draft.frontMatter.id || title);
+  const finalTitle = cleanGeneratedTitle(generated.draft.frontMatter.title, title);
+  const slug = await uniqueSlug(input.roomId.length === 0 ? null : input.roomId, generated.draft.frontMatter.id || finalTitle);
   const moduleRecord = await prisma.module.create({
     data: {
       ownerId: input.userId,
       roomId: input.roomId.length === 0 ? null : input.roomId,
       slug,
-      title: generated.draft.frontMatter.title,
+      title: finalTitle,
       synopsis: generated.draft.frontMatter.summary,
       author: generated.draft.frontMatter.author,
       system: generated.draft.frontMatter.system,
@@ -1322,7 +1345,7 @@ export async function importModuleWithDeepSeek(input: {
 
   return {
     moduleId: moduleRecord.id,
-    title: generated.draft.frontMatter.title,
+    title: finalTitle,
     model,
     sessionId,
     attempts: generated.attempts,

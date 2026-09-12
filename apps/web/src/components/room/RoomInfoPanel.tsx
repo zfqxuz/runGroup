@@ -123,8 +123,8 @@ export default function RoomInfoPanel(props: Props) {
               <input name="title" placeholder="线索标题" className={inputClass} />
               <textarea name="content" rows={3} placeholder="线索内容" className={inputClass} />
               <label className="flex items-center gap-2 text-[11px] text-white/50">
-                <input type="checkbox" name="isPublic" value="1" defaultChecked />
-                对所有成员公开
+                <input type="checkbox" name="isPublic" value="1" />
+                对所有成员公开（默认仅 KP 可见）
               </label>
               <button
                 type="submit"

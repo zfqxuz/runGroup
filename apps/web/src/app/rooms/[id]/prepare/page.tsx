@@ -62,7 +62,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
       room: {
         include: {
           members: {
-            include: { user: { select: { username: true, displayName: true } } },
+            include: { user: { select: { username: true, displayName: true, avatarUrl: true } } },
             orderBy: { joinedAt: "asc" }
           }
         }
@@ -284,11 +284,13 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     userId: member.userId,
     username: member.user.username,
     displayName: member.user.displayName ?? member.user.username,
-    role: member.role
+    role: member.role,
+    avatarUrl: member.user.avatarUrl,
+    character: null
   }));
   void initialMembers;
 
-  const activeSceneForPrepare = await loadSceneView(room.id);
+  const activeSceneForPrepare = await loadSceneView(room.id, undefined, { userId: session.user.id, isKP });
   const scenesForPrepare = await prisma.scene.findMany({
     where: { roomId: room.id },
     select: { id: true, name: true, isActive: true },
@@ -301,16 +303,26 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   });
   const approvedForPrepare = await prisma.roomCharacterEntry.findMany({
     where: { roomId: room.id, status: "APPROVED" },
-    include: { character: { select: { name: true } } },
+    include: { character: { select: { name: true, userId: true } } },
     orderBy: { submittedAt: "asc" }
   });
   const sceneUnitsForPrepare = [
-    ...approvedForPrepare.map((entry) => ({
-      ref: "character:" + entry.characterId,
-      name: entry.character.name,
-      kind: "PLAYER" as const
-    })),
-    ...npcCardsForPrepare.map((card) => ({ ref: "npc:" + card.id, name: card.name, kind: "NPC" as const }))
+    ...approvedForPrepare
+      .filter((entry) => isKP || entry.character.userId === session.user.id)
+      .map((entry) => ({
+        ref: "character:" + entry.characterId,
+        name: entry.character.name,
+        kind: "PLAYER" as const,
+        userId: entry.character.userId
+      })),
+    ...(isKP
+      ? npcCardsForPrepare.map((card) => ({
+          ref: "npc:" + card.id,
+          name: card.name,
+          kind: "NPC" as const,
+          userId: null
+        }))
+      : [])
   ];
 
   return (
@@ -396,7 +408,18 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
           {room.members.map((member) => (
             <div key={member.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
-              <div className="min-w-0">
+              {member.user.avatarUrl === null || member.user.avatarUrl.length === 0 ? (
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-ink-800 text-xs text-white/40">
+                  {(member.user.displayName ?? member.user.username).slice(0, 1)}
+                </span>
+              ) : (
+                <img
+                  src={member.user.avatarUrl}
+                  alt=""
+                  className="h-8 w-8 shrink-0 rounded-lg border border-white/15 object-cover"
+                />
+              )}
+              <div className="min-w-0 flex-1">
                 <p className="truncate text-xs text-white/70">
                   {member.user.displayName ?? member.user.username}
                   {member.userId === session.user.id ? "（我）" : ""}
@@ -591,7 +614,8 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
         {searchParams.preset === "applied" ? (
           <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">
-            团本预设已应用：章节 {searchParams.chapters ?? "0"} / 场景 {searchParams.scenes ?? "0"} / NPC·Boss {searchParams.npcs ?? "0"} / 武器物品 {searchParams.items ?? "0"} / 线索证物 {searchParams.clues ?? "0"} / 遭遇 {searchParams.encounters ?? "0"} / 魔法 {searchParams.magic ?? "0"}。
+            团本预设已应用：章节 {searchParams.chapters ?? "0"} / 场景 {searchParams.scenes ?? "0"} / NPC·Boss {searchParams.npcs ?? "0"} / 武器物品 {searchParams.items ?? "0"} / 线索证物 {searchParams.clues ?? "0"} / 遭遇 {searchParams.encounters ?? "0"}
+            {isKP ? " / 魔法 " + (searchParams.magic ?? "0") : ""}。
           </p>
         ) : null}
         {searchParams.error === "preset" ? (
@@ -616,7 +640,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           </p>
         ) : null}
 
-        {selectedModuleMagic === null || selectedModuleMagic.spells.length === 0 ? null : (
+        {isKP === false || selectedModuleMagic === null || selectedModuleMagic.spells.length === 0 ? null : (
           <div className="mt-4 rounded-lg border border-purple-400/30 bg-purple-400/5 px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
@@ -994,6 +1018,14 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           returnTo={"/rooms/" + room.id + "/prepare"}
           scenes={scenesForPrepare.map((scene) => ({ id: scene.id, name: scene.name, isActive: scene.isActive }))}
           units={sceneUnitsForPrepare}
+          canControlAll={isKP}
+          allowPlayerCombatRequest={room.allowPlayerCombatRequest}
+          activeCombatId={null}
+          members={initialMembers}
+          sharedUserIds={[]}
+          backgroundAssets={[]}
+          tradeCards={[]}
+          shareableClues={[]}
           scene={activeSceneForPrepare}
         />
       )}
