@@ -58,6 +58,7 @@ function withQuery(path: string, key: string, value: string): string {
 
 function revalidateScene(roomId: string): void {
   revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
   revalidatePath("/rooms/" + roomId + "/scenes");
 }
 

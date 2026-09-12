@@ -41,7 +41,8 @@ export default function RoomPlay(props: Props) {
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const socketRef = useRef<Socket | null>(null);
-  const bottomRef = useRef<HTMLDivElement | null>(null);
+  const listRef = useRef<HTMLUListElement | null>(null);
+  const messageCountRef = useRef(messages.length);
   const router = useRouter();
 
   useEffect(() => {
@@ -125,8 +126,18 @@ export default function RoomPlay(props: Props) {
     };
   }, [props.roomId, props.initialGameStateVersion, props.initialCombatId, router]);
 
+  // 首次挂载：日志滚到底部，但不移动窗口位置。
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const list = listRef.current;
+    if (list !== null) list.scrollTop = list.scrollHeight;
+  }, []);
+
+  // 只在新消息到达时滚日志容器；不再用 scrollIntoView 让整页跳动。
+  useEffect(() => {
+    if (messageCountRef.current === messages.length) return;
+    messageCountRef.current = messages.length;
+    const list = listRef.current;
+    if (list !== null) list.scrollTop = list.scrollHeight;
   }, [messages.length]);
 
   function send(): void {
@@ -198,7 +209,7 @@ export default function RoomPlay(props: Props) {
           </span>
         </header>
 
-        <ul className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <ul ref={listRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
           {messages.length === 0 ? (
             <li className="py-10 text-center text-sm text-white/30">还没有消息，说点什么吧</li>
           ) : (
@@ -233,7 +244,6 @@ export default function RoomPlay(props: Props) {
               </li>
             ))
           )}
-          <div ref={bottomRef} />
         </ul>
 
         {error === null ? null : (

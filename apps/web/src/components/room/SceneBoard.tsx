@@ -119,7 +119,11 @@ export default function SceneBoard(props: Props) {
 
     socket.on("connect", () => {
       if (cancelled) return;
-      socket.emit("room:join", props.roomId, () => undefined);
+      socket.emit("room:join", props.roomId, (result: { ok?: boolean }) => {
+        // 首次连接 / 断线重连后都主动同步一次，
+        // 避免错过 scene:updated 后一直停留在旧场景。
+        if (cancelled === false && result?.ok === true) router.refresh();
+      });
     });
     socket.on("scene:token:updated", (update: SceneTokenUpdate) => {
       if (cancelled || update.roomId !== props.roomId) return;

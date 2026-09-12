@@ -1,4 +1,6 @@
+import { Suspense } from "react";
 import type { Metadata } from "next";
+import ScrollRestoration from "@/components/layout/ScrollRestoration";
 import SiteHeader from "@/components/layout/SiteHeader";
 import { auth } from "@/server/auth";
 import "./globals.css";
@@ -25,6 +27,9 @@ export default async function RootLayout({
   return (
     <html lang="zh-CN">
       <body className="min-h-screen antialiased">
+        <Suspense fallback={null}>
+          <ScrollRestoration />
+        </Suspense>
         {user === null ? null : <SiteHeader user={user} />}
         {children}
       </body>
