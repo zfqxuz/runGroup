@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`e1aaed9 feat(admin): 新增魔法管理链路与规则包魔法预览`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`f90fe97 feat(combat): 追逐战第二阶段同地点攻击与应对`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -26,8 +26,9 @@
   - 战斗伤害结算、AOE 应对窗口与战斗展示已优化（见第 41 节）：COC7 反击失败不再把 1d6=1 减成 0；攻击 / 闪避 / 反击 / 伤害骰日志全部标明掷的是什么；参战单位改并排卡片并高亮当前行动 / 可行动 / 等待应对；AOE 每个目标都要应对。
   - COC7 追逐战已完成第一阶段（见第 42 节）：FLEE 会触发追逐；速度检定调整 MOV；按 MOV 排位和计算行动点；DEX 顺序移动；逃离者到达终点即脱身；战斗与追逐共用同一套单位 / 日志 / 快照。
   - 管理后台魔法管理已完成（见第 43 节）：`/admin/magic` 可逐房间查看「房间开关 → 团本 structured.magic → Room.ruleOverride → 最终生效规则包」链路，直接排查“魔法为什么不生效”。
+  - COC7 追逐战已完成第二阶段（见第 44 节）：追上不会自动掉血；同地点敌对单位可花费 1 行动点攻击，目标可闪避 / 反击，走完整攻击 / 伤害管线；击败逃离者判定 CAUGHT 并结束追逐。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 177 tests（formula 50 / rules 75 / combat 52）；`apps/web/scripts/verify-*.ts` 共 30 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:chase`、`verify:combat-options`、`verify:combat`、`verify:combat-rounds` PASS；`verify-occupation-slots`、`verify-chargen-rules` 前一轮已验证；全量 30 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-12）：`npm run typecheck` PASS；`npm test` 181 tests（formula 50 / rules 75 / combat 56）；`apps/web/scripts/verify-*.ts` 共 30 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:chase`（含追逐攻击 / 应对 / 掉血）、`verify:combat-options`、`verify:combat`、`verify:combat-rounds`、`verify:magic-effects` PASS；`npm run build --workspace @touhou/web` PASS；全量 30 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1685,7 +1686,8 @@ MagicEffect =
 ### 还没做（下一阶段）
 - 追逐中的障碍 / 险境：锁门、高墙、泥沼、坠落等技能检定与减速 / 伤害。
 - 载具追逐：汽车驾驶速度检定、体格冲撞、车辆 HP / 事故。
-- 同地点冲突：追逐中的攻击 / 反击 / 闪避 / 战技需要接入现有应对窗口，并消耗 1 行动点。
+- 同地点冲突已完成第二阶段（见第 44 节）。
+- 剩余：战技 / 瞄准等特殊动作尚未接入追逐。
 - 可选规则：追踪失向、分头行动、择路而逃、多人分场追逐。
 
 ## 43. 管理后台魔法管理（本轮）
@@ -1757,3 +1759,48 @@ MagicEffect =
 - `apps/web/src/app/admin/rulepacks/[packId]/page.tsx`：规则包 magic 预览。
 - `apps/web/src/app/admin/layout.tsx`、`apps/web/src/app/admin/page.tsx`：导航入口。
 
+
+## 44. COC7 追逐战第二阶段：同地点攻击与应对（本轮）
+
+### 规则依据
+- COC7 原版：追上 / 同地点**不会自动造成伤害**。
+- 同地点的敌对单位可以花费 **1 行动点**发起攻击。
+- 攻击按普通战斗流程处理：攻击检定 → 目标选择不应对 / 闪避 / 反击 → 伤害管线。
+- 攻击方可以在一轮内用剩余行动点继续移动或再次攻击；移动 1 个地点仍然消耗 1 行动点。
+- 逃离者被击败：追逐判定 `CAUGHT`，战斗结束，房间回到 `PLAYING`。
+
+### 核心实现
+- `packages/combat/src/combat.ts`
+  - 新增 `resolveImmediateAction`：不依赖 ATB / 先攻队列，立即结算单个行动，复用完整 `resolveOne` 攻击管线（检定 / 应对 / 伤害 / 倒地）。
+- `packages/combat/src/chase.ts`
+  - 新增 `chaseAttackIssue`：校验当前行动者、同地点、敌对阵营、目标存活、行动点 ≥ 1。
+  - 新增 `resolveChaseAttack`：扣除 1 AP → 调用 `resolveImmediateAction` → 结算后处理：
+    - 击败最后一名逃离者：`CAUGHT` + `endCombat`；
+    - 击败最后一名追逐者：`ESCAPED` + `endCombat`；
+    - 其他情况保持 `ACTIVE`，可继续使用剩余 AP。
+  - `chaseEndTurn` 现在会跳过已失去战斗能力的参与者，回合重置只给存活者回满 AP。
+- `apps/web/src/server/socket/combat.ts`
+  - 新增 `combat:chase-attack`；攻击发出后写入 `runtime.chaseAttack` 并广播 `combat:reaction-request`。
+  - `combat:reaction` 会优先尝试结算追逐攻击（`tryResolveChaseAttack`），再回落到普通战斗结算。
+  - 待应对期间禁止 `chase-move` / `chase-end-turn`，防止抢行动；KP 强制结算会按 `PASS` 自动应对。
+- `apps/web/src/components/room/CombatBoard.tsx`
+  - 追逐面板新增「攻击同地点目标（1 AP）」：目标 / 攻击技能 / 伤害表达式选择。
+  - 追上后未进入同地点时给出移动提示；攻击后显示等待应对；目标在应对面板选择闪避 / 反击 / 不应对。
+  - 文案明确：追上不会自动掉血，攻击才结算伤害。
+
+### 验证
+- `packages/combat/src/__tests__/chase.test.ts` 新增：
+  - 同地点攻击消耗 1 AP，按攻击 / 应对 / 伤害结算并掉血；
+  - 非当前行动者 / 同阵营 / 不同地点 / AP 不足的校验；
+  - 击败逃离者 → `CAUGHT` + 战斗结束；
+  - 回合跳过已失去战斗能力的参与者。
+- `npm test` PASS（181 tests：combat 56 / formula 50 / rules 75）。
+- `apps/web/scripts/verify-chase.ts` 扩展为：
+  `FLEE → 速度检定 → 移动 / 行动点 → 追逐者接近 → 同地点攻击 → 应对窗口 → 掉血 / AP 扣除 → 逃离 → 战斗结束`，`npm run verify:chase` PASS。
+- `npm run typecheck`、`npm run build --workspace @touhou/web`、`verify:combat`、`verify:combat-options`、`verify:combat-rounds`、`verify:magic-effects` PASS。
+
+### 还没做
+- 追逐中的战技 / 瞄准 / 特殊动作；离开同地点时的借机攻击（如采用可选规则）。
+- 追逐障碍 / 险境：锁门、高墙、泥沼、坠落等技能检定与减速 / 伤害。
+- 载具追逐：汽车驾驶速度检定、体格冲撞、车辆 HP / 事故。
+- 可选规则：追踪失向、分头行动、择路而逃、多人分场追逐。
