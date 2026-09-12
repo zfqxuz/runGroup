@@ -111,6 +111,7 @@ export default function CharacterBuilder(props: Props) {
     props.pack.attributes.methods[0];
   const [attributes, setAttributes] = useState<AttributeSet>(() => defaultAttributesForMethod(initialMethod));
   const [age, setAge] = useState<number>(30);
+  const [ageInput, setAgeInput] = useState<string>("30");
   const [ageAllocation, setAgeAllocation] = useState<Coc7AgeAllocation>({});
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [sets, setSets] = useState<AttributeSetOption[]>([]);
@@ -359,13 +360,30 @@ export default function CharacterBuilder(props: Props) {
     }) as AttributeSet);
   }
 
-  function changeAge(value: number): void {
-    const numeric = Math.floor(Number(value));
-    if (Number.isFinite(numeric) === false) return;
-    setAge(Math.max(15, Math.min(90, numeric)));
+  function changeAgeInput(raw: string): void {
+    setAgeInput(raw);
+    // 只在输入已经是 15~90 的合法整数时提交；否则保留原年龄，避免输入 3 / 30 的过程中被直接夹到 15。
+    const numeric = Number(raw);
+    if (raw.trim().length === 0 || Number.isFinite(numeric) === false) return;
+    const next = Math.floor(numeric);
+    if (next < 15 || next > 90) return;
+    setAge(next);
     setAgeAllocation({});
     setAgeConfirmed(false);
     setMessage(null);
+  }
+
+  function commitAgeInput(): void {
+    const numeric = Number(ageInput);
+    if (ageInput.trim().length === 0 || Number.isFinite(numeric) === false) {
+      setAgeInput(String(age));
+      return;
+    }
+    const next = Math.max(15, Math.min(90, Math.floor(numeric)));
+    setAgeInput(String(next));
+    setAge(next);
+    setAgeAllocation({});
+    setAgeConfirmed(false);
   }
 
   function setAgeDeduction(key: Coc7PhysicalAttribute, value: number): void {
@@ -914,9 +932,10 @@ export default function CharacterBuilder(props: Props) {
                 type="number"
                 min={15}
                 max={90}
-                value={age}
+                value={ageInput}
                 disabled={ageConfirmed}
-                onChange={(event) => changeAge(Number(event.target.value))}
+                onChange={(event) => changeAgeInput(event.target.value)}
+                onBlur={commitAgeInput}
                 className="h-10 w-24 rounded-lg border border-white/20 bg-ink-900 px-2 text-center font-mono text-sm text-white outline-none focus:border-sakura-500 disabled:opacity-60"
               />
             </label>
