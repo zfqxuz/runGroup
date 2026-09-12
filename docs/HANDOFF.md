@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`f90fe97 feat(combat): 追逐战第二阶段同地点攻击与应对`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`12ffaff fix(room): 场景重连同步与导航后保持滚动位置`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -27,6 +27,7 @@
   - COC7 追逐战已完成第一阶段（见第 42 节）：FLEE 会触发追逐；速度检定调整 MOV；按 MOV 排位和计算行动点；DEX 顺序移动；逃离者到达终点即脱身；战斗与追逐共用同一套单位 / 日志 / 快照。
   - 管理后台魔法管理已完成（见第 43 节）：`/admin/magic` 可逐房间查看「房间开关 → 团本 structured.magic → Room.ruleOverride → 最终生效规则包」链路，直接排查“魔法为什么不生效”。
   - COC7 追逐战已完成第二阶段（见第 44 节）：追上不会自动掉血；同地点敌对单位可花费 1 行动点攻击，目标可闪避 / 反击，走完整攻击 / 伤害管线；击败逃离者判定 CAUGHT 并结束追逐。
+  - 房间导航滚动位置与场景重连同步已修复（见第 45 节）：Server Action redirect 不再把页面顶回顶部；SceneBoard 首次连接 / 断线重连后会主动同步，避免错过 `scene:updated` 后一直停留在旧场景；日志区不再用 `scrollIntoView` 导致整页跳动。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
 - 测试基线（2026-09-12）：`npm run typecheck` PASS；`npm test` 181 tests（formula 50 / rules 75 / combat 56）；`apps/web/scripts/verify-*.ts` 共 30 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:chase`（含追逐攻击 / 应对 / 掉血）、`verify:combat-options`、`verify:combat`、`verify:combat-rounds`、`verify:magic-effects` PASS；`npm run build --workspace @touhou/web` PASS；全量 30 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
@@ -1804,3 +1805,49 @@ MagicEffect =
 - 追逐障碍 / 险境：锁门、高墙、泥沼、坠落等技能检定与减速 / 伤害。
 - 载具追逐：汽车驾驶速度检定、体格冲撞、车辆 HP / 事故。
 - 可选规则：追踪失向、分头行动、择路而逃、多人分场追逐。
+
+
+## 45. 场景重连同步与导航后滚动位置保持（本轮修复）
+
+### 问题 1：切换场景后，其他客户端 / 重连客户端看到旧场景
+- `SceneBoard` 依赖 `scene:updated` 事件 -> `router.refresh()` 来同步场景。
+- 如果客户端在事件发出后才完成 socket 连接 / 断线重连（例如刷新、网络抖动、后进玩家），就会永远错过这次事件，页面一直停留在旧场景。
+- `activateSceneAction` 的 `revalidateScene` 只失效了 `/rooms/[id]` 与 `/rooms/[id]/scenes`，没有失效 `/rooms/[id]/prepare`。
+
+修复：
+- `apps/web/src/components/room/SceneBoard.tsx`
+  - socket `connect` -> `room:join` ack 成功后，立即 `router.refresh()` 同步当前服务端场景；首次连接和断线重连都会执行。
+- `apps/web/src/server/actions/scene.ts`
+  - `revalidateScene` 补上 `revalidatePath("/rooms/" + roomId + "/prepare")`。
+
+验证（Chrome headless + 同源测试页，临时测试后已移除）：
+- 两个客户端都连接后，A 切场景，B 的棋盘同步更新，且 B 的滚动位置不变。
+- 客户端在 `scene:updated` 之后才加入 / 重连时，加入后的 `router.refresh()` 能补同步到正确场景。
+
+### 问题 2：保存 / 切换后页面跳回最上面
+- Next App Router 的 Server Action `redirect()` 会被视为一次导航，默认执行 scroll-to-top。
+- 实测：局内状态面板保存并勾选「切换为激活场景」后，`scrollY` 从 1200 变成 0；切换场景按钮同理。
+
+修复：
+- 新增 `apps/web/src/components/layout/ScrollRestoration.tsx`，挂到根 `layout.tsx`：
+  - 以 `pathname` 为 key，持续把窗口滚动位置写入内存 + `sessionStorage`；
+  - 挂载、浏览器刷新、以及同一路径下的 query 变化（Server Action redirect 会带 `?state=saved` 等）后恢复位置；
+  - 忽略「非用户操作导致的程序化回顶」（`scrollY=0` 且此前有记录且用户未滚动），避免记录被覆盖；
+  - 恢复时循环重试到超时，覆盖 Next 更晚执行的 scroll-to-top；用户滚轮 / 触摸 / 键盘打断时立即停止。
+- `apps/web/src/components/room/RoomPlay.tsx`
+  - 日志区不再使用 `bottomRef.scrollIntoView()`（会连带整页滚动），改为只设置日志容器自身的 `scrollTop`；
+  - 只在新增消息时自动滚日志底部，首次挂载只滚容器。
+
+验证：
+- Chrome headless 实测：滚动到 1200 后触发布局状态保存 / 切换场景，redirect 后仍停在 1200。
+- 浏览器 F5 后仍停在 1200。
+- 新页面（没有历史位置）仍从顶部开始，不受影响。
+- `npm run typecheck`、`npm test`（181 tests）、`npm run build --workspace @touhou/web` PASS。
+- `verify:scene-ops`、`verify:game-state`、`verify:realtime-sync`、`verify:room-ready` PASS。
+
+### 相关文件
+- `apps/web/src/components/layout/ScrollRestoration.tsx`
+- `apps/web/src/app/layout.tsx`
+- `apps/web/src/components/room/SceneBoard.tsx`
+- `apps/web/src/components/room/RoomPlay.tsx`
+- `apps/web/src/server/actions/scene.ts`
