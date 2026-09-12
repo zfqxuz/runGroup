@@ -46,9 +46,9 @@ export default function ScrollRestoration(): null {
     const key = pathname;
     let frame = 0;
     let lastSaved = -1;
-    let userInteracted = false;
-    const markUserInteracted = (): void => {
-      userInteracted = true;
+    let lastGestureAt = 0;
+    const markScrollGesture = (): void => {
+      lastGestureAt = Date.now();
     };
 
     const persist = (immediate: boolean): void => {
@@ -56,7 +56,8 @@ export default function ScrollRestoration(): null {
       if (value === lastSaved) return;
       // App Router 在 Server Action redirect 后会程序化滚回顶部；
       // 这不是用户意图，不能用它覆盖掉已经记录的位置。
-      if (value === 0 && lastSaved > 0 && userInteracted === false) return;
+      // 只有 400ms 内发生过滚轮 / 触摸 / 键盘滚动时，才认为 0 是用户主动滚到顶部。
+      if (value === 0 && lastSaved > 0 && Date.now() - lastGestureAt > 400) return;
       if (immediate === false) {
         if (frame !== 0) return;
         frame = window.requestAnimationFrame(() => {
@@ -75,18 +76,18 @@ export default function ScrollRestoration(): null {
     window.addEventListener("scroll", onScroll, { passive: true });
     window.addEventListener("pagehide", onPageHide);
     window.addEventListener("beforeunload", onPageHide);
-    window.addEventListener("wheel", markUserInteracted, { passive: true });
-    window.addEventListener("touchstart", markUserInteracted, { passive: true });
-    window.addEventListener("keydown", markUserInteracted);
+    window.addEventListener("wheel", markScrollGesture, { passive: true });
+    window.addEventListener("touchstart", markScrollGesture, { passive: true });
+    window.addEventListener("keydown", markScrollGesture);
 
     return () => {
       if (frame !== 0) window.cancelAnimationFrame(frame);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("pagehide", onPageHide);
       window.removeEventListener("beforeunload", onPageHide);
-      window.removeEventListener("wheel", markUserInteracted);
-      window.removeEventListener("touchstart", markUserInteracted);
-      window.removeEventListener("keydown", markUserInteracted);
+      window.removeEventListener("wheel", markScrollGesture);
+      window.removeEventListener("touchstart", markScrollGesture);
+      window.removeEventListener("keydown", markScrollGesture);
     };
   }, [pathname]);
 
