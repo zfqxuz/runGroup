@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`3eba393 fix(room): 滚动恢复按真实手势判断回顶`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`c369fb4 feat(ai): DeepSeek 团本导入分块解析与图片提取优化`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -28,8 +28,9 @@
   - 管理后台魔法管理已完成（见第 43 节）：`/admin/magic` 可逐房间查看「房间开关 → 团本 structured.magic → Room.ruleOverride → 最终生效规则包」链路，直接排查“魔法为什么不生效”。
   - COC7 追逐战已完成第二阶段（见第 44 节）：追上不会自动掉血；同地点敌对单位可花费 1 行动点攻击，目标可闪避 / 反击，走完整攻击 / 伤害管线；击败逃离者判定 CAUGHT 并结束追逐。
   - 房间导航滚动位置与场景重连同步已修复（见第 45 节）：Server Action redirect 不再把页面顶回顶部；SceneBoard 首次连接 / 断线重连后会主动同步，避免错过 `scene:updated` 后一直停留在旧场景；日志区不再用 `scrollIntoView` 导致整页跳动。
+  - DeepSeek 团本导入分块化已完成（见第 46 节）：长素材不再一次性交给模型，而是按约 8000 字切段、逐段提取、确定性合并；任意一段失败会明确报错而不是生成不完整团本；PDF 增加整页渲染与候选图排序，图片改为逐张/小批次 vision 分析。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-12）：`npm run typecheck` PASS；`npm test` 181 tests（formula 50 / rules 75 / combat 56）；`apps/web/scripts/verify-*.ts` 共 30 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:chase`（含追逐攻击 / 应对 / 掉血）、`verify:combat-options`、`verify:combat`、`verify:combat-rounds`、`verify:magic-effects` PASS；`npm run build --workspace @touhou/web` PASS；全量 30 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-12）：`npm run typecheck` PASS；`npm test` 181 tests（formula 50 / rules 75 / combat 56）；`apps/web/scripts/verify-*.ts` 共 31 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:ai-chunking`（离线分块端到端）、`verify:ai-pdf-parse`、`verify:ai-import`（真实 DeepSeek，短素材 + `AI_IMPORT_LONG_TEST=1` 长素材 3 段）、`verify:scene-ops`、`verify:game-state`、`verify:realtime-sync`、`verify:room-ready`、`verify:chase`、`verify:combat` 等 PASS；`npm run build --workspace @touhou/web` PASS；全量未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1851,3 +1852,71 @@ MagicEffect =
 - `apps/web/src/components/room/SceneBoard.tsx`
 - `apps/web/src/components/room/RoomPlay.tsx`
 - `apps/web/src/server/actions/scene.ts`
+
+
+## 46. DeepSeek 团本导入分块解析与图片提取优化（本轮）
+
+### 问题
+1. **输出截断导致团本不完整**
+   - 旧流程把全部文字 + 全部图片一次性交给 DeepSeek，一次生成完整 JSON。
+   - 即使 `max_tokens` 提到 32768，长团本的 chapters / scenes / npcs / items / clues / magic 仍可能触达上限；旧实现只能压缩后重试，极端情况会丢内容或直接失败。
+   - 素材侧还有 `PER_FILE_CHARS=24000`、`TOTAL_CHARS=120000` 的静默截断，超限只给 warning，用户拿到的是缺章少节的团本。
+2. **图片提取不准确**
+   - PDF 只取每页内嵌位图，按页顺序取前 12 张；装饰图 / 水印可能挤掉真正的地图。
+   - 矢量地图、排版型扫描页没有内嵌大图时完全提取不到。
+   - 所有图片压缩到 1400px 后，和全部文字一起塞进最后一次调用；地图小字 / 手书文字识别差，图片与章节 / 线索 / 场景的对应关系靠模型猜。
+
+### 新流程：先切段，再分次解析，最后确定性合并
+核心文件：`apps/web/src/server/ai/chunking.ts`、`apps/web/src/server/ai/module-import.ts`。
+
+1. **素材不再静默截断**
+   - `prepareSources` 保留全文；总量上限 90 万字。超过上限时抛错，提示拆分文件，而不是截断。
+   - `chunkSourceText` 按段落 / 句子边界切段：目标 8000 字、硬上限 12000 字，保留最近标题；最多 80 段，超限同样明确报错。
+2. **逐段提取（text chunks）**
+   - 每一段独立调用 DeepSeek，只返回该段的 `meta + sections + structured` JSON，长度可控，正常不会触达输出上限。
+   - 若某段仍 `finish_reason=length`：自动按段落二分递归继续解析；拆到最小仍截断则整体失败，不允许静默丢段。
+   - JSON 解析失败最多重试 3 次，并把错误反馈给模型；每次都是独立消息，不复用 assistant 历史。
+3. **覆盖检查（防止模型概括掉内容）**
+   - 每段提取后，对原文中的标题、编号 / 标记、大写 ID、章节号、清单项做确定性覆盖检查。
+   - 模型没有保留的关键片段，会自动以“原文补录”写入附录；保证编号 / 条目 / 专有信息不会因为概括而消失。
+4. **图片分次分析（vision）**
+   - 每 1-2 张图片单独调用 vision 模型；每张图附带文件名、引用路径、PDF 页码与同页文字。
+   - 输出结构化 `kind / transcription / description / section / sectionText / scene / clue / npc / item`；地图进场景、手书进线索、立绘进 NPC、物品图进 items。
+   - 单批截断自动拆成单张；单张仍截断先用精简模式重试，再失败则整体报错。
+5. **PDF 图片候选重做**
+   - 提高候选上限到 80：内嵌位图全部收集，不再按页顺序先到先得。
+   - 对“文字 < 160 字且没有 >=320px 内嵌图”的页面，用 `renderPageAsImage`（`@napi-rs/canvas`）整页渲染，覆盖矢量地图 / 扫描页 / 排版页。
+   - 候选图用 average hash 去重，再按 尺寸 + 熵 + 对比度评分排序（用户主动上传的图优先）；最终选 12 张，并保留页码 / 同页文字。
+   - 发送 vision 前压缩到 2000px、JPEG 88（旧版 1400px / 82），地图小字与手书文字更清楚。
+6. **确定性合并**
+   - `mergeDraft` 按 id / 同名归一化合并 structured：NPC、场景、遭遇、线索、道具、法术去重；字符串取更长、对象递归合并、数组去重。
+   - 自动重映射 `sceneId / chapterId / linkedItemId`；模型编造的 `assets/...` 图片路径如果不在真实资源列表里会被清空。
+   - 章节按标准 14 节合并，段落级去重；重复出现的设定不会多次堆叠。
+7. **失败语义**
+   - 任意文本段 / 图片批在重试后仍无法解析，任务直接 FAILED 并给出段号 / 文件名。
+   - 目标是“要么完整，要么明确失败”，不再产出悄悄缺内容的团本。
+8. **模型透传**
+   - 分块 / 图片每次调用都会带上用户选择或自动切换后的 model；修复了中间版本默认模型覆盖用户选择的问题。
+
+### 验证
+- `npm run verify:ai-chunking`（离线，无需 API Key）：
+  - 长文本切成 3 段、逐段假响应、30 个章节 / 线索全部合并、同名 NPC 合并成 1 个、编造图片路径被清空。
+- `AI_IMPORT_LONG_TEST=1 npm run verify:ai-import`（真实 DeepSeek）：
+  - 长素材 3 段全部完成（`chunks=3/3`，`aiCalls=4`）；12 个原文长素材标记全部保留；短素材 `chunks=1/1`、`images=1/1`。
+- `npm run verify:ai-pdf-parse`：正文 + 内嵌图 + 整页候选正常。
+- `npm run typecheck`、`npm test`（181 tests）、`npm run build --workspace @touhou/web` PASS。
+- `@napi-rs/canvas` 已加入 `apps/web/package.json`，并在 `next.config.mjs` 的 `experimental.serverComponentsExternalPackages` 中外部化，避免 webpack 打包原生 `.node`。
+
+### 新增 / 修改文件
+- `apps/web/src/server/ai/chunking.ts`：切段、章节 / 结构化合并、引用重映射、图片路径清洗。
+- `apps/web/src/server/ai/module-import.ts`：分块提取、图片分析、PDF 整页渲染、候选图排序、覆盖补录、最终组装。
+- `apps/web/src/server/ai/deepseek.ts`：截断错误不再内部重试，交给上层拆分。
+- `apps/web/src/app/api/modules/ai-import/route.ts`、`apps/web/src/components/module/AiModuleImporter.tsx`：返回并展示 `chunks / aiCalls / imagesAnalyzed`。
+- `apps/web/scripts/verify-ai-chunking.ts`、`verify-ai-import.ts`、`verify-ai-pdf-parse.ts`。
+- `apps/web/package.json`、`package-lock.json`、`apps/web/next.config.mjs`。
+
+### 已知边界
+- 单次导入为保护内存 / 时间设了硬上限：90 万字、80 个文本段、12 张图片；超限会明确失败并要求拆分，不再截断。
+- 分块提取仍是“语义整理”，不是逐字复制；覆盖检查负责兜底标题、编号、标记、清单等结构信息，普通描述性文字仍可能被合理压缩。
+- 整页渲染只对“文字少且没有大图”的页面触发；如果整本 PDF 都是长文字 + 小矢量图，仍以内嵌图 / 文字为主。
+- `@napi-rs/canvas` 是原生依赖，部署环境需要能安装对应平台的预编译包（本机 Linux x64 已验证）。
