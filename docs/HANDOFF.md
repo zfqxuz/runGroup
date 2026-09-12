@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`a5d979f fix(chargen): 年龄输入改为失焦时再夹紧范围`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`8bb7fed fix(rooms): 创建房间页显示校验错误并必填房间名`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -20,6 +20,8 @@
   - CoC7 年龄补正与派生属性已完成（见第 38 节）：年龄空位一次性分配后锁定；车卡页 / 角色页展示 DB、Build、MOV、重伤值，技能显示困难 / 极限成功率；DB 表覆盖 444 以上每 80 点成长。
   - COC7 Excel 职业空位模型已完成（见第 38 节）：230 个职业从「本职技能」矩阵生成固定本职 + `☆ / ⊙ / ☯ / ※ / 任意特长` 结构化空位；必须先选中空位技能才能使用职业点；TOUHOU 仍走旧文本解析回退。
   - 信用评级校验已完成（见第 38 节）：信用评级始终视为 COC7 本职技能（可吃职业点），最终值必须落在职业 `creditMin~creditMax` 范围内，客户端 / 服务端都会拦截。
+  - 房间准备页已支持「带入已有角色 / 已有卡牌」（见第 39 节）：玩家可从自己的角色库 / 卡牌库选择并提交 KP 审核，不必重新车卡。
+  - 创建房间页会显示空房间名 / 非法车卡方式的错误，并给房间名加了必填校验；修复“点创建后仍停留在本页且没有反馈”的问题。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
 - 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 165 tests（formula 48 / rules 75 / combat 42）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
@@ -1529,4 +1531,35 @@ MagicEffect =
 - Excel 技能行的 `Ω`（现代标记）已忽略，年代仍由房间 / 职业 era 控制。
 - 年龄补正 UI 还没有“一键平均 / 自动填满”辅助；EDU 成长判定与幸运两次取高尚未接随机。
 - 旧角色 `maxSan / MOV / DB` 的批量回填尚未做；新角色不受影响。
+
+## 39. 准备页已有角色 / 卡牌带入与创建房间错误提示（本轮）
+
+### 准备页支持带入已有角色 / 卡牌
+- 之前 `submitCharacterToRoom` / `submitCardToRoom` 两个 server action 已存在，但准备页没有任何入口，只能通过「车一张新卡」重新建角色。
+- `apps/web/src/app/rooms/[id]/prepare/page.tsx` 现在会查询：
+  - 当前用户角色库中，系统与房间匹配、且尚未提交 PENDING_REVIEW / APPROVED 的角色；
+  - 当前用户卡牌库 `COMPENDIUM` 中，系统与房间匹配、且尚未提交 PENDING_REVIEW / APPROVED 的卡牌。
+- 在「角色卡」和「带入的卡牌」区域分别新增带入表单：
+  - 角色：选择已有角色 -> `submitCharacterToRoom` -> 生成 `RoomCharacterEntry(PENDING_REVIEW)`；
+  - 卡牌：选择已有卡牌 -> `submitCardToRoom` -> 生成 `RoomCardEntry(PENDING_REVIEW)`。
+- 被驳回（REJECTED）的申请不会挡住重新提交，因为查询只排除 PENDING_REVIEW / APPROVED。
+- 已通过 curl 模拟原生表单 POST 验证：两个 action 均能正确生成 PENDING_REVIEW 申请。
+
+### 创建房间错误提示
+- `/rooms/new` 之前不显示 `?error=name` / `?error=method`，房间名为空时服务端会静默跳回本页，看起来像“点击创建没反应”。
+- 现在页面顶部会显示红色错误条：
+  - 空房间名：请填写房间名后再创建；
+  - 车卡方式非法：请重新选择。
+- `RoomSetupForm` 的房间名输入加了 `required` / `minLength`，并在下方说明“房间名必填；不填会被服务端退回本页”。
+
+### 相关文件
+- `apps/web/src/app/rooms/[id]/prepare/page.tsx`：带入已有角色 / 卡牌表单与候选查询。
+- `apps/web/src/app/rooms/new/page.tsx`：创建房间错误提示。
+- `apps/web/src/components/room/RoomSetupForm.tsx`：房间名必填。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（165 tests）。
+- `npm run build --workspace @touhou/web` PASS。
+- curl 模拟原生表单 POST：`submitCharacterToRoom` / `submitCardToRoom` 均生成 PENDING_REVIEW 申请。
 
