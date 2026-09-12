@@ -132,6 +132,10 @@ export async function GET(request: Request): Promise<NextResponse> {
     model: result?.model,
     sessionId: result?.sessionId,
     attempts: result?.attempts,
+    aiCalls: result?.aiCalls,
+    chunks: result?.chunks,
+    chunksCompleted: result?.chunksCompleted,
+    imagesAnalyzed: result?.imagesAnalyzed,
     imagesUsed: result?.imagesUsed,
     warnings: result?.warnings ?? []
   });

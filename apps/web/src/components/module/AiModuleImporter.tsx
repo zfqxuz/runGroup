@@ -18,6 +18,10 @@ interface ImportResult {
   readonly model?: string;
   readonly sessionId?: string;
   readonly attempts?: number;
+  readonly aiCalls?: number;
+  readonly chunks?: number;
+  readonly chunksCompleted?: number;
+  readonly imagesAnalyzed?: number;
   readonly imagesUsed?: number;
   readonly warnings?: readonly { readonly filename: string; readonly message: string }[];
 }
@@ -118,8 +122,8 @@ export default function AiModuleImporter(props: Props) {
             className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-900"
           />
           <span className="text-[10px] leading-4 text-white/30">
-            支持 md / txt / json / yaml / csv / docx / pptx / xlsx / pdf（自动抽取正文与内嵌图片）/ png / jpg / webp / gif / avif / bmp / tiff / heic；
-            单文件最大 25MB，最多 40 个。
+            支持 md / txt / json / yaml / csv / docx / pptx / xlsx / pdf（自动抽取正文、内嵌图片与矢量页面渲染）/ png / jpg / webp / gif / avif / bmp / tiff / heic；
+            单文件最大 25MB，最多 40 个，图片最多 12 张；长文本会分段解析后合并，不会因为模型输出上限丢内容（正文上限约 90 万字、80 段，超限会明确要求拆分而不是静默截断）。
           </span>
         </label>
 
@@ -173,7 +177,12 @@ export default function AiModuleImporter(props: Props) {
       {message === null ? null : (
         <p className={result?.ok === false ? "mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-[11px] text-red-200" : "mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200"}>
           {message}
-          {result?.model === undefined ? "" : "（模型 " + result.model + "，尝试 " + String(result.attempts ?? 1) + " 次，图片 " + String(result.imagesUsed ?? 0) + " 张）"}
+          {result?.model === undefined
+            ? ""
+            : "（模型 " + result.model +
+              "，文本段 " + String(result.chunksCompleted ?? 0) + "/" + String(result.chunks ?? 0) +
+              "，图片 " + String(result.imagesAnalyzed ?? result.imagesUsed ?? 0) + "/" + String(result.imagesUsed ?? 0) +
+              "，调用 " + String(result.aiCalls ?? result.attempts ?? 1) + " 次）"}
         </p>
       )}
 

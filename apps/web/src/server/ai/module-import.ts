@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import AdmZip from "adm-zip";
 import sharp from "sharp";
-import { extractImages, extractText, getDocumentProxy } from "unpdf";
+import { extractImages, extractText, getDocumentProxy, renderPageAsImage } from "unpdf";
 import * as XLSX from "xlsx";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { prisma } from "@/server/db/prisma";
@@ -15,14 +15,34 @@ import {
   DeepSeekTruncationError,
   type DeepSeekContentPart,
   type DeepSeekMessage,
+  type DeepSeekChatOptions,
   DEEPSEEK_MODELS
 } from "@/server/ai/deepseek";
+import {
+  chunkSourceText,
+  mergeDraft,
+  STRUCTURED_PLURALS,
+  type AiDraft,
+  type ChunkExtraction,
+  type ImageExtraction,
+  type TextChunk
+} from "@/server/ai/chunking";
 
 const MAX_FILE_BYTES = 25 * 1024 * 1024;
 const MAX_FILES = 40;
 const MAX_IMAGES = 12;
-const PER_FILE_CHARS = 24000;
-const TOTAL_CHARS = 120000;
+/** 分块提取时单段的目标 / 硬上限；每段单独调用模型，杜绝整本输出被截断。 */
+const CHUNK_TARGET_CHARS = 8000;
+const CHUNK_MAX_CHARS = 12000;
+/** 单次导入最多切成的段数；超过则明确报错，不做静默截断。 */
+const MAX_TEXT_CHUNKS = 80;
+/** 全文安全上限；超过同样明确报错，要求拆分素材。 */
+const MAX_TOTAL_SOURCE_CHARS = 900000;
+/** PDF 图片候选上限：先收集，再按信息量排序选中 MAX_IMAGES 张。 */
+const MAX_IMAGE_CANDIDATES = 80;
+const MAX_RENDERED_PAGES = 24;
+const MAX_CHUNK_OUTPUT_TOKENS = 12288;
+const MAX_IMAGE_OUTPUT_TOKENS = 12288;
 
 export interface AiImportWarning {
   readonly filename: string;
@@ -35,15 +55,34 @@ export interface AiImportResult {
   readonly model: string;
   /** 本次导入专属的 AI 会话 id；每次导入都会重新生成，不复用旧上下文。 */
   readonly sessionId: string;
+  /** 单次调用允许的最大重试轮次（>=1）；不再是整本只用一次。 */
   readonly attempts: number;
+  /** 本次导入实际调用 DeepSeek 的总次数（文本分段 + 图片分析）。 */
+  readonly aiCalls: number;
+  /** 素材被切成的文本段数。 */
+  readonly chunks: number;
+  /** 成功完成提取的文本段数。 */
+  readonly chunksCompleted: number;
+  /** 成功分析并合并进团本的图片数。 */
+  readonly imagesAnalyzed: number;
   readonly imagesUsed: number;
   readonly warnings: readonly AiImportWarning[];
 }
+
+export interface ImportModuleDependencies {
+  /** 测试用注入；默认调用真实 DeepSeek。 */
+  readonly chat?: AiChatClient;
+}
+
+type ImageOrigin = "EMBEDDED" | "PAGE_RENDER" | "UPLOAD";
 
 interface ExtractedImage {
   readonly filename: string;
   readonly buffer: Buffer;
   readonly mime: string;
+  readonly pageNumber?: number;
+  readonly pageText?: string;
+  readonly origin?: ImageOrigin;
 }
 
 interface ExtractedSource {
@@ -61,6 +100,9 @@ interface PreparedImage {
   readonly dataUrl: string;
   readonly buffer: Buffer;
   readonly mime: string;
+  readonly origin: ImageOrigin;
+  readonly pageNumber?: number;
+  readonly pageText?: string;
 }
 
 interface PreparedSources {
@@ -197,20 +239,23 @@ async function detectImageMime(buffer: Buffer, extension: string): Promise<strin
   return "";
 }
 
-/** 发给 vision 模型前先压缩，避免原始大图撑爆请求体与上下文。 */
+/** 发给 vision 模型前先压缩；地图 / 手书上的小字需要更高分辨率才能读准。 */
 async function compressForVision(buffer: Buffer): Promise<{ readonly buffer: Buffer; readonly mime: string }> {
   const normalized = await sharp(buffer, { limitInputPixels: 4096 * 4096 })
     .rotate()
     .flatten({ background: "#ffffff" })
-    .resize({ width: 1400, height: 1400, fit: "inside", withoutEnlargement: true })
-    .jpeg({ quality: 82, mozjpeg: true })
+    .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
+    .jpeg({ quality: 88, mozjpeg: true })
     .toBuffer();
   return { buffer: normalized, mime: "image/jpeg" };
 }
 
 /**
- * 解析 PDF 正文与内嵌图片。
- * 扫描版 PDF 通常没有文字层，此时仍会把内嵌的大图取出来交给 vision 模型。
+ * 解析 PDF 正文与候选图片。
+ *
+ * - 每页文字单独保留，便于跟该页图片一起交给 vision 模型（图片 + 同页上下文）。
+ * - 除提取内嵌位图外，对“文字很少且没有大图”的页面做整页渲染，
+ *   这样矢量地图 / 排版型页面不会被漏掉。
  */
 async function readPdf(
   buffer: Buffer,
@@ -221,55 +266,95 @@ async function readPdf(
   let pdf: Awaited<ReturnType<typeof getDocumentProxy>> | null = null;
   try {
     pdf = await getDocumentProxy(data);
-    const extracted = await extractText(pdf, { mergePages: true });
-    const text = Array.isArray(extracted.text) ? extracted.text.join("\n\n") : extracted.text;
-    const images: ExtractedImage[] = [];
-    if (extracted.totalPages > 0) {
-      for (let pageNumber = 1; pageNumber <= extracted.totalPages; pageNumber += 1) {
-        if (images.length >= MAX_IMAGES) {
-          warnings.push(warning(filename, "PDF 内嵌图片超过 " + MAX_IMAGES + " 张，超出部分已跳过"));
-          break;
-        }
-        let pageImages: Awaited<ReturnType<typeof extractImages>> = [];
-        try {
-          pageImages = await extractImages(pdf, pageNumber);
-        } catch {
+    const extracted = await extractText(pdf, { mergePages: false });
+    const pageTexts = Array.isArray(extracted.text)
+      ? extracted.text.map((item) => (typeof item === "string" ? item : ""))
+      : [typeof extracted.text === "string" ? extracted.text : ""];
+    const text = pageTexts.join("\n\n");
+    const totalPages = Math.max(extracted.totalPages, pageTexts.length);
+    const candidates: ExtractedImage[] = [];
+    let renderedPages = 0;
+
+    for (let pageNumber = 1; pageNumber <= totalPages; pageNumber += 1) {
+      if (candidates.length >= MAX_IMAGE_CANDIDATES) {
+        warnings.push(warning(filename, "PDF 图片候选超过 " + MAX_IMAGE_CANDIDATES + " 张，后续页面已跳过"));
+        break;
+      }
+      const pageText = pageTexts[pageNumber - 1] ?? "";
+      let pageImages: Awaited<ReturnType<typeof extractImages>> = [];
+      try {
+        pageImages = await extractImages(pdf, pageNumber);
+      } catch {
+        pageImages = [];
+      }
+
+      let hasLargeEmbedded = false;
+      for (let index = 0; index < pageImages.length; index += 1) {
+        if (candidates.length >= MAX_IMAGE_CANDIDATES) break;
+        const image = pageImages[index];
+        if (
+          image === undefined ||
+          Number.isFinite(image.width) === false ||
+          Number.isFinite(image.height) === false ||
+          image.width < 160 ||
+          image.height < 160
+        ) {
           continue;
         }
-        for (let index = 0; index < pageImages.length; index += 1) {
-          const image = pageImages[index];
-          if (
-            image === undefined ||
-            !Number.isFinite(image.width) ||
-            !Number.isFinite(image.height) ||
-            image.width < 160 ||
-            image.height < 160
-          ) {
-            continue;
-          }
-          try {
-            const png = await sharp(Buffer.from(image.data), {
-              raw: {
-                width: image.width,
-                height: image.height,
-                channels: image.channels as 1 | 2 | 3 | 4
-              }
-            })
-              .png()
-              .toBuffer();
-            images.push({
-              filename: filename + "（第 " + pageNumber + " 页图 " + (index + 1) + "）",
-              buffer: png,
-              mime: "image/png"
-            });
-          } catch {
-            warnings.push(warning(filename, "PDF 第 " + pageNumber + " 页的图片无法转换，已跳过"));
-          }
-          if (images.length >= MAX_IMAGES) break;
+        if (Math.max(image.width, image.height) >= 320) hasLargeEmbedded = true;
+        try {
+          const png = await sharp(Buffer.from(image.data), {
+            raw: {
+              width: image.width,
+              height: image.height,
+              channels: image.channels as 1 | 2 | 3 | 4
+            }
+          })
+            .png()
+            .toBuffer();
+          candidates.push({
+            filename: filename + "（第 " + pageNumber + " 页内嵌图 " + (index + 1) + "）",
+            buffer: png,
+            mime: "image/png",
+            pageNumber,
+            pageText,
+            origin: "EMBEDDED"
+          });
+        } catch {
+          warnings.push(warning(filename, "PDF 第 " + pageNumber + " 页的内嵌图片无法转换，已跳过"));
+        }
+      }
+
+      // 文字很少、也没有大位图的页面：渲染整页（覆盖扫描件、矢量地图、排版页）。
+      if (
+        renderedPages < MAX_RENDERED_PAGES &&
+        pageText.trim().length < 160 &&
+        hasLargeEmbedded === false
+      ) {
+        try {
+          const rendered = await renderPageAsImage(pdf, pageNumber, {
+            canvasImport: () => import("@napi-rs/canvas"),
+            width: 1600
+          });
+          candidates.push({
+            filename: filename + "（第 " + pageNumber + " 页整页渲染）",
+            buffer: Buffer.from(rendered),
+            mime: "image/png",
+            pageNumber,
+            pageText,
+            origin: "PAGE_RENDER"
+          });
+          renderedPages += 1;
+        } catch {
+          warnings.push(warning(filename, "PDF 第 " + pageNumber + " 页无法渲染为图片，已跳过"));
         }
       }
     }
-    return { text, images };
+
+    if (candidates.length === 0) {
+      warnings.push(warning(filename, "PDF 没有可用的内嵌图片或可渲染页面，视觉素材为空"));
+    }
+    return { text, images: candidates };
   } catch (error) {
     warnings.push(warning(filename, "PDF 解析失败：" + (error instanceof Error ? error.message : "未知错误")));
     return { text: "", images: [] };
@@ -305,89 +390,178 @@ async function extractSource(file: File, warnings: AiImportWarning[]): Promise<E
   return { filename: file.name, kind: "BINARY", text: "", extension, buffer };
 }
 
+interface ImageCandidate {
+  readonly filename: string;
+  readonly buffer: Buffer;
+  readonly mime: string;
+  readonly origin: ImageOrigin;
+  readonly pageNumber?: number;
+  readonly pageText?: string;
+  readonly order: number;
+}
+
+function averageHash(data: Buffer): string {
+  if (data.length === 0) return "empty";
+  let sum = 0;
+  for (const value of data) sum += value;
+  const mean = sum / data.length;
+  let bits = "";
+  for (const value of data) bits += value >= mean ? "1" : "0";
+  return bits;
+}
+
+/** 图片信息量评分：尺寸 + 熵 + 对比度；只用于 PDF 候选排序，不评价画质艺术性。 */
+async function imageCandidateInfo(
+  buffer: Buffer
+): Promise<{ readonly score: number; readonly hash: string }> {
+  try {
+    const stats = await sharp(buffer, { limitInputPixels: 4096 * 4096 })
+      .resize(72, 72, { fit: "inside" })
+      .greyscale()
+      .stats();
+    const channel = stats.channels[0];
+    const entropy = Number.isFinite(stats.entropy) ? stats.entropy : 0;
+    const stdev = channel !== undefined && Number.isFinite(channel.stdev) ? channel.stdev : 0;
+    const metadata = await sharp(buffer, { limitInputPixels: 4096 * 4096 }).metadata();
+    const width = Number.isFinite(metadata.width) ? metadata.width ?? 0 : 0;
+    const height = Number.isFinite(metadata.height) ? metadata.height ?? 0 : 0;
+    const pixelScore = Math.log2(Math.max(1, width * height)) * 4;
+    const hashBuffer = await sharp(buffer, { limitInputPixels: 4096 * 4096 })
+      .resize(8, 8, { fit: "fill" })
+      .greyscale()
+      .raw()
+      .toBuffer();
+    return { score: pixelScore + entropy * 10 + Math.min(stdev, 64) / 4, hash: averageHash(hashBuffer) };
+  } catch {
+    return { score: 0, hash: "unreadable-" + String(buffer.length) };
+  }
+}
+
 export async function prepareSources(files: readonly File[], warnings: AiImportWarning[]): Promise<PreparedSources> {
   const sources: ExtractedSource[] = [];
-  const images: PreparedImage[] = [];
+  const candidates: ImageCandidate[] = [];
   let totalChars = 0;
+  let imageOrder = 0;
 
   for (const file of files) {
     const source = await extractSource(file, warnings);
     if (source === null) continue;
 
-    let embeddedImagesAdded = false;
     if (source.embeddedImages !== undefined && source.embeddedImages.length > 0) {
       for (const embedded of source.embeddedImages) {
-        if (images.length >= MAX_IMAGES) {
-          warnings.push(warning(file.name, "图片数量超过 " + MAX_IMAGES + " 张，PDF 内嵌图片超出部分已跳过"));
-          break;
-        }
-        try {
-          const compressed = await compressForVision(embedded.buffer);
-          images.push({
-            filename: embedded.filename,
-            relativePath: "assets/images/" + safeNameStem(embedded.filename) + ".png",
-            dataUrl: "data:" + compressed.mime + ";base64," + compressed.buffer.toString("base64"),
-            buffer: embedded.buffer,
-            mime: embedded.mime
-          });
-          embeddedImagesAdded = true;
-        } catch {
-          warnings.push(warning(embedded.filename, "PDF 内嵌图片压缩失败，已跳过"));
-        }
+        candidates.push({
+          filename: embedded.filename,
+          buffer: embedded.buffer,
+          mime: embedded.mime,
+          origin: embedded.origin ?? "EMBEDDED",
+          pageNumber: embedded.pageNumber,
+          pageText: embedded.pageText,
+          order: imageOrder
+        });
+        imageOrder += 1;
       }
     }
 
     const mime = await detectImageMime(source.buffer, source.extension);
     if (mime.length > 0) {
-      if (images.length >= MAX_IMAGES) {
-        warnings.push(warning(file.name, "图片数量超过 " + MAX_IMAGES + " 张，已跳过"));
-        continue;
-      }
-      let visionBuffer = source.buffer;
-      let visionMime = mime;
-      try {
-        const compressed = await compressForVision(source.buffer);
-        visionBuffer = compressed.buffer;
-        visionMime = compressed.mime;
-      } catch {
-        const directlySupported = mime === "image/png" || mime === "image/jpeg" || mime === "image/webp" || mime === "image/gif";
-        if (directlySupported === false) {
-          warnings.push(warning(file.name, "图片格式 " + mime + " 无法转换，已跳过"));
-          continue;
-        }
-        warnings.push(warning(file.name, "图片压缩失败，将按原图发送给视觉模型"));
-      }
-      const relativePath = "assets/images/" + safeNameStem(file.name) + ".png";
-      images.push({
+      candidates.push({
         filename: file.name,
-        relativePath,
-        dataUrl: "data:" + visionMime + ";base64," + visionBuffer.toString("base64"),
         buffer: source.buffer,
-        mime
+        mime,
+        origin: "UPLOAD",
+        order: imageOrder
       });
+      imageOrder += 1;
       continue;
     }
 
-    let text = source.text.trim();
+    const text = source.text.trim();
     if (text.length === 0) {
-      if (embeddedImagesAdded) {
-        warnings.push(warning(file.name, "PDF 未提取到文字，已改用内嵌图片交给视觉模型"));
+      if (source.embeddedImages !== undefined && source.embeddedImages.length > 0) {
+        warnings.push(warning(file.name, "PDF 未提取到文字，已改用页面图片 / 内嵌图片交给视觉模型"));
       } else {
         warnings.push(warning(file.name, kindHint(source.kind) + "没有提取到可用文字，已跳过内容整合"));
       }
       continue;
     }
-    if (text.length > PER_FILE_CHARS) {
-      text = text.slice(0, PER_FILE_CHARS);
-      warnings.push(warning(file.name, "文本过长，已截断到 " + PER_FILE_CHARS + " 字"));
-    }
-    if (totalChars + text.length > TOTAL_CHARS) {
-      text = text.slice(0, Math.max(0, TOTAL_CHARS - totalChars));
-      warnings.push(warning(file.name, "素材总量达到上限，部分内容被截断"));
-    }
     totalChars += text.length;
+    if (totalChars > MAX_TOTAL_SOURCE_CHARS) {
+      throw new Error(
+        "素材文字总量超过 " + MAX_TOTAL_SOURCE_CHARS + " 字（当前已到 " + totalChars + "），" +
+        "系统会拒绝生成不完整团本；请拆分素材后分批导入。"
+      );
+    }
     sources.push({ ...source, text });
   }
+
+  const enriched = await Promise.all(
+    candidates.map(async (candidate) => {
+      const info = await imageCandidateInfo(candidate.buffer);
+      return { candidate, score: info.score, hash: info.hash };
+    })
+  );
+  const deduped: typeof enriched = [];
+  const seenHash = new Map<string, number>();
+  for (const item of enriched) {
+    const existingIndex = seenHash.get(item.hash);
+    if (existingIndex === undefined) {
+      seenHash.set(item.hash, deduped.length);
+      deduped.push(item);
+      continue;
+    }
+    const existing = deduped[existingIndex];
+    if (existing !== undefined && item.score > existing.score) deduped[existingIndex] = item;
+    warnings.push(warning(item.candidate.filename, "与已有图片重复，已跳过"));
+  }
+
+  const ranked = [...deduped].sort((a, b) => {
+    const aUpload = a.candidate.origin === "UPLOAD" ? 1_000_000 : 0;
+    const bUpload = b.candidate.origin === "UPLOAD" ? 1_000_000 : 0;
+    return bUpload + b.score - (aUpload + a.score) || a.candidate.order - b.candidate.order;
+  });
+  const selected = ranked.slice(0, MAX_IMAGES).sort((a, b) => a.candidate.order - b.candidate.order);
+  if (ranked.length > MAX_IMAGES) {
+    warnings.push({
+      filename: "全部图片",
+      message:
+        "共 " + ranked.length + " 张图片候选，已按信息量选出 " + MAX_IMAGES +
+        " 张；如需保留更多请压缩素材后分次导入。"
+    });
+  }
+
+  const images: PreparedImage[] = [];
+  for (const item of selected) {
+    const candidate = item.candidate;
+    let visionBuffer = candidate.buffer;
+    let visionMime = candidate.mime;
+    try {
+      const compressed = await compressForVision(candidate.buffer);
+      visionBuffer = compressed.buffer;
+      visionMime = compressed.mime;
+    } catch {
+      const directlySupported =
+        candidate.mime === "image/png" ||
+        candidate.mime === "image/jpeg" ||
+        candidate.mime === "image/webp" ||
+        candidate.mime === "image/gif";
+      if (directlySupported === false) {
+        warnings.push(warning(candidate.filename, "图片格式 " + candidate.mime + " 无法转换，已跳过"));
+        continue;
+      }
+      warnings.push(warning(candidate.filename, "图片压缩失败，将按原图发送给视觉模型"));
+    }
+    images.push({
+      filename: candidate.filename,
+      relativePath: "assets/images/" + safeNameStem(candidate.filename) + ".png",
+      dataUrl: "data:" + visionMime + ";base64," + visionBuffer.toString("base64"),
+      buffer: candidate.buffer,
+      mime: candidate.mime,
+      origin: candidate.origin,
+      pageNumber: candidate.pageNumber,
+      pageText: candidate.pageText
+    });
+  }
+
   return { sources, images, warnings };
 }
 
@@ -414,67 +588,17 @@ function asObjectArray(value: unknown): Record<string, unknown>[] {
   return [];
 }
 
-interface AiDraftFrontMatter {
-  readonly spec: string;
-  readonly id: string;
-  readonly title: string;
-  readonly system: string;
-  readonly era: string;
-  readonly author: string;
-  readonly version: string;
-  readonly summary: string;
-  readonly background: string;
-  readonly occupationRecommendation: string;
+type AiChatClient = (
+  messages: readonly DeepSeekMessage[],
+  options?: DeepSeekChatOptions
+) => Promise<string>;
+
+interface GenerationStats {
+  calls: number;
+  maxAttempts: number;
 }
 
-interface AiDraft {
-  readonly frontMatter: AiDraftFrontMatter;
-  readonly sections: Record<string, string>;
-  readonly structured: Record<string, Record<string, unknown>[]>;
-}
-
-function normalizeDraft(raw: unknown, input: {
-  readonly title: string;
-  readonly system: "COC7" | "TOUHOU";
-  readonly era: string;
-  readonly author: string;
-}): AiDraft {
-  const root = asRecord(raw);
-  const fmRaw = asRecord(root.frontMatter ?? root.frontmatter ?? {});
-  const sectionsRaw = asRecord(root.sections ?? root.章节 ?? {});
-  const structuredRaw = asRecord(root.structured ?? root.结构化数据 ?? {});
-
-  const sections: Record<string, string> = {};
-  for (const section of REQUIRED_MODULE_SECTIONS) {
-    const value = sectionsRaw[section] ?? sectionsRaw[section.replace(/与/g, "")] ?? "";
-    sections[section] = typeof value === "string" ? value.trim() : JSON.stringify(value, null, 2);
-  }
-
-  const structured: Record<string, Record<string, unknown>[]> = {};
-  for (const [key, value] of Object.entries(structuredRaw)) {
-    const cleanKey = key === "spells" ? "magic" : key.replace(/s$/, "");
-    structured[cleanKey] = asObjectArray(value);
-  }
-
-  const title = asString(fmRaw.title, input.title) || input.title;
-  const system = asString(fmRaw.system, input.system) === "TOUHOU" ? "TOUHOU" : "COC7";
-  return {
-    frontMatter: {
-      spec: "touhou-module/v1",
-      id: slugifyModuleId(asString(fmRaw.id, title) || title),
-      title,
-      system,
-      era: asString(fmRaw.era, input.era) || input.era,
-      author: asString(fmRaw.author, input.author) || input.author,
-      version: asString(fmRaw.version, "1.0.0") || "1.0.0",
-      summary: (asString(fmRaw.summary) || (title + "（DeepSeek 根据素材整理）")).slice(0, 1200),
-      background: asString(fmRaw.background).slice(0, 4000),
-      occupationRecommendation: asString(fmRaw.occupationRecommendation).slice(0, 4000)
-    },
-    sections,
-    structured
-  };
-}
+const SECTION_SET = new Set<string>(REQUIRED_MODULE_SECTIONS);
 
 function yamlBlock(kind: string, value: Record<string, unknown>): string {
   const text = stringifyYaml(value).trim();
@@ -510,18 +634,7 @@ function assembleMarkdown(draft: AiDraft, imagePaths: readonly string[]): string
   }
 
   lines.push("### 结构化数据", "");
-  const kindToPlural: Record<string, string> = {
-    chapter: "chapters",
-    scene: "scenes",
-    encounter: "encounters",
-    npc: "npcs",
-    clue: "clues",
-    item: "items",
-    ending: "endings",
-    reward: "rewards",
-    magic: "magic"
-  };
-  for (const [kind, plural] of Object.entries(kindToPlural)) {
+  for (const [kind, plural] of Object.entries(STRUCTURED_PLURALS)) {
     for (const item of draft.structured[kind] ?? []) {
       lines.push(yamlBlock(kind, item), "");
     }
@@ -529,217 +642,500 @@ function assembleMarkdown(draft: AiDraft, imagePaths: readonly string[]): string
   return lines.join("\n");
 }
 
-function materialPrompt(input: {
-  readonly sources: readonly ExtractedSource[];
-  readonly images: readonly PreparedImage[];
-  readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly instructions: string };
+const CHUNK_SYSTEM_MESSAGE: DeepSeekMessage = {
+  role: "system",
+  content:
+    "你是严谨的中文 TRPG 团本编辑。当前任务是分块提取素材，每次调用都是完全独立的导入任务，" +
+    "不继承任何历史上下文；只依据本次用户消息中的素材片段输出严格 JSON，不要续写、不要解释。"
+};
+
+const IMAGE_SYSTEM_MESSAGE: DeepSeekMessage = {
+  role: "system",
+  content:
+    "你是 TRPG 素材视觉分析助手。每次调用都是独立任务，只依据当前图片与随图文字输出严格 JSON；" +
+    "看不清或不确定的内容必须如实说明，不得脑补。"
+};
+
+function structuredSchemaHint(): string {
+  return [
+    "structured 可用字段（只输出本段中出现的，没有就省略）：",
+    '{"chapters":[{"id":"ch1","name":"章节名","summary":"..."}],',
+    '"scenes":[{"id":"scene1","name":"场景名","description":"...","width":1600,"height":1000,"gridType":"SQUARE 或 HEX","bgColor":"#1a1a2e","background":"assets/images/xxx.png 或留空"}],',
+    '"encounters":[{"id":"enc1","name":"遭遇名","sceneId":"scene1","sceneName":"场景名","chapterId":"ch1","chapterName":"章节名","trigger":"...","setup":{}}],',
+    '"npcs":[{"id":"npc1","name":"NPC 名","tier":"MINION 或 STANDARD 或 ELITE 或 BOSS","rarity":"COMMON","race":null,"tags":[],"description":"...","portrait":"assets/images/xxx.png 或留空","attributes":{"str":50,"con":50,"siz":50,"dex":50,"app":50,"int":50,"pow":50,"edu":50,"luck":50},"skills":{"DODGE":40},"maxHp":12,"maxMp":10,"maxSan":50,"maxDp":0}],',
+    '"clues":[{"id":"clue1","title":"线索名","content":"线索正文","image":"assets/clues/xxx.png 或留空","isPublic":false,"linkedItemId":"item1 或留空"}],',
+    '"items":[{"id":"item1","name":"道具名","itemType":"WEAPON 或 ITEM 或 TOME 或 ARTIFACT 或 EVIDENCE","description":"...","rarity":"COMMON","image":"assets/images/xxx.png 或留空","quantity":1,"damage":"1d6 或留空","range":"MELEE 或 NEAR 或 FAR 或留空","skillId":"FIGHTING_BRAWL 等或留空","accuracyMod":0}],',
+    '"endings":[{"id":"end1","name":"结局名","condition":"...","description":"..."}],',
+    '"rewards":[{"id":"reward1","name":"奖励名","description":"..."}],',
+    '"magic":[{"id":"spell1","name":"法术名","skill":"MAGIC 或 OCCULT","mpCost":"3","sanCost":"1d3","damage":"1d6","target":"ONE","targeting":"ENEMY","effects":[{"type":"DAMAGE","amount":"1d6"}],"description":"..."}]}'
+  ].join("\n");
+}
+
+function chunkExtractionPrompt(chunk: TextChunk, hints: {
+  readonly system: "COC7" | "TOUHOU";
+  readonly era: string;
+  readonly instructions: string;
 }): string {
   const lines: string[] = [];
-  lines.push("你是资深 TRPG 团本编辑。请把下列全部素材整合成一个可直接跑团的中文团本。");
-  lines.push("这是一次全新的独立导入任务，不要引用、假设或延续任何历史对话、此前生成过的团本或上次导入的设定。");
-  lines.push("目标系统：" + input.hints.system + "；年代：" + input.hints.era + "。");
-  lines.push("必须严格以本次用户指定的目标系统与年代为准；图片 / PDF 中识别到的国家、城市、年代线索优先于模型默认设定。");
-  if (input.hints.instructions.trim().length > 0) {
-    lines.push("用户额外要求：" + input.hints.instructions.trim().slice(0, 2000));
+  lines.push("请从下面这一小段团本素材中做“分块提取”。只处理这一段，不要参考其他段落或历史任务。");
+  lines.push("目标系统：" + hints.system + "；年代：" + hints.era + "。");
+  if (hints.instructions.trim().length > 0) {
+    lines.push("用户额外要求：" + hints.instructions.trim().slice(0, 2000));
   }
+  lines.push(
+    "来源：" + chunk.filename +
+    "，本文件第 " + String(chunk.fileIndex) + "/" + String(chunk.fileTotal) + " 段" +
+    (chunk.heading.length === 0 ? "" : "，最近标题：" + chunk.heading)
+  );
+  lines.push("要求：");
+  lines.push("- 只提取本段明确出现的事实、剧情、NPC、场景、线索、道具、法术；没有的字段直接省略，不要编造，也不要输出其他段落的内容。");
+  lines.push("- 原文中的标题、编号 / 标记、专有名词、NPC / 场景 / 道具 / 技能 / 法术名、数字与判定值必须原样保留；压缩时只能压缩形容词，不能删除任何条目。");
+  lines.push("- 叙事 / 设定按语义归入 sections 中最贴切的标准章节；实在无法归类就放入 附录。只要本段有正文，就至少输出一个 sections 字段，并尽量保留所有小节标题。");
+  lines.push("- 结构化实体放入 structured；字段 id 用 slug，同一实体在不同段落请用同名 / 同 id，方便合并。");
+  lines.push("- 输出必须是单个合法 JSON 对象，不要 markdown 代码围栏，不要解释。");
+  lines.push("- 总长度控制在 4000 个中文字符以内，JSON 必须完整闭合。");
+  lines.push("JSON 结构：");
+  lines.push('{"meta":{"title":"...","summary":"...","background":"...","occupationRecommendation":"..."},');
+  lines.push('"sections":{"元信息":"...","真相与背景":"...","剧情梗概":"...","开场钩子":"...","关键NPC":"...","地点与场景":"...","线索":"...","遭遇与战斗":"...","道具与手书":"...","怪物与神话生物":"...","结局分支":"...","奖励与成长":"...","KP备注":"...","附录":"..."},');
+  lines.push('"structured":{...}}');
+  lines.push(structuredSchemaHint());
   lines.push("");
-  lines.push("【素材一：文字/表格文件】");
-  if (input.sources.length === 0) {
-    lines.push("（没有可读文字素材）");
-  }
-  for (const source of input.sources) {
-    lines.push("===== " + source.filename + " =====");
-    lines.push(source.text);
-    lines.push("");
-  }
-  if (input.images.length > 0) {
-    lines.push("【素材二：图片】以下图片会以视觉输入提供，请结合图片内容写作。");
-    for (const image of input.images) {
-      lines.push("- " + image.filename + " -> 引用路径：" + image.relativePath);
+  lines.push("本段原文：");
+  lines.push(chunk.text);
+  return lines.join("\n");
+}
+
+function imageAnalysisPrompt(
+  images: readonly PreparedImage[],
+  hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string },
+  compact = false
+): string {
+  const lines: string[] = [];
+  lines.push("请逐张分析下面的图片素材，并把结果整理成 JSON。");
+  lines.push("目标系统：" + hints.system + "；年代：" + hints.era + "。");
+  lines.push("要求：");
+  lines.push("- 每张图片必须返回一条 images 记录，filename 与输入完全一致。");
+  lines.push("- kind 只能是 MAP / SCENE / HANDOUT / CLUE / NPC / ITEM / TEXT / OTHER 之一。");
+  lines.push("- transcription：逐字抄录图中可见文字（保留原文，可附中文翻译）；" + (compact ? "最多 800 字。" : "最多 2000 字。"));
+  lines.push("- description：客观描述画面内容、人物、地图结构、房间 / 地点标记，不要脑补素材中不存在的设定。");
+  lines.push("- section：选一个最贴切的标准章节；sectionText：可直接写进该章节的中文正文（" + (compact ? "最多 500 字" : "最多 1200 字") + "）。");
+  lines.push("- 如果图片是地图，尽量给出 scene（name / description / width / height / gridType）；是手书 / 文件就给 clue；是人物立绘就给 npc；是物品就给 item；否则对应字段返回 null。");
+  lines.push("- 只返回单个合法 JSON 对象，不要解释、不要 markdown 代码围栏。");
+  lines.push('JSON 结构：{"images":[{"filename":"...","kind":"MAP","transcription":"...","description":"...","section":"地点与场景","sectionText":"...","scene":{"id":"scene1","name":"...","description":"...","width":1600,"height":1000,"gridType":"SQUARE"},"clue":null,"npc":null,"item":null}]}');
+  lines.push("");
+  lines.push("图片清单：");
+  for (const image of images) {
+    lines.push("- filename：" + image.filename + "；引用路径：" + image.relativePath);
+    if (image.pageNumber !== undefined) {
+      lines.push("  来源：PDF 第 " + String(image.pageNumber) + " 页" + (image.origin === "PAGE_RENDER" ? "（整页渲染）" : "（内嵌图）"));
+    }
+    if (image.pageText !== undefined && image.pageText.trim().length > 0) {
+      lines.push("  同页文字（可能不完整）：" + image.pageText.trim().slice(0, 1200));
     }
   }
   return lines.join("\n");
 }
 
-function jsonInstruction(): string {
-  return [
-    "请只返回一个严格 JSON 对象（不要 markdown 代码围栏，不要解释）。",
-    "JSON 结构：",
-    "{",
-    '  "frontMatter": {',
-    '    "id": "英文小写 slug", "title": "团本标题", "system": "COC7 或 TOUHOU", "era": "年代",',
-    '    "author": "整理者", "version": "1.0.0", "summary": "一句话简介",',
-    '    "background": "背景长文", "occupationRecommendation": "推荐职业/角色方向"',
-    "  },",
-    '  "sections": { "元信息": "...", "真相与背景": "...", "剧情梗概": "...", "开场钩子": "...", "关键NPC": "...", "地点与场景": "...", "线索": "...", "遭遇与战斗": "...", "道具与手书": "...", "怪物与神话生物": "...", "结局分支": "...", "奖励与成长": "...", "KP备注": "...", "附录": "..." },',
-    '  "structured": {',
-    '    "chapters": [{ "id": "ch1", "name": "章节名", "summary": "..." }],',
-    '    "scenes": [{ "id": "scene1", "name": "场景名", "description": "...", "width": 1600, "height": 1000, "gridType": "SQUARE 或 HEX", "bgColor": "#1a1a2e", "background": "assets/images/xxx.png 或留空" }],',
-    '    "encounters": [{ "id": "enc1", "name": "遭遇名", "sceneId": "scene1", "chapterId": "ch1", "trigger": "触发条件", "setup": {} }],',
-    '    "npcs": [{ "id": "npc1", "name": "NPC 名", "tier": "MINION 或 STANDARD 或 ELITE 或 BOSS", "rarity": "COMMON", "race": null, "tags": [], "description": "...", "portrait": "assets/images/xxx.png 或留空", "attributes": { "str": 50, "con": 50, "siz": 50, "dex": 50, "app": 50, "int": 50, "pow": 50, "edu": 50, "luck": 50 }, "skills": { "DODGE": 40, "FIGHTING_BRAWL": 50 }, "maxHp": 12, "maxMp": 10, "maxSan": 50, "maxDp": 0 }],',
-    '    "clues": [{ "id": "clue1", "title": "线索名", "content": "线索内容", "image": "assets/handouts/xxx.png 或留空", "isPublic": false, "linkedItemId": "item1 或留空" }],',
-    '    "items": [{ "id": "item1", "name": "道具名", "itemType": "WEAPON 或 ITEM 或 TOME 或 ARTIFACT 或 EVIDENCE", "description": "...", "rarity": "COMMON", "image": "assets/images/xxx.png 或留空", "quantity": 1, "damage": "1d6 或留空", "range": "MELEE/NEAR/FAR 或留空", "skillId": "FIGHTING_BRAWL 等或留空", "accuracyMod": 0 }],',
-    '    "endings": [{ "id": "end1", "name": "结局名", "condition": "...", "description": "..." }],',
-    '    "rewards": [{ "id": "reward1", "name": "奖励名", "description": "..." }],',
-    '    "magic": [{ "id": "spell1", "name": "法术名", "skill": "MAGIC 或 OCCULT", "mpCost": "3", "sanCost": "1d3", "damage": "1d6", "target": "ONE", "targeting": "ENEMY", "effects": [{ "type": "DAMAGE", "amount": "1d6" }, { "type": "DOT", "amount": "1d3", "durationTicks": "3" }, { "type": "STUN", "durationActions": "1" }], "description": "..." }]',
-    "  }",
-    "}",
-    "写作要求：",
-    "- 14 个标准章节必须全部存在，即 JSON 的 sections 必须包含上面列出的全部 key。",
-    "- 内容尽量具体，但不要编造与素材冲突的关键事实；缺失处写“素材未提供，KP 可自行补充”。",
-    "- structured 至少给出 1 个 chapter、2 个 scene、1 个 encounter，方便后台自动生成战术棋盘。",
-    "- 素材中出现的每个重要 NPC / Boss / 怪物都要整理成 npcs，并尽量补全九项属性、技能、HP/MP/SAN/DP；素材没给数值时可用系统默认值。",
-    "- 素材中出现的武器、物品、法器、法术书、关键证物都要整理成 items；关键证物 itemType 用 EVIDENCE。",
-    "- 素材中出现的线索、手书、照片、文件都要整理成 clues；没有图片则 image 留空，不要编造资源路径。",
-    "- clues 数组中每条线索必须包含 content 正文（可以是提炼后的调查信息），禁止只输出标题。",
-    "- 如果素材涉及魔法 / 法术 / 咒文 / 仪式 / 超自然能力，必须整理成 structured.magic 数组并尽量给出可结算数值（技能、消耗、伤害、目标）；没有魔法则给空数组 []。",
-    "- 法术的 effects 是通用指令数组，可组合使用：DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN_LOSS / SAN_RESTORE / STATUS / DOT（持续伤害）/ STUN（眩晕）/ CONTROL（控制）/ CLEANSE（净化）。target 为 SELF / ONE / ALL；targeting 为 SELF / ALLY / ENEMY / ANY。伤害类法术必须给出 DAMAGE 或 DOT；控制类给出 STUN / CONTROL。",
-    "- 若素材提供了图片，请在相关章节使用 markdown 图片语法，路径必须严格使用上面给出的引用路径。",
-    "- JSON 必须一次性完整闭合，严禁被截断；若素材很多，请优先保留全部 14 个章节标题和所有结构化字段，压缩描述性文字。",
-    "- 总篇幅尽量控制在约 9000 个中文字符以内，单章描述 2-4 段即可。"
-  ].join("\n");
+function combineChunkExtractions(
+  left: ChunkExtraction,
+  right: ChunkExtraction,
+  label: string
+): ChunkExtraction {
+  const sections: Record<string, string> = { ...left.sections };
+  for (const [section, value] of Object.entries(right.sections)) {
+    const current = sections[section];
+    sections[section] = current === undefined || current.length === 0 ? value : current + "\n\n" + value;
+  }
+  const structured: Record<string, Record<string, unknown>[]> = {};
+  const meta: Record<string, unknown> = { ...left.meta };
+  for (const [key, value] of Object.entries(right.meta)) {
+    const current = meta[key];
+    if (typeof current === "string" && typeof value === "string") {
+      meta[key] = value.length > current.length ? value : current;
+    } else if (current === undefined) {
+      meta[key] = value;
+    }
+  }
+  for (const key of new Set([...Object.keys(left.structured), ...Object.keys(right.structured)])) {
+    structured[key] = [...(left.structured[key] ?? []), ...(right.structured[key] ?? [])];
+  }
+  return { label, meta, sections, structured };
+}
+
+function splitTextAtMiddle(text: string): { readonly left: string; readonly right: string } | null {
+  if (text.length < 400) return null;
+  const middle = Math.floor(text.length / 2);
+  const before = text.lastIndexOf("\n\n", middle);
+  const after = text.indexOf("\n\n", middle);
+  let split = middle;
+  if (before > text.length * 0.25) split = before;
+  else if (after > 0 && after < text.length * 0.75) split = after;
+  if (split <= 0 || split >= text.length - 1) return null;
+  const left = text.slice(0, split).trim();
+  const right = text.slice(split).trim();
+  if (left.length < 100 || right.length < 100) return null;
+  return { left, right };
+}
+
+async function callJsonModel(input: {
+  readonly chat: AiChatClient;
+  readonly messages: readonly DeepSeekMessage[];
+  readonly label: string;
+  readonly maxTokens: number;
+  readonly model?: string;
+  readonly stats: GenerationStats;
+  readonly onProgress?: (message: string) => void;
+}): Promise<unknown> {
+  let messages = [...input.messages];
+  let lastError = "";
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    input.stats.calls += 1;
+    input.stats.maxAttempts = Math.max(input.stats.maxAttempts, attempt);
+    input.onProgress?.(input.label + "：DeepSeek 第 " + attempt + "/3 次…");
+    let raw: string;
+    try {
+      raw = await input.chat(messages, {
+        model: input.model,
+        jsonMode: true,
+        temperature: attempt === 1 ? 0.15 : 0.05,
+        maxTokens: input.maxTokens
+      });
+    } catch (error) {
+      if (error instanceof DeepSeekTruncationError) throw error;
+      lastError = error instanceof Error ? error.message : "调用失败";
+      continue;
+    }
+    try {
+      return extractJsonObject(raw);
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "JSON 解析失败";
+      messages = [
+        ...input.messages,
+        {
+          role: "user",
+          content:
+            "上次输出不是合法 JSON（" + lastError + "）。请重新只返回一个完整、合法、闭合的 JSON 对象，" +
+            "不要解释、不要 markdown 代码围栏，并适当压缩内容长度。"
+        }
+      ];
+    }
+  }
+  throw new Error(input.label + " 连续 3 次未返回合法 JSON：" + lastError);
+}
+
+function normalizeChunkExtraction(raw: unknown, label: string): ChunkExtraction {
+  const root = asRecord(raw);
+  const metaRaw = asRecord(root.meta ?? root.frontMatter ?? {});
+  const meta: Record<string, unknown> = {};
+  for (const key of ["title", "summary", "background", "occupationRecommendation"]) {
+    const value = asString(metaRaw[key]);
+    if (value.length > 0) meta[key] = value;
+  }
+  const sectionsRaw = asRecord(root.sections ?? root["章节"] ?? {});
+  const sections: Record<string, string> = {};
+  for (const section of REQUIRED_MODULE_SECTIONS) {
+    const value = asString(sectionsRaw[section] ?? sectionsRaw[section.replace(/与/g, "")] ?? "");
+    if (value.length > 0) sections[section] = value;
+  }
+  const structuredRaw = asRecord(root.structured ?? root["结构化数据"] ?? {});
+  const structured: Record<string, Record<string, unknown>[]> = {};
+  for (const [rawKind, value] of Object.entries(structuredRaw)) {
+    const plural = rawKind === "spells" ? "magic" : rawKind;
+    const kind = (Object.keys(STRUCTURED_PLURALS) as Array<keyof typeof STRUCTURED_PLURALS>).find(
+      (item) => STRUCTURED_PLURALS[item] === plural || item === plural || STRUCTURED_PLURALS[item] === plural.replace(/s$/, "")
+    );
+    if (kind === undefined) continue;
+    const entries = asObjectArray(value);
+    if (entries.length > 0) structured[kind] = entries;
+  }
+  return { label, meta, sections, structured };
+}
+
+async function extractChunkWithSplit(input: {
+  readonly chunk: TextChunk;
+  readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly instructions: string };
+  readonly chat: AiChatClient;
+  readonly model: string;
+  readonly stats: GenerationStats;
+  readonly onProgress?: (message: string) => void;
+}): Promise<ChunkExtraction> {
+  const label = "文本段 " + input.chunk.filename + " " + String(input.chunk.fileIndex) + "/" + String(input.chunk.fileTotal);
+  const messages: DeepSeekMessage[] = [
+    CHUNK_SYSTEM_MESSAGE,
+    { role: "user", content: [{ type: "text", text: chunkExtractionPrompt(input.chunk, input.hints) }] }
+  ];
+  try {
+    const raw = await callJsonModel({
+      chat: input.chat,
+      messages,
+      label,
+      model: input.model,
+      maxTokens: MAX_CHUNK_OUTPUT_TOKENS,
+      stats: input.stats,
+      onProgress: input.onProgress
+    });
+    return normalizeChunkExtraction(raw, label);
+  } catch (error) {
+    if (error instanceof DeepSeekTruncationError) {
+      const halves = splitTextAtMiddle(input.chunk.text);
+      if (halves !== null) {
+        input.onProgress?.(label + " 输出被截断，已自动拆成两段继续解析…");
+        const left = await extractChunkWithSplit({
+          ...input,
+          chunk: { ...input.chunk, text: halves.left, fileIndex: input.chunk.fileIndex, fileTotal: input.chunk.fileTotal }
+        });
+        const right = await extractChunkWithSplit({
+          ...input,
+          chunk: { ...input.chunk, text: halves.right, fileIndex: input.chunk.fileIndex, fileTotal: input.chunk.fileTotal }
+        });
+        return combineChunkExtractions(left, right, label);
+      }
+      throw new Error(label + " 在最小拆分下仍触达输出上限；请拆分该文件后重试，系统不会生成不完整团本。");
+    }
+    throw error;
+  }
+}
+
+function normalizeImageExtractions(raw: unknown, batch: readonly PreparedImage[]): ImageExtraction[] {
+  const records = asObjectArray(asRecord(asRecord(raw).images));
+  const results: ImageExtraction[] = [];
+  for (let index = 0; index < batch.length; index += 1) {
+    const image = batch[index];
+    if (image === undefined) continue;
+    const record = records.find((item) => asString(item.filename) === image.filename) ?? records[index] ?? {};
+    const kindRaw = asString(record.kind).toUpperCase();
+    const kinds = ["MAP", "SCENE", "HANDOUT", "CLUE", "NPC", "ITEM", "TEXT", "OTHER"];
+    const kind = kinds.includes(kindRaw) ? kindRaw : "OTHER";
+    const rawSection = asString(record.section);
+    const section = SECTION_SET.has(rawSection) ? rawSection : "附录";
+    results.push({
+      filename: image.filename,
+      relativePath: image.relativePath,
+      kind,
+      transcription: asString(record.transcription).slice(0, 4000),
+      description: asString(record.description).slice(0, 3000),
+      section,
+      sectionText: asString(record.sectionText).slice(0, 3000),
+      scene: isPlainRecord(record.scene) ? record.scene : null,
+      clue: isPlainRecord(record.clue) ? record.clue : null,
+      npc: isPlainRecord(record.npc) ? record.npc : null,
+      item: isPlainRecord(record.item) ? record.item : null
+    });
+  }
+  return results;
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && Array.isArray(value) === false;
+}
+
+async function analyzeImageBatch(input: {
+  readonly images: readonly PreparedImage[];
+  readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string };
+  readonly chat: AiChatClient;
+  readonly model: string;
+  readonly stats: GenerationStats;
+  readonly onProgress?: (message: string) => void;
+  readonly compact?: boolean;
+}): Promise<ImageExtraction[]> {
+  const label = "图片分析 " + input.images.map((image) => image.filename).join("、").slice(0, 80);
+  const parts: DeepSeekContentPart[] = [
+    { type: "text", text: imageAnalysisPrompt(input.images, input.hints, input.compact === true) }
+  ];
+  for (const image of input.images) {
+    parts.push({ type: "image_url", image_url: { url: image.dataUrl } });
+  }
+  try {
+    const raw = await callJsonModel({
+      chat: input.chat,
+      messages: [IMAGE_SYSTEM_MESSAGE, { role: "user", content: parts }],
+      label,
+      model: input.model,
+      maxTokens: MAX_IMAGE_OUTPUT_TOKENS,
+      stats: input.stats,
+      onProgress: input.onProgress
+    });
+    return normalizeImageExtractions(raw, input.images);
+  } catch (error) {
+    if (error instanceof DeepSeekTruncationError) {
+      if (input.images.length > 1 && input.compact !== true) {
+        input.onProgress?.(label + " 输出被截断，已自动拆分为单张图片继续解析…");
+        const middle = Math.floor(input.images.length / 2);
+        const left = await analyzeImageBatch({ ...input, images: input.images.slice(0, middle) });
+        const right = await analyzeImageBatch({ ...input, images: input.images.slice(middle) });
+        return [...left, ...right];
+      }
+      if (input.compact !== true) {
+        input.onProgress?.(label + " 输出被截断，正在用精简模式重试…");
+        return analyzeImageBatch({ ...input, compact: true });
+      }
+      throw new Error(label + " 在精简模式下仍被截断；请压缩该图片后重试，系统不会生成不完整团本。");
+    }
+    throw error;
+  }
+}
+
+async function analyzeImages(input: {
+  readonly images: readonly PreparedImage[];
+  readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string };
+  readonly chat: AiChatClient;
+  readonly model: string;
+  readonly stats: GenerationStats;
+  readonly onProgress?: (message: string) => void;
+}): Promise<ImageExtraction[]> {
+  const results: ImageExtraction[] = [];
+  const batchSize = 2;
+  for (let offset = 0; offset < input.images.length; offset += batchSize) {
+    const batch = input.images.slice(offset, offset + batchSize);
+    input.onProgress?.("正在分析图片 " + String(Math.min(offset + batch.length, input.images.length)) + "/" + String(input.images.length) + "…");
+    results.push(...(await analyzeImageBatch({ ...input, images: batch })));
+  }
+  return results;
 }
 
 /**
- * 重试时也不复用上一轮 assistant 上下文。
- * 这里把上次输出当作“错误样本”放进一条全新的 user 消息里，
- * 每次请求都只包含 system + user，等价于一个全新的单轮会话。
+ * 从原文中抽取“不能丢”的关键片段（标题、编号、大写标记、清单项等）。
+ * 模型可以概括形容词，但这些结构性 token 必须能在提取结果里找到；
+ * 找不到就把原句自动补录到附录，避免整条内容被概括掉。
  */
-function retryUserContent(
-  original: readonly DeepSeekContentPart[],
-  previous: string,
-  errors: readonly string[]
-): readonly DeepSeekContentPart[] {
-  const lines = [
-    "",
-    "【这是一次全新的独立会话】",
-    "不要延续、引用或假设任何上一轮助手回复；只把下面内容当作错误样本用于定位问题。",
-    "请只依据最初提供的素材，重新生成一个完整、全新的 JSON。",
-    "硬性要求：所有 14 个章节 key 必须存在，结构化字段必须齐全，JSON 必须完整闭合。",
-    "如果内容过长，请压缩每章描述，优先保留章节标题与 structured 字段，总长度控制在约 8000 个中文字符以内。",
-    "校验错误：",
-    ...errors.slice(0, 20).map((error) => "- " + error)
-  ];
-  if (previous.length > 0) {
-    lines.push(
-      "上次输出片段（可能不完整；仅用于定位缺失字段，禁止照抄、复述或续写）：",
-      previous.slice(0, 12000)
-    );
+function salientSourceSnippets(text: string): { readonly key: string; readonly snippet: string }[] {
+  const snippets: { key: string; snippet: string }[] = [];
+  const seen = new Set<string>();
+  const push = (snippet: string, key: string): void => {
+    const cleanSnippet = snippet.trim().replace(/\s+/g, " ").slice(0, 800);
+    const cleanKey = key.trim().replace(/[\s_\-—–·•.。:：,，、;；!！?？'"“”‘’（）()【】\[\]《》<>\/\\]+/g, "").toLowerCase();
+    if (cleanSnippet.length < 2 || cleanKey.length < 2 || seen.has(cleanKey)) return;
+    seen.add(cleanKey);
+    snippets.push({ key: cleanKey, snippet: cleanSnippet });
+  };
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (trimmed.length === 0) continue;
+    if (/^#{1,6}\s+/.test(trimmed) || /^【[^】]{1,60}】/.test(trimmed)) {
+      push(trimmed, trimmed.replace(/^#{1,6}\s+/, ""));
+    }
+    for (const match of trimmed.matchAll(/[A-Z][A-Z0-9_\-]{3,}/g)) {
+      const token = match[0];
+      if (token === undefined) continue;
+      push(trimmed, token);
+    }
+    for (const match of trimmed.matchAll(/第\s*[一二三四五六七八九十百0-9]+\s*[章节条项幕]/g)) {
+      const token = match[0];
+      if (token === undefined) continue;
+      push(trimmed, token);
+    }
+    if (/^([-*·]|\d+[.、)])\s+/.test(trimmed)) push(trimmed, trimmed);
   }
-  lines.push("只返回 JSON，不要解释、不要复述上文。");
-  return [...original, { type: "text", text: lines.join("\n") }];
+  return snippets;
 }
 
-interface AiGenerateState {
+function coverageSearchText(extraction: ChunkExtraction): string {
+  const parts: string[] = [];
+  for (const value of Object.values(extraction.sections)) parts.push(value);
+  for (const [key, value] of Object.entries(extraction.meta)) parts.push(String(key), String(value));
+  parts.push(JSON.stringify(extraction.structured));
+  return parts.join("\n").replace(/[\s_\-—–·•.。:：,，、;；!！?？'"“”‘’（）()【】\[\]《》<>\/\\]+/g, "").toLowerCase();
+}
+
+function missingCoverageSnippets(chunkText: string, extraction: ChunkExtraction): string[] {
+  const search = coverageSearchText(extraction);
+  const missing: string[] = [];
+  for (const item of salientSourceSnippets(chunkText)) {
+    if (search.includes(item.key)) continue;
+    missing.push(item.snippet);
+    if (missing.length >= 20) break;
+  }
+  return missing;
+}
+
+async function generateDraftFromChunks(input: {
+  readonly chunks: readonly TextChunk[];
+  readonly images: readonly PreparedImage[];
+  readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly author: string; readonly instructions: string };
+  readonly title: string;
+  readonly chat: AiChatClient;
+  readonly model: string;
+  readonly onProgress?: (message: string) => void;
+}): Promise<{
   readonly draft: AiDraft;
   readonly markdown: string;
-  readonly errors: readonly string[];
   readonly warnings: readonly string[];
-}
-
-async function generateDraft(input: {
-  readonly materialText: string;
-  readonly images: readonly PreparedImage[];
-  readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly author: string; readonly model: string };
-  readonly title: string;
-  readonly sessionId: string;
-  readonly onProgress?: (message: string) => void;
-}): Promise<{ state: AiGenerateState; attempts: number; rawModels: string[] }> {
-  const sessionLabel = "AI 会话 " + input.sessionId.slice(0, 8);
-  const userParts: DeepSeekContentPart[] = [{ type: "text", text: input.materialText + "\n\n" + jsonInstruction() }];
-  for (const image of input.images) {
-    userParts.push({ type: "image_url", image_url: { url: image.dataUrl } });
-  }
-  const systemMessage: DeepSeekMessage = {
-    role: "system",
-    content: "你是严谨的中文 TRPG 团本编辑。每次调用都是完全独立的导入任务，不继承任何历史上下文；输出必须是合法 JSON，且严格遵守用户给定结构。"
-  };
-  const messages: DeepSeekMessage[] = [
-    systemMessage,
-    { role: "user", content: userParts }
-  ];
-
-  const MAX_OUTPUT_TOKENS = 32768;
-
-  let previousRaw = "";
-  let lastErrors: readonly string[] = [];
-  let truncated = false;
-  for (let attempt = 1; attempt <= 3; attempt += 1) {
-    input.onProgress?.(sessionLabel + "：正在调用 DeepSeek（第 " + attempt + "/3 次）…");
-    let raw: string;
-    try {
-      if (attempt === 1) {
-        raw = await chatDeepSeek(messages, {
-          model: input.hints.model,
-          jsonMode: true,
-          maxTokens: MAX_OUTPUT_TOKENS,
-          temperature: 0.2
-        });
-      } else {
-        // 重试也必须是一次全新的单轮会话：只发送 system + user，
-        // 不复用上一轮 assistant 消息，避免模型把上一次输出当成持续上下文续写。
-        const retryMessages: DeepSeekMessage[] = [
-          systemMessage,
-          {
-            role: "user",
-            content: retryUserContent(userParts, previousRaw, lastErrors)
-          }
-        ];
-        raw = await chatDeepSeek(retryMessages, {
-          model: input.hints.model,
-          jsonMode: true,
-          maxTokens: MAX_OUTPUT_TOKENS,
-          temperature: 0.1
-        });
-      }
-    } catch (error) {
-      if (error instanceof DeepSeekTruncationError) {
-        truncated = true;
-        lastErrors = [error.message + "；请压缩每章内容，确保 JSON 完整闭合。"];
-        input.onProgress?.(sessionLabel + "：输出被截断，正在压缩后重试…");
-        continue;
-      }
-      throw error;
-    }
-
-    previousRaw = raw;
-    input.onProgress?.("已收到 DeepSeek 回复，正在校验结构…");
-    let parsed: unknown;
-    try {
-      parsed = extractJsonObject(raw);
-    } catch (error) {
-      lastErrors = [error instanceof Error ? error.message : "JSON 解析失败"];
-      continue;
-    }
-    const draft = normalizeDraft(parsed, {
-      title: input.title,
-      system: input.hints.system,
-      era: input.hints.era,
-      author: input.hints.author
+  readonly chunksCompleted: number;
+  readonly imagesAnalyzed: number;
+  readonly aiCalls: number;
+  readonly attempts: number;
+}> {
+  const stats: GenerationStats = { calls: 0, maxAttempts: 1 };
+  const extractions: ChunkExtraction[] = [];
+  for (let index = 0; index < input.chunks.length; index += 1) {
+    const chunk = input.chunks[index];
+    if (chunk === undefined) continue;
+    input.onProgress?.("正在解析文本段 " + String(index + 1) + "/" + String(input.chunks.length) + "（" + chunk.filename + "）…");
+    const extraction = await extractChunkWithSplit({
+      chunk,
+      hints: input.hints,
+      chat: input.chat,
+      model: input.model,
+      stats,
+      onProgress: input.onProgress
     });
-    const markdown = assembleMarkdown(draft, input.images.map((image) => image.relativePath));
-    const parsedModule = parseModuleMarkdown(markdown);
-    lastErrors = parsedModule.errors;
-    if (parsedModule.errors.length === 0) {
-      return {
-        state: {
-          draft,
-          markdown,
-          errors: [],
-          warnings: parsedModule.warnings
-        },
-        attempts: attempt,
-        rawModels: [raw]
-      };
+    const hasContent =
+      Object.values(extraction.sections).some((value) => value.trim().length > 0) ||
+      Object.values(extraction.structured).some((entries) => entries.length > 0);
+    const missingSnippets = missingCoverageSnippets(chunk.text, extraction);
+    const fallbackParts: string[] = [];
+    if (hasContent === false) {
+      fallbackParts.push("（本段未提取出明确章节信息，原文保留如下）\n" + chunk.text.slice(0, 2000));
     }
+    if (missingSnippets.length > 0) {
+      fallbackParts.push(
+        "【以下原文条目在分块提取中未被模型保留，系统已自动补录，避免内容丢失】\n" +
+        missingSnippets.join("\n")
+      );
+    }
+    extractions.push(
+      fallbackParts.length === 0
+        ? extraction
+        : { ...extraction, fallbackText: fallbackParts.join("\n\n") }
+    );
   }
 
-  const reason = lastErrors.slice(0, 3).join("；");
-  throw new Error(
-    "DeepSeek 连续 3 次未返回完整、合法的 JSON：" +
-      reason +
-      (truncated ? "。输出多次触达长度上限，建议减少单次素材量或拆分文件后重试。" : "")
-  );
+  const imagesAnalyzed = input.images.length;
+  const imageExtractions = input.images.length === 0
+    ? []
+    : await analyzeImages({
+        images: input.images,
+        hints: input.hints,
+        chat: input.chat,
+        model: input.model,
+        stats,
+        onProgress: input.onProgress
+      });
+
+  input.onProgress?.("正在合并 " + String(input.chunks.length) + " 段文本与 " + String(imagesAnalyzed) + " 张图片的解析结果…");
+  const draft = mergeDraft({
+    title: input.title,
+    system: input.hints.system,
+    era: input.hints.era,
+    author: input.hints.author,
+    extractions,
+    images: imageExtractions,
+    validImagePaths: new Set(input.images.map((image) => image.relativePath))
+  });
+  const markdown = assembleMarkdown(draft, input.images.map((image) => image.relativePath));
+  const parsed = parseModuleMarkdown(markdown);
+  if (parsed.errors.length > 0) {
+    throw new Error("分块结果合并后结构校验失败：" + parsed.errors.slice(0, 6).join("；"));
+  }
+  return {
+    draft,
+    markdown,
+    warnings: parsed.warnings,
+    chunksCompleted: input.chunks.length,
+    imagesAnalyzed,
+    aiCalls: stats.calls,
+    attempts: stats.maxAttempts
+  };
 }
 
 async function uniqueSlug(roomId: string | null, base: string): Promise<string> {
@@ -762,7 +1158,8 @@ export async function importModuleWithDeepSeek(input: {
   readonly instructions: string;
   readonly requestedModel: string;
   readonly onProgress?: (message: string) => void;
-}): Promise<AiImportResult> {
+}, deps: ImportModuleDependencies = {}): Promise<AiImportResult> {
+  const chat = deps.chat ?? chatDeepSeek;
   if (input.files.length === 0) throw new Error("请至少上传一个素材文件");
   if (input.files.length > MAX_FILES) throw new Error("单次最多上传 " + MAX_FILES + " 个文件");
   const sessionId = randomUUID();
@@ -794,41 +1191,64 @@ export async function importModuleWithDeepSeek(input: {
     });
   }
 
-  const generated = await generateDraft({
-    materialText: materialPrompt({
-      sources: prepared.sources,
-      images: prepared.images,
-      hints: { system, era: input.requestedEra, instructions: input.instructions }
-    }),
+  const chunks = prepared.sources.flatMap((source) =>
+    chunkSourceText({
+      filename: source.filename,
+      text: source.text,
+      targetChars: CHUNK_TARGET_CHARS,
+      maxChars: CHUNK_MAX_CHARS
+    })
+  );
+  if (chunks.length > MAX_TEXT_CHUNKS) {
+    throw new Error(
+      "素材共切成 " + chunks.length + " 段，超过单次导入上限 " + MAX_TEXT_CHUNKS +
+      " 段；系统会拒绝生成不完整团本，请拆分素材后分批导入。"
+    );
+  }
+  if (prepared.sources.length > 0) {
+    input.onProgress?.(
+      "文字素材共 " + String(chunks.length) + " 段（单段上限 " + String(CHUNK_MAX_CHARS) +
+      " 字），将逐段解析并合并；不会再把整本一次性交给模型。"
+    );
+  }
+
+  const generated = await generateDraftFromChunks({
+    chunks,
     images: prepared.images,
-    hints: { system, era: input.requestedEra, author: input.author, model },
+    hints: {
+      system,
+      era: input.requestedEra,
+      author: input.author,
+      instructions: input.instructions
+    },
     title,
-    sessionId,
+    chat,
+    model,
     onProgress: input.onProgress
   });
 
-  input.onProgress?.("AI 结构校验通过，正在写入团本…");
-  const slug = await uniqueSlug(input.roomId.length === 0 ? null : input.roomId, generated.state.draft.frontMatter.id || title);
+  input.onProgress?.("分块结果合并、结构校验通过，正在写入团本…");
+  const slug = await uniqueSlug(input.roomId.length === 0 ? null : input.roomId, generated.draft.frontMatter.id || title);
   const moduleRecord = await prisma.module.create({
     data: {
       ownerId: input.userId,
       roomId: input.roomId.length === 0 ? null : input.roomId,
       slug,
-      title: generated.state.draft.frontMatter.title,
-      synopsis: generated.state.draft.frontMatter.summary,
-      author: generated.state.draft.frontMatter.author,
-      system: generated.state.draft.frontMatter.system,
-      era: generated.state.draft.frontMatter.era,
-      background: generated.state.draft.frontMatter.background || null,
-      occupationRecommendation: generated.state.draft.frontMatter.occupationRecommendation || null,
-      version: generated.state.draft.frontMatter.version,
+      title: generated.draft.frontMatter.title,
+      synopsis: generated.draft.frontMatter.summary,
+      author: generated.draft.frontMatter.author,
+      system: generated.draft.frontMatter.system,
+      era: generated.draft.frontMatter.era,
+      background: generated.draft.frontMatter.background || null,
+      occupationRecommendation: generated.draft.frontMatter.occupationRecommendation || null,
+      version: generated.draft.frontMatter.version,
       sourceType: "AI_DEEPSEEK",
       originalFilename: input.files.map((file) => file.name).join(", ").slice(0, 300),
       content: {
         format: "markdown",
-        text: generated.state.markdown,
-        sections: parseModuleMarkdown(generated.state.markdown).sections,
-        structured: parseStructuredBlocks(generated.state.markdown)
+        text: generated.markdown,
+        sections: parseModuleMarkdown(generated.markdown).sections,
+        structured: parseStructuredBlocks(generated.markdown)
       } as never,
       metadata: {
         aiModel: model,
@@ -838,9 +1258,13 @@ export async function importModuleWithDeepSeek(input: {
         instructions: input.instructions
       } as never,
       importReport: {
-        warnings: [...warnings, ...generated.state.warnings.map((text) => ({ filename: "AI 校验", message: text }))],
+        warnings: [...warnings, ...generated.warnings.map((text) => ({ filename: "AI 校验", message: text }))],
         sourceCount: prepared.sources.length,
         imageCount: prepared.images.length,
+        textChunks: chunks.length,
+        textChunksCompleted: generated.chunksCompleted,
+        imagesAnalyzed: generated.imagesAnalyzed,
+        aiCalls: generated.aiCalls,
         attempts: generated.attempts
       } as never
     },
@@ -898,10 +1322,14 @@ export async function importModuleWithDeepSeek(input: {
 
   return {
     moduleId: moduleRecord.id,
-    title: generated.state.draft.frontMatter.title,
+    title: generated.draft.frontMatter.title,
     model,
     sessionId,
     attempts: generated.attempts,
+    aiCalls: generated.aiCalls,
+    chunks: chunks.length,
+    chunksCompleted: generated.chunksCompleted,
+    imagesAnalyzed: generated.imagesAnalyzed,
     imagesUsed: prepared.images.length,
     warnings
   };

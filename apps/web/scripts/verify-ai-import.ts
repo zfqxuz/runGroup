@@ -61,8 +61,22 @@ async function main(): Promise<void> {
       "关键证物：染血的符纸，itemType=EVIDENCE，关联线索「红色符纸」。",
       "魔法：茶屋里残留着符纸法阵，调查员可以学会「退魔符」法术，消耗 2 点 MP、1d3 点 SAN，对妖怪造成 1d6 伤害。",
       "图片 red-clue.png 是一张红色符纸的照片，请写进线索章节并引用。"
-    ].join("\n");
-    const textFile = new File([toFilePart(Buffer.from(story, "utf8"))], "story.md", { type: "text/markdown" });
+    ];
+    const longMode = process.env.AI_IMPORT_LONG_TEST === "1";
+    if (longMode) {
+      for (let index = 1; index <= 12; index += 1) {
+        const marker = "LONG-MARK-" + String(index).padStart(2, "0");
+        story.push(
+          "",
+          "## 长线第 " + String(index) + " 节",
+          "",
+          "这是长文本分块验证内容 " + marker + "。" +
+            "本段用于撑大素材并确保触发多段解析；角色「长线NPC」会在多段中出现；线索内容必须完整保留。".repeat(28)
+        );
+      }
+    }
+    const storyText = story.join("\n");
+    const textFile = new File([toFilePart(Buffer.from(storyText, "utf8"))], "story.md", { type: "text/markdown" });
     const imageFile = new File([toFilePart(await readOptionalImage())], "red-clue.png", { type: "image/png" });
 
     const result = await importModuleWithDeepSeek({
@@ -105,6 +119,20 @@ async function main(): Promise<void> {
     ensure((content.structured?.items?.length ?? 0) >= 1, "素材涉及武器 / 证物时应至少应有 1 个结构化物品");
     ensure((content.structured?.clues?.length ?? 0) >= 1, "素材涉及线索时应至少应有 1 条结构化线索");
     ensure(moduleRecord.assets.length >= 1, "图片素材应保存为模块资源");
+    if (longMode) {
+      ensure(result.chunks >= 2, "长素材应被切成至少 2 段，实际 " + String(result.chunks));
+      ensure(result.chunksCompleted === result.chunks, "所有文本段都必须完成提取，实际 " + String(result.chunksCompleted) + "/" + String(result.chunks));
+      ensure(result.aiCalls >= result.chunks, "长素材调用次数应不少于分段数");
+      const missing = Array.from({ length: 12 }, (_, index) => index + 1)
+        .map((index) => "LONG-MARK-" + String(index).padStart(2, "0"))
+        .filter((marker) => text.includes(marker) === false);
+      ensure(
+        missing.length === 0,
+        "最终团本缺少长素材标记：" + missing.join(", ") +
+          "（chunks=" + String(result.chunks) + "/" + String(result.chunksCompleted) +
+          " aiCalls=" + String(result.aiCalls) + " textLen=" + String(text.length) + "）"
+      );
+    }
 
     const templateCounts = {
       chapters: await prisma.chapterTemplate.count({ where: { moduleId: result.moduleId } }),
@@ -124,7 +152,13 @@ async function main(): Promise<void> {
     ensure(templateCounts.magic >= 1, "应创建魔法模板");
 
     console.log("PASS DeepSeek 智能团本导入");
-    console.log("  model=" + result.model + " attempts=" + String(result.attempts) + " images=" + String(result.imagesUsed));
+    console.log(
+      "  model=" + result.model +
+      " attempts=" + String(result.attempts) +
+      " aiCalls=" + String(result.aiCalls) +
+      " chunks=" + String(result.chunksCompleted) + "/" + String(result.chunks) +
+      " images=" + String(result.imagesAnalyzed) + "/" + String(result.imagesUsed)
+    );
     console.log("  templates=" + JSON.stringify(templateCounts));
     console.log("  sections=" + String(parseInt(String(text.split("## ").length - 1), 10)) + " structured=" + JSON.stringify({
       chapters: content.structured?.chapters?.length ?? 0,

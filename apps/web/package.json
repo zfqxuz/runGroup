@@ -44,9 +44,11 @@
     "verify:module-preset": "tsx --env-file=.env scripts/verify-module-preset.ts",
     "verify:chargen-rules": "tsx --env-file=.env scripts/verify-chargen-rules.ts",
     "verify:occupation-slots": "tsx scripts/verify-occupation-slots.ts",
-    "verify:magic-effects": "tsx --env-file=.env scripts/verify-magic-effects.ts"
+    "verify:magic-effects": "tsx --env-file=.env scripts/verify-magic-effects.ts",
+    "verify:ai-chunking": "tsx --env-file=.env scripts/verify-ai-chunking.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.9",
     "@prisma/client": "^5.22.0",
     "@touhou/combat": "^0.1.0",
     "@touhou/formula": "^0.1.0",

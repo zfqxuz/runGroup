@@ -149,7 +149,8 @@ export async function chatDeepSeek(
     } catch (error) {
       lastError = error;
       const aborted = error instanceof Error && error.name === "AbortError";
-      if (aborted) break;
+      // 截断是确定性的：重试同一请求只会得到同样结果，交给上层拆分素材。
+      if (aborted || error instanceof DeepSeekTruncationError) break;
       if (attempt < 2) {
         await new Promise((resolve) => setTimeout(resolve, 1200 * (attempt + 1)));
       }
