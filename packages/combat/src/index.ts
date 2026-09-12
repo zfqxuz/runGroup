@@ -18,6 +18,7 @@ export {
   readyParticipants,
   recomputeSpeed,
   resolveInitiativeTurn,
+  reactionTargetIdsForAction,
   resolvePending,
   submitAction
 } from "./combat";

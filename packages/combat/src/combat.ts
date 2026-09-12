@@ -16,6 +16,7 @@ import {
   resolveActionCost,
   damageMultiplierOf,
   fromMicro,
+  isHostileSpell,
   schedule,
   speedMultiplierOf,
   spellEffectsOf,
@@ -438,8 +439,8 @@ function resolveAttack(
     kind: "CHECK",
     actorId: actor.id,
     targetId: defender.id,
-    text: `${actor.name} 的 ${skillName} 判定 ${attackRoll}/${target} → ${attackCheck.result}`,
-    data: { roll: attackRoll, target, result: attackCheck.result }
+    text: `攻击检定：${actor.name} 使用「${skillName}」掷 1d100 = ${attackRoll}，目标值 ${target} → ${attackCheck.result}`,
+    data: { rollType: "ATTACK", skill: skillName, roll: attackRoll, target, result: attackCheck.result }
   });
 
   if (isSuccess(attackCheck.result) === false) {
@@ -447,7 +448,8 @@ function resolveAttack(
       kind: "ACTION",
       actorId: actor.id,
       targetId: defender.id,
-      text: `${actor.name} 的攻击落空`
+      text: `攻击落空：${actor.name} 的 1d100 = ${attackRoll} 未通过「${skillName}」检定`,
+      data: { rollType: "ATTACK", roll: attackRoll, target }
     });
     return;
   }
@@ -476,8 +478,8 @@ function resolveAttack(
       kind: "CHECK",
       actorId: defender.id,
       targetId: actor.id,
-      text: `${defender.name} ${isCoc7 ? "闪避" : "擦弹"}判定 ${dodgeRoll}/${dodgeTarget} → ${dodgeCheck.result}`,
-      data: { roll: dodgeRoll, target: dodgeTarget, result: dodgeCheck.result }
+      text: `${isCoc7 ? "闪避" : "擦弹"}检定：${defender.name} 掷 1d100 = ${dodgeRoll}，目标值 ${dodgeTarget} → ${dodgeCheck.result}`,
+      data: { rollType: "DODGE", roll: dodgeRoll, target: dodgeTarget, result: dodgeCheck.result }
     });
   } else if (reaction.type === "COUNTER") {
     const counterTarget = skillValueOf(
@@ -496,13 +498,25 @@ function resolveAttack(
       kind: "CHECK",
       actorId: defender.id,
       targetId: actor.id,
-      text: `${defender.name} ${counterLabel} ${counterRoll}/${counterTarget} → ${defenseSuccess ? "成功" : "失败"}`,
-      data: { roll: counterRoll, target: counterTarget, success: defenseSuccess }
+      text: `${counterLabel}对抗：攻击方 ${attackRoll}/${target} vs ${defender.name} ${counterRoll}/${counterTarget} → ${defender.name}${defenseSuccess ? "成功" : "失败"}`,
+      data: { rollType: "COUNTER", attackRoll, attackTarget: target, counterRoll, counterTarget, success: defenseSuccess }
     });
   }
 
   const damageSource = expandDamageBonus(submission.damage ?? "0", actor.damageBonus);
-  const damageRoll = rollDice(parseDice(damageSource), rng);
+  const damageRng = nextRollRng(state, `damage:${actor.id}:${defender.id}`);
+  const damageRoll = rollDice(parseDice(damageSource), damageRng);
+  const detailText = damageRoll.details
+    .map((detail) => (detail.sign < 0 ? "-" : "+") + detail.count + "d" + detail.sides + "[" + detail.values.join(", ") + "]")
+    .join("  ");
+  pushLog(state, {
+    kind: "DAMAGE",
+    actorId: actor.id,
+    targetId: defender.id,
+    text: `伤害骰：${actor.name} 的「${damageSource}」= ${damageRoll.total}（${detailText}），范围 ${damageRoll.min}~${damageRoll.max}`,
+    data: { rollType: "DAMAGE_ROLL", expression: damageSource, roll: damageRoll.total, min: damageRoll.min, max: damageRoll.max }
+  });
+
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
 
   const outcome = applyDamagePipeline(ctx.pack, {
@@ -519,14 +533,24 @@ function resolveAttack(
   }
 
   const applied = applyDamageToParticipant(ctx, defender, outcome.damage);
+  const defenseText =
+    reaction.type === "PASS"
+      ? "未应对"
+      : (reaction.type === "DODGE" ? "闪避" : reaction.type === "COUNTER" ? counterLabel : "防御") +
+        (defenseSuccess ? "成功" : "失败");
 
   pushLog(state, {
     kind: "DAMAGE",
     actorId: actor.id,
     targetId: defender.id,
-    text: `${actor.name} → ${defender.name} 伤害 ${outcome.damage}（符卡吸收 ${applied.toDeclaration} / 本体 ${applied.toHp}）`,
+    text: `伤害结算：${actor.name} → ${defender.name}，应对=${defenseText}，原始 ${damageRoll.total} → 最终 ${outcome.damage}${outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"}`,
     data: {
+      rollType: "DAMAGE_SETTLE",
+      rawDamage: damageRoll.total,
       damage: outcome.damage,
+      defense: reaction.type,
+      defenseSuccess,
+      steps: outcome.steps.join("；"),
       toDeclaration: applied.toDeclaration,
       toHp: applied.toHp,
       mpCost: outcome.mpCost,
@@ -770,6 +794,43 @@ function resolveMagicTargets(
   return target === undefined || target.defeated ? [] : [target];
 }
 
+/**
+ * 计算一个行动需要哪些单位进入「应对窗口」。
+ * - 普通攻击：单个目标；
+ * - 敌对法术：单体目标；群体法术（target=ALL）返回全部命中目标，保证 AOE 每个人都要应对。
+ */
+export function reactionTargetIdsForAction(
+  pack: CompiledRulePack,
+  state: CombatState,
+  action: ActionSubmission
+): string[] {
+  const actor = findParticipant(state, action.actorId);
+  if (actor === undefined || actor.defeated) return [];
+  const requestedTargetId = action.targetId ?? null;
+
+  if (action.kind === "DANMAKU") {
+    if (requestedTargetId === null || requestedTargetId === actor.id) return [];
+    const target = findParticipant(state, requestedTargetId);
+    return target === undefined || target.defeated ? [] : [target.id];
+  }
+
+  if (action.kind === "MAGIC") {
+    const rules = pack.pack.magic;
+    if (rules === undefined || rules.enabled === false) return [];
+    const spell = rules.spells.find(
+      (item) => item.id === action.spellId || item.name === action.name
+    );
+    if (spell === undefined || isHostileSpell(spell) === false) return [];
+    const targeting = spellTargeting(spell);
+    if (targeting === "ALLY" || targeting === "SELF") return [];
+    return resolveMagicTargets(state, actor, spell, requestedTargetId)
+      .filter((target) => target.id !== actor.id)
+      .map((target) => target.id);
+  }
+
+  return [];
+}
+
 function applyMagicEffect(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -792,6 +853,13 @@ function applyMagicEffect(
 
   if (effect.type === "DAMAGE") {
     const base = rollEffectDice(effect.amount, state, "magic-damage:" + actor.id + ":" + spell.id + ":" + target.id);
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: target.id,
+      text: "伤害骰：「" + spell.name + "」对 " + target.name + " 的 " + effect.amount + " = " + base,
+      data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: base }
+    });
     const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
     const outcome = applyDamagePipeline(ctx.pack, {
       baseDamage: base,
@@ -807,8 +875,8 @@ function applyMagicEffect(
       kind: "DAMAGE",
       actorId: actor.id,
       targetId: target.id,
-      text: actor.name + " 施放「" + spell.name + "」 → " + target.name + " 伤害 " + outcome.damage,
-      data: { ...meta, damage: outcome.damage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+      text: "伤害结算：「" + spell.name + "」→ " + target.name + "，应对=" + defense.type + (defense.type === "PASS" ? "" : defense.success ? "成功" : "失败") + "，原始 " + base + " → 最终 " + outcome.damage + (outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"),
+      data: { ...meta, rollType: "DAMAGE_SETTLE", rawDamage: base, damage: outcome.damage, defense: defense.type, defenseSuccess: defense.success, steps: outcome.steps.join("；"), toDeclaration: applied.toDeclaration, toHp: applied.toHp }
     });
     return;
   }

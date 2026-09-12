@@ -117,5 +117,8 @@ export function applyDamagePipeline(
     }
   }
 
-  return { damage: Math.max(0, Math.floor(damage)), mpCost, mpGained, steps };
+  const floored = Math.max(0, Math.floor(damage));
+  // 伤害被防御/减伤压到 (0,1) 之间时，按至少 1 点结算；完全免伤（0）仍为 0。
+  const finalDamage = damage > 0 && floored === 0 ? 1 : floored;
+  return { damage: finalDamage, mpCost, mpGained, steps };
 }

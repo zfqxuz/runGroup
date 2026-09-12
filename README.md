@@ -77,7 +77,7 @@ packages/
 ## 测试
 
 ```bash
-npm test          # 167 tests / 3 packages
+npm test          # 173 tests / 3 packages
 npm run typecheck # 全量类型检查
 ```
 

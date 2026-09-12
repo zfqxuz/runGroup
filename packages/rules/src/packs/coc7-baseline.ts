@@ -76,7 +76,8 @@ export const COC7_BASELINE: RulePackInput = {
     ],
     defend: { cost: "0", reduceMultiplier: "3" },
     dodge: { cost: "0", grazeMpGainRatio: "0" },
-    counter: { cost: "0", failDamageRatio: "0.5" }
+    // COC7 反击失败 = 攻击方正常命中，不做减半；1d6 不应该被 0.5 向下取整成 0。
+    counter: { cost: "0", failDamageRatio: "1" }
   },
   // COC7 战斗：KP 每轮排定出手顺序，随后全员依次行动
   combat: {

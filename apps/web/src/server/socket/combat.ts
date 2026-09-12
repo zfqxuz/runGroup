@@ -5,6 +5,7 @@ import {
   endCombat,
   currentActorId,
   endTurn,
+  reactionTargetIdsForAction,
   readyParticipants,
   resolveInitiativeTurn,
   resolvePending,
@@ -12,7 +13,6 @@ import {
   type ActionSubmission,
   type DefenseReaction
 } from "@touhou/combat";
-import { isHostileSpell, spellTargeting } from "@touhou/rules";
 import {
   canControl,
   controlledReadyParticipantId,
@@ -77,20 +77,6 @@ export async function broadcastCombat(io: SocketServer, runtime: CombatRuntime):
 async function persistAndBroadcast(io: SocketServer, runtime: CombatRuntime): Promise<void> {
   await saveCombatState(runtime.combatId, runtime.state);
   await broadcastCombat(io, runtime);
-}
-
-function needsReaction(pack: CombatRuntime["pack"], action: ActionSubmission): boolean {
-  const target = action.targetId ?? null;
-  if (target === null || target === action.actorId) return false;
-  if (action.kind === "DANMAKU") return true;
-  if (action.kind === "MAGIC") {
-    const spell = pack.pack.magic?.spells.find((item) => item.id === action.spellId || item.name === action.name);
-    if (spell === undefined) return false;
-    // 群体法术不做单个反应窗口；单体攻击性法术（ENEMY / ANY）需要目标应对。
-    const targeting = spellTargeting(spell);
-    return spell.target === "ONE" && isHostileSpell(spell) && targeting !== "ALLY" && targeting !== "SELF";
-  }
-  return false;
 }
 
 async function emitReactionRequest(
@@ -225,12 +211,14 @@ async function handleAction(
     ack({ ok: false, error: "现在不能行动，或该单位未就绪" });
     return;
   }
-  const targetId = action.targetId ?? null;
-  if (needsReaction(runtime.pack, action) && targetId !== null) {
-    runtime.pendingReactions.set(targetId, action.actorId);
+  const reactionTargetIds = reactionTargetIdsForAction(runtime.pack, runtime.state, action);
+  if (reactionTargetIds.length > 0) {
     const magicOptions: CombatReactionRequest["options"] | undefined =
       action.kind === "MAGIC" ? ["PASS", "DODGE"] : undefined;
-    await emitReactionRequest(io, runtime, action.actorId, targetId, magicOptions);
+    for (const targetId of reactionTargetIds) {
+      runtime.pendingReactions.set(targetId, action.actorId);
+      await emitReactionRequest(io, runtime, action.actorId, targetId, magicOptions);
+    }
   }
   const resolved = await tryResolveCombat(io, runtime);
   if (resolved === false) await broadcastCombat(io, runtime);

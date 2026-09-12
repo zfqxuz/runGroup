@@ -16,6 +16,7 @@ import {
   applyStatus,
   createCombat,
   filterCombatForViewer,
+  reactionTargetIdsForAction,
   resolvePending,
   submitAction,
   type CombatParticipantState,
@@ -451,3 +452,79 @@ describe("ATB 防御性推进", () => {
     expect(resolveActionCost(coc7, "PASS", { dex: 50 })).toBeGreaterThan(0);
   });
 });
+
+describe("AOE 应对窗口", () => {
+  const aoePack = compileParsedRulePack({
+    ...resolveRulePack("touhou-ext", builtinRegistry()),
+    magic: {
+      enabled: true,
+      system: "TOUHOU",
+      spells: [
+        {
+          id: "meteor",
+          name: "陨石",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "ALL",
+          effects: [{ type: "DAMAGE", amount: "1d6" }]
+        }
+      ]
+    }
+  });
+
+  it("群体敌对法术会给所有命中目标生成应对", () => {
+    const state = createCombat({ id: "aoe-targets", seed: "aoe-seed", tickMs: 250 });
+    const derived = computeDerived(aoePack, { attributes: attrs }).derived;
+    addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(aoePack, { dex: 55 }), speed: computeBaseSpeed(aoePack, { dex: 55 })
+    });
+    addParticipant(state, {
+      id: "e1", name: "妖精A", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(aoePack, { dex: 50 }), speed: computeBaseSpeed(aoePack, { dex: 50 })
+    });
+    addParticipant(state, {
+      id: "e2", name: "妖精B", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(aoePack, { dex: 50 }), speed: computeBaseSpeed(aoePack, { dex: 50 })
+    });
+    const targets = reactionTargetIdsForAction(aoePack, state, {
+      actorId: "caster",
+      kind: "MAGIC",
+      spellId: "meteor"
+    });
+    expect(targets.slice().sort()).toEqual(["e1", "e2"]);
+  });
+
+  it("AOE 结算时每个目标的应对都会参与", () => {
+    const state = createCombat({ id: "aoe-resolve", seed: "aoe-resolve-seed", tickMs: 250 });
+    const derived = computeDerived(aoePack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(aoePack, { dex: 55 }), speed: computeBaseSpeed(aoePack, { dex: 55 })
+    });
+    const e1 = addParticipant(state, {
+      id: "e1", name: "妖精A", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: { DODGE: 1 },
+      atbMax: computeAtbMax(aoePack, { dex: 50 }), speed: computeBaseSpeed(aoePack, { dex: 50 })
+    });
+    const e2 = addParticipant(state, {
+      id: "e2", name: "妖精B", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(aoePack, { dex: 50 }), speed: computeBaseSpeed(aoePack, { dex: 50 })
+    });
+    caster.isReady = true;
+    expect(submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "meteor" })).toBe(true);
+    const hp2 = e2.hp;
+    resolvePending(aoePack, state, {
+      e1: { type: "DODGE", skill: "DODGE" },
+      e2: { type: "PASS" }
+    });
+    expect(e2.hp).toBeLessThan(hp2);
+  });
+});
+
