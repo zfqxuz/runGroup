@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`0fc6ac5 fix(socket): 掷骰归一化全角输入并保证异常时有回执`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`d219cfe fix(combat): 修正 1d6 伤害归零并支持 AOE 应对窗口与并排高亮`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -23,9 +23,9 @@
   - 房间准备页已支持「带入已有角色 / 已有卡牌」（见第 39 节）：玩家可从自己的角色库 / 卡牌库选择并提交 KP 审核，不必重新车卡。
   - 创建房间页会显示空房间名 / 非法车卡方式的错误，并给房间名加了必填校验；修复“点创建后仍停留在本页且没有反馈”的问题。
   - 掷骰健壮性已修复（见第 40 节）：支持中文全角数字 / ｄ / ＋ / －，服务端 handler 用统一回执包裹，异常时不会再静默无响应；客户端离线时禁用掷骰按钮。
-  - 测试基线更新为 167 tests（formula 50 / rules 75 / combat 42）。
+  - 战斗伤害结算、AOE 应对窗口与战斗展示已优化（见第 41 节）：COC7 反击失败不再把 1d6=1 减成 0；攻击 / 闪避 / 反击 / 伤害骰日志全部标明掷的是什么；参战单位改并排卡片并高亮当前行动 / 可行动 / 等待应对；AOE 每个目标都要应对。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 167 tests（formula 50 / rules 75 / combat 42）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 173 tests（formula 50 / rules 75 / combat 48）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1596,4 +1596,50 @@ MagicEffect =
 - `packages/formula/src/__tests__/dice.test.ts`：新增用例。
 - `apps/web/src/server/socket/index.ts`：dice handler 统一回执与异常保护。
 - `apps/web/src/components/room/RoomPlay.tsx`：客户端归一化、错误清理、回车掷骰、离线禁用。
+
+## 41. 战斗伤害结算、AOE 应对窗口与展示优化（本轮）
+
+### 为什么 1d6 会掉 0 血
+- COC7 基线包原先 `damage.counter.failDamageRatio = 0.5`，反击失败时把 `1d6=1` 乘成 `0.5`，最终 `Math.floor` 后变 0。
+- 修复：
+  - `packages/rules/src/packs/coc7-baseline.ts`：COC7 反击失败 = 攻击方正常命中，`failDamageRatio` 改为 `1`；
+  - `packages/rules/src/damage.ts`：伤害被减伤压到 `(0,1)` 之间时至少保留 1 点；完全免伤（0）仍为 0。
+- 新增 `packages/combat/src/__tests__/damage-pipeline.test.ts` 覆盖这三种情况。
+
+### 每次 roll 都写清楚是什么
+`packages/combat/src/combat.ts`：
+- 攻击：`攻击检定：X 使用「技能」掷 1d100 = N，目标值 M → 结果`；
+- 应对：`闪避检定 / 擦弹检定`、`反击对抗：攻击方 N/M vs 防守方 N/M → 成功/失败`；
+- 伤害：`伤害骰：X 的「1d6」= N（+1d6[...]），范围 min~max`；
+- 结算：`伤害结算：A → B，应对=闪避成功，原始 N → 最终 M（管线步骤）`，并记录符卡吸收 / 本体伤害。
+- 法术伤害同样拆成“伤害骰”“伤害结算”两条。
+
+### AOE 每个目标都要应对
+- `packages/combat` 新增 `reactionTargetIdsForAction`：
+  - 普通攻击 -> 单个目标；
+  - 敌对法术目标 ALL -> 返回全部命中目标。
+- `apps/web/src/server/socket/combat.ts` 改为按目标逐个写入 `pendingReactions`，全部应对完成后才结算；KP 强制结算仍会把未应对按 PASS 处理。
+- `resolveMagic` 本来就会按 `target.id` 读取 reactions，因此 AOE 每个目标的 PASS / 闪避会分别生效。
+
+### 战斗展示
+`apps/web/src/components/room/CombatBoard.tsx` 重做：
+- 参战单位改成并排卡片（`sm:grid-cols-2 xl:grid-cols-3`），显示 HP 条、ATB 条、状态、阵营、符卡。
+- 高亮：
+  - 当前行动 = 粉色；
+  - 你可行动 = 绿色；
+  - 你需要应对 = 琥珀色；
+  - 已退场 = 淡出；
+  - 不可操作的存活单位标「旁观」。
+- 行动面板只对你操控的单位开放；不是你的回合时明确显示“等待 XXX 行动，只能旁观”。
+- 「你需要应对」区按被攻击目标逐个生成应对卡：
+  - 可选择 PASS / 闪避 / 反击（规则允许时）；
+  - 闪避可选闪避 / 擦弹，反击可选该单位拥有的攻击技能；
+  - AOE 时多个目标同时出现，逐个提交；
+  - 别人的应对只在下方显示“其他单位正在应对”，不能操作。
+- 日志增加中文徽章：攻击检定 / 闪避检定 / 反击对抗 / 伤害骰 / 伤害结算 / 行动 / 状态 / 法术 / 退场 / 系统。
+
+### 验证
+- `npm test` PASS（173 tests：combat 48 / formula 50 / rules 75）。
+- 新增 AOE 应对目标与结算测试、伤害管线最小 1 点测试。
+- `npm run typecheck`、`npm run build --workspace @touhou/web` PASS。
 
