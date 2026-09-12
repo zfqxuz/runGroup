@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`12ffaff fix(room): 场景重连同步与导航后保持滚动位置`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`3eba393 fix(room): 滚动恢复按真实手势判断回顶`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -1832,7 +1832,7 @@ MagicEffect =
 - 新增 `apps/web/src/components/layout/ScrollRestoration.tsx`，挂到根 `layout.tsx`：
   - 以 `pathname` 为 key，持续把窗口滚动位置写入内存 + `sessionStorage`；
   - 挂载、浏览器刷新、以及同一路径下的 query 变化（Server Action redirect 会带 `?state=saved` 等）后恢复位置；
-  - 忽略「非用户操作导致的程序化回顶」（`scrollY=0` 且此前有记录且用户未滚动），避免记录被覆盖；
+  - 忽略「非用户操作导致的程序化回顶」（`scrollY=0` 且此前有记录，且最近 400ms 内没有滚轮 / 触摸 / 键盘滚动手势），避免记录被覆盖；
   - 恢复时循环重试到超时，覆盖 Next 更晚执行的 scroll-to-top；用户滚轮 / 触摸 / 键盘打断时立即停止。
 - `apps/web/src/components/room/RoomPlay.tsx`
   - 日志区不再使用 `bottomRef.scrollIntoView()`（会连带整页滚动），改为只设置日志容器自身的 `scrollTop`；
