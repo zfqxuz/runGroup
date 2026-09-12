@@ -89,7 +89,8 @@ export function createCombat(init: CombatInit): CombatState {
     rollSeq: 0,
     participants: [],
     pending: {},
-    log: []
+    log: [],
+    chase: null
   };
 }
 

@@ -31,6 +31,7 @@
     "verify:growth-inheritance": "tsx --env-file=.env scripts/verify-growth-inheritance.ts",
     "verify:growth-checks": "tsx --env-file=.env scripts/verify-growth-checks.ts",
     "verify:combat-rounds": "tsx --env-file=.env scripts/verify-combat-rounds.ts",
+    "verify:chase": "tsx --env-file=.env scripts/verify-chase.ts",
     "verify:realtime-sync": "tsx --env-file=.env scripts/verify-realtime-sync.ts",
     "verify:clue-npc-edit": "tsx --env-file=.env scripts/verify-clue-npc-edit.ts",
     "verify:module-entities": "tsx --env-file=.env scripts/verify-module-entities.ts",

@@ -507,7 +507,7 @@ describe("AOE 应对窗口", () => {
       attributes: attrs, derived, skills: { MAGIC: 80 },
       atbMax: computeAtbMax(aoePack, { dex: 55 }), speed: computeBaseSpeed(aoePack, { dex: 55 })
     });
-    const e1 = addParticipant(state, {
+    addParticipant(state, {
       id: "e1", name: "妖精A", kind: "NPC", characterId: null, faction: "ENEMY",
       attributes: attrs, derived, skills: { DODGE: 1 },
       atbMax: computeAtbMax(aoePack, { dex: 50 }), speed: computeBaseSpeed(aoePack, { dex: 50 })

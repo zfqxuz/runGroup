@@ -72,12 +72,15 @@ packages/
   - COC7 判定（边界全覆盖）
   - 伤害管线（顺序由配置声明）
   - ATB 事件调度（解析解，非轮询）
+- [x] `@touhou/combat` 战斗与追逐引擎（52 tests）
+  - 伤害管线、应对窗口、AOE 多目标应对
+  - COC7 追逐：速度检定 / MOV / 行动点 / 地点 / 逃跑判定
 - [x] 内置规则包 `coc7-baseline` / `touhou-ext`
 
 ## 测试
 
 ```bash
-npm test          # 173 tests / 3 packages
+npm test          # 177 tests / 3 packages
 npm run typecheck # 全量类型检查
 ```
 

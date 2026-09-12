@@ -2,13 +2,19 @@ import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
   applyForcedSkips,
-  endCombat,
+  chaseCurrentActorId,
+  chaseEndTurn,
+  chaseMove,
   currentActorId,
+  endCombat,
   endTurn,
+  findParticipant,
+  pushLog,
   reactionTargetIdsForAction,
   readyParticipants,
   resolveInitiativeTurn,
   resolvePending,
+  startChase,
   submitAction,
   type ActionSubmission,
   type DefenseReaction
@@ -109,6 +115,8 @@ export async function tryResolveCombat(
   runtime: CombatRuntime
 ): Promise<boolean> {
   if (isEnded(runtime.state)) return false;
+  // 追逐轮与普通 ATB / 先攻轮分开处理，避免两套回合系统互相抢行动。
+  if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") return false;
   if (runtime.pendingReactions.size > 0) return false;
   applyForcedSkips(runtime.state);
 
@@ -202,6 +210,51 @@ async function handleAction(
     declarationHp: asNumber(raw.declarationHp),
     declarationDurationTicks: asNumber(raw.declarationDurationTicks)
   };
+  if (action.kind === "FLEE") {
+    if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") {
+      ack({ ok: false, error: "追逐进行中：请使用追逐移动或结束回合" });
+      return;
+    }
+    const actor = findParticipant(runtime.state, requestedActor);
+    if (actor === undefined) {
+      ack({ ok: false, error: "行动单位不存在" });
+      return;
+    }
+    const chasers = runtime.state.participants
+      .filter(
+        (participant) =>
+          participant.defeated === false &&
+          participant.id !== actor.id &&
+          participant.faction !== actor.faction
+      )
+      .map((participant) => participant.id);
+    if (chasers.length > 0) {
+      const chaseResult = startChase(runtime.pack, runtime.state, {
+        preyId: actor.id,
+        chaserIds: chasers,
+        trackLength: 10
+      });
+      if (chaseResult.ok === false) {
+        ack({ ok: false, error: chaseResult.error ?? "无法建立追逐" });
+        return;
+      }
+      if (chaseResult.escapedImmediately !== true) {
+        runtime.pendingReactions.clear();
+        runtime.reactions = {};
+        runtime.state.pending = {};
+        await persistAndBroadcast(io, runtime);
+        ack({ ok: true });
+        return;
+      }
+      // 速度检定直接甩开追逐者：继续按普通 FLEE 结算，把该单位移出战斗。
+    }
+  }
+
+  if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") {
+    ack({ ok: false, error: "追逐进行中：请使用追逐移动或结束回合" });
+    return;
+  }
+
   const actionError = validateCombatAction({ pack: runtime.pack, state: runtime.state, attackSkills: runtime.attackSkills }, action);
   if (typeof actionError === "string") {
     ack({ ok: false, error: actionError });
@@ -284,6 +337,73 @@ async function handleReaction(
   ack({ ok: true });
 }
 
+async function handleChaseMove(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as { combatId?: unknown; actorId?: unknown; steps?: unknown };
+  if (userId === null || typeof input.combatId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  const actorId = typeof input.actorId === "string" ? input.actorId : null;
+  if (actorId === null || canControl(runtime, userId, actorId) === false) {
+    ack({ ok: false, error: "你不能操控这个单位" });
+    return;
+  }
+  const steps = typeof input.steps === "number" && Number.isFinite(input.steps) ? Math.trunc(input.steps) : 0;
+  const result = chaseMove(runtime.state, actorId, steps);
+  if (result.ok === false) {
+    ack({ ok: false, error: result.error ?? "追逐移动失败" });
+    return;
+  }
+  if (result.escaped === true) {
+    endCombat(runtime.state, "追逐结束：逃离者成功脱身");
+  }
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
+async function handleChaseEndTurn(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as { combatId?: unknown; actorId?: unknown };
+  if (userId === null || typeof input.combatId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  const chase = runtime.state.chase;
+  const currentId = chase === null ? null : chaseCurrentActorId(chase);
+  if (currentId === null || canControl(runtime, userId, currentId) === false) {
+    ack({ ok: false, error: "还没轮到你操控的单位行动" });
+    return;
+  }
+  const result = chaseEndTurn(runtime.state);
+  if (result.ok === false) {
+    ack({ ok: false, error: result.error ?? "结束追逐回合失败" });
+    return;
+  }
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
 async function handleAbort(
   io: SocketServer,
   socket: Socket,
@@ -311,6 +431,7 @@ async function handleAbort(
   }
   runtime.pendingReactions.clear();
   runtime.reactions = {};
+  runtime.state.chase = null;
   endCombat(runtime.state, "KP 中止了战斗");
   await saveCombatState(runtime.combatId, runtime.state);
   await broadcastCombat(io, runtime);
@@ -337,6 +458,10 @@ async function handleForceResolve(
   }
   if (runtime.roles.get(userId) !== "KP") {
     ack({ ok: false, error: "只有 KP 能强制结算" });
+    return;
+  }
+  if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") {
+    ack({ ok: false, error: "追逐进行中：请等待移动结算，或直接中止战斗" });
     return;
   }
   for (const targetId of runtime.pendingReactions.keys()) {
@@ -369,6 +494,12 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:reaction", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleReaction(io, socket, payload, ack);
+  });
+  socket.on("combat:chase-move", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleChaseMove(io, socket, payload, ack);
+  });
+  socket.on("combat:chase-end-turn", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleChaseEndTurn(io, socket, payload, ack);
   });
   socket.on("combat:force-resolve", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleForceResolve(io, socket, payload, ack);

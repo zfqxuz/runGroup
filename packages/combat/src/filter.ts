@@ -1,4 +1,4 @@
-import type { CombatState, LogEntry } from "./types";
+import type { ChaseState, CombatState, LogEntry } from "./types";
 
 export type ViewerRole = "KP" | "PLAYER" | "SPECTATOR";
 
@@ -38,6 +38,27 @@ export interface ParticipantView {
   readonly skills: Readonly<Record<string, number>> | null;
 }
 
+export interface ChaseParticipantView {
+  readonly id: string;
+  readonly name: string;
+  readonly side: "PREY" | "CHASER";
+  readonly position: number;
+  readonly baseMov: number;
+  readonly mov: number;
+  readonly actionPoints: number;
+  readonly maxActionPoints: number;
+  readonly speedResult: string;
+}
+
+export interface ChaseView {
+  readonly status: ChaseState["status"];
+  readonly round: number;
+  readonly activeActorId: string | null;
+  readonly trackLength: number;
+  readonly participants: readonly ChaseParticipantView[];
+  readonly ending: string | null;
+}
+
 export interface CombatView {
   readonly id: string;
   readonly tick: number;
@@ -52,6 +73,8 @@ export interface CombatView {
   readonly pendingIds: readonly string[];
   /** 正在等待应对窗口的行动：actor 对 target 出手。 */
   readonly pendingReactions: readonly { readonly actorId: string; readonly targetId: string }[];
+  /** 追逐状态；null 表示当前不在追逐中。 */
+  readonly chase: ChaseView | null;
 }
 
 /** 把精确 HP 转成文字描述，供 PL 视角使用。 */
@@ -143,6 +166,27 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
     participants,
     log,
     pendingIds: Object.keys(state.pending),
-    pendingReactions: []
+    pendingReactions: [],
+    chase:
+      state.chase === null
+        ? null
+        : {
+            status: state.chase.status,
+            round: state.chase.round,
+            activeActorId: state.chase.order[state.chase.activeIndex] ?? null,
+            trackLength: state.chase.trackLength,
+            ending: state.chase.ending,
+            participants: state.chase.participants.map((participant) => ({
+              id: participant.id,
+              name: identifiedIds.has(participant.id) ? participant.name : "???",
+              side: participant.side,
+              position: participant.position,
+              baseMov: participant.baseMov,
+              mov: participant.mov,
+              actionPoints: participant.actionPoints,
+              maxActionPoints: participant.maxActionPoints,
+              speedResult: participant.speedResult
+            }))
+          }
   };
 }

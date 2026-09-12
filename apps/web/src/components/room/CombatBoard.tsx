@@ -154,13 +154,24 @@ export default function CombatBoard(props: Props) {
 
   const participants = view?.participants ?? [];
   const alive = participants.filter((item) => item.defeated === false);
+  const chase = view?.chase ?? null;
+  const chaseActive = chase !== null && chase.status === "ACTIVE";
+  const chaseActiveParticipant =
+    chase === null || chase.activeActorId === null
+      ? null
+      : chase.participants.find((item) => item.id === chase.activeActorId) ?? null;
 
   function isControlled(item: ParticipantView): boolean {
     return item.isSelf || (props.isKP && item.kind === "NPC");
   }
 
-  const actionable = alive.filter((item) => item.isReady && isControlled(item));
-  const selectedActor = actionable.find((item) => item.id === actorId) ?? actionable[0] ?? null;
+  function isChaseControlled(participantId: string): boolean {
+    const item = participants.find((participant) => participant.id === participantId);
+    return item !== undefined && isControlled(item);
+  }
+
+  const actionable = chaseActive ? [] : alive.filter((item) => item.isReady && isControlled(item));
+  const selectedActor = chaseActive ? null : (actionable.find((item) => item.id === actorId) ?? actionable[0] ?? null);
   const selectedActorId = selectedActor === null ? "" : selectedActor.id;
   const activeActorId = view?.mode === "INITIATIVE" ? view.activeActorId : null;
   const activeActor = participants.find((item) => item.id === activeActorId) ?? null;
@@ -262,6 +273,42 @@ export default function CombatBoard(props: Props) {
     socket.emit("combat:action", { combatId: props.combatId, actorId: selectedActor.id, action }, (result: Ack) => {
       if (result.ok === false) setError(result.error ?? "行动失败");
     });
+  }
+
+  function emitChaseMove(steps: number): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    const actorIdForMove = chase?.activeActorId ?? null;
+    if (actorIdForMove === null) return;
+    setError(null);
+    socket.emit(
+      "combat:chase-move",
+      { combatId: props.combatId, actorId: actorIdForMove, steps },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "追逐移动失败");
+      }
+    );
+  }
+
+  function emitChaseEndTurn(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    const actorIdForTurn = chase?.activeActorId ?? null;
+    if (actorIdForTurn === null) return;
+    setError(null);
+    socket.emit(
+      "combat:chase-end-turn",
+      { combatId: props.combatId, actorId: actorIdForTurn },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "结束追逐回合失败");
+      }
+    );
   }
 
   function setReactionDraft(targetIdValue: string, patch: Partial<ReactionDraft>): void {
@@ -398,13 +445,107 @@ export default function CombatBoard(props: Props) {
           </div>
         )}
 
+        {chase === null ? null : (
+          <section className="rounded-xl border border-emerald-400/30 bg-emerald-400/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-medium text-emerald-200">追逐 · 第 {chase.round} 轮</h3>
+              <span className="text-[11px] text-white/45">
+                地点 {chase.trackLength} 格 · 逃离者到达最后一格即脱身
+              </span>
+            </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-2">
+              {Array.from({ length: chase.trackLength }).map((_, position) => {
+                const here = chase.participants.filter((item) => item.position === position);
+                return (
+                  <div
+                    key={position}
+                    className={
+                      "min-w-[120px] rounded-lg border px-2 py-2 " +
+                      (here.length > 0 ? "border-white/20 bg-ink-900/70" : "border-white/5 bg-ink-900/30")
+                    }
+                  >
+                    <p className="text-[10px] text-white/30">
+                      {position === chase.trackLength - 1 ? "出口" : "地点 " + position}
+                    </p>
+                    <div className="mt-1 flex flex-col gap-1">
+                      {here.map((item) => {
+                        const current = chase.activeActorId === item.id;
+                        return (
+                          <span
+                            key={item.id}
+                            className={
+                              "rounded px-1.5 py-0.5 text-[10px] " +
+                              (item.side === "PREY"
+                                ? "bg-amber-400/15 text-amber-200"
+                                : "bg-red-400/15 text-red-200") +
+                              (current ? " ring-1 ring-emerald-300" : "")
+                            }
+                          >
+                            {item.side === "PREY" ? "逃 " : "追 "}
+                            {item.name} · AP {item.actionPoints}/{item.maxActionPoints}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            {chase.status === "ACTIVE" ? (
+              chaseActiveParticipant === null ? null : (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-white/70">
+                    {chaseActiveParticipant.name} 的回合 · MOV {chaseActiveParticipant.mov} · 剩余 AP{" "}
+                    {chaseActiveParticipant.actionPoints}/{chaseActiveParticipant.maxActionPoints}
+                  </span>
+                  {isChaseControlled(chaseActiveParticipant.id) ? (
+                    <>
+                      <button
+                        type="button"
+                        disabled={chaseActiveParticipant.actionPoints < 1 || chaseActiveParticipant.position <= 0}
+                        onClick={() => emitChaseMove(-1)}
+                        className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35 disabled:opacity-40"
+                      >
+                        后退 1 格
+                      </button>
+                      <button
+                        type="button"
+                        disabled={
+                          chaseActiveParticipant.actionPoints < 1 ||
+                          chaseActiveParticipant.position >= chase.trackLength - 1
+                        }
+                        onClick={() => emitChaseMove(1)}
+                        className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-emerald-300 disabled:opacity-40"
+                      >
+                        前进 1 格
+                      </button>
+                      <button
+                        type="button"
+                        onClick={emitChaseEndTurn}
+                        className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
+                      >
+                        结束回合
+                      </button>
+                    </>
+                  ) : (
+                    <span className="text-[11px] text-white/40">等待该单位行动</span>
+                  )}
+                </div>
+              )
+            ) : (
+              <p className="mt-2 text-xs text-white/60">{chase.ending ?? "追逐已结束"}</p>
+            )}
+          </section>
+        )}
+
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
           <h3 className="text-sm font-medium text-white/80">参战单位</h3>
           <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
             {participants.map((item) => {
               const controlled = isControlled(item);
               const awaiting = pendingTargetIds.has(item.id);
-              const current = activeActorId === item.id || (view?.mode === "ATB" && item.isReady);
+              const canActNow = chaseActive === false && controlled && item.isReady;
+              const current = chaseActive === false && (activeActorId === item.id || (view?.mode === "ATB" && item.isReady));
               return (
                 <div key={item.id} className={"rounded-xl border px-3 py-3 transition " + cardClass(item)}>
                   <div className="flex items-start justify-between gap-2">
@@ -413,7 +554,7 @@ export default function CombatBoard(props: Props) {
                       {item.isSelf ? (
                         <span className="rounded border border-sakura-500/40 px-1.5 py-0.5 text-[10px] text-sakura-300">你</span>
                       ) : null}
-                      {controlled && item.isReady ? (
+                      {canActNow ? (
                         <span className="rounded border border-emerald-400/40 px-1.5 py-0.5 text-[10px] text-emerald-300">可行动</span>
                       ) : null}
                       {current ? (
@@ -555,13 +696,15 @@ export default function CombatBoard(props: Props) {
           <h3 className="text-sm font-medium text-white/80">行动</h3>
           {selectedActor === null ? (
             <p className="mt-3 text-xs text-white/40">
-              {myPendingReactions.length > 0
-                ? "请先完成上方的应对。"
-                : activeActor === null
-                  ? "当前没有可行动的参战单位。"
-                  : isControlled(activeActor)
-                    ? "当前单位还没就绪，请等待结算。"
-                    : "等待 " + activeActor.name + " 行动；你没有可操作单位，只能旁观。"}
+              {chaseActive
+                ? "追逐进行中，请使用上方追逐面板移动或结束回合。"
+                : myPendingReactions.length > 0
+                  ? "请先完成上方的应对。"
+                  : activeActor === null
+                    ? "当前没有可行动的参战单位。"
+                    : isControlled(activeActor)
+                      ? "当前单位还没就绪，请等待结算。"
+                      : "等待 " + activeActor.name + " 行动；你没有可操作单位，只能旁观。"}
             </p>
           ) : (
             <div className="mt-3 flex flex-col gap-3">
@@ -640,6 +783,13 @@ export default function CombatBoard(props: Props) {
                   </button>
                 ) : null}
                 <button type="button" onClick={() => emitAction({ kind: "PASS" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">跳过</button>
+                <button
+                  type="button"
+                  onClick={() => emitAction({ kind: "FLEE" })}
+                  className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs text-amber-200 transition hover:bg-amber-400/10"
+                >
+                  逃跑 / 发起追逐
+                </button>
               </div>
               {props.canOutOfRule ? (
                 <div className="flex flex-wrap items-center gap-2">

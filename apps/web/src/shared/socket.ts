@@ -80,6 +80,17 @@ export interface CombatReactionPayload {
   readonly skill?: string;
 }
 
+export interface CombatChaseMovePayload {
+  readonly combatId: string;
+  readonly actorId?: string;
+  readonly steps: number;
+}
+
+export interface CombatChaseEndTurnPayload {
+  readonly combatId: string;
+  readonly actorId?: string;
+}
+
 export interface CombatReactionRequest {
   readonly combatId: string;
   readonly actorId: string;

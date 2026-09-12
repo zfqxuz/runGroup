@@ -1,6 +1,7 @@
 import type {
   ActiveStatusEffect,
   AttributeSet,
+  CheckResult,
   DerivedStats
 } from "@touhou/rules";
 
@@ -117,6 +118,39 @@ export interface LogEntry {
   readonly data?: Record<string, number | string | boolean | null>;
 }
 
+export type ChaseSide = "PREY" | "CHASER";
+
+export interface ChaseParticipantState {
+  readonly id: string;
+  readonly name: string;
+  readonly side: ChaseSide;
+  /** 速度检定前的基础 MOV。 */
+  readonly baseMov: number;
+  /** 速度检定调整后的 MOV。 */
+  mov: number;
+  /** 当前地点（0 ~ trackLength-1）。 */
+  position: number;
+  /** 本轮剩余行动点。 */
+  actionPoints: number;
+  /** 本轮最大行动点 = 1 + (MOV - 全场最低 MOV)。 */
+  readonly maxActionPoints: number;
+  readonly speedRoll: number;
+  readonly speedResult: CheckResult;
+}
+
+export interface ChaseState {
+  status: "ACTIVE" | "ESCAPED" | "CAUGHT" | "ENDED";
+  round: number;
+  activeIndex: number;
+  /** 追逐行动顺序（按 DEX 从高到低）。 */
+  order: string[];
+  /** 地点总数；prey 抵达最后一个地点即逃脱。 */
+  trackLength: number;
+  participants: ChaseParticipantState[];
+  /** 结束原因 / 最近一次裁决说明。 */
+  ending: string | null;
+}
+
 export interface CombatState {
   readonly id: string;
   readonly seed: string;
@@ -135,4 +169,6 @@ export interface CombatState {
   participants: CombatParticipantState[];
   pending: Record<string, ActionSubmission>;
   log: LogEntry[];
+  /** 追逐状态；null 表示当前不在追逐中。 */
+  chase: ChaseState | null;
 }
