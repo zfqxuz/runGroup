@@ -72,6 +72,9 @@ export default function CombatBoard(props: Props) {
   const [spellId, setSpellId] = useState("");
   const [spellTargetId, setSpellTargetId] = useState("");
   const [actorId, setActorId] = useState("");
+  const [chaseTargetId, setChaseTargetId] = useState("");
+  const [chaseSkill, setChaseSkill] = useState("");
+  const [chaseDamage, setChaseDamage] = useState("1d6");
   const [reactionOptions, setReactionOptions] = useState<Record<string, readonly CombatReactionPayload["type"][]>>({});
   const [reactionDrafts, setReactionDrafts] = useState<Record<string, ReactionDraft>>({});
   const router = useRouter();
@@ -214,6 +217,31 @@ export default function CombatBoard(props: Props) {
     ? spellTargetId
     : (spellTargetOptions[0]?.id ?? "");
 
+  const chaseCanControl =
+    chaseActiveParticipant !== null && isChaseControlled(chaseActiveParticipant.id);
+  const chaseAttackPending = pendingReactions.length > 0;
+  const chaseTargetOptions =
+    chase === null || chaseActiveParticipant === null
+      ? []
+      : chase.participants.filter((item) => {
+          if (item.id === chaseActiveParticipant.id) return false;
+          if (item.side === chaseActiveParticipant.side) return false;
+          if (item.position !== chaseActiveParticipant.position) return false;
+          const combat = participants.find((participant) => participant.id === item.id);
+          return combat !== undefined && combat.defeated === false;
+        });
+  const activeChaseTargetId = chaseTargetOptions.some((item) => item.id === chaseTargetId)
+    ? chaseTargetId
+    : (chaseTargetOptions[0]?.id ?? "");
+  const chaseActorIdForSkills = chaseActiveParticipant?.id ?? "";
+  const chaseAttackSkillIds = props.attackSkillsByParticipant[chaseActorIdForSkills] ?? [];
+  const chaseAttackSkills = props.skillOptions.filter((option) =>
+    chaseAttackSkillIds.includes(option.id)
+  );
+  const activeChaseSkill = chaseAttackSkills.some((option) => option.id === chaseSkill)
+    ? chaseSkill
+    : (chaseAttackSkills[0]?.id ?? "");
+
   function reactionLabel(type: CombatReactionPayload["type"]): string {
     if (type === "COUNTER") return props.system === "TOUHOU" ? "消弹对抗" : "反击";
     return REACTION_LABELS[type];
@@ -307,6 +335,38 @@ export default function CombatBoard(props: Props) {
       { combatId: props.combatId, actorId: actorIdForTurn },
       (result: Ack) => {
         if (result.ok === false) setError(result.error ?? "结束追逐回合失败");
+      }
+    );
+  }
+
+  function emitChaseAttack(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    const actorIdForAttack = chase?.activeActorId ?? null;
+    if (actorIdForAttack === null) return;
+    if (activeChaseTargetId.length === 0) {
+      setError("当前地点没有可攻击的敌对目标");
+      return;
+    }
+    if (activeChaseSkill.length === 0) {
+      setError("当前单位没有可用攻击技能");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "combat:chase-attack",
+      {
+        combatId: props.combatId,
+        actorId: actorIdForAttack,
+        targetId: activeChaseTargetId,
+        skill: activeChaseSkill,
+        damage: chaseDamage
+      },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "追逐攻击失败");
       }
     );
   }
@@ -493,43 +553,114 @@ export default function CombatBoard(props: Props) {
             </div>
             {chase.status === "ACTIVE" ? (
               chaseActiveParticipant === null ? null : (
-                <div className="mt-2 flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-white/70">
-                    {chaseActiveParticipant.name} 的回合 · MOV {chaseActiveParticipant.mov} · 剩余 AP{" "}
-                    {chaseActiveParticipant.actionPoints}/{chaseActiveParticipant.maxActionPoints}
-                  </span>
-                  {isChaseControlled(chaseActiveParticipant.id) ? (
-                    <>
-                      <button
-                        type="button"
-                        disabled={chaseActiveParticipant.actionPoints < 1 || chaseActiveParticipant.position <= 0}
-                        onClick={() => emitChaseMove(-1)}
-                        className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35 disabled:opacity-40"
-                      >
-                        后退 1 格
-                      </button>
-                      <button
-                        type="button"
-                        disabled={
-                          chaseActiveParticipant.actionPoints < 1 ||
-                          chaseActiveParticipant.position >= chase.trackLength - 1
-                        }
-                        onClick={() => emitChaseMove(1)}
-                        className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-emerald-300 disabled:opacity-40"
-                      >
-                        前进 1 格
-                      </button>
-                      <button
-                        type="button"
-                        onClick={emitChaseEndTurn}
-                        className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
-                      >
-                        结束回合
-                      </button>
-                    </>
-                  ) : (
-                    <span className="text-[11px] text-white/40">等待该单位行动</span>
-                  )}
+                <div className="mt-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs text-white/70">
+                      {chaseActiveParticipant.name} 的回合 · MOV {chaseActiveParticipant.mov} · 剩余 AP{" "}
+                      {chaseActiveParticipant.actionPoints}/{chaseActiveParticipant.maxActionPoints}
+                    </span>
+                    {chaseCanControl ? (
+                      <>
+                        <button
+                          type="button"
+                          disabled={chaseActiveParticipant.actionPoints < 1 || chaseActiveParticipant.position <= 0}
+                          onClick={() => emitChaseMove(-1)}
+                          className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35 disabled:opacity-40"
+                        >
+                          后退 1 格
+                        </button>
+                        <button
+                          type="button"
+                          disabled={
+                            chaseActiveParticipant.actionPoints < 1 ||
+                            chaseActiveParticipant.position >= chase.trackLength - 1
+                          }
+                          onClick={() => emitChaseMove(1)}
+                          className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-emerald-300 disabled:opacity-40"
+                        >
+                          前进 1 格
+                        </button>
+                        <button
+                          type="button"
+                          onClick={emitChaseEndTurn}
+                          className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
+                        >
+                          结束回合
+                        </button>
+                      </>
+                    ) : (
+                      <span className="text-[11px] text-white/40">等待该单位行动</span>
+                    )}
+                  </div>
+                  {chaseCanControl ? (
+                    <div className="mt-3 rounded-lg border border-red-400/25 bg-red-400/5 p-3">
+                      <p className="text-[11px] text-red-200/80">
+                        同地点冲突：追上不会自动掉血。攻击消耗 1 行动点，按普通攻击检定结算，目标可以闪避 / 反击。
+                      </p>
+                      {chaseAttackPending ? (
+                        <p className="mt-2 text-xs text-amber-200">
+                          攻击已发出，正在等待目标应对…（KP 可强制结算）
+                        </p>
+                      ) : chaseTargetOptions.length === 0 ? (
+                        <p className="mt-2 text-[11px] text-white/40">
+                          当前地点没有敌对目标；先移动到目标所在地点。
+                        </p>
+                      ) : (
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          <select
+                            value={activeChaseTargetId}
+                            onChange={(event) => setChaseTargetId(event.target.value)}
+                            className={inputClass}
+                          >
+                            {chaseTargetOptions.map((item) => {
+                              const combat = participants.find((participant) => participant.id === item.id);
+                              const hpText =
+                                combat !== undefined && combat.hp !== null ? " · HP " + combat.hp : "";
+                              return (
+                                <option key={item.id} value={item.id}>
+                                  {item.name}
+                                  {hpText}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          <select
+                            value={activeChaseSkill}
+                            onChange={(event) => setChaseSkill(event.target.value)}
+                            className={inputClass}
+                            disabled={chaseAttackSkills.length === 0}
+                          >
+                            {chaseAttackSkills.length === 0 ? (
+                              <option value="">当前无可用攻击技能</option>
+                            ) : null}
+                            {chaseAttackSkills.map((option) => (
+                              <option key={option.id} value={option.id}>
+                                {option.id} · {option.name}
+                              </option>
+                            ))}
+                          </select>
+                          <input
+                            value={chaseDamage}
+                            onChange={(event) => setChaseDamage(event.target.value)}
+                            placeholder="1d6 / 1d4+db"
+                            className={inputClass + " w-28 font-mono"}
+                          />
+                          <button
+                            type="button"
+                            disabled={
+                              chaseActiveParticipant.actionPoints < 1 ||
+                              chaseAttackSkills.length === 0 ||
+                              activeChaseTargetId.length === 0
+                            }
+                            onClick={emitChaseAttack}
+                            className="rounded-lg bg-red-400 px-4 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-red-300 disabled:opacity-40"
+                          >
+                            攻击同地点目标（1 AP）
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
                 </div>
               )
             ) : (
@@ -697,7 +828,7 @@ export default function CombatBoard(props: Props) {
           {selectedActor === null ? (
             <p className="mt-3 text-xs text-white/40">
               {chaseActive
-                ? "追逐进行中，请使用上方追逐面板移动或结束回合。"
+                ? "追逐进行中，请使用上方追逐面板移动、攻击或结束回合。"
                 : myPendingReactions.length > 0
                   ? "请先完成上方的应对。"
                   : activeActor === null

@@ -8,9 +8,11 @@ import {
 } from "@touhou/rules";
 import {
   addParticipant,
+  chaseAttackIssue,
   chaseEndTurn,
   chaseMove,
   createCombat,
+  resolveChaseAttack,
   startChase
 } from "../index";
 
@@ -35,6 +37,35 @@ function makeChaseState(preyDex = 80) {
     atbMax: 0, speed: 0
   });
   return { state, prey, chaser };
+}
+
+interface ContactChase {
+  readonly state: ReturnType<typeof createCombat>;
+  readonly prey: ReturnType<typeof addParticipant>;
+  readonly chaser: ReturnType<typeof addParticipant>;
+  readonly chase: NonNullable<ReturnType<typeof createCombat>["chase"]>;
+  readonly preyEntry: NonNullable<ReturnType<typeof createCombat>["chase"]>["participants"][number];
+  readonly chaserEntry: NonNullable<ReturnType<typeof createCombat>["chase"]>["participants"][number];
+}
+
+/** 建一场追逐，并让追逐者与逃离者处于同一地点、轮到追逐者行动。 */
+function makeContactChase(): ContactChase {
+  const { state, prey, chaser } = makeChaseState();
+  startChase(coc7, state, {
+    preyId: prey.id,
+    chaserIds: [chaser.id],
+    trackLength: 10,
+    speedRolls: { prey: 60, chaser: 50 }
+  });
+  const chase = state.chase;
+  if (chase === null) throw new Error("missing chase");
+  const preyEntry = chase.participants.find((item) => item.id === prey.id);
+  const chaserEntry = chase.participants.find((item) => item.id === chaser.id);
+  if (preyEntry === undefined || chaserEntry === undefined) throw new Error("missing chase participant");
+  chaserEntry.position = preyEntry.position;
+  chaserEntry.actionPoints = 2;
+  chase.activeIndex = chase.order.indexOf(chaser.id);
+  return { state, prey, chaser, chase, preyEntry, chaserEntry };
 }
 
 describe("COC7 追逐", () => {
@@ -121,5 +152,75 @@ describe("COC7 追逐", () => {
     expect(chase.round).toBe(2);
     expect(preyEntry.actionPoints).toBe(preyEntry.maxActionPoints);
     expect(chaserEntry.actionPoints).toBe(chaserEntry.maxActionPoints);
+  });
+
+  it("同地点攻击消耗 1 行动点，并按攻击 / 应对 / 伤害结算", () => {
+    const { state, prey, chaser, chase, chaserEntry } = makeContactChase();
+    chaser.skills.FIGHTING_BRAWL = 100;
+    prey.hp = 10;
+    const hpBefore = prey.hp;
+    const result = resolveChaseAttack(
+      coc7,
+      state,
+      { actorId: chaser.id, targetId: prey.id, skill: "FIGHTING_BRAWL", damage: "1d6" },
+      { [prey.id]: { type: "PASS" } }
+    );
+    expect(result.ok).toBe(true);
+    expect(result.targetDefeated).toBe(false);
+    expect(chaserEntry.actionPoints).toBe(1);
+    expect(prey.hp).toBeLessThan(hpBefore);
+    expect(state.log.some((entry) => entry.data?.rollType === "ATTACK")).toBe(true);
+    expect(state.log.some((entry) => entry.data?.rollType === "DAMAGE_SETTLE")).toBe(true);
+    expect(chase.status).toBe("ACTIVE");
+    expect(state.phase).not.toBe("ENDED");
+  });
+
+  it("追逐攻击校验：非当前行动者 / 同阵营 / 不同地点 / 行动点不足", () => {
+    const { state, prey, chaser, preyEntry, chaserEntry } = makeContactChase();
+    expect(chaseAttackIssue(state, prey.id, chaser.id)).toContain("还没轮到");
+    expect(chaseAttackIssue(state, chaser.id, chaser.id)).toContain("敌对阵营");
+    preyEntry.position += 1;
+    expect(chaseAttackIssue(state, chaser.id, prey.id)).toContain("同一地点");
+    preyEntry.position -= 1;
+    chaserEntry.actionPoints = 0;
+    expect(chaseAttackIssue(state, chaser.id, prey.id)).toContain("行动点不足");
+  });
+
+  it("追逐回合会跳过已失去战斗能力的参与者", () => {
+    const { state, prey, chaser } = makeChaseState();
+    startChase(coc7, state, {
+      preyId: prey.id,
+      chaserIds: [chaser.id],
+      trackLength: 10,
+      speedRolls: { prey: 60, chaser: 50 }
+    });
+    const chase = state.chase;
+    if (chase === null) throw new Error("missing chase");
+    expect(chase.order[0]).toBe(prey.id);
+    expect(chase.order[1]).toBe(chaser.id);
+    chaser.defeated = true;
+    const result = chaseEndTurn(state);
+    expect(result.ok).toBe(true);
+    expect(result.newRound).toBe(true);
+    expect(result.nextActorId).toBe(prey.id);
+    expect(chase.activeIndex).toBe(0);
+  });
+
+  it("击败逃离者后追逐判定 CAUGHT 并结束战斗", () => {
+    const { state, prey, chaser, chase } = makeContactChase();
+    chaser.skills.FIGHTING_BRAWL = 100;
+    prey.hp = 1;
+    const result = resolveChaseAttack(
+      coc7,
+      state,
+      { actorId: chaser.id, targetId: prey.id, skill: "FIGHTING_BRAWL", damage: "1d6" },
+      { [prey.id]: { type: "PASS" } }
+    );
+    expect(result.ok).toBe(true);
+    expect(result.targetDefeated).toBe(true);
+    expect(result.chaseEnded).toBe(true);
+    expect(result.combatEnded).toBe(true);
+    expect(chase.status).toBe("CAUGHT");
+    expect(state.phase).toBe("ENDED");
   });
 });

@@ -6,7 +6,15 @@ import {
   type CompiledRulePack
 } from "@touhou/rules";
 import { rollDie, type Rng } from "@touhou/formula";
-import { findParticipant, pushLog } from "./combat";
+import {
+  checkEnd,
+  endCombat,
+  findParticipant,
+  pushLog,
+  resolveImmediateAction,
+  type DefenseReaction,
+  type ResolveResult
+} from "./combat";
 import { rngFor } from "./rng";
 import type {
   ChaseParticipantState,
@@ -242,6 +250,161 @@ export function findChaseParticipant(
   return chase.participants.find((participant) => participant.id === id);
 }
 
+/**
+ * 追逐中的同地点攻击校验。
+ *
+ * COC7 原版：追上本身不会自动造成伤害；只有同一地点的敌对单位
+ * 可以花费 1 行动点发起攻击，攻击者与应对方按普通战斗流程结算。
+ */
+export function chaseAttackIssue(
+  state: CombatState,
+  actorId: string,
+  targetId: string
+): string | null {
+  const chase = state.chase;
+  if (chase === null || chase.status !== "ACTIVE") return "当前没有进行中的追逐";
+  const currentId = chaseCurrentActorId(chase);
+  if (currentId === null) return "当前没有可行动的单位";
+  if (currentId !== actorId) return "还没轮到这个单位行动";
+  const actor = findChaseParticipant(chase, actorId);
+  if (actor === undefined) return "该单位不在这场追逐中";
+  const target = findChaseParticipant(chase, targetId);
+  if (target === undefined) return "目标不在这场追逐中";
+  const actorCombat = findParticipant(state, actorId);
+  if (actorCombat === undefined || actorCombat.defeated) return "行动单位已失去战斗能力";
+  const targetCombat = findParticipant(state, targetId);
+  if (targetCombat === undefined || targetCombat.defeated) return "目标已失去战斗能力";
+  if (actor.side === target.side) return "只能攻击敌对阵营的单位";
+  if (actor.position !== target.position) return "只能攻击同一地点的单位";
+  if (actor.actionPoints < 1) return "行动点不足：攻击需要 1 点";
+  return null;
+}
+
+export interface ChaseAttackInput {
+  readonly actorId: string;
+  readonly targetId: string;
+  readonly skill?: string;
+  readonly damage?: string;
+  readonly accuracyMod?: number;
+}
+
+export interface ChaseAttackResolution {
+  readonly ok: boolean;
+  readonly error?: string;
+  readonly result?: ResolveResult;
+  readonly targetDefeated?: boolean;
+  readonly chaseEnded?: boolean;
+  readonly combatEnded?: boolean;
+}
+
+/**
+ * 结算一次追逐攻击：
+ * 1. 消耗 1 行动点；
+ * 2. 走完整攻击管线（攻击检定 / 闪避 / 反击 / 伤害）；
+ * 3. 目标被击败后判断追逐是否结束（逃离者被制服 = CAUGHT）。
+ */
+export function resolveChaseAttack(
+  pack: CompiledRulePack,
+  state: CombatState,
+  attack: ChaseAttackInput,
+  reactions: Readonly<Record<string, DefenseReaction>> = {}
+): ChaseAttackResolution {
+  const issue = chaseAttackIssue(state, attack.actorId, attack.targetId);
+  if (issue !== null) return { ok: false, error: issue };
+  const chase = state.chase;
+  if (chase === null) return { ok: false, error: "当前没有进行中的追逐" };
+  const actorEntry = findChaseParticipant(chase, attack.actorId);
+  if (actorEntry === undefined) return { ok: false, error: "行动单位不在这场追逐中" };
+  const actorName = findParticipant(state, attack.actorId)?.name ?? "???";
+  const targetName = findParticipant(state, attack.targetId)?.name ?? "???";
+
+  actorEntry.actionPoints -= 1;
+  pushLog(state, {
+    kind: "ACTION",
+    actorId: attack.actorId,
+    targetId: attack.targetId,
+    text:
+      actorName +
+      " 在追逐中攻击 " +
+      targetName +
+      "（地点 " +
+      actorEntry.position +
+      "），消耗 1 行动点，剩余 " +
+      actorEntry.actionPoints,
+    data: {
+      rollType: "CHASE_ATTACK",
+      position: actorEntry.position,
+      actionPoints: actorEntry.actionPoints
+    }
+  });
+
+  const result = resolveImmediateAction(
+    pack,
+    state,
+    {
+      actorId: attack.actorId,
+      kind: "DANMAKU",
+      targetId: attack.targetId,
+      skill: attack.skill,
+      damage: attack.damage,
+      accuracyMod: attack.accuracyMod
+    },
+    reactions
+  );
+
+  const targetDefeated = findParticipant(state, attack.targetId)?.defeated === true;
+  let chaseEnded = false;
+  let combatEnded = false;
+  if (chase.status === "ACTIVE") {
+    const aliveOnSide = (side: ChaseSide): boolean =>
+      chase.participants
+        .filter((participant) => participant.side === side)
+        .some((participant) => findParticipant(state, participant.id)?.defeated === false);
+    if (targetDefeated && aliveOnSide("PREY") === false) {
+      chase.status = "CAUGHT";
+      chase.ending = targetName + " 被制服，追逐结束";
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: attack.actorId,
+        targetId: attack.targetId,
+        text: chase.ending,
+        data: { rollType: "CHASE_CAUGHT" }
+      });
+      endCombat(state, "追逐结束：逃离者被制服");
+      chaseEnded = true;
+      combatEnded = true;
+    } else if (targetDefeated && aliveOnSide("CHASER") === false) {
+      chase.status = "ESCAPED";
+      chase.ending = "所有追逐者失去战斗能力，追逐结束";
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: attack.actorId,
+        targetId: attack.targetId,
+        text: chase.ending,
+        data: { rollType: "CHASE_ESCAPED" }
+      });
+      endCombat(state, "追逐结束：所有追逐者失去战斗能力");
+      chaseEnded = true;
+      combatEnded = true;
+    } else if (checkEnd(state)) {
+      chase.status = "ENDED";
+      chase.ending = "场上只剩一个阵营，追逐结束";
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: null,
+        targetId: null,
+        text: chase.ending,
+        data: { rollType: "CHASE_END" }
+      });
+      endCombat(state, "追逐结束：场上只剩一个阵营");
+      chaseEnded = true;
+      combatEnded = true;
+    }
+  }
+
+  return { ok: true, result, targetDefeated, chaseEnded, combatEnded };
+}
+
 export interface ChaseMoveResult {
   readonly ok: boolean;
   readonly error?: string;
@@ -333,28 +496,55 @@ export interface ChaseTurnResult {
   readonly nextActorId?: string | null;
 }
 
-/** 结束当前单位回合；跑完一轮后重置所有行动点并进入下一轮。 */
+function nextAliveChaseIndex(state: CombatState, chase: ChaseState, start: number): number | null {
+  for (let step = 0; step < chase.order.length; step += 1) {
+    const index = (start + step) % chase.order.length;
+    const id = chase.order[index];
+    if (id === undefined) continue;
+    const participant = findParticipant(state, id);
+    if (participant !== undefined && participant.defeated === false) return index;
+  }
+  return null;
+}
+
+/** 结束当前单位回合；跑完一轮后重置存活者的行动点并进入下一轮。 */
 export function chaseEndTurn(state: CombatState): ChaseTurnResult {
   const chase = state.chase;
   if (chase === null || chase.status !== "ACTIVE") {
     return { ok: false, error: "当前没有进行中的追逐" };
   }
-  chase.activeIndex += 1;
-  if (chase.activeIndex >= chase.order.length) {
-    chase.activeIndex = 0;
-    chase.round += 1;
-    for (const participant of chase.participants) {
-      participant.actionPoints = participant.maxActionPoints;
+
+  for (let advanced = 0; advanced < chase.order.length; advanced += 1) {
+    chase.activeIndex += 1;
+    if (chase.activeIndex >= chase.order.length) {
+      chase.activeIndex = 0;
+      chase.round += 1;
+      for (const participant of chase.participants) {
+        const combat = findParticipant(state, participant.id);
+        if (combat !== undefined && combat.defeated === false) {
+          participant.actionPoints = participant.maxActionPoints;
+        }
+      }
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: null,
+        targetId: null,
+        text: "追逐进入第 " + chase.round + " 轮，存活参与者行动点已重置。",
+        data: { rollType: "CHASE_ROUND", round: chase.round }
+      });
+      const first = nextAliveChaseIndex(state, chase, 0);
+      if (first !== null) chase.activeIndex = first;
+      return { ok: true, newRound: true, nextActorId: chaseCurrentActorId(chase) };
     }
-    pushLog(state, {
-      kind: "SYSTEM",
-      actorId: null,
-      targetId: null,
-      text: "追逐进入第 " + chase.round + " 轮，所有参与者行动点已重置。",
-      data: { rollType: "CHASE_ROUND", round: chase.round }
-    });
-    return { ok: true, newRound: true, nextActorId: chaseCurrentActorId(chase) };
+    const nextId = chase.order[chase.activeIndex];
+    const nextParticipant = nextId === undefined ? undefined : findParticipant(state, nextId);
+    if (nextParticipant !== undefined && nextParticipant.defeated === false) {
+      return { ok: true, nextActorId: chaseCurrentActorId(chase) };
+    }
   }
+
+  const fallback = nextAliveChaseIndex(state, chase, 0);
+  if (fallback !== null) chase.activeIndex = fallback;
   return { ok: true, nextActorId: chaseCurrentActorId(chase) };
 }
 

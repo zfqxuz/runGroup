@@ -91,6 +91,15 @@ export interface CombatChaseEndTurnPayload {
   readonly actorId?: string;
 }
 
+export interface CombatChaseAttackPayload {
+  readonly combatId: string;
+  readonly actorId?: string;
+  readonly targetId: string;
+  readonly skill?: string;
+  readonly damage?: string;
+  readonly accuracyMod?: number;
+}
+
 export interface CombatReactionRequest {
   readonly combatId: string;
   readonly actorId: string;

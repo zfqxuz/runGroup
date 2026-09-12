@@ -1,6 +1,7 @@
 import {
   filterCombatForViewer,
   type ActionSubmission,
+  type ChaseAttackInput,
   type CombatState,
   type CombatView,
   type DefenseReaction
@@ -22,6 +23,8 @@ export interface CombatRuntime {
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
   pendingReactions: Map<string, string>;
   reactions: Record<string, DefenseReaction>;
+  /** 追逐中等待目标应对的一次攻击；null 表示没有待结算攻击。 */
+  chaseAttack: ChaseAttackInput | null;
 }
 
 const cache = new Map<string, CombatRuntime>();
@@ -109,7 +112,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     partyStatsVisible: combat.room.characterVisibility !== "PRIVATE",
     attackSkills,
     pendingReactions: new Map(),
-    reactions: {}
+    reactions: {},
+    chaseAttack: null
   };
   cache.set(combatId, runtime);
   return runtime;

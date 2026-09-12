@@ -2,6 +2,7 @@ import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
   applyForcedSkips,
+  chaseAttackIssue,
   chaseCurrentActorId,
   chaseEndTurn,
   chaseMove,
@@ -12,6 +13,7 @@ import {
   pushLog,
   reactionTargetIdsForAction,
   readyParticipants,
+  resolveChaseAttack,
   resolveInitiativeTurn,
   resolvePending,
   startChase,
@@ -139,6 +141,36 @@ export async function tryResolveCombat(
   resolvePending(runtime.pack, runtime.state, runtime.reactions);
   runtime.reactions = {};
   if (isEnded(runtime.state) === false) advanceToNextEvent(runtime.pack, runtime.state);
+  await persistAndBroadcast(io, runtime);
+  return true;
+}
+
+async function tryResolveChaseAttack(
+  io: SocketServer,
+  runtime: CombatRuntime
+): Promise<boolean> {
+  const pending = runtime.chaseAttack;
+  if (pending === null) return false;
+  const chase = runtime.state.chase;
+  if (chase === null || chase.status !== "ACTIVE") {
+    runtime.chaseAttack = null;
+    runtime.pendingReactions.clear();
+    runtime.reactions = {};
+    return false;
+  }
+  if (runtime.pendingReactions.size > 0) return false;
+  runtime.chaseAttack = null;
+  const reactions = runtime.reactions;
+  runtime.reactions = {};
+  const result = resolveChaseAttack(runtime.pack, runtime.state, pending, reactions);
+  if (result.ok === false) {
+    pushLog(runtime.state, {
+      kind: "SYSTEM",
+      actorId: pending.actorId,
+      targetId: pending.targetId,
+      text: "追逐攻击未结算：" + (result.error ?? "未知原因")
+    });
+  }
   await persistAndBroadcast(io, runtime);
   return true;
 }
@@ -332,7 +364,8 @@ async function handleReaction(
   }
   runtime.pendingReactions.delete(input.targetId);
   runtime.reactions[input.targetId] = { type: raw.type, skill: reactionSkill };
-  const resolved = await tryResolveCombat(io, runtime);
+  const resolvedChase = await tryResolveChaseAttack(io, runtime);
+  const resolved = resolvedChase ? true : await tryResolveCombat(io, runtime);
   if (resolved === false) await broadcastCombat(io, runtime);
   ack({ ok: true });
 }
@@ -352,6 +385,10 @@ async function handleChaseMove(
   const runtime = await loadCombatRuntime(input.combatId);
   if (runtime === null) {
     ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.chaseAttack !== null) {
+    ack({ ok: false, error: "追逐攻击正在等待目标应对，请先完成结算" });
     return;
   }
   const actorId = typeof input.actorId === "string" ? input.actorId : null;
@@ -389,6 +426,10 @@ async function handleChaseEndTurn(
     ack({ ok: false, error: "战斗不存在" });
     return;
   }
+  if (runtime.chaseAttack !== null) {
+    ack({ ok: false, error: "追逐攻击正在等待目标应对，请先完成结算" });
+    return;
+  }
   const chase = runtime.state.chase;
   const currentId = chase === null ? null : chaseCurrentActorId(chase);
   if (currentId === null || canControl(runtime, userId, currentId) === false) {
@@ -401,6 +442,88 @@ async function handleChaseEndTurn(
     return;
   }
   await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
+async function handleChaseAttack(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as {
+    combatId?: unknown;
+    actorId?: unknown;
+    targetId?: unknown;
+    skill?: unknown;
+    damage?: unknown;
+    accuracyMod?: unknown;
+  };
+  if (
+    userId === null ||
+    typeof input.combatId !== "string" ||
+    typeof input.targetId !== "string"
+  ) {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  const chase = runtime.state.chase;
+  if (chase === null || chase.status !== "ACTIVE") {
+    ack({ ok: false, error: "当前没有进行中的追逐" });
+    return;
+  }
+  const actorId = typeof input.actorId === "string" ? input.actorId : chaseCurrentActorId(chase);
+  if (actorId === null || canControl(runtime, userId, actorId) === false) {
+    ack({ ok: false, error: "你不能操控这个单位" });
+    return;
+  }
+  if (runtime.chaseAttack !== null) {
+    ack({ ok: false, error: "已有一次追逐攻击正在等待应对" });
+    return;
+  }
+  const issue = chaseAttackIssue(runtime.state, actorId, input.targetId);
+  if (issue !== null) {
+    ack({ ok: false, error: issue });
+    return;
+  }
+  const allowedSkills = runtime.attackSkills.get(actorId) ?? [];
+  const skill = asString(input.skill) ?? allowedSkills[0];
+  const damage = asString(input.damage) ?? "1d6";
+  const accuracyMod = asNumber(input.accuracyMod);
+  const action: ActionSubmission = {
+    actorId,
+    kind: "DANMAKU",
+    targetId: input.targetId,
+    skill,
+    damage,
+    accuracyMod
+  };
+  const actionError = validateCombatAction(
+    { pack: runtime.pack, state: runtime.state, attackSkills: runtime.attackSkills },
+    action
+  );
+  if (typeof actionError === "string") {
+    ack({ ok: false, error: actionError });
+    return;
+  }
+  runtime.chaseAttack = { actorId, targetId: input.targetId, skill, damage, accuracyMod };
+  runtime.reactions = {};
+  runtime.pendingReactions.clear();
+  runtime.pendingReactions.set(input.targetId, actorId);
+  await emitReactionRequest(
+    io,
+    runtime,
+    actorId,
+    input.targetId,
+    allowedReactionTypes(runtime.pack)
+  );
+  await broadcastCombat(io, runtime);
   ack({ ok: true });
 }
 
@@ -431,6 +554,7 @@ async function handleAbort(
   }
   runtime.pendingReactions.clear();
   runtime.reactions = {};
+  runtime.chaseAttack = null;
   runtime.state.chase = null;
   endCombat(runtime.state, "KP 中止了战斗");
   await saveCombatState(runtime.combatId, runtime.state);
@@ -461,7 +585,17 @@ async function handleForceResolve(
     return;
   }
   if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") {
-    ack({ ok: false, error: "追逐进行中：请等待移动结算，或直接中止战斗" });
+    if (runtime.chaseAttack === null) {
+      ack({ ok: false, error: "追逐进行中：请等待移动结算，或直接中止战斗" });
+      return;
+    }
+    for (const targetId of runtime.pendingReactions.keys()) {
+      runtime.reactions[targetId] = { type: "PASS" };
+    }
+    runtime.pendingReactions.clear();
+    const resolved = await tryResolveChaseAttack(io, runtime);
+    if (resolved === false) await broadcastCombat(io, runtime);
+    ack({ ok: true });
     return;
   }
   for (const targetId of runtime.pendingReactions.keys()) {
@@ -500,6 +634,9 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:chase-end-turn", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleChaseEndTurn(io, socket, payload, ack);
+  });
+  socket.on("combat:chase-attack", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleChaseAttack(io, socket, payload, ack);
   });
   socket.on("combat:force-resolve", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleForceResolve(io, socket, payload, ack);

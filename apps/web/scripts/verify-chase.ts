@@ -76,6 +76,25 @@ function waitForView(
   });
 }
 
+function waitForReactionRequest(
+  socket: Socket,
+  combatId: string
+): Promise<{ actorId: string; targetId: string }> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off("combat:reaction-request", handler);
+      reject(new Error("reaction request timeout"));
+    }, 8000);
+    function handler(request: { combatId?: string; actorId: string; targetId: string }): void {
+      if (request.combatId !== combatId) return;
+      clearTimeout(timer);
+      socket.off("combat:reaction-request", handler);
+      resolve(request);
+    }
+    socket.on("combat:reaction-request", handler);
+  });
+}
+
 function connectSocket(ticket: string): Promise<Socket> {
   return new Promise((resolve, reject) => {
     const socket = io(BASE, { path: "/api/socket", autoConnect: false, transports: ["websocket"] });
@@ -163,7 +182,7 @@ async function main(): Promise<void> {
         maxSan: 50,
         dp: 10,
         maxDp: 10,
-        skills: { DODGE: 50 }
+        skills: { DODGE: 50, FIGHTING_BRAWL: 80 }
       }
     });
     await prisma.roomCharacterEntry.create({
@@ -176,7 +195,7 @@ async function main(): Promise<void> {
       tier: "MINION",
       race: null,
       attributes: { str: 90, con: 90, siz: 10, dex: 70, app: 50, int: 50, pow: 50, edu: 50, luck: 50 },
-      skills: {},
+      skills: { FIGHTING_BRAWL: 100 },
       maxHp: 20,
       maxMp: 10,
       maxSan: 50,
@@ -244,6 +263,96 @@ async function main(): Promise<void> {
     assert(prey !== undefined && chaser !== undefined, "缺少逃离者/追逐者");
     assert(prey.position < chaser.position === false, "逃离者应在追逐者前方");
 
+    // 第二阶段：追逐者接近并攻击同地点目标，验证应对窗口 / AP 消耗 / 掉血。
+    let attacked = false;
+    let attackGuard = 0;
+    while (attacked === false && attackGuard < 40) {
+      attackGuard += 1;
+      const currentChase = update.view.chase;
+      if (currentChase === null || currentChase.status !== "ACTIVE") break;
+      const currentId = currentChase.activeActorId;
+      if (currentId === null) break;
+      const current = currentChase.participants.find((item) => item.id === currentId);
+      if (current === undefined) break;
+
+      const endTurn = async (): Promise<void> => {
+        const nextUpdate = waitForView(socket as Socket, combatId, () => true);
+        const endAck = await emitAck<Ack>(socket as Socket, "combat:chase-end-turn", {
+          combatId,
+          actorId: current.id
+        });
+        assert(endAck.ok === true, endAck.error ?? "结束追逐回合失败");
+        update = await nextUpdate;
+      };
+
+      if (current.id === prey.id) {
+        await endTurn();
+        continue;
+      }
+      if (current.position < prey.position) {
+        if (current.actionPoints < 1) {
+          await endTurn();
+          continue;
+        }
+        const steps = Math.min(current.actionPoints, prey.position - current.position);
+        const nextUpdate = waitForView(socket as Socket, combatId, () => true);
+        const moveAck = await emitAck<Ack>(socket as Socket, "combat:chase-move", {
+          combatId,
+          actorId: current.id,
+          steps
+        });
+        assert(moveAck.ok === true, moveAck.error ?? "追逐者接近目标失败");
+        update = await nextUpdate;
+        continue;
+      }
+      if (current.position === prey.position) {
+        if (current.actionPoints < 1) {
+          await endTurn();
+          continue;
+        }
+        const hpBefore = update.view.participants.find((item) => item.id === prey.id)?.hp ?? null;
+        const reactionRequest = waitForReactionRequest(socket as Socket, combatId);
+        const attackAck = await emitAck<Ack>(socket as Socket, "combat:chase-attack", {
+          combatId,
+          actorId: current.id,
+          targetId: prey.id,
+          skill: "FIGHTING_BRAWL",
+          damage: "1d6"
+        });
+        assert(attackAck.ok === true, attackAck.error ?? "追逐攻击失败");
+        const request = await reactionRequest;
+        assert(
+          request.targetId === prey.id && request.actorId === current.id,
+          "应对请求的双方不正确"
+        );
+        const resolvedUpdate = waitForView(
+          socket as Socket,
+          combatId,
+          (item) =>
+            item.view.pendingReactions.length === 0 &&
+            item.view.log.some((entry) => entry.data?.rollType === "DAMAGE_SETTLE")
+        );
+        const reactionAck = await emitAck<Ack>(socket as Socket, "combat:reaction", {
+          combatId,
+          targetId: prey.id,
+          reaction: { type: "PASS" }
+        });
+        assert(reactionAck.ok === true, reactionAck.error ?? "追逐中的应对提交失败");
+        update = await resolvedUpdate;
+        const hpAfter = update.view.participants.find((item) => item.id === prey.id)?.hp ?? null;
+        assert(
+          typeof hpBefore === "number" && typeof hpAfter === "number" && hpAfter < hpBefore,
+          "追逐攻击命中后目标应掉血"
+        );
+        const apAfter = update.view.chase?.participants.find((item) => item.id === current.id)?.actionPoints;
+        assert(apAfter === current.actionPoints - 1, "追逐攻击应恰好消耗 1 行动点");
+        attacked = true;
+        break;
+      }
+      await endTurn();
+    }
+    assert(attacked === true, "40 步内未完成同地点追逐攻击验证");
+
     let guard = 0;
     while (update.view.phase !== "ENDED" && guard < 40) {
       guard += 1;
@@ -276,7 +385,7 @@ async function main(): Promise<void> {
     const roomAfter = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
     assert(roomAfter?.status === "PLAYING", "追逐结束后房间应回到 PLAYING");
 
-    console.log("PASS 追逐 E2E：FLEE → 速度检定 → 地点 / 行动点 → 移动 → 逃离 → 战斗结束");
+    console.log("PASS 追逐 E2E：FLEE → 速度检定 → 地点 / 行动点 → 接近 → 同地点攻击 / 应对 / 掉血 → 移动 → 逃离 → 战斗结束");
     console.log("  初始地点数 " + chase.trackLength + "，逃离者 MOV " + prey.mov + "，追逐者 MOV " + chaser.mov);
   } finally {
     if (socket !== null) socket.close();

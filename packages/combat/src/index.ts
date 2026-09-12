@@ -1,5 +1,6 @@
 export * from "./types";
 export {
+  chaseAttackIssue,
   chaseBaseMov,
   chaseCurrentActorId,
   chaseEndTurn,
@@ -7,9 +8,17 @@ export {
   chaseSpeedCheckTarget,
   endChase,
   findChaseParticipant,
+  resolveChaseAttack,
   startChase
 } from "./chase";
-export type { ChaseMoveResult, ChaseTurnResult, StartChaseOptions, StartChaseResult } from "./chase";
+export type {
+  ChaseAttackInput,
+  ChaseAttackResolution,
+  ChaseMoveResult,
+  ChaseTurnResult,
+  StartChaseOptions,
+  StartChaseResult
+} from "./chase";
 export {
   addParticipant,
   advanceToNextEvent,
@@ -29,6 +38,7 @@ export {
   pushLog,
   readyParticipants,
   recomputeSpeed,
+  resolveImmediateAction,
   resolveInitiativeTurn,
   reactionTargetIdsForAction,
   resolvePending,

@@ -1144,6 +1144,57 @@ function resolveOne(
   }
 }
 
+/**
+ * 立即结算单个行动，不依赖 ATB / 先攻队列。
+ *
+ * 用于追逐战中的「行动点动作」：同地点攻击仍然走完整的
+ * 攻击检定 / 闪避 / 反击 / 伤害管线，但不需要等待先攻轮转。
+ */
+export function resolveImmediateAction(
+  pack: CompiledRulePack,
+  state: CombatState,
+  action: ActionSubmission,
+  reactions: Readonly<Record<string, DefenseReaction>> = {}
+): ResolveResult {
+  const actor = findParticipant(state, action.actorId);
+  if (state.phase === "ENDED" || actor === undefined || actor.defeated) {
+    return {
+      acted: [],
+      defeated: state.participants.filter((item) => item.defeated).map((item) => item.id),
+      cleared: []
+    };
+  }
+  const ctx: ResolveContext = {
+    pack,
+    state,
+    reactions,
+    queue: [action],
+    cancelled: new Set<string>()
+  };
+  const acted: string[] = [];
+  while (ctx.queue.length > 0) {
+    const next = ctx.queue.shift() as ActionSubmission;
+    const who = findParticipant(state, next.actorId);
+    if (who === undefined || who.defeated) continue;
+    if (ctx.cancelled.has(next.actorId)) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: who.id,
+        targetId: null,
+        text: who.name + " 的弹幕被清除"
+      });
+      continue;
+    }
+    acted.push(who.id);
+    resolveOne(ctx, who, next);
+  }
+  return {
+    acted,
+    defeated: state.participants.filter((item) => item.defeated).map((item) => item.id),
+    cleared: [...ctx.cancelled]
+  };
+}
+
 /** 一方全灭（或只剩单一阵营）即结束。 */
 export function checkEnd(state: CombatState): boolean {
   const alive = state.participants.filter((participant) => participant.defeated === false);
