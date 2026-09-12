@@ -9,6 +9,7 @@ const NAV = [
   { href: "/admin/modules", label: "团本" },
   { href: "/admin/games", label: "游戏局" },
   { href: "/admin/rulepacks", label: "规则包" },
+  { href: "/admin/magic", label: "魔法" },
   { href: "/admin/system", label: "系统设置" },
   { href: "/admin/audit", label: "审计日志" }
 ] as const;

@@ -8,6 +8,7 @@ const MODULES_NAV = [
   { href: "/admin/rooms", title: "房间管理", description: "房间状态、成员、规则包绑定与删除" },
   { href: "/admin/modules", title: "团本管理", description: "全站团本发布、下架与删除" },
   { href: "/admin/rulepacks", title: "规则包管理", description: "创建、版本、发布、绑房与导入导出" },
+  { href: "/admin/magic", title: "魔法管理", description: "逐房间查看魔法链路：开关 / 团本 / 覆盖 / 最终生效" },
   { href: "/admin/games", title: "游戏局", description: "查看全站开局与结束状态" },
   { href: "/admin/system", title: "系统设置", description: "DeepSeek 等平台级配置" },
   { href: "/admin/audit", title: "审计日志", description: "所有管理员操作留痕" }

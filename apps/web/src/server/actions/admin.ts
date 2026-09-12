@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { applyMagicRulesToRoom, disableMagicRulesInRoom } from "@/server/modules/magic";
 
 const ADMIN_HOME = "/admin";
 
@@ -149,6 +150,53 @@ export async function deleteRoomAdminAction(formData: FormData): Promise<void> {
   revalidatePath("/admin/rooms");
   revalidatePath("/");
   redirect(adminPath("/admin/rooms", "?saved=deleted"));
+}
+
+export async function adminSetRoomMagicEnabledAction(formData: FormData): Promise<void> {
+  const actor = await requireAdminActor();
+  const roomId = clean(formData.get("roomId"), 64);
+  const enabled = boolOf(formData.get("enabled"));
+  const room = await prisma.room.findUnique({ where: { id: roomId }, select: { id: true, name: true } });
+  if (room === null) redirect(adminPath("/admin/magic", "?error=not-found"));
+
+  await prisma.room.update({ where: { id: room.id }, data: { magicEnabled: enabled } });
+  if (enabled) await applyMagicRulesToRoom(room.id);
+  else await disableMagicRulesInRoom(room.id);
+
+  await audit({
+    actor,
+    action: enabled ? "room.magic-enable" : "room.magic-disable",
+    targetType: "Room",
+    targetId: room.id,
+    detail: { name: room.name }
+  });
+  revalidatePath("/admin/magic");
+  revalidatePath("/admin/magic/" + room.id);
+  revalidatePath("/rooms/" + room.id);
+  revalidatePath("/rooms/" + room.id + "/prepare");
+  redirect(adminPath("/admin/magic/" + room.id, enabled ? "?saved=magic-enabled" : "?saved=magic-disabled"));
+}
+
+/** 重新从当前团本同步结构化魔法到 Room.ruleOverride，不改动房间开关。 */
+export async function adminSyncRoomMagicAction(formData: FormData): Promise<void> {
+  const actor = await requireAdminActor();
+  const roomId = clean(formData.get("roomId"), 64);
+  const room = await prisma.room.findUnique({ where: { id: roomId }, select: { id: true, name: true } });
+  if (room === null) redirect(adminPath("/admin/magic", "?error=not-found"));
+
+  const applied = await applyMagicRulesToRoom(room.id);
+  await audit({
+    actor,
+    action: "room.magic-sync",
+    targetType: "Room",
+    targetId: room.id,
+    detail: { name: room.name, applied }
+  });
+  revalidatePath("/admin/magic");
+  revalidatePath("/admin/magic/" + room.id);
+  revalidatePath("/rooms/" + room.id);
+  revalidatePath("/rooms/" + room.id + "/prepare");
+  redirect(adminPath("/admin/magic/" + room.id, "?saved=magic-synced&count=" + applied));
 }
 
 /* ------------------------------- 团本管理 ------------------------------- */

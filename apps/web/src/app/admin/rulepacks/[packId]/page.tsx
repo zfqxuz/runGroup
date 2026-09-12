@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { MagicRulesSchema, spellTargeting } from "@touhou/rules";
 import {
   adminSetRulePackVersionStatusAction,
   createRulePackVersionAction,
@@ -7,6 +8,7 @@ import {
   importRulePackVersionAction
 } from "@/server/actions/admin";
 import { prisma } from "@/server/db/prisma";
+import { magicSpellEffectLabels } from "@/shared/magic";
 
 export const dynamic = "force-dynamic";
 
@@ -107,6 +109,70 @@ export default async function AdminRulePackDetailPage({
           </form>
         )}
       </section>
+
+      {latest === null ? null : (() => {
+        const config = (latest.config ?? {}) as Record<string, unknown>;
+        const magic = MagicRulesSchema.safeParse(config.magic);
+        if (magic.success === false || magic.data.spells.length === 0) {
+          return (
+            <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+              <h2 className="text-sm font-medium text-white/80">魔法规则</h2>
+              <p className="mt-1 text-[11px] leading-relaxed text-white/40">
+                该版本没有 `magic` / `spells`。房间里的魔法通常来自团本 `structured.magic`，
+                也可以在下面的完整 RulePack JSON 里加入 `magic` 字段后发布新版本。
+              </p>
+              <Link href="/admin/magic" className="mt-2 inline-block text-xs text-spirit-300 transition hover:text-spirit-200">
+                去魔法管理查看房间生效链路 →
+              </Link>
+            </section>
+          );
+        }
+        return (
+          <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-sm font-medium text-white/80">魔法规则（{magic.data.spells.length}）</h2>
+              <span className="text-[11px] text-white/40">
+                enabled = {String(magic.data.enabled)} · system = {magic.data.system ?? "未指定"}
+              </span>
+            </div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="border-b border-white/10 text-[10px] uppercase tracking-wider text-white/35">
+                  <tr>
+                    <th className="px-2 py-2">ID</th>
+                    <th className="px-2 py-2">名称</th>
+                    <th className="px-2 py-2">技能</th>
+                    <th className="px-2 py-2">MP</th>
+                    <th className="px-2 py-2">SAN</th>
+                    <th className="px-2 py-2">目标</th>
+                    <th className="px-2 py-2">效果</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {magic.data.spells.map((spell) => (
+                    <tr key={spell.id}>
+                      <td className="px-2 py-2 font-mono text-[10px] text-white/55">{spell.id}</td>
+                      <td className="px-2 py-2 text-white/80">{spell.name}</td>
+                      <td className="px-2 py-2 font-mono text-[10px] text-white/55">{spell.skill}</td>
+                      <td className="px-2 py-2 font-mono text-[10px] text-white/55">{spell.mpCost}</td>
+                      <td className="px-2 py-2 font-mono text-[10px] text-white/55">{spell.sanCost}</td>
+                      <td className="px-2 py-2 text-[10px] text-white/55">
+                        {spell.target} / {spellTargeting(spell)}
+                      </td>
+                      <td className="px-2 py-2 text-[10px] text-white/55">
+                        {magicSpellEffectLabels(spell).join("；") || (spell.damage ?? "无直接效果")}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Link href="/admin/magic" className="mt-3 inline-block text-xs text-spirit-300 transition hover:text-spirit-200">
+              去魔法管理查看房间生效链路 →
+            </Link>
+          </section>
+        );
+      })()}
 
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
