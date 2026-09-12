@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`d219cfe fix(combat): 修正 1d6 伤害归零并支持 AOE 应对窗口与并排高亮`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`29f9491 feat(combat): COC7 追逐战第一阶段（速度检定 / 行动点 / 地点移动 / 逃跑）`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -24,8 +24,9 @@
   - 创建房间页会显示空房间名 / 非法车卡方式的错误，并给房间名加了必填校验；修复“点创建后仍停留在本页且没有反馈”的问题。
   - 掷骰健壮性已修复（见第 40 节）：支持中文全角数字 / ｄ / ＋ / －，服务端 handler 用统一回执包裹，异常时不会再静默无响应；客户端离线时禁用掷骰按钮。
   - 战斗伤害结算、AOE 应对窗口与战斗展示已优化（见第 41 节）：COC7 反击失败不再把 1d6=1 减成 0；攻击 / 闪避 / 反击 / 伤害骰日志全部标明掷的是什么；参战单位改并排卡片并高亮当前行动 / 可行动 / 等待应对；AOE 每个目标都要应对。
+  - COC7 追逐战已完成第一阶段（见第 42 节）：FLEE 会触发追逐；速度检定调整 MOV；按 MOV 排位和计算行动点；DEX 顺序移动；逃离者到达终点即脱身；战斗与追逐共用同一套单位 / 日志 / 快照。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 173 tests（formula 50 / rules 75 / combat 48）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 177 tests（formula 50 / rules 75 / combat 52）；`apps/web/scripts/verify-*.ts` 共 30 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:chase`、`verify:combat-options`、`verify:combat`、`verify:combat-rounds` PASS；`verify-occupation-slots`、`verify-chargen-rules` 前一轮已验证；全量 30 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1642,4 +1643,47 @@ MagicEffect =
 - `npm test` PASS（173 tests：combat 48 / formula 50 / rules 75）。
 - 新增 AOE 应对目标与结算测试、伤害管线最小 1 点测试。
 - `npm run typecheck`、`npm run build --workspace @touhou/web` PASS。
+
+## 42. COC7 追逐战第一阶段（本轮）
+
+### 规则依据
+参考 COC7 守秘人规则书「追逐」章节（COCchm/COC7thChm）：
+- 建立追逐：步行角色进行体质（CON）速度检定。极限成功 MOV +1，成功不变，失败 MOV -1。
+- 速度比较：逃离者调整后 MOV 高于最快追逐者，直接逃离，不建立追逐。
+- 否则按 MOV 相对值排位：最慢追逐者在起点，其余追逐者每高 1 MOV 前移 1 格；最慢逃离者在最快追逐者前方 2 格，其余逃离者按 MOV 差值前移。
+- 追逐轮：与战斗轮同理，按 DEX 从高到低行动。
+- 行动点：所有参与者基础 1 点，MOV 比全场最低者每高 1 点额外 +1；移动 1 个地点消耗 1 点。
+- 冲突：同地点才能攻击；本轮第二阶段实现，当前先支持移动 / 逃跑判定。
+
+### 核心实现
+- `packages/combat/src/chase.ts`：
+  - `startChase`：速度检定、MOV 调整、立即逃离判定、初始站位、行动点、DEX 行动顺序。
+  - `chaseMove`：按当前行动者与剩余行动点移动；prey 到达 track 最后一个地点判定 `ESCAPED`。
+  - `chaseEndTurn`：切换到下一个 DEX 行动者；一轮走完重置行动点并进入下一轮。
+  - `endChase` / `chaseCurrentActorId` / `findChaseParticipant`。
+- `CombatState.chase` 纳入战斗快照持久化；`filterCombatForViewer` 输出 `CombatView.chase`。
+- `FLEE` 行动接入：有敌对阵营存活单位时自动建立追逐；无追逐者或速度检定直接甩开时按原逻辑移出战斗。
+- Socket 事件：`combat:chase-move`、`combat:chase-end-turn`；普通攻击 / 反应 / 强制结算在追逐期间被暂时禁用，避免两套回合系统抢行动。
+- `CombatBoard`：
+  - 新增追逐面板：地点轨道、追逐者 / 逃离者标记、当前行动者、MOV、剩余 AP；
+  - 当前行动者的控制者可以「前进 / 后退 / 结束回合」；其他人只能旁观；
+  - 普通行动面板在追逐期间显示“追逐进行中”提示；
+  - 行动区新增「逃跑 / 发起追逐」按钮（仅普通战斗阶段可用）。
+
+### 验证
+- 新增 `packages/combat/src/__tests__/chase.test.ts`：
+  - 速度检定 MOV 调整与初始站位 / 行动点；
+  - 速度检定直接甩开时 `escapedImmediately`；
+  - 移动消耗 AP 与到达终点逃脱；
+  - 轮次结束重置 AP。
+- 新增 `apps/web/scripts/verify-chase.ts` + `npm run verify:chase`：
+  - E2E 实测 FLEE → 追逐建立 → 按 DEX 移动 → 到达出口 → 战斗结束 / 房间回 PLAYING。
+- `npm test` PASS（177 tests：combat 52 / formula 50 / rules 75）。
+- `npm run typecheck`、`npm run build --workspace @touhou/web` PASS。
+
+### 还没做（下一阶段）
+- 追逐中的障碍 / 险境：锁门、高墙、泥沼、坠落等技能检定与减速 / 伤害。
+- 载具追逐：汽车驾驶速度检定、体格冲撞、车辆 HP / 事故。
+- 同地点冲突：追逐中的攻击 / 反击 / 闪避 / 战技需要接入现有应对窗口，并消耗 1 行动点。
+- 可选规则：追踪失向、分头行动、择路而逃、多人分场追逐。
 
