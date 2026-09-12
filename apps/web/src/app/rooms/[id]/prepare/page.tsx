@@ -13,7 +13,7 @@ import {
   toggleReadyAction
 } from "@/server/actions/room";
 import { applyModulePresetAction } from "@/server/actions/preset";
-import { reviewCardEntries, reviewEntry, withdrawEntry } from "@/server/actions/room-entry";
+import { reviewCardEntries, reviewEntry, submitCardToRoom, submitCharacterToRoom, withdrawEntry } from "@/server/actions/room-entry";
 import { auth } from "@/server/auth";
 import { loadGameModuleView } from "@/server/modules/revision";
 import { loadSceneView } from "@/server/scene/load";
@@ -195,6 +195,29 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     orderBy: { submittedAt: "desc" }
   });
 
+  // 我的角色库里，尚未带入本房（或已被驳回可重新提交）且系统匹配的角色。
+  const submittableCharacters = await prisma.character.findMany({
+    where: {
+      userId: session.user.id,
+      system: room.system,
+      roomEntries: {
+        none: {
+          roomId: room.id,
+          status: { in: ["PENDING_REVIEW", "APPROVED"] }
+        }
+      }
+    },
+    select: {
+      id: true,
+      name: true,
+      occupation: true,
+      maxHp: true,
+      maxSan: true
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 200
+  });
+
   const playerUserIds = room.members
     .filter((member) => member.role === "PLAYER")
     .map((member) => member.userId);
@@ -225,6 +248,29 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
       card: { include: { owner: { select: { username: true, displayName: true } } } }
     },
     orderBy: { submittedAt: "desc" }
+  });
+
+  // 我的卡牌库里，尚未带入本房（或已被驳回可重新提交）且系统匹配的卡牌。
+  const submittableCards = await prisma.card.findMany({
+    where: {
+      ownerId: session.user.id,
+      scope: "COMPENDIUM",
+      system: room.system,
+      roomEntries: {
+        none: {
+          roomId: room.id,
+          status: { in: ["PENDING_REVIEW", "APPROVED"] }
+        }
+      }
+    },
+    select: {
+      id: true,
+      name: true,
+      type: true,
+      rarity: true
+    },
+    orderBy: { updatedAt: "desc" },
+    take: 200
   });
 
   // 待审的排最前，KP 一眼看到该处理什么
@@ -700,6 +746,41 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">角色卡（{characterEntries.length}）{pendingCharacterCount > 0 ? <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">待审 {pendingCharacterCount}</span> : null}</h2>
+        {submittableCharacters.length > 0 ? (
+          <form
+            action={submitCharacterToRoom}
+            className="mt-4 flex flex-wrap items-end gap-3 rounded-lg border border-spirit-400/25 bg-spirit-400/5 p-3"
+          >
+            <input type="hidden" name="roomId" value={room.id} />
+            <label className="flex min-w-[260px] flex-1 flex-col gap-1.5">
+              <span className="text-xs text-white/50">从我的角色库选择已有角色</span>
+              <select
+                name="characterId"
+                defaultValue=""
+                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white/80 outline-none focus:border-spirit-400/60"
+              >
+                <option value="" disabled>请选择角色</option>
+                {submittableCharacters.map((character) => (
+                  <option key={character.id} value={character.id}>
+                    {character.name}
+                    {character.occupation === null ? "" : " · " + character.occupation}
+                    {" · HP " + character.maxHp + " · SAN " + character.maxSan}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-lg border border-spirit-400/50 px-4 py-2 text-sm text-spirit-300 transition hover:bg-spirit-400/10"
+            >
+              带入已有角色
+            </button>
+          </form>
+        ) : (
+          <p className="mt-3 text-[11px] text-white/35">
+            角色库里没有可带入本房的角色；可以先去「我的角色」新建 / 导入，再回本页提交。
+          </p>
+        )}
         {characterEntries.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">还没有人带角色卡进来</p>
         ) : (
@@ -780,6 +861,35 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        {submittableCards.length > 0 ? (
+          <form
+            action={submitCardToRoom}
+            className="mb-4 flex flex-wrap items-end gap-3 rounded-lg border border-spirit-400/25 bg-spirit-400/5 p-3"
+          >
+            <input type="hidden" name="roomId" value={room.id} />
+            <label className="flex min-w-[260px] flex-1 flex-col gap-1.5">
+              <span className="text-xs text-white/50">从我的卡牌库选择已有卡牌</span>
+              <select
+                name="cardId"
+                defaultValue=""
+                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white/80 outline-none focus:border-spirit-400/60"
+              >
+                <option value="" disabled>请选择卡牌</option>
+                {submittableCards.map((card) => (
+                  <option key={card.id} value={card.id}>
+                    {card.name} · {card.type} · {RARITY_LABELS[card.rarity]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="submit"
+              className="rounded-lg border border-spirit-400/50 px-4 py-2 text-sm text-spirit-300 transition hover:bg-spirit-400/10"
+            >
+              带入已有卡牌
+            </button>
+          </form>
+        ) : null}
         <form action={reviewCardEntries}>
           <div className="flex flex-wrap items-center justify-between gap-3">
             <h2 className="flex items-center gap-2 text-sm font-medium text-white/80">
