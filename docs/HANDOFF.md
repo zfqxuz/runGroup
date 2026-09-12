@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`29f9491 feat(combat): COC7 追逐战第一阶段（速度检定 / 行动点 / 地点移动 / 逃跑）`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`e1aaed9 feat(admin): 新增魔法管理链路与规则包魔法预览`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -25,6 +25,7 @@
   - 掷骰健壮性已修复（见第 40 节）：支持中文全角数字 / ｄ / ＋ / －，服务端 handler 用统一回执包裹，异常时不会再静默无响应；客户端离线时禁用掷骰按钮。
   - 战斗伤害结算、AOE 应对窗口与战斗展示已优化（见第 41 节）：COC7 反击失败不再把 1d6=1 减成 0；攻击 / 闪避 / 反击 / 伤害骰日志全部标明掷的是什么；参战单位改并排卡片并高亮当前行动 / 可行动 / 等待应对；AOE 每个目标都要应对。
   - COC7 追逐战已完成第一阶段（见第 42 节）：FLEE 会触发追逐；速度检定调整 MOV；按 MOV 排位和计算行动点；DEX 顺序移动；逃离者到达终点即脱身；战斗与追逐共用同一套单位 / 日志 / 快照。
+  - 管理后台魔法管理已完成（见第 43 节）：`/admin/magic` 可逐房间查看「房间开关 → 团本 structured.magic → Room.ruleOverride → 最终生效规则包」链路，直接排查“魔法为什么不生效”。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
 - 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 177 tests（formula 50 / rules 75 / combat 52）；`apps/web/scripts/verify-*.ts` 共 30 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:chase`、`verify:combat-options`、`verify:combat`、`verify:combat-rounds` PASS；`verify-occupation-slots`、`verify-chargen-rules` 前一轮已验证；全量 30 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
@@ -1686,4 +1687,73 @@ MagicEffect =
 - 载具追逐：汽车驾驶速度检定、体格冲撞、车辆 HP / 事故。
 - 同地点冲突：追逐中的攻击 / 反击 / 闪避 / 战技需要接入现有应对窗口，并消耗 1 行动点。
 - 可选规则：追踪失向、分头行动、择路而逃、多人分场追逐。
+
+## 43. 管理后台魔法管理（本轮）
+
+### 背景
+规则包管理（`/admin/rulepacks`）和魔法引擎（`packages/rules/src/magic.ts`、`packages/combat` 魔法结算）之前已经存在。
+但魔法的最终生效是四层叠加的，任意一层断了都不会报错，只会表现为战斗页没有「施法」区域：
+1. `Room.magicEnabled` 房间开关；
+2. 当前团本 `module.structured.magic`；
+3. `Room.ruleOverride.magic`（由“启用魔法 / 应用团本预设 / 重新同步”写入）；
+4. 最终 `loadEffectivePack` 出来的 `pack.magic.enabled / spells`。
+
+以前没有任何页面把这四层摆在一起，所以“魔法不生效”很难查。
+
+### 新增 `/admin/magic`
+- 房间列表显示：
+  - 房间系统 / 状态；
+  - `Room.magicEnabled`；
+  - 选中团本与 `structured.magic` 解析条数；
+  - `Room.ruleOverride.magic` 的 enabled / spells 条数；
+  - 绑定规则包版本。
+- 顶部统计：已开启开关的房间数 / 团本中解析出魔法的房间数 / 开关 + 有法术数据的房间数。
+
+### 新增 `/admin/magic/[roomId]` 详情页
+按链路拆成四块：
+1. **房间开关**：管理员可直接开启 / 关闭；开启调用 `applyMagicRulesToRoom`，关闭调用 `disableMagicRulesInRoom`。
+2. **团本 structured.magic**：显示团本标题、解析法术数，提供「从团本重新同步」按钮。
+3. **Room.ruleOverride.magic**：显示 enabled / spells 数量和原始 JSON。
+4. **最终生效规则包**：显示 source（builtin / database）、是否有房间覆盖、`magic.enabled`、法术数量。
+
+同时自动列出「未生效原因」：
+- 房间开关 `magicEnabled = false`；
+- 没有选择团本，也没有进行中的局；
+- 团本没有可解析的 `structured.magic`；
+- `Room.ruleOverride.magic.enabled = false`；
+- 最终规则包 `magic.enabled = false` 或 spells 为 0；
+- 最终规则包编译失败（例如绑定的 DB 版本配置非法）。
+
+下方还会用表格列出**最终生效法术**：
+- id / 名称 / 技能 / MP / SAN / target+targeting / 效果标签；
+- 数据就是 `CombatBoard` 实际用来渲染施法面板的同一份 `pack.magic.spells`。
+
+### 规则包详情页
+`/admin/rulepacks/[packId]` 新增「魔法规则」预览：
+- 解析最新版本的 `config.magic`；
+- 有 magic 时显示 enabled / system 和法术表；
+- 没有 magic 时提示“该版本没有 magic，魔法可以来自团本 structured.magic，或把 magic 写进 RulePack JSON 后发布新版本”。
+
+### 管理后台入口
+- 左侧导航新增「魔法」；
+- 总览卡片新增「魔法管理」。
+
+### 排查结论：魔法不生效最常见的原因
+1. 导入的团本没有生成 `structured.magic`（AI 导入时可能没识别到法术段）；
+2. 团本有魔法，但准备页没有点「启用魔法规则」，`Room.magicEnabled=false`；
+3. 点了启用但 `applyMagicRulesToRoom` 找不到当前团本 / 团本无法术，自动把 `Room.ruleOverride.magic.enabled` 写成 false；
+4. 绑定了自定义 DB 规则包，但房间 `ruleOverride.magic.enabled=false` 覆盖了规则包里的 magic；
+5. 自定义规则包版本本身没有 `magic` 字段。
+现在按 `/admin/magic` 的四层顺序看，哪层断了会直接列出来。
+
+### 验证
+- `/admin/magic`、`/admin/magic/[roomId]`、`/admin/rulepacks/[packId]` 本地实测 HTTP 200，诊断文案正常渲染。
+- `npm run typecheck`、`npm test`（177 tests）、`npm run build --workspace @touhou/web` PASS。
+
+### 相关文件
+- `apps/web/src/server/modules/magic.ts`：`loadRoomMagicDiagnostics`。
+- `apps/web/src/server/actions/admin.ts`：`adminSetRoomMagicEnabledAction`、`adminSyncRoomMagicAction`。
+- `apps/web/src/app/admin/magic/page.tsx`、`apps/web/src/app/admin/magic/[roomId]/page.tsx`。
+- `apps/web/src/app/admin/rulepacks/[packId]/page.tsx`：规则包 magic 预览。
+- `apps/web/src/app/admin/layout.tsx`、`apps/web/src/app/admin/page.tsx`：导航入口。
 
