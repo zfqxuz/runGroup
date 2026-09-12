@@ -23,7 +23,7 @@ function buildOptions(packId: string) {
   };
 }
 
-export default async function NewRoomPage({ searchParams }: { searchParams: { moduleId?: string } }) {
+export default async function NewRoomPage({ searchParams }: { searchParams: { moduleId?: string; error?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -55,6 +55,15 @@ export default async function NewRoomPage({ searchParams }: { searchParams: { mo
         {selectedModule === null ? null : (
           <p className="mt-2 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-xs text-spirit-200">
             已预选团本：{selectedModule.title}
+          </p>
+        )}
+        {searchParams.error === undefined ? null : (
+          <p className="mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-xs text-red-200">
+            {searchParams.error === "name"
+              ? "请填写房间名后再创建。"
+              : searchParams.error === "method"
+                ? "车卡方式不合法，请重新选择。"
+                : "创建房间失败，请重试；如果持续失败，请刷新页面或重启 dev server。"}
           </p>
         )}
       </header>

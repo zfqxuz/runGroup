@@ -72,7 +72,14 @@ export default function RoomSetupForm(props: Props) {
         <h2 className="text-sm font-medium text-white/80">房间</h2>
         <label className="mt-4 flex flex-col gap-1.5">
           <span className="text-xs text-white/50">房间名</span>
-          <input name="name" placeholder="例：红魔馆异变调查" className={inputClass} />
+          <input
+            name="name"
+            required
+            minLength={1}
+            placeholder="例：红魔馆异变调查"
+            className={inputClass}
+          />
+          <span className="text-[11px] text-white/35">房间名必填；不填会被服务端退回本页。</span>
         </label>
         <input type="hidden" name="system" value={system} />
       </section>
