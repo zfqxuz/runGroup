@@ -5,7 +5,7 @@
 ## 0.1 最新交接摘要（优先阅读）
 
 ### 当前状态
-- 最新基线：`8bb7fed fix(rooms): 创建房间页显示校验错误并必填房间名`，分支 `main`，工作区干净，已推送 `origin/main`。
+- 最新基线：`0fc6ac5 fix(socket): 掷骰归一化全角输入并保证异常时有回执`，分支 `main`，工作区干净，已推送 `origin/main`。
 - 平台已具备：认证、房间准备 / 跑团、团本广场、我的团本、角色 / 卡牌库、战斗、团本快照、局内状态、暂停 / 继续 / 结束、游戏历史、用户菜单、线索 / 笔记 / 手书、悄悄话 / 暗骰、Markdown 渲染、房间归档。
 - P2 当前进度：
   - P2-1 战术棋盘已完成：场景 / 地图 / Token / 拖动 / 实时同步；Token 图片与属性；六边形网格与吸附；战争迷雾；墙体 / 灯光 / 视线遮挡；地图图层；团本结构化场景自动绑定。准备阶段也可用 SceneBoard，可切换场景、清空墙灯、放置 PC / NPC Token。同一角色在同一场景只能有一个 Token（下拉过滤 + 服务端校验 + DB 唯一约束）。
@@ -22,8 +22,10 @@
   - 信用评级校验已完成（见第 38 节）：信用评级始终视为 COC7 本职技能（可吃职业点），最终值必须落在职业 `creditMin~creditMax` 范围内，客户端 / 服务端都会拦截。
   - 房间准备页已支持「带入已有角色 / 已有卡牌」（见第 39 节）：玩家可从自己的角色库 / 卡牌库选择并提交 KP 审核，不必重新车卡。
   - 创建房间页会显示空房间名 / 非法车卡方式的错误，并给房间名加了必填校验；修复“点创建后仍停留在本页且没有反馈”的问题。
+  - 掷骰健壮性已修复（见第 40 节）：支持中文全角数字 / ｄ / ＋ / －，服务端 handler 用统一回执包裹，异常时不会再静默无响应；客户端离线时禁用掷骰按钮。
+  - 测试基线更新为 167 tests（formula 50 / rules 75 / combat 42）。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
-- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 165 tests（formula 48 / rules 75 / combat 42）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
+- 测试基线（2026-09-11）：`npm run typecheck` PASS；`npm test` 167 tests（formula 50 / rules 75 / combat 42）；`apps/web/scripts/verify-*.ts` 共 29 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify-occupation-slots`、`verify-chargen-rules` PASS；`verify-combat-options`、`verify-combat`、`verify-combat-rounds`、`verify-magic-effects` 在上一轮已验证；全量 29 项未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
 ### 接手建议（用户尚未给出下一项开工指令）
 1. **补 P2-2 规则内容（建议第一优先，但开工前先向用户确认）**：`touhou-ext` 完整法术表、特色物品、普通型 / 幻想型进阶效果；可顺带做规则包可视编辑与更强的校验提示。
@@ -1562,4 +1564,36 @@ MagicEffect =
 - `npm test` PASS（165 tests）。
 - `npm run build --workspace @touhou/web` PASS。
 - curl 模拟原生表单 POST：`submitCharacterToRoom` / `submitCardToRoom` 均生成 PENDING_REVIEW 申请。
+
+## 40. 掷骰健壮性：全角归一化与异常回执（本轮）
+
+### 问题
+- 玩家用中文输入法输入 `１ｄ１００`、`２ｄ６＋３` 这类全角表达式时，`parseDice` 会判定不合法；
+- 服务端 `dice:roll` handler 没有整体异常保护，若 Prisma / 消息写入等步骤抛错，`ack` 不会被调用，客户端就会表现为“点掷骰没反应”；
+- 客户端也没有清掉上一次的红色错误提示，容易让玩家以为功能坏了。
+
+### 修复
+- `packages/formula/src/dice.ts` 新增 `normalizeDiceExpression`：
+  - 全角数字 `０~９` -> `0~9`；
+  - 全角 `ｄ / Ｄ` -> `d`；
+  - 全角 `＋ / － / − / — / –` -> `+ / -`。
+- `RoomPlay` 掷骰前先归一化并 trim；空表达式给明确提示；每次掷骰前清空旧错误；成功后也清空错误。
+- 掷骰输入框支持回车掷骰；连接断开时按钮禁用。
+- `server/socket/index.ts` 的 `dice:roll` 改为统一 `reply()` 回执 + 整体 try/catch：
+  - 任何未预期异常都会 `ack({ ok:false, error:"掷骰失败，请重试" })`，不再静默；
+  - 表达式长度限制 120 字符；
+  - 空表达式返回“请输入骰子表达式，例如 1d100”。
+
+### 验证
+- `packages/formula/src/__tests__/dice.test.ts` 新增全角归一化用例，`npm test` 167 tests PASS。
+- 用 Socket.IO 客户端实测：
+  - `１ｄ１００` -> ok；
+  - `abc` -> `骰子表达式不合法，例如 2d6+3`；
+  - 失败后继续掷 `1d100` -> ok，不会再卡住。
+
+### 相关文件
+- `packages/formula/src/dice.ts`、`packages/formula/src/index.ts`：表达式归一化。
+- `packages/formula/src/__tests__/dice.test.ts`：新增用例。
+- `apps/web/src/server/socket/index.ts`：dice handler 统一回执与异常保护。
+- `apps/web/src/components/room/RoomPlay.tsx`：客户端归一化、错误清理、回车掷骰、离线禁用。
 
