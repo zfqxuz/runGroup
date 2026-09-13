@@ -274,19 +274,17 @@ export default function CombatBoard(props: Props) {
   }
 
   function reactionSkillOptionsFor(targetIdValue: string, type: CombatReactionPayload["type"]): readonly SkillOption[] {
-    const target = participants.find((item) => item.id === targetIdValue);
-    const skills = target?.skills ?? {};
     if (type === "DODGE") {
       const ids = props.system === "TOUHOU" ? ["DODGE", "GRAZE"] : ["DODGE"];
-      return props.skillOptions.filter(
-        (option) => ids.includes(option.id) && Object.prototype.hasOwnProperty.call(skills, option.id)
-      );
+      return props.skillOptions.filter((option) => ids.includes(option.id));
     }
     if (type === "COUNTER") {
+      if (props.system === "COC7") {
+        // COC7 反击 = 格斗（斗殴）检定，基础值 25。
+        return props.skillOptions.filter((option) => option.id === "FIGHTING_BRAWL");
+      }
       const ids = props.attackSkillsByParticipant[targetIdValue] ?? [];
-      return props.skillOptions.filter(
-        (option) => ids.includes(option.id) && Object.prototype.hasOwnProperty.call(skills, option.id)
-      );
+      return props.skillOptions.filter((option) => ids.includes(option.id));
     }
     return [];
   }

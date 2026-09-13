@@ -78,6 +78,20 @@ describe('INITIATIVE 按顺序结算', () => {
     expect(state.participants[0]?.isReady).toBe(false);
   });
 
+  it('COC7 反击使用斗殴基础值 25，即使卡面没有写技能', () => {
+    const state = setup();
+    const attacker = state.participants[0];
+    const defender = state.participants[1];
+    if (attacker === undefined || defender === undefined) throw new Error('missing participant');
+    attacker.skills.FIGHTING_BRAWL = 80;
+    defender.skills = {};
+    beginInitiativeRound(coc, state);
+    expect(submitAction(state, { actorId: 'p1', kind: 'DANMAKU', targetId: 'p2', skill: 'FIGHTING_BRAWL', damage: '1d6' })).toBe(true);
+    resolveInitiativeTurn(coc, state, { p2: { type: 'COUNTER', skill: 'FIGHTING_BRAWL' } });
+    const counter = state.log.find((entry) => entry.data?.rollType === 'COUNTER');
+    expect(counter?.data?.counterTarget).toBe(25);
+  });
+
   it('COC7 反击应对可以完成结算', () => {
     const state = setup();
     const attacker = state.participants[0];

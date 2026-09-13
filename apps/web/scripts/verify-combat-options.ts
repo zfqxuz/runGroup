@@ -63,19 +63,45 @@ function main(): void {
   ensure(touhouFlags.canOutOfRule === true, "东方应显示规则外施法");
   ensure(allowedReactionTypes(touhou).includes("COUNTER"), "东方应对应包含消弹对抗");
 
+  const cocCivilian = {
+    id: "coc-civilian",
+    kind: "PLAYER" as const,
+    characterId: null,
+    skills: {}
+  };
+  const civilianAttack = allowedAttackSkills(coc, cocCivilian, []);
+  expectIds(civilianAttack, ["FIGHTING_BRAWL"], "COC7 角色即使卡面没写也应拥有斗殴基础值");
+
+  const cocNpcNoSkill = {
+    id: "coc-npc-no-skill",
+    kind: "NPC" as const,
+    characterId: null,
+    skills: {}
+  };
+  expectIds(
+    allowedAttackSkills(coc, cocNpcNoSkill, []),
+    ["FIGHTING_BRAWL"],
+    "COC7 NPC 卡面没写战斗技能时也应有斗殴基础值"
+  );
+
   const counterSkills = new Map<string, readonly string[]>([
-    ["coc-civilian", []],
-    ["coc-fighter", ["FIGHTING_BRAWL"]]
+    ["coc-civilian", civilianAttack],
+    ["coc-no-base", []]
   ]);
   expectIds(
     [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-civilian")],
-    ["PASS", "DODGE"],
-    "没有反击技能的单位不应下发反击选项"
+    ["PASS", "DODGE", "COUNTER"],
+    "COC7 有斗殴基础值的单位应下发反击选项"
   );
   expectIds(
-    [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-fighter")],
+    [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-no-base")],
     ["PASS", "DODGE", "COUNTER"],
-    "有反击技能的单位应下发反击选项"
+    "COC7 反击是斗殴检定，没写技能也应能用基础值反击"
+  );
+  expectIds(
+    [...allowedReactionTypesForParticipant(touhou, new Map([["touhou-no-skill", []]]), "touhou-no-skill")],
+    ["PASS", "DEFEND", "DODGE"],
+    "东方包没有对应攻击技能时才隐藏消弹对抗"
   );
 
   const cocActionContext = {
@@ -143,7 +169,7 @@ function main(): void {
   });
   ensure(brawlError === null, "COC 斗殴攻击应被允许");
 
-  console.log("PASS 战斗选项：COC 闪避/反击与无防御、反击技能可用性过滤、斗殴/武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
+  console.log("PASS 战斗选项：COC7 反击=斗殴基础值、闪避与无防御、武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
 }
 
 main();

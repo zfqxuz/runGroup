@@ -414,13 +414,28 @@ function applyDamageToParticipant(
   return { toDeclaration, toHp };
 }
 
+function compiledSkillBase(
+  pack: CompiledRulePack,
+  participant: CombatParticipantState,
+  skill: string
+): number | null {
+  const rule = pack.skills.find((item) => item.id === skill);
+  if (rule === undefined) return null;
+  return Math.floor(evaluate(rule.base, { vars: participant.vars, consts: pack.pack.const }));
+}
+
 function skillValueOf(
+  pack: CompiledRulePack,
   participant: CombatParticipantState,
   skill: string | undefined,
   fallback: number
 ): number {
   if (skill === undefined) return fallback;
-  return participant.skills[skill] ?? fallback;
+  const explicit = participant.skills[skill];
+  if (typeof explicit === "number") return explicit;
+  const base = compiledSkillBase(pack, participant, skill);
+  if (base !== null) return base;
+  return fallback;
 }
 
 function resolveAttack(
@@ -432,7 +447,7 @@ function resolveAttack(
   const state = ctx.state;
   const rng = nextRollRng(state, `attack:${actor.id}`);
   const skillName = submission.skill ?? "DANMAKU";
-  const target = (actor.skills[skillName] ?? 0) + (submission.accuracyMod ?? 0);
+  const target = skillValueOf(ctx.pack, actor, skillName, 0) + (submission.accuracyMod ?? 0);
   const attackRoll = rollDie(rng, 100);
   const attackCheck = resolveCheck(ctx.pack, attackRoll, target);
 
@@ -471,7 +486,7 @@ function resolveAttack(
   const isCoc7 = ctx.pack.system === "COC7";
   const counterLabel = isCoc7 ? "反击" : "消弹对抗";
   if (reaction.type === "DODGE") {
-    const dodgeTarget = skillValueOf(defender, reaction.skill ?? "DODGE", defender.attributes.dex);
+    const dodgeTarget = skillValueOf(ctx.pack, defender, reaction.skill ?? "DODGE", defender.attributes.dex);
     const dodgeRoll = rollDie(rng, 100);
     const dodgeCheck = resolveCheck(ctx.pack, dodgeRoll, dodgeTarget);
     defenseSuccess = isSuccess(dodgeCheck.result);
@@ -484,6 +499,7 @@ function resolveAttack(
     });
   } else if (reaction.type === "COUNTER") {
     const counterTarget = skillValueOf(
+      ctx.pack,
       defender,
       reaction.skill ?? (isCoc7 ? "FIGHTING_BRAWL" : "DANMAKU"),
       defender.attributes.dex
@@ -1040,7 +1056,7 @@ function resolveMagic(
     const effectiveReaction = blocked === null ? reaction : { type: "PASS" as DefenseType };
 
     if (target.id !== actor.id && effectiveReaction.type === "DODGE" && targeting !== "ALLY" && targeting !== "SELF") {
-      const dodgeTarget = skillValueOf(target, effectiveReaction.skill ?? "DODGE", target.attributes.dex);
+      const dodgeTarget = skillValueOf(ctx.pack, target, effectiveReaction.skill ?? "DODGE", target.attributes.dex);
       const dodgeRoll = rollDie(nextRollRng(state, "magic-dodge:" + actor.id + ":" + target.id), 100);
       const dodgeCheck = resolveCheck(ctx.pack, dodgeRoll, dodgeTarget);
       pushLog(state, {

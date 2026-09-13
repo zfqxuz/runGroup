@@ -360,21 +360,29 @@ async function handleReaction(
     reactionSkill = candidate;
   }
   if (reactionType === "COUNTER") {
-    const allowed = runtime.attackSkills.get(input.targetId) ?? [];
-    const candidate = reactionSkill ?? allowed[0];
-    if (candidate === undefined || allowed.includes(candidate) === false) {
-      // 没有可用反击技能时不能把应对窗口卡死：按 PASS 继续结算并记录原因。
-      reactionType = "PASS";
-      reactionSkill = undefined;
-      pushLog(runtime.state, {
-        kind: "SYSTEM",
-        actorId: target.id,
-        targetId: null,
-        text: target.name + " 没有可用的反击技能，本次按未应对处理",
-        data: { rollType: "COUNTER_FALLBACK" }
-      });
+    const hasCoc7BrawlBase =
+      runtime.pack.system === "COC7" &&
+      runtime.pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
+    if (hasCoc7BrawlBase) {
+      // COC7 标准：反击使用格斗（斗殴）检定；卡面没写也按基础值 25 计算。
+      reactionSkill = "FIGHTING_BRAWL";
     } else {
-      reactionSkill = candidate;
+      const allowed = runtime.attackSkills.get(input.targetId) ?? [];
+      const candidate = reactionSkill ?? allowed[0];
+      if (candidate === undefined || allowed.includes(candidate) === false) {
+        // 非 COC7 包没有可用反击技能时不能把应对窗口卡死：按 PASS 继续结算并记录原因。
+        reactionType = "PASS";
+        reactionSkill = undefined;
+        pushLog(runtime.state, {
+          kind: "SYSTEM",
+          actorId: target.id,
+          targetId: null,
+          text: target.name + " 没有可用的反击技能，本次按未应对处理",
+          data: { rollType: "COUNTER_FALLBACK" }
+        });
+      } else {
+        reactionSkill = candidate;
+      }
     }
   }
   runtime.pendingReactions.delete(input.targetId);

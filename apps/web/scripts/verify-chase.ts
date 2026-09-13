@@ -335,7 +335,7 @@ async function main(): Promise<void> {
         const reactionAck = await emitAck<Ack>(socket as Socket, "combat:reaction", {
           combatId,
           targetId: prey.id,
-          reaction: { type: "COUNTER", skill: "FIGHTING_BRAWL" }
+          reaction: { type: "PASS" }
         });
         assert(reactionAck.ok === true, reactionAck.error ?? "追逐中的应对提交失败");
         update = await resolvedUpdate;

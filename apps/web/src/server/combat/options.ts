@@ -69,7 +69,9 @@ function offensiveSkillIds(pack: CompiledRulePack, participant: CombatOptionPart
 
 function fallbackAttackSkills(pack: CompiledRulePack, participant: CombatOptionParticipant): string[] {
   if (pack.system === "COC7") {
-    return hasSkill(participant, "FIGHTING_BRAWL") ? ["FIGHTING_BRAWL"] : offensiveSkillIds(pack, participant).slice(0, 1);
+    // COC7 所有角色都有基础技能；斗殴基础值 25，没写在卡上也必须能用。
+    if (knownSkillIds(pack).has("FIGHTING_BRAWL")) return ["FIGHTING_BRAWL"];
+    return offensiveSkillIds(pack, participant).slice(0, 1);
   }
   const preferred = ["DANMAKU", "MELEE", "THROW"];
   const available = preferred.filter((skillId) => hasSkill(participant, skillId));
@@ -81,8 +83,16 @@ export function allowedAttackSkills(
   participant: CombatOptionParticipant,
   equippedWeapons: readonly WeaponLike[]
 ): readonly string[] {
-  if (participant.kind === "NPC") return offensiveSkillIds(pack, participant);
   const known = knownSkillIds(pack);
+  const addCoc7BrawlBase = (ids: string[]): string[] => {
+    if (pack.system !== "COC7") return ids;
+    if (known.has("FIGHTING_BRAWL") === false) return ids;
+    return ids.includes("FIGHTING_BRAWL") ? ids : [...ids, "FIGHTING_BRAWL"];
+  };
+
+  if (participant.kind === "NPC") {
+    return addCoc7BrawlBase(offensiveSkillIds(pack, participant));
+  }
   const skillIds: string[] = [];
   for (const weapon of equippedWeapons) {
     const inferred = inferWeaponSkillId(pack, weapon);
@@ -146,8 +156,9 @@ export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatRea
 
 /**
  * 某个具体单位可用的应对选项。
- * COUNTER 只有在服务器确实给该单位准备了反击技能时才下发，
- * 避免客户端出现「有反击选项但无技能可选」的卡住状态。
+ * COC7 反击是格斗（斗殴）检定，所有角色都有斗殴基础值 25；
+ * 因此只要规则包定义了 FIGHTING_BRAWL，就始终下发 COUNTER。
+ * 东方包仍按单位实际拥有的攻击技能过滤，避免出现无技能可选的反击。
  */
 export function allowedReactionTypesForParticipant(
   pack: CompiledRulePack,
@@ -156,6 +167,10 @@ export function allowedReactionTypesForParticipant(
 ): readonly CombatReactionType[] {
   const types = allowedReactionTypes(pack);
   if (types.includes("COUNTER") === false) return types;
+  if (pack.system === "COC7") {
+    const hasBrawlBase = pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
+    return hasBrawlBase ? types : types.filter((type) => type !== "COUNTER");
+  }
   const counterSkills = attackSkills.get(participantId) ?? [];
   if (counterSkills.length === 0) {
     return types.filter((type) => type !== "COUNTER");
