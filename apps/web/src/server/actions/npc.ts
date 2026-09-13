@@ -39,6 +39,7 @@ function materializePreset(preset: PresetCharacter, effective: EffectivePack): N
     maxSan: preset.maxSan ?? fallback.derived.maxSan,
     maxDp: preset.maxDp ?? fallback.derived.maxDp,
     tags: [...preset.tags],
+    spells: [],
     rarity: preset.rarity
   };
 }

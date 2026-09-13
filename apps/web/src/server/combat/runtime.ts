@@ -27,6 +27,8 @@ export interface CombatRuntime {
   reactions: Record<string, DefenseReaction>;
   /** 追逐中等待目标应对的一次攻击；null 表示没有待结算攻击。 */
   chaseAttack: ChaseAttackInput | null;
+  /** ATB 模式下，被攻击时选择逃跑的待处理对象；普通攻击结算后进入追逐。 */
+  pendingFlee: { readonly targetId: string; readonly actorId: string } | null;
 }
 
 const cache = new Map<string, CombatRuntime>();
@@ -122,7 +124,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     attackSkills,
     pendingReactions: new Map(),
     reactions: {},
-    chaseAttack: null
+    chaseAttack: null,
+    pendingFlee: null
   };
   cache.set(combatId, runtime);
   return runtime;

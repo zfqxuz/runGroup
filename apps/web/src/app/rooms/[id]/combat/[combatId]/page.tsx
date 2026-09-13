@@ -46,6 +46,7 @@ export default async function CombatDetailPage({
     select: { state: true }
   });
   const attackSkillsByParticipant: Record<string, readonly string[]> = {};
+  const spellIdsByParticipant: Record<string, readonly string[]> = {};
   if (snapshot !== null) {
     const state = snapshot.state as unknown as CombatState;
     const attackSkills = await loadAttackSkillsByParticipant(
@@ -59,6 +60,12 @@ export default async function CombatDetailPage({
     );
     for (const [participantId, skillIds] of attackSkills) {
       attackSkillsByParticipant[participantId] = skillIds;
+    }
+    for (const participant of state.participants) {
+      const raw = (participant as unknown as { spells?: unknown }).spells;
+      spellIdsByParticipant[participant.id] = Array.isArray(raw)
+        ? raw.filter((item): item is string => typeof item === "string")
+        : [];
     }
   }
 
@@ -152,6 +159,7 @@ export default async function CombatDetailPage({
           effects: magicSpellEffectLabels(spell)
         }))}
         attackSkillsByParticipant={attackSkillsByParticipant}
+        spellIdsByParticipant={spellIdsByParticipant}
         portraits={portraits}
       />
     </main>

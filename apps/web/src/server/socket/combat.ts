@@ -176,6 +176,37 @@ async function tryResolveChaseAttack(
   return true;
 }
 
+async function maybeStartPendingFlee(io: SocketServer, runtime: CombatRuntime): Promise<boolean> {
+  const pending = runtime.pendingFlee;
+  if (pending === null) return false;
+  runtime.pendingFlee = null;
+
+  const prey = findParticipant(runtime.state, pending.targetId);
+  if (prey === undefined || prey.defeated || runtime.state.phase === "ENDED") return false;
+  if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") return false;
+
+  const chasers = runtime.state.participants
+    .filter(
+      (participant) =>
+        participant.defeated === false &&
+        participant.id !== prey.id &&
+        participant.faction !== prey.faction
+    )
+    .map((participant) => participant.id);
+  if (chasers.length === 0) return false;
+
+  const result = startChase(runtime.pack, runtime.state, {
+    preyId: prey.id,
+    chaserIds: chasers,
+    trackLength: 10,
+    initialLead: 1,
+    allowImmediateEscape: false
+  });
+  if (result.ok !== true) return false;
+  await persistAndBroadcast(io, runtime);
+  return true;
+}
+
 async function handleJoin(
   socket: Socket,
   combatId: unknown,
@@ -303,12 +334,15 @@ async function handleAction(
   }
   const reactionTargetIds = reactionTargetIdsForAction(runtime.pack, runtime.state, action);
   if (reactionTargetIds.length > 0) {
-    const magicOptions: CombatReactionRequest["options"] | undefined =
-      action.kind === "MAGIC" ? ["PASS", "DODGE"] : undefined;
     const canFlee =
-      action.kind === "DANMAKU" &&
-      reactionTargetIds.length === 1 &&
-      runtime.pack.combat.mode === "INITIATIVE";
+      (action.kind === "DANMAKU" || action.kind === "MAGIC") &&
+      reactionTargetIds.length === 1;
+    const magicOptions: CombatReactionRequest["options"] | undefined =
+      action.kind === "MAGIC"
+        ? canFlee
+          ? ["PASS", "DODGE", "FLEE"]
+          : ["PASS", "DODGE"]
+        : undefined;
     for (const targetId of reactionTargetIds) {
       runtime.pendingReactions.set(targetId, action.actorId);
       const options =
@@ -318,7 +352,11 @@ async function handleAction(
     }
   }
   const resolved = await tryResolveCombat(io, runtime);
-  if (resolved === false) await broadcastCombat(io, runtime);
+  if (resolved === false) {
+    await broadcastCombat(io, runtime);
+  } else {
+    await maybeStartPendingFlee(io, runtime);
+  }
   ack({ ok: true });
 }
 
@@ -355,9 +393,8 @@ async function handleReaction(
   const canFleeReaction =
     raw.type === "FLEE" &&
     runtime.chaseAttack === null &&
-    runtime.pack.combat.mode === "INITIATIVE" &&
     pendingActorId !== undefined &&
-    pendingAction?.kind === "DANMAKU" &&
+    (pendingAction?.kind === "DANMAKU" || pendingAction?.kind === "MAGIC") &&
     runtime.pendingReactions.size === 1;
   const allowedTypes = allowedReactionTypes(runtime.pack);
   if (canFleeReaction === false && allowedTypes.includes(raw.type) === false) {
@@ -365,6 +402,9 @@ async function handleReaction(
     return;
   }
   const fleeAfterResolution = canFleeReaction;
+  if (fleeAfterResolution) {
+    runtime.pendingFlee = { targetId: input.targetId, actorId: pendingActorId ?? "" };
+  }
   let reactionType: "PASS" | "DEFEND" | "DODGE" | "COUNTER" =
     raw.type === "FLEE" ? "PASS" : raw.type;
   let reactionSkill = asString(raw.skill);
@@ -417,35 +457,10 @@ async function handleReaction(
   runtime.reactions[input.targetId] = { type: reactionType, skill: reactionSkill };
   const resolvedChase = await tryResolveChaseAttack(io, runtime);
   const resolved = resolvedChase ? true : await tryResolveCombat(io, runtime);
-  if (resolved === true && fleeAfterResolution) {
-    const prey = findParticipant(runtime.state, input.targetId);
-    const chaseable =
-      prey !== undefined &&
-      prey.defeated === false &&
-      runtime.state.phase !== "ENDED" &&
-      (runtime.state.chase === null || runtime.state.chase.status !== "ACTIVE");
-    const chasers = chaseable
-      ? runtime.state.participants
-          .filter(
-            (participant) =>
-              participant.defeated === false &&
-              participant.id !== input.targetId &&
-              participant.faction !== prey.faction
-          )
-          .map((participant) => participant.id)
-      : [];
-    if (chaseable && chasers.length > 0) {
-      const chaseResult = startChase(runtime.pack, runtime.state, {
-        preyId: input.targetId,
-        chaserIds: chasers,
-        trackLength: 10,
-        initialLead: 1,
-        allowImmediateEscape: false
-      });
-      if (chaseResult.ok === true) await persistAndBroadcast(io, runtime);
-    }
-  } else if (resolved === false) {
+  if (resolved === false) {
     await broadcastCombat(io, runtime);
+  } else {
+    await maybeStartPendingFlee(io, runtime);
   }
   ack({ ok: true });
 }
@@ -681,6 +696,7 @@ async function handleAbort(
   runtime.pendingReactions.clear();
   runtime.reactions = {};
   runtime.chaseAttack = null;
+  runtime.pendingFlee = null;
   runtime.state.chase = null;
   endCombat(runtime.state, "KP 中止了战斗");
   await saveCombatState(runtime.combatId, runtime.state);
@@ -741,7 +757,11 @@ async function handleForceResolve(
     }
   }
   const resolved = await tryResolveCombat(io, runtime);
-  if (resolved === false) await broadcastCombat(io, runtime);
+  if (resolved === false) {
+    await broadcastCombat(io, runtime);
+  } else {
+    await maybeStartPendingFlee(io, runtime);
+  }
   ack({ ok: true });
 }
 

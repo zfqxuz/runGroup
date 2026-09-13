@@ -29,6 +29,8 @@ export const NpcStatsSchema = z.object({
     luck: z.number().int().min(0).max(999)
   }),
   skills: z.record(z.string(), z.number().int().min(0).max(999)).default({}),
+  /** 该 NPC 可以施放的法术 id；团本物化时自动写入该团本的法术。 */
+  spells: z.array(z.string().max(120)).max(200).default([]),
   maxHp: z.number().int().min(1).max(9999),
   maxMp: z.number().int().min(0).max(99999),
   maxSan: z.number().int().min(0).max(999),

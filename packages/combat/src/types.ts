@@ -61,6 +61,8 @@ export interface CombatParticipantState {
   attributes: AttributeSet;
   derived: DerivedStats;
   skills: Record<string, number>;
+  /** 该单位允许施放的法术 id；玩家来自角色卡，NPC 来自 NPC 卡。 */
+  spells: string[];
   /** 伤害表达式里 `db` 的替换值，例如 "1d4" / "-2" / "0"。 */
   damageBonus: string;
   /** 公式求值作用域：attributes + derived + atbMax。 */

@@ -337,6 +337,8 @@ export async function applyModulePresetToRoom(input: {
               maxSan: template.maxSan,
               maxDp: template.maxDp,
               tags: template.tags as never,
+              // 团本法术只给团本物化出来的 NPC；玩家需要自己卡上有法术才能施放。
+              spells: magicTemplates.map((spell) => spell.id),
               rarity: template.rarity
             } as never
           } as never,

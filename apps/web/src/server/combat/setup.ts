@@ -110,6 +110,22 @@ export async function listSelectableUnits(
   return units;
 }
 
+function stringArrayOf(value: unknown): string[] {
+  if (Array.isArray(value) === false) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function characterSpellsOf(character: Character): string[] {
+  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
+  const sourceSpells = stringArrayOf(sourceData.spells);
+  if (sourceSpells.length > 0) return sourceSpells;
+  const backstory = (character.backstory ?? {}) as Record<string, unknown>;
+  return stringArrayOf(backstory.spells);
+}
+
 function buildCharacterInit(pack: CompiledRulePack, character: Character, faction: string): ParticipantInit {
   const attributes: AttributeSet = {
     str: character.str,
@@ -138,13 +154,19 @@ function buildCharacterInit(pack: CompiledRulePack, character: Character, factio
     attributes: outcome.attributes,
     derived: outcome.derived,
     skills,
+    spells: characterSpellsOf(character),
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",
     atbMax: computeAtbMax(pack, vars),
     speed: computeBaseSpeed(pack, vars)
   };
 }
 
-function buildNpcInit(pack: CompiledRulePack, card: Card, faction: string): ParticipantInit | string {
+function buildNpcInit(
+  pack: CompiledRulePack,
+  card: Card,
+  faction: string,
+  defaultSpells: readonly string[] = []
+): ParticipantInit | string {
   const parsed = NpcStatsSchema.safeParse(card.stats);
   if (parsed.success === false) return "NPC 卡数据不合法：" + card.name;
   const attributes = parsed.data.attributes as AttributeSet;
@@ -168,6 +190,7 @@ function buildNpcInit(pack: CompiledRulePack, card: Card, faction: string): Part
     attributes,
     derived,
     skills: { ...parsed.data.skills },
+    spells: parsed.data.spells.length > 0 ? [...parsed.data.spells] : [...defaultSpells],
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(attributes.str + attributes.siz) : "0",
     atbMax: computeAtbMax(pack, vars),
     speed: computeBaseSpeed(pack, vars),
@@ -258,7 +281,8 @@ export async function createCombatRecord(
     } else {
       const card = cardById.get(ref.id);
       if (card === undefined) return { ok: false, error: "NPC 卡不存在" };
-      const init = buildNpcInit(pack, card, selection.faction);
+      const defaultNpcSpells = pack.pack.magic?.spells.map((spell) => spell.id) ?? [];
+      const init = buildNpcInit(pack, card, selection.faction, defaultNpcSpells);
       if (typeof init === "string") return { ok: false, error: init };
       npcDataById.set(card.id, card.stats);
       addParticipant(state, init);

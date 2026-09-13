@@ -206,6 +206,74 @@ function DeleteForm(props: { moduleId: string; kind: string; entityId: string; l
   );
 }
 
+function jsonArrayText(value: unknown): string {
+  if (Array.isArray(value) === false) return "[]";
+  return JSON.stringify(value, null, 2);
+}
+
+function MagicForm(props: {
+  readonly moduleId: string;
+  readonly entry: StructuredModuleEntry | null;
+  readonly returnTo: string;
+}) {
+  const data = props.entry?.data ?? {};
+  const target = textOf(data, "target", "ONE");
+  const targeting = textOf(data, "targeting", "");
+  return (
+    <FormShell moduleId={props.moduleId} kind="magic" entityId={props.entry?.id ?? ""} returnTo={props.returnTo}>
+      <div className="grid gap-2 sm:grid-cols-2">
+        <label className={labelClass}>
+          <span className={captionClass}>法术名</span>
+          <input name="name" defaultValue={textOf(data, "name", props.entry?.title ?? "")} className={inputClass} />
+        </label>
+        <label className={labelClass}>
+          <span className={captionClass}>检定技能</span>
+          <input name="skill" defaultValue={textOf(data, "skill", "OCCULT")} className={inputClass} />
+        </label>
+        <label className={labelClass}>
+          <span className={captionClass}>MP 消耗</span>
+          <input name="mpCost" defaultValue={textOf(data, "mpCost", "0")} className={inputClass} />
+        </label>
+        <label className={labelClass}>
+          <span className={captionClass}>SAN 消耗</span>
+          <input name="sanCost" defaultValue={textOf(data, "sanCost", "0")} className={inputClass} />
+        </label>
+        <label className={labelClass}>
+          <span className={captionClass}>目标数量</span>
+          <select name="target" defaultValue={target} className={inputClass}>
+            <option value="SELF">SELF 自己</option>
+            <option value="ONE">ONE 单体</option>
+            <option value="ALL">ALL 全体</option>
+          </select>
+        </label>
+        <label className={labelClass}>
+          <span className={captionClass}>目标阵营（留空自动推断）</span>
+          <select name="targeting" defaultValue={targeting} className={inputClass}>
+            <option value="">自动</option>
+            <option value="SELF">SELF</option>
+            <option value="ALLY">ALLY 友方</option>
+            <option value="ENEMY">ENEMY 敌方</option>
+            <option value="ANY">ANY 任意</option>
+          </select>
+        </label>
+        <label className={labelClass + " sm:col-span-2"}>
+          <span className={captionClass}>描述</span>
+          <textarea name="description" rows={3} defaultValue={textOf(data, "description", "")} className={inputClass} />
+        </label>
+        <label className={labelClass + " sm:col-span-2"}>
+          <span className={captionClass}>效果 effects（JSON 数组）</span>
+          <textarea name="effects" rows={7} defaultValue={jsonArrayText(data.effects)} className={inputClass + " font-mono text-[11px]"} />
+        </label>
+      </div>
+      <p className={captionClass}>
+        示例：[&#123;&quot;type&quot;:&quot;DAMAGE&quot;,&quot;amount&quot;:&quot;1d6&quot;&#125;,
+        &#123;&quot;type&quot;:&quot;STUN&quot;,&quot;durationActions&quot;:1&#125;]。
+        可用类型：DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN_LOSS / SAN_RESTORE / STATUS / DOT / STUN / CONTROL / CLEANSE。
+      </p>
+    </FormShell>
+  );
+}
+
 function Section(props: {
   readonly title: string;
   readonly count: number;
@@ -275,6 +343,22 @@ export default function ModuleEntityEditors({ moduleId, content, assets, returnT
         <details className="rounded-lg border border-dashed border-white/15 bg-ink-900/40 p-3">
           <summary className="cursor-pointer text-xs text-spirit-300">+ 新增线索</summary>
           <ClueForm moduleId={moduleId} entry={null} returnTo={returnTo} assets={assets} />
+        </details>
+      </Section>
+
+      <Section title="法术" count={structured.magic.length}>
+        {structured.magic.map((entry) => (
+          <details key={entry.id} className="rounded-lg border border-white/10 bg-ink-900/50 p-3">
+            <summary className="flex cursor-pointer items-center gap-2 text-sm text-white/75">
+              <span className="flex-1">{entry.title}</span>
+              <DeleteForm moduleId={moduleId} kind="magic" entityId={entry.id} label="法术" returnTo={returnTo} />
+            </summary>
+            <MagicForm moduleId={moduleId} entry={entry} returnTo={returnTo} />
+          </details>
+        ))}
+        <details className="rounded-lg border border-dashed border-white/15 bg-ink-900/40 p-3">
+          <summary className="cursor-pointer text-xs text-spirit-300">+ 新增法术</summary>
+          <MagicForm moduleId={moduleId} entry={null} returnTo={returnTo} />
         </details>
       </Section>
 

@@ -211,7 +211,12 @@ export function combatFeatureFlags(pack: CompiledRulePack): CombatFeatureFlags {
 export interface CombatActionContext {
   readonly pack: CompiledRulePack;
   readonly state: {
-    readonly participants: readonly { readonly id: string; readonly defeated: boolean; readonly faction?: string }[];
+    readonly participants: readonly {
+      readonly id: string;
+      readonly defeated: boolean;
+      readonly faction?: string;
+      readonly spells?: readonly string[];
+    }[];
   };
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
 }
@@ -231,6 +236,12 @@ export function validateCombatAction(
       (item) => item.id === action.spellId || item.name === action.name
     );
     if (spell === undefined) return "没有找到这个法术";
+    const actor = context.state.participants.find((item) => item.id === action.actorId);
+    if (actor === undefined) return "施法者不在场";
+    const actorSpells = actor.spells ?? [];
+    if (actorSpells.includes(spell.id) === false) {
+      return "该单位没有学会这个法术";
+    }
     const targeting = spellTargeting(spell);
     if (targeting === "SELF" || spell.target === "SELF") return null;
     // ALL 由服务端按阵营选择目标；ONE 需要玩家指定合法目标。
@@ -239,8 +250,6 @@ export function validateCombatAction(
     if (targetId === null) return "施法需要目标";
     const target = context.state.participants.find((item) => item.id === targetId);
     if (target === undefined || target.defeated) return "目标已不在场";
-    const actor = context.state.participants.find((item) => item.id === action.actorId);
-    if (actor === undefined) return "施法者不在场";
     if (targeting === "ENEMY" && target.id === actor.id) return "这个法术不能对自己使用";
     if (
       targeting === "ENEMY" &&

@@ -47,6 +47,17 @@ function attributesOf(formData: FormData): Record<string, number> {
   return out;
 }
 
+function effectsOf(value: FormDataEntryValue | null): unknown[] {
+  const raw = String(value ?? "").trim();
+  if (raw.length === 0) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    return Array.isArray(parsed) ? parsed.slice(0, 50) : [];
+  } catch {
+    return [];
+  }
+}
+
 function skillsOf(value: FormDataEntryValue | null): Record<string, number> {
   const out: Record<string, number> = {};
   const raw = String(value ?? "").trim();
@@ -183,15 +194,20 @@ function entityDataOf(kind: StructuredEntityKind, formData: FormData): Record<st
       description: optional(formData.get("description"), 4000)
     };
   }
-  return {
-    name: clean(formData.get("name"), 120),
-    skill: clean(formData.get("skill"), 60),
-    description: optional(formData.get("description"), 4000),
-    mpCost: optional(formData.get("mpCost"), 40) ?? "0",
-    sanCost: optional(formData.get("sanCost"), 40) ?? "0",
-    damage: optional(formData.get("damage"), 40),
-    target: clean(formData.get("target"), 10) || "ONE"
-  };
+  if (kind === "magic") {
+    return {
+      name: clean(formData.get("name"), 120),
+      skill: clean(formData.get("skill"), 60),
+      description: optional(formData.get("description"), 4000),
+      mpCost: optional(formData.get("mpCost"), 40) ?? "0",
+      sanCost: optional(formData.get("sanCost"), 40) ?? "0",
+      damage: optional(formData.get("damage"), 40),
+      target: clean(formData.get("target"), 10) || "ONE",
+      targeting: optional(formData.get("targeting"), 12),
+      effects: effectsOf(formData.get("effects"))
+    };
+  }
+  return {};
 }
 
 async function deleteTemplateRow(moduleId: string, kind: StructuredEntityKind, entityId: string): Promise<void> {

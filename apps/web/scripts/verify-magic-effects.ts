@@ -123,6 +123,7 @@ async function main(): Promise<void> {
             spells: [
               { id: "selfheal", name: "自愈", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "SELF", effects: [{ type: "HEAL", amount: "5" }] },
               { id: "bless", name: "祝福", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ALLY", effects: [{ type: "HEAL", amount: "3" }] },
+              { id: "forbidden", name: "禁术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ENEMY", effects: [{ type: "DAMAGE", amount: "9" }] },
               { id: "hex", name: "蚀血诅咒", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ENEMY", effects: [
                 { type: "DAMAGE", amount: "2" },
                 { type: "DOT", amount: "3", durationTicks: "2" },
@@ -139,7 +140,8 @@ async function main(): Promise<void> {
     const character = await prisma.character.create({
       data: {
         userId: plId, system: "COC7", name: "E2E 法师", str: 50, con: 50, siz: 50, dex: 60, app: 50, int: 60, pow: 70, edu: 60, luck: 50,
-        hp: 12, maxHp: 12, mp: 10, maxMp: 10, san: 50, maxSan: 50, dp: 0, maxDp: 0, skills: { OCCULT: 70 }
+        hp: 12, maxHp: 12, mp: 10, maxMp: 10, san: 50, maxSan: 50, dp: 0, maxDp: 0, skills: { OCCULT: 70 },
+        sourceData: { spells: ["selfheal", "bless", "hex"] } as never
       }
     });
     await prisma.roomCharacterEntry.create({ data: { roomId: room.id, characterId: character.id, status: "APPROVED" } });
@@ -182,6 +184,19 @@ async function main(): Promise<void> {
 
     const ownActor = await waitOwnReady();
 
+
+    // 0. 玩家角色卡上没有的法术不能被施放。
+    const forbiddenAck = await emitAck<Ack>(plSocket, "combat:action", {
+      combatId,
+      actorId: ownActor.id,
+      action: { kind: "MAGIC", targetId: enemyActor.id, spellId: "forbidden", name: "禁术" }
+    });
+    expectEqual(forbiddenAck.ok, false, "角色卡上没有的法术应被服务端拒绝");
+    expectEqual(
+      (forbiddenAck.error ?? "").includes("没有学会"),
+      true,
+      "拒绝原因应说明该单位没有学会这个法术"
+    );
 
     // 1. SELF 法术：不需要目标，自动作用于自己。
     const selfHealAck = await emitAck<Ack>(plSocket, "combat:action", {

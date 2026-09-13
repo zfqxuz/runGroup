@@ -217,12 +217,32 @@ async function main(): Promise<void> {
     const actionError = validateCombatAction(
       {
         pack: effective.compiled,
-        state: { participants: [{ id: "caster", defeated: false }, { id: "target", defeated: false }] },
+        state: {
+          participants: [
+            { id: "caster", defeated: false, spells: ["fireball"] },
+            { id: "target", defeated: false }
+          ]
+        },
         attackSkills: new Map()
       },
       { actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "fireball" }
     );
     expectEqual(actionError, null, "MAGIC 行动校验应通过");
+    const noSpellError = validateCombatAction(
+      {
+        pack: effective.compiled,
+        state: {
+          participants: [
+            { id: "caster-no-spell", defeated: false, spells: [] },
+            { id: "target", defeated: false }
+          ]
+        },
+        attackSkills: new Map()
+      },
+      { actorId: "caster-no-spell", kind: "MAGIC", targetId: "target", spellId: "fireball" }
+    );
+    expectEqual(noSpellError, "该单位没有学会这个法术", "未持有法术的单位不能施法");
+
 
     console.log("PASS 可见性与魔法准备 E2E：NPC 隐藏/公开 / 角色互见配置 / 魔法规则启用与校验");
     console.log("  room=" + room.id + " module=" + moduleId + " spells=" + String(effective.compiled.pack.magic?.spells.length ?? 0));

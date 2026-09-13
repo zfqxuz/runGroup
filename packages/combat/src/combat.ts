@@ -103,6 +103,8 @@ export interface ParticipantInit {
   readonly attributes: AttributeSet;
   readonly derived: DerivedStats;
   readonly skills?: Record<string, number>;
+  /** 该单位允许施放的法术 id。 */
+  readonly spells?: readonly string[];
   /** 伤害表达式里 `db` 的替换值，例如 "1d4" / "-2" / "0"。 */
   readonly damageBonus?: string;
   /** 单位 1/ATB_SCALE。 */
@@ -144,6 +146,7 @@ export function addParticipant(
     attributes: init.attributes,
     derived: init.derived,
     skills: init.skills ?? {},
+    spells: [...(init.spells ?? [])],
     damageBonus: init.damageBonus ?? "0",
     vars,
     statusEffects: [],

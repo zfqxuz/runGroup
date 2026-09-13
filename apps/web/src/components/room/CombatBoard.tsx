@@ -40,6 +40,7 @@ interface Props {
   readonly canCastMagic: boolean;
   readonly magicSpells: readonly MagicSpellOption[];
   readonly attackSkillsByParticipant: Readonly<Record<string, readonly string[]>>;
+  readonly spellIdsByParticipant: Readonly<Record<string, readonly string[]>>;
   /** combatParticipant.id -> 立绘 / 头像 URL。 */
   readonly portraits: Readonly<Record<string, string>>;
 }
@@ -200,8 +201,11 @@ export default function CombatBoard(props: Props) {
   const activeSkill = attackSkills.some((option) => option.id === skill) ? skill : (attackSkills[0]?.id ?? "");
   const targetOptions = alive.filter((item) => item.id !== selectedActorId);
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
-  const activeSpell = props.magicSpells.some((item) => item.id === spellId) ? spellId : (props.magicSpells[0]?.id ?? "");
-  const selectedSpell = props.magicSpells.find((item) => item.id === activeSpell) ?? null;
+  const allowedSpellIds =
+    selectedActor === null ? [] : props.spellIdsByParticipant[selectedActor.id] ?? [];
+  const actorMagicSpells = props.magicSpells.filter((spell) => allowedSpellIds.includes(spell.id));
+  const activeSpell = actorMagicSpells.some((item) => item.id === spellId) ? spellId : (actorMagicSpells[0]?.id ?? "");
+  const selectedSpell = actorMagicSpells.find((item) => item.id === activeSpell) ?? null;
   const spellTargetOptions = selectedSpell === null || selectedActor === null
     ? []
     : selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
@@ -986,11 +990,11 @@ export default function CombatBoard(props: Props) {
                   <button type="button" onClick={() => emitAction({ kind: "OUT_OF_RULE", name: outName })} className="rounded-lg border border-purple-400/40 px-3 py-2 text-xs text-purple-300 transition hover:bg-purple-400/10">规则外施法</button>
                 </div>
               ) : null}
-              {props.canCastMagic ? (
+              {props.canCastMagic && actorMagicSpells.length > 0 ? (
                 <div className="flex flex-col gap-2 rounded-lg border border-purple-400/30 bg-purple-400/5 p-2">
                   <div className="flex flex-wrap items-center gap-2">
                     <select value={activeSpell} onChange={(event) => setSpellId(event.target.value)} className={inputClass + " flex-1"}>
-                      {props.magicSpells.map((spell) => (
+                      {actorMagicSpells.map((spell) => (
                         <option key={spell.id} value={spell.id}>
                           {spell.name}（MP {spell.mpCost} / SAN {spell.sanCost}{spell.effects.length === 0 ? "" : " / " + spell.effects.join(" + ")}）
                         </option>
