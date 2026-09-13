@@ -145,6 +145,18 @@ async function main(): Promise<void> {
     });
     expectEqual(gameCharacter?.currentHp, 7, "当前局 HP 应同步");
 
+    const valuesAck = await emitAck<Ack & { source?: string; values?: Record<string, unknown> }>(
+      kpSocket,
+      "room:unit-values",
+      { roomId: room.id, unitRef: "character:" + character.id }
+    );
+    expectEqual(valuesAck.ok, true, "KP 应能读取单位实时数值");
+    expectEqual(valuesAck.values?.hp, 7, "读取结果应带当前 HP");
+    const readAttributes = valuesAck.values?.attributes as Record<string, number> | undefined;
+    const readSkills = valuesAck.values?.skills as Record<string, number> | undefined;
+    expectEqual(readAttributes?.str, 60, "读取结果应带当前 STR");
+    expectEqual(readSkills?.DODGE, 100, "读取结果应带当前技能值");
+
     const checkAck = await emitAck<Ack>(plSocket, "dice:skill-check", {
       roomId: room.id,
       characterId: character.id,

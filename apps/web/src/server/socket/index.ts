@@ -95,6 +95,11 @@ function recordOf(value: unknown): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 
+interface UnitValuesAck extends Ack {
+  readonly source?: string;
+  readonly values?: Record<string, unknown>;
+}
+
 interface KpAdjustValues {
   readonly vitals: Partial<Record<(typeof KP_VITAL_FIELDS)[number], number>>;
   readonly attributes: Partial<Record<(typeof KP_ATTRIBUTE_KEYS)[number], number>>;
@@ -632,6 +637,148 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
       } catch (error) {
         console.error("dice:skill-check failed", error);
         reply({ ok: false, error: "技能检定失败，请重试" });
+      }
+    });
+
+    socket.on("room:unit-values", async (payload: unknown, ack: (result: UnitValuesAck) => void) => {
+      try {
+        const input = payload as { roomId?: unknown; unitRef?: unknown };
+        if (typeof input?.roomId !== "string") {
+          ack({ ok: false, error: "参数不合法" });
+          return;
+        }
+        const roomId = input.roomId;
+        const unit = parseKpUnitRef(input.unitRef);
+        if (unit === null) {
+          ack({ ok: false, error: "单位引用不合法" });
+          return;
+        }
+        const membership = await loadMembership(roomId, me.userId);
+        if (membership === null || membership.role !== "KP") {
+          ack({ ok: false, error: "只有 KP 可以查看单位实时数值" });
+          return;
+        }
+
+        const activeCombat = await prisma.combat.findFirst({
+          where: { roomId, endedAt: null },
+          select: { id: true }
+        });
+        if (activeCombat !== null) {
+          const runtime = await loadCombatRuntime(activeCombat.id);
+          if (runtime !== null) {
+            const participant =
+              unit.kind === "CHARACTER"
+                ? runtime.state.participants.find((item) => item.characterId === unit.id)
+                : runtime.state.participants.find((item) => item.id === unit.id);
+            if (participant !== undefined) {
+              ack({
+                ok: true,
+                source: "COMBAT",
+                values: {
+                  hp: participant.hp,
+                  maxHp: participant.maxHp,
+                  mp: participant.mp,
+                  maxMp: participant.maxMp,
+                  san: participant.san,
+                  maxSan: participant.maxSan,
+                  dp: participant.dp,
+                  maxDp: participant.maxDp,
+                  attributes: { ...participant.attributes },
+                  skills: { ...participant.skills }
+                }
+              });
+              return;
+            }
+          }
+        }
+
+        if (unit.kind === "CHARACTER") {
+          const character = await prisma.character.findUnique({ where: { id: unit.id } });
+          if (character === null) {
+            ack({ ok: false, error: "角色不存在" });
+            return;
+          }
+          const game = await prisma.game.findFirst({
+            where: { roomId, status: { in: ["PLAYING", "COMBAT", "PAUSED"] } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true }
+          });
+          const gameCharacter =
+            game === null
+              ? null
+              : await prisma.gameCharacter.findUnique({
+                  where: { gameId_characterId: { gameId: game.id, characterId: unit.id } }
+                });
+          const skills: Record<string, number> = {};
+          for (const [key, value] of Object.entries(recordOf(character.skills))) {
+            if (typeof value === "number" && Number.isFinite(value)) skills[key] = value;
+          }
+          ack({
+            ok: true,
+            source: gameCharacter === null ? "CARD" : "GAME",
+            values: {
+              hp: gameCharacter?.currentHp ?? character.hp,
+              maxHp: character.maxHp,
+              mp: gameCharacter?.currentMp ?? character.mp,
+              maxMp: character.maxMp,
+              san: gameCharacter?.currentSan ?? character.san,
+              maxSan: character.maxSan,
+              dp: gameCharacter?.currentDp ?? character.dp,
+              maxDp: character.maxDp,
+              attributes: {
+                str: character.str,
+                con: character.con,
+                siz: character.siz,
+                dex: character.dex,
+                app: character.app,
+                int: character.int,
+                pow: character.pow,
+                edu: character.edu,
+                luck: character.luck
+              },
+              skills
+            }
+          });
+          return;
+        }
+
+        const card = await prisma.card.findUnique({ where: { id: unit.id } });
+        if (card === null || card.roomId !== roomId || card.type !== "NPC") {
+          ack({ ok: false, error: "NPC 卡不存在或不属于本房间" });
+          return;
+        }
+        const stats = recordOf(card.stats);
+        const rawAttributes = recordOf(stats.attributes);
+        const rawSkills = recordOf(stats.skills);
+        const attributes: Record<string, number> = {};
+        for (const key of KP_ATTRIBUTE_KEYS) {
+          const value = finiteNumber(rawAttributes[key], 0, 999);
+          if (value !== undefined) attributes[key] = value;
+        }
+        const skills: Record<string, number> = {};
+        for (const [key, raw] of Object.entries(rawSkills)) {
+          const value = finiteNumber(raw, 0, 999);
+          if (value !== undefined) skills[key] = value;
+        }
+        ack({
+          ok: true,
+          source: "CARD",
+          values: {
+            hp: finiteNumber(stats.hp, 0, 999999) ?? finiteNumber(stats.maxHp, 0, 999999) ?? 0,
+            maxHp: finiteNumber(stats.maxHp, 0, 999999) ?? 0,
+            mp: finiteNumber(stats.mp, 0, 999999) ?? finiteNumber(stats.maxMp, 0, 999999) ?? 0,
+            maxMp: finiteNumber(stats.maxMp, 0, 999999) ?? 0,
+            san: finiteNumber(stats.san, 0, 999999) ?? finiteNumber(stats.maxSan, 0, 999999) ?? 0,
+            maxSan: finiteNumber(stats.maxSan, 0, 999999) ?? 0,
+            dp: finiteNumber(stats.dp, 0, 999999) ?? finiteNumber(stats.maxDp, 0, 999999) ?? 0,
+            maxDp: finiteNumber(stats.maxDp, 0, 999999) ?? 0,
+            attributes,
+            skills
+          }
+        });
+      } catch (error) {
+        console.error("room:unit-values failed", error);
+        ack({ ok: false, error: "读取单位数值失败，请重试" });
       }
     });
 

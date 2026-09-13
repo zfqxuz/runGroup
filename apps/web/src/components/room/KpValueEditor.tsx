@@ -15,6 +15,28 @@ interface Props {
   readonly units: readonly UnitOption[];
 }
 
+interface UnitValuesAck extends Ack {
+  readonly source?: string;
+  readonly values?: {
+    readonly hp?: number;
+    readonly maxHp?: number;
+    readonly mp?: number;
+    readonly maxMp?: number;
+    readonly san?: number;
+    readonly maxSan?: number;
+    readonly dp?: number;
+    readonly maxDp?: number;
+    readonly attributes?: Record<string, number>;
+    readonly skills?: Record<string, number>;
+  };
+}
+
+const SOURCE_LABELS: Record<string, string> = {
+  COMBAT: "战斗中实时数值",
+  GAME: "当前局数值",
+  CARD: "角色卡 / NPC 卡数值"
+};
+
 const VITALS = [
   ["hp", "HP"],
   ["maxHp", "最大 HP"],
@@ -55,6 +77,9 @@ export default function KpValueEditor(props: Props) {
   const [attributes, setAttributes] = useState<Record<string, string>>({});
   const [skillsText, setSkillsText] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [source, setSource] = useState<string | null>(null);
+  const [socketReady, setSocketReady] = useState(false);
   const socketRef = useRef<Socket | null>(null);
 
   useEffect(() => {
@@ -69,12 +94,65 @@ export default function KpValueEditor(props: Props) {
       socket.connect();
     }
     void bootstrap();
+    socket.on("connect", () => {
+      if (cancelled === false) setSocketReady(true);
+    });
+    socket.on("disconnect", () => {
+      if (cancelled === false) setSocketReady(false);
+    });
     return () => {
       cancelled = true;
       socket.removeAllListeners();
       socket.close();
     };
   }, []);
+
+  function applyValues(values: UnitValuesAck["values"]): void {
+    if (values === undefined) return;
+    const nextVitals: Record<string, string> = {};
+    for (const [key] of VITALS) {
+      const value = values[key as keyof typeof values];
+      if (typeof value === "number") nextVitals[key] = String(value);
+    }
+    setVitals(nextVitals);
+    const nextAttributes: Record<string, string> = {};
+    for (const [key] of ATTRIBUTES) {
+      const value = values.attributes?.[key];
+      if (typeof value === "number") nextAttributes[key] = String(value);
+    }
+    setAttributes(nextAttributes);
+    const nextSkills = values.skills ?? {};
+    setSkillsText(
+      Object.entries(nextSkills)
+        .map(([id, value]) => id + ":" + String(value))
+        .join("\n")
+    );
+  }
+
+  function requestValues(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false || unitRef.length === 0) return;
+    setLoading(true);
+    socket.emit(
+      "room:unit-values",
+      { roomId: props.roomId, unitRef },
+      (result: UnitValuesAck) => {
+        setLoading(false);
+        if (result.ok === false) {
+          setMessage(result.error ?? "读取实时数值失败");
+          return;
+        }
+        applyValues(result.values);
+        setSource(result.source ?? null);
+        setMessage(null);
+      }
+    );
+  }
+
+  useEffect(() => {
+    if (socketReady === false) return;
+    requestValues();
+  }, [socketReady, unitRef]);
 
   function setVital(key: string, value: string): void {
     setVitals((prev) => ({ ...prev, [key]: value }));
@@ -122,7 +200,12 @@ export default function KpValueEditor(props: Props) {
         values: { ...parsedVitals, attributes: parsedAttributes, skills: parsedSkills }
       },
       (result: Ack) => {
-        setMessage(result.ok ? "数值已应用。" : result.error ?? "数值调整失败");
+        if (result.ok) {
+          setMessage("数值已应用。");
+          requestValues();
+        } else {
+          setMessage(result.error ?? "数值调整失败");
+        }
       }
     );
   }
@@ -202,6 +285,18 @@ export default function KpValueEditor(props: Props) {
         >
           应用数值
         </button>
+        <button
+          type="button"
+          onClick={requestValues}
+          className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35"
+        >
+          重新读取实时值
+        </button>
+        {source === null ? null : (
+          <span className="text-[10px] text-white/35">
+            {SOURCE_LABELS[source] ?? source}{loading ? " · 读取中…" : ""}
+          </span>
+        )}
         {message === null ? null : <span className="text-[11px] text-white/55">{message}</span>}
       </div>
     </section>
