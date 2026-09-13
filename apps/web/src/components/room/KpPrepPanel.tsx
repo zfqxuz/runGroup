@@ -1,6 +1,7 @@
 import Link from "next/link";
 import ClueAdminControls, { type ClueMemberOption } from "@/components/room/ClueAdminControls";
 import KpCombatRequestPanel from "@/components/room/KpCombatRequestPanel";
+import KpValueEditor from "@/components/room/KpValueEditor";
 import ImageUpload from "@/components/upload/ImageUpload";
 import { setGameSceneAction } from "@/server/actions/game";
 import { applyMapBackgroundAction, createSceneTokenAction, setSceneFogAction } from "@/server/actions/scene";
@@ -263,6 +264,8 @@ export default function KpPrepPanel(props: Props) {
           </Link>
         </div>
       </section>
+
+      <KpValueEditor roomId={props.roomId} units={props.units} />
 
       <KpCombatRequestPanel roomId={props.roomId} />
 

@@ -133,9 +133,10 @@ export default function KpValueEditor(props: Props) {
     <section className="rounded-xl border border-purple-400/30 bg-purple-400/5 p-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <h2 className="text-sm font-medium text-purple-200">KP 数值调整</h2>
+          <h2 className="text-sm font-medium text-purple-200">KP 数值调整（玩家 / NPC）</h2>
           <p className="mt-0.5 text-[10px] text-white/45">
-            任意阶段可用：非战斗时写入角色卡 / NPC 卡，战斗中同时同步到战斗单位。留空表示不修改。
+            任意阶段可用：HP / MP / SAN / DP、九项属性、技能。非战斗写入角色卡 / NPC 卡，
+            战斗中同时实时同步到战斗单位。留空表示不修改。
           </p>
         </div>
       </div>
@@ -165,7 +166,7 @@ export default function KpValueEditor(props: Props) {
         ))}
       </div>
 
-      <details className="mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-2">
+      <details open className="mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-2">
         <summary className="cursor-pointer text-[11px] text-white/50">属性（留空不改）</summary>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {ATTRIBUTES.map(([key, label]) => (

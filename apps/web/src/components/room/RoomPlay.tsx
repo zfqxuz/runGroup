@@ -69,12 +69,14 @@ export default function RoomPlay(props: Props) {
   const [checkCharacterId, setCheckCharacterId] = useState(props.skillCheckCharacters[0]?.id ?? "");
   const [skillQuery, setSkillQuery] = useState("");
   const [skillId, setSkillId] = useState("");
+  const [skillDropdownOpen, setSkillDropdownOpen] = useState(false);
   const [favoriteSkillIds, setFavoriteSkillIds] = useState<Record<string, boolean>>({});
   const [diceVisibility, setDiceVisibility] = useState<DiceVisibility>("PUBLIC");
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
   const [membersOpen, setMembersOpen] = useState(false);
   const socketRef = useRef<Socket | null>(null);
+  const skillComboRef = useRef<HTMLDivElement | null>(null);
   const listRef = useRef<HTMLUListElement | null>(null);
   const messageCountRef = useRef(messages.length);
   const router = useRouter();
@@ -207,7 +209,9 @@ export default function RoomPlay(props: Props) {
           if (favoriteA !== favoriteB) return favoriteB - favoriteA;
           if (a.occupational !== b.occupational) return a.occupational ? -1 : 1;
           if (a.value !== b.value) return b.value - a.value;
-          return a.name.localeCompare(b.name);
+          if (a.name < b.name) return -1;
+          if (a.name > b.name) return 1;
+          return 0;
         });
   const effectiveSkillId = visibleSkillOptions.some((skill) => skill.id === skillId)
     ? skillId
@@ -223,6 +227,16 @@ export default function RoomPlay(props: Props) {
       setFavoriteSkillIds({});
     }
   }, [props.roomId, selectedCheckCharacter?.id]);
+
+  useEffect(() => {
+    function onDocumentMouseDown(event: MouseEvent): void {
+      const target = event.target as Node | null;
+      if (target === null || skillComboRef.current === null || skillComboRef.current.contains(target)) return;
+      setSkillDropdownOpen(false);
+    }
+    document.addEventListener("mousedown", onDocumentMouseDown);
+    return () => document.removeEventListener("mousedown", onDocumentMouseDown);
+  }, []);
 
   function toggleSkillFavorite(id: string): void {
     if (selectedCheckCharacter === null) return;
@@ -493,33 +507,68 @@ export default function RoomPlay(props: Props) {
                       ))}
                     </select>
                   ) : null}
-                  <input
-                    value={skillQuery}
-                    onChange={(event) => setSkillQuery(event.target.value)}
-                    onKeyDown={(event) => { if (event.key === "Enter") rollSkillCheck(); }}
-                    placeholder="检索技能"
-                    className="min-w-[140px] rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-xs outline-none focus:border-spirit-400"
-                  />
-                  <select
-                    value={effectiveSkillId}
-                    onChange={(event) => setSkillId(event.target.value)}
-                    className="min-w-[220px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
-                  >
-                    {visibleSkillOptions.length === 0 ? <option value="">没有匹配技能</option> : null}
-                    {visibleSkillOptions.map((skill) => (
-                      <option key={skill.id} value={skill.id}>
-                        {favoriteSkillIds[skill.id] === true ? "★ " : ""}{skill.occupational ? "本职 · " : ""}{skill.name}（{skill.value}）
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    onClick={() => { if (effectiveSkillId.length > 0) toggleSkillFavorite(effectiveSkillId); }}
-                    disabled={effectiveSkillId.length === 0}
-                    className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs text-amber-200 transition hover:bg-amber-400/10 disabled:opacity-40"
-                  >
-                    {favoriteSkillIds[effectiveSkillId] === true ? "取消收藏" : "收藏技能"}
-                  </button>
+                  <div ref={skillComboRef} className="relative min-w-[260px] flex-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSkillDropdownOpen((open) => open === false);
+                        setSkillQuery("");
+                      }}
+                      className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-left text-xs outline-none hover:border-white/30"
+                    >
+                      <span className="truncate">
+                        {effectiveSkill === null
+                          ? "选择技能"
+                          : (favoriteSkillIds[effectiveSkill.id] === true ? "★ " : "") +
+                            (effectiveSkill.occupational ? "本职 · " : "") +
+                            effectiveSkill.name +
+                            "（" + effectiveSkill.value + "）"}
+                      </span>
+                      <span className="text-white/35">▾</span>
+                    </button>
+                    {skillDropdownOpen ? (
+                      <div className="absolute left-0 top-full z-50 mt-1 w-full rounded-lg border border-white/15 bg-ink-900 p-2 shadow-2xl">
+                        <input
+                          autoFocus
+                          value={skillQuery}
+                          onChange={(event) => setSkillQuery(event.target.value)}
+                          onKeyDown={(event) => { if (event.key === "Enter") rollSkillCheck(); }}
+                          placeholder="输入技能名 / ID 检索"
+                          className="w-full rounded border border-white/15 bg-ink-800 px-2 py-1.5 text-xs outline-none focus:border-spirit-400"
+                        />
+                        <div className="mt-2 max-h-72 overflow-y-auto">
+                          {visibleSkillOptions.length === 0 ? (
+                            <p className="px-2 py-2 text-[11px] text-white/35">没有匹配技能</p>
+                          ) : (
+                            visibleSkillOptions.map((skill) => (
+                              <div key={skill.id} className="flex items-center gap-1 rounded px-1 py-0.5 hover:bg-white/5">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSkillId(skill.id);
+                                    setSkillDropdownOpen(false);
+                                  }}
+                                  className="min-w-0 flex-1 truncate rounded px-2 py-1.5 text-left text-xs text-white/70"
+                                >
+                                  {favoriteSkillIds[skill.id] === true ? "★ " : ""}
+                                  {skill.occupational ? "本职 · " : ""}
+                                  {skill.name}（{skill.value}）
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => toggleSkillFavorite(skill.id)}
+                                  title={favoriteSkillIds[skill.id] === true ? "取消收藏" : "收藏技能"}
+                                  className="rounded px-2 py-1 text-sm text-amber-300 transition hover:bg-amber-400/10"
+                                >
+                                  {favoriteSkillIds[skill.id] === true ? "★" : "☆"}
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                   <span className="rounded border border-white/15 px-2 py-1 font-mono text-[11px] text-white/50">1d100</span>
                 </>
               )}

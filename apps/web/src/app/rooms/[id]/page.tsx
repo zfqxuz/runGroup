@@ -361,7 +361,9 @@ export default async function RoomPage({
             .sort((a, b) => {
               if (a.occupational !== b.occupational) return a.occupational ? -1 : 1;
               if (a.value !== b.value) return b.value - a.value;
-              return a.name.localeCompare(b.name);
+              if (a.name < b.name) return -1;
+              if (a.name > b.name) return 1;
+              return 0;
             });
           return { id: item.characterId, name: item.character.name, skills };
         });
@@ -650,7 +652,7 @@ export default async function RoomPage({
         </p>
       ) : null}
 
-      {isKP ? <KpValueEditor roomId={room.id} units={placeableSceneUnits} /> : null}
+      {isKP && isKpSplit === false ? <KpValueEditor roomId={room.id} units={placeableSceneUnits} /> : null}
 
       {isKpSplit ? (
         <div className="flex flex-col gap-4">
