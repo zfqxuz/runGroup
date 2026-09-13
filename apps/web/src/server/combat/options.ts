@@ -2,7 +2,7 @@ import type { ActionSubmission } from "@touhou/combat";
 import { spellTargeting, type CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 
-export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER";
+export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "FLEE";
 
 export interface CombatOptionParticipant {
   readonly id: string;
@@ -163,18 +163,24 @@ export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatRea
 export function allowedReactionTypesForParticipant(
   pack: CompiledRulePack,
   attackSkills: ReadonlyMap<string, readonly string[]>,
-  participantId: string
+  participantId: string,
+  canFlee = false
 ): readonly CombatReactionType[] {
-  const types = allowedReactionTypes(pack);
-  if (types.includes("COUNTER") === false) return types;
-  if (pack.system === "COC7") {
-    const hasBrawlBase = pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
-    return hasBrawlBase ? types : types.filter((type) => type !== "COUNTER");
+  const types: CombatReactionType[] = [...allowedReactionTypes(pack)];
+  if (types.includes("COUNTER")) {
+    if (pack.system === "COC7") {
+      const hasBrawlBase = pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
+      if (hasBrawlBase === false) {
+        return canFlee ? types.filter((type) => type !== "COUNTER").concat("FLEE") : types.filter((type) => type !== "COUNTER");
+      }
+    } else {
+      const counterSkills = attackSkills.get(participantId) ?? [];
+      if (counterSkills.length === 0) {
+        return canFlee ? types.filter((type) => type !== "COUNTER").concat("FLEE") : types.filter((type) => type !== "COUNTER");
+      }
+    }
   }
-  const counterSkills = attackSkills.get(participantId) ?? [];
-  if (counterSkills.length === 0) {
-    return types.filter((type) => type !== "COUNTER");
-  }
+  if (canFlee && types.includes("FLEE") === false) types.push("FLEE");
   return types;
 }
 

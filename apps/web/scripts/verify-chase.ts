@@ -8,7 +8,7 @@ import { characterRef, createCombatRecord, npcRef } from "../src/server/combat/s
 import { prisma } from "../src/server/db/prisma";
 import { loadEffectivePack } from "../src/server/rules/loader";
 import { NpcStatsSchema } from "../src/shared/npc";
-import type { Ack, CombatJoinAck, CombatUpdate } from "../src/shared/socket";
+import type { Ack, CombatJoinAck, CombatReactionPayload, CombatUpdate } from "../src/shared/socket";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const jar = new Map<string, string>();
@@ -79,13 +79,18 @@ function waitForView(
 function waitForReactionRequest(
   socket: Socket,
   combatId: string
-): Promise<{ actorId: string; targetId: string }> {
+): Promise<{ actorId: string; targetId: string; options: readonly CombatReactionPayload["type"][] }> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       socket.off("combat:reaction-request", handler);
       reject(new Error("reaction request timeout"));
     }, 8000);
-    function handler(request: { combatId?: string; actorId: string; targetId: string }): void {
+    function handler(request: {
+      combatId?: string;
+      actorId: string;
+      targetId: string;
+      options: readonly CombatReactionPayload["type"][];
+    }): void {
       if (request.combatId !== combatId) return;
       clearTimeout(timer);
       socket.off("combat:reaction-request", handler);
@@ -466,7 +471,60 @@ async function main(): Promise<void> {
     });
     assert(secondRoomAfter?.status === "PLAYING", "第二场战斗后房间应回到 PLAYING");
 
-    console.log("PASS 追逐 E2E：FLEE → 追逐 → 攻击 / 应对 / 掉血 → 终点脱身 → 主动放弃追逐 → ESCAPED");
+    // 第三阶段：被攻击时选择逃跑：先结算这次攻击，再进入追逐。
+    const thirdCreated = await createCombatRecord(
+      room.id,
+      effective,
+      [characterRef(character.id)],
+      [npcRef(npc.id)]
+    );
+    const thirdCombatId = thirdCreated.combatId;
+    assert(thirdCreated.ok === true, thirdCreated.error ?? "创建第三场战斗失败");
+    assert(typeof thirdCombatId === "string", "第三场战斗缺少 id");
+
+    const thirdJoin = await emitAck<CombatJoinAck>(socket, "combat:join", thirdCombatId);
+    assert(thirdJoin.ok === true, thirdJoin.error ?? "加入第三场战斗失败");
+    if (thirdJoin.view === undefined) throw new Error("第三场战斗缺少视图");
+    const thirdActor = thirdJoin.view.participants.find(
+      (item) => item.isReady && item.defeated === false
+    );
+    if (thirdActor === undefined) throw new Error("第三场战斗缺少可行动的玩家单位");
+    assert(thirdActor.id === character.id, "第三场当前应是玩家角色行动");
+
+    const thirdReactionRequest = waitForReactionRequest(socket, thirdCombatId);
+    const thirdAttackAck = await emitAck<Ack>(socket, "combat:action", {
+      combatId: thirdCombatId,
+      actorId: thirdActor.id,
+      action: {
+        kind: "DANMAKU",
+        targetId: npc.id,
+        skill: "FIGHTING_BRAWL",
+        damage: "1d6"
+      }
+    });
+    assert(thirdAttackAck.ok === true, thirdAttackAck.error ?? "第三场攻击失败");
+    const thirdReaction = await thirdReactionRequest;
+    assert(thirdReaction.targetId === npc.id, "第三场应对目标应为 NPC");
+    assert(thirdReaction.options.includes("FLEE"), "被攻击时反应选项应包含逃跑");
+
+    const thirdChaseStarted = waitForView(socket, thirdCombatId, (update) => {
+      return update.view.chase?.status === "ACTIVE";
+    });
+    const thirdFleeAck = await emitAck<Ack>(socket, "combat:reaction", {
+      combatId: thirdCombatId,
+      targetId: npc.id,
+      reaction: { type: "FLEE" }
+    });
+    assert(thirdFleeAck.ok === true, thirdFleeAck.error ?? "被攻击时逃跑失败");
+    const thirdUpdate = await thirdChaseStarted;
+    const thirdChase = thirdUpdate.view.chase;
+    if (thirdChase === null) throw new Error("第三场没有进入追逐");
+    const thirdPrey = thirdChase.participants.find((item) => item.side === "PREY");
+    const thirdChaser = thirdChase.participants.find((item) => item.side === "CHASER");
+    assert(thirdPrey?.id === npc.id, "逃跑的 NPC 应成为被追逐者");
+    assert(thirdChaser?.id === thirdActor.id, "玩家角色应成为追逐者");
+
+    console.log("PASS 追逐 E2E：FLEE → 追逐 → 攻击 / 应对 / 掉血 → 终点脱身 → 主动放弃追逐 → 被攻击时逃跑进入追逐");
     console.log("  初始地点数 " + chase.trackLength + "，逃离者 MOV " + prey.mov + "，追逐者 MOV " + chaser.mov);
   } finally {
     if (socket !== null) socket.close();

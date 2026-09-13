@@ -48,7 +48,8 @@ const REACTION_LABELS: Record<CombatReactionPayload["type"], string> = {
   PASS: "不应对",
   DEFEND: "防御",
   DODGE: "闪避",
-  COUNTER: "反击"
+  COUNTER: "反击",
+  FLEE: "逃跑"
 };
 
 type ConnState = "connecting" | "online" | "offline";
@@ -247,6 +248,7 @@ export default function CombatBoard(props: Props) {
     : (chaseAttackSkills[0]?.id ?? "");
 
   function reactionLabel(type: CombatReactionPayload["type"]): string {
+    if (type === "FLEE") return "逃跑（进入追逐）";
     if (type === "COUNTER") return props.system === "TOUHOU" ? "消弹对抗" : "反击";
     return REACTION_LABELS[type];
   }

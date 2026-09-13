@@ -115,7 +115,7 @@ export interface CombatActionPayload {
 }
 
 export interface CombatReactionPayload {
-  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER";
+  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "FLEE";
   readonly skill?: string;
 }
 

@@ -305,9 +305,16 @@ async function handleAction(
   if (reactionTargetIds.length > 0) {
     const magicOptions: CombatReactionRequest["options"] | undefined =
       action.kind === "MAGIC" ? ["PASS", "DODGE"] : undefined;
+    const canFlee =
+      action.kind === "DANMAKU" &&
+      reactionTargetIds.length === 1 &&
+      runtime.pack.combat.mode === "INITIATIVE";
     for (const targetId of reactionTargetIds) {
       runtime.pendingReactions.set(targetId, action.actorId);
-      await emitReactionRequest(io, runtime, action.actorId, targetId, magicOptions);
+      const options =
+        magicOptions ??
+        allowedReactionTypesForParticipant(runtime.pack, runtime.attackSkills, targetId, canFlee);
+      await emitReactionRequest(io, runtime, action.actorId, targetId, options);
     }
   }
   const resolved = await tryResolveCombat(io, runtime);
@@ -337,18 +344,39 @@ async function handleReaction(
     return;
   }
   const raw = (input.reaction ?? {}) as CombatReactionPayload;
-  const allowedTypes = allowedReactionTypes(runtime.pack);
-  if (allowedTypes.includes(raw.type) === false) {
-    ack({ ok: false, error: "本规则包不支持该应对" });
-    return;
-  }
   const target = runtime.state.participants.find((item) => item.id === input.targetId);
   if (target === undefined) {
     ack({ ok: false, error: "应对目标不存在" });
     return;
   }
-  let reactionType = raw.type;
+  const pendingActorId = runtime.pendingReactions.get(input.targetId);
+  const pendingAction =
+    pendingActorId === undefined ? undefined : runtime.state.pending[pendingActorId];
+  const canFleeReaction =
+    raw.type === "FLEE" &&
+    runtime.chaseAttack === null &&
+    runtime.pack.combat.mode === "INITIATIVE" &&
+    pendingActorId !== undefined &&
+    pendingAction?.kind === "DANMAKU" &&
+    runtime.pendingReactions.size === 1;
+  const allowedTypes = allowedReactionTypes(runtime.pack);
+  if (canFleeReaction === false && allowedTypes.includes(raw.type) === false) {
+    ack({ ok: false, error: "本规则包不支持该应对" });
+    return;
+  }
+  const fleeAfterResolution = canFleeReaction;
+  let reactionType: "PASS" | "DEFEND" | "DODGE" | "COUNTER" =
+    raw.type === "FLEE" ? "PASS" : raw.type;
   let reactionSkill = asString(raw.skill);
+  if (fleeAfterResolution) {
+    pushLog(runtime.state, {
+      kind: "ACTION",
+      actorId: target.id,
+      targetId: pendingActorId ?? null,
+      text: target.name + " 放弃防御，试图逃跑。",
+      data: { rollType: "REACTION_FLEE" }
+    });
+  }
   if (reactionType === "DODGE") {
     const candidate = reactionSkill ?? "DODGE";
     const isDodge = candidate === "DODGE";
@@ -389,7 +417,36 @@ async function handleReaction(
   runtime.reactions[input.targetId] = { type: reactionType, skill: reactionSkill };
   const resolvedChase = await tryResolveChaseAttack(io, runtime);
   const resolved = resolvedChase ? true : await tryResolveCombat(io, runtime);
-  if (resolved === false) await broadcastCombat(io, runtime);
+  if (resolved === true && fleeAfterResolution) {
+    const prey = findParticipant(runtime.state, input.targetId);
+    const chaseable =
+      prey !== undefined &&
+      prey.defeated === false &&
+      runtime.state.phase !== "ENDED" &&
+      (runtime.state.chase === null || runtime.state.chase.status !== "ACTIVE");
+    const chasers = chaseable
+      ? runtime.state.participants
+          .filter(
+            (participant) =>
+              participant.defeated === false &&
+              participant.id !== input.targetId &&
+              participant.faction !== prey.faction
+          )
+          .map((participant) => participant.id)
+      : [];
+    if (chaseable && chasers.length > 0) {
+      const chaseResult = startChase(runtime.pack, runtime.state, {
+        preyId: input.targetId,
+        chaserIds: chasers,
+        trackLength: 10,
+        initialLead: 1,
+        allowImmediateEscape: false
+      });
+      if (chaseResult.ok === true) await persistAndBroadcast(io, runtime);
+    }
+  } else if (resolved === false) {
+    await broadcastCombat(io, runtime);
+  }
   ack({ ok: true });
 }
 
