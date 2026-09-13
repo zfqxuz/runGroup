@@ -78,6 +78,21 @@ describe('INITIATIVE 按顺序结算', () => {
     expect(state.participants[0]?.isReady).toBe(false);
   });
 
+  it('COC7 反击应对可以完成结算', () => {
+    const state = setup();
+    const attacker = state.participants[0];
+    const defender = state.participants[1];
+    if (attacker === undefined || defender === undefined) throw new Error('missing participant');
+    attacker.skills.FIGHTING_BRAWL = 80;
+    defender.skills.FIGHTING_BRAWL = 80;
+    beginInitiativeRound(coc, state);
+    expect(submitAction(state, { actorId: 'p1', kind: 'DANMAKU', targetId: 'p2', skill: 'FIGHTING_BRAWL', damage: '1d6' })).toBe(true);
+    const result = resolveInitiativeTurn(coc, state, { p2: { type: 'COUNTER', skill: 'FIGHTING_BRAWL' } });
+    expect(result.acted).toEqual(['p1']);
+    expect(state.pending.p1).toBeUndefined();
+    expect(state.log.some((entry) => entry.data?.rollType === 'COUNTER' || entry.data?.rollType === 'DAMAGE_SETTLE')).toBe(true);
+  });
+
   it('没提交行动也能交棒（视为跳过）', () => {
     const state = setup();
     beginInitiativeRound(coc, state);

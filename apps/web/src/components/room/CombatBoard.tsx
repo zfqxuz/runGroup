@@ -259,7 +259,11 @@ export default function CombatBoard(props: Props) {
   }
 
   function reactionOptionsFor(targetIdValue: string): readonly CombatReactionPayload["type"][] {
-    return reactionOptions[targetIdValue] ?? defaultReactionOptions();
+    const types = reactionOptions[targetIdValue] ?? defaultReactionOptions();
+    if (types.includes("COUNTER") && reactionSkillOptionsFor(targetIdValue, "COUNTER").length === 0) {
+      return types.filter((type) => type !== "COUNTER");
+    }
+    return types;
   }
 
   function reactionDraftFor(targetIdValue: string): ReactionDraft {

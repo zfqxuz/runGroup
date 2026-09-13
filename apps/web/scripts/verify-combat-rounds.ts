@@ -225,13 +225,13 @@ async function runMode(mode: "ATB" | "INITIATIVE"): Promise<void> {
       const controllable = ctx.kpView?.participants.some((participant) =>
         participant.id === request.targetId && (participant.kind === "NPC" || participant.isSelf));
       if (controllable === true) {
-        void emitAck<Ack>(ctx.kpSocket, "combat:reaction", { combatId, targetId: request.targetId, reaction: { type: "PASS" } }).catch(() => undefined);
+        void emitAck<Ack>(ctx.kpSocket, "combat:reaction", { combatId, targetId: request.targetId, reaction: { type: "COUNTER", skill: "FIGHTING_BRAWL" } }).catch(() => undefined);
       }
     });
     ctx.plSocket.on("combat:reaction-request", (request: CombatReactionRequest) => {
       const controllable = ctx.plView?.participants.some((participant) => participant.id === request.targetId && participant.isSelf);
       if (controllable === true) {
-        void emitAck<Ack>(ctx.plSocket, "combat:reaction", { combatId, targetId: request.targetId, reaction: { type: "PASS" } }).catch(() => undefined);
+        void emitAck<Ack>(ctx.plSocket, "combat:reaction", { combatId, targetId: request.targetId, reaction: { type: "COUNTER", skill: "FIGHTING_BRAWL" } }).catch(() => undefined);
       }
     });
 

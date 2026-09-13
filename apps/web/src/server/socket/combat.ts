@@ -29,7 +29,7 @@ import {
   viewForUser,
   type CombatRuntime
 } from "@/server/combat/runtime";
-import { allowedReactionTypes, validateCombatAction } from "@/server/combat/options";
+import { allowedReactionTypes, allowedReactionTypesForParticipant, validateCombatAction } from "@/server/combat/options";
 import { saveCombatState } from "@/server/combat/setup";
 import type {
   Ack,
@@ -104,7 +104,7 @@ async function emitReactionRequest(
     actorName: actor.name,
     targetId,
     targetName: target.name,
-    options: options ?? allowedReactionTypes(runtime.pack)
+    options: options ?? allowedReactionTypesForParticipant(runtime.pack, runtime.attackSkills, targetId)
   };
   io.to(combatChannel(runtime.combatId)).emit("combat:reaction-request", payload);
 }
@@ -347,8 +347,9 @@ async function handleReaction(
     ack({ ok: false, error: "应对目标不存在" });
     return;
   }
+  let reactionType = raw.type;
   let reactionSkill = asString(raw.skill);
-  if (raw.type === "DODGE") {
+  if (reactionType === "DODGE") {
     const candidate = reactionSkill ?? "DODGE";
     const isDodge = candidate === "DODGE";
     const isGraze = candidate === "GRAZE" && runtime.pack.skills.some((skill) => skill.id === "GRAZE");
@@ -358,17 +359,26 @@ async function handleReaction(
     }
     reactionSkill = candidate;
   }
-  if (raw.type === "COUNTER") {
+  if (reactionType === "COUNTER") {
     const allowed = runtime.attackSkills.get(input.targetId) ?? [];
     const candidate = reactionSkill ?? allowed[0];
     if (candidate === undefined || allowed.includes(candidate) === false) {
-      ack({ ok: false, error: "应对技能不合法" });
-      return;
+      // 没有可用反击技能时不能把应对窗口卡死：按 PASS 继续结算并记录原因。
+      reactionType = "PASS";
+      reactionSkill = undefined;
+      pushLog(runtime.state, {
+        kind: "SYSTEM",
+        actorId: target.id,
+        targetId: null,
+        text: target.name + " 没有可用的反击技能，本次按未应对处理",
+        data: { rollType: "COUNTER_FALLBACK" }
+      });
+    } else {
+      reactionSkill = candidate;
     }
-    reactionSkill = candidate;
   }
   runtime.pendingReactions.delete(input.targetId);
-  runtime.reactions[input.targetId] = { type: raw.type, skill: reactionSkill };
+  runtime.reactions[input.targetId] = { type: reactionType, skill: reactionSkill };
   const resolvedChase = await tryResolveChaseAttack(io, runtime);
   const resolved = resolvedChase ? true : await tryResolveCombat(io, runtime);
   if (resolved === false) await broadcastCombat(io, runtime);

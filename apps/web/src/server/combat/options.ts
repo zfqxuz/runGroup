@@ -144,6 +144,25 @@ export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatRea
   return types;
 }
 
+/**
+ * 某个具体单位可用的应对选项。
+ * COUNTER 只有在服务器确实给该单位准备了反击技能时才下发，
+ * 避免客户端出现「有反击选项但无技能可选」的卡住状态。
+ */
+export function allowedReactionTypesForParticipant(
+  pack: CompiledRulePack,
+  attackSkills: ReadonlyMap<string, readonly string[]>,
+  participantId: string
+): readonly CombatReactionType[] {
+  const types = allowedReactionTypes(pack);
+  if (types.includes("COUNTER") === false) return types;
+  const counterSkills = attackSkills.get(participantId) ?? [];
+  if (counterSkills.length === 0) {
+    return types.filter((type) => type !== "COUNTER");
+  }
+  return types;
+}
+
 export interface CombatFeatureFlags {
   readonly canCounter: boolean;
   readonly canOutOfRule: boolean;

@@ -11,6 +11,7 @@ import {
 import {
   allowedAttackSkills,
   allowedReactionTypes,
+  allowedReactionTypesForParticipant,
   combatFeatureFlags,
   validateCombatAction
 } from "../src/server/combat/options";
@@ -61,6 +62,21 @@ function main(): void {
   ensure(touhouFlags.canCounter === true, "东方应显示消弹");
   ensure(touhouFlags.canOutOfRule === true, "东方应显示规则外施法");
   ensure(allowedReactionTypes(touhou).includes("COUNTER"), "东方应对应包含消弹对抗");
+
+  const counterSkills = new Map<string, readonly string[]>([
+    ["coc-civilian", []],
+    ["coc-fighter", ["FIGHTING_BRAWL"]]
+  ]);
+  expectIds(
+    [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-civilian")],
+    ["PASS", "DODGE"],
+    "没有反击技能的单位不应下发反击选项"
+  );
+  expectIds(
+    [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-fighter")],
+    ["PASS", "DODGE", "COUNTER"],
+    "有反击技能的单位应下发反击选项"
+  );
 
   const cocActionContext = {
     pack: coc,
@@ -127,7 +143,7 @@ function main(): void {
   });
   ensure(brawlError === null, "COC 斗殴攻击应被允许");
 
-  console.log("PASS 战斗选项：COC 闪避/反击与无防御、斗殴/武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
+  console.log("PASS 战斗选项：COC 闪避/反击与无防御、反击技能可用性过滤、斗殴/武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
 }
 
 main();
