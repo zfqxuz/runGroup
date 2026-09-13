@@ -247,6 +247,23 @@ export default function KpPrepPanel(props: Props) {
         </div>
       </section>
 
+      <section className="rounded-xl border border-red-400/30 bg-red-400/5 p-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-sm font-medium text-red-200">主动开战</h2>
+            <p className="mt-0.5 text-[10px] text-white/45">
+              KP 直接选择双方单位进入战斗，不需要玩家申请，也不需要审批。
+            </p>
+          </div>
+          <Link
+            href={"/rooms/" + props.roomId + "/combat/new"}
+            className="rounded-lg bg-red-400 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-red-300"
+          >
+            直接发起战斗
+          </Link>
+        </div>
+      </section>
+
       <KpCombatRequestPanel roomId={props.roomId} />
 
       <section id="kp-clues" className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

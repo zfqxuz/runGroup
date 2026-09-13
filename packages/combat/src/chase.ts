@@ -63,6 +63,10 @@ export interface StartChaseOptions {
   readonly trackLength?: number;
   /** 测试 / KP 覆盖速度检定骰值（1~100）。 */
   readonly speedRolls?: Readonly<Record<string, number>>;
+  /** 追逐开始时逃方相对最快追逐者的最小领先格数；默认 2。 */
+  readonly initialLead?: number;
+  /** 是否允许速度检定直接甩开追逐；从战斗接触中逃跑时应传 false。 */
+  readonly allowImmediateEscape?: boolean;
 }
 
 export interface StartChaseResult {
@@ -150,7 +154,8 @@ export function startChase(
   const chaserRows = rows.filter((row) => row.side === "CHASER");
   const preyRows = rows.filter((row) => row.side === "PREY");
   const fastestChaserMov = Math.max(...chaserRows.map((row) => row.mov));
-  if (preyRows.every((row) => row.mov > fastestChaserMov)) {
+  const allowImmediateEscape = options.allowImmediateEscape === false ? false : true;
+  if (allowImmediateEscape && preyRows.every((row) => row.mov > fastestChaserMov)) {
     pushLog(state, {
       kind: "SYSTEM",
       actorId: prey.id,
@@ -175,9 +180,10 @@ export function startChase(
     chaserPositions.set(row.participant.id, row.mov - minChaserMov);
   }
   const maxChaserPosition = Math.max(0, ...chaserPositions.values());
+  const initialLead = Math.max(1, Math.floor(options.initialLead ?? 2));
   const preySorted = [...preyRows].sort((a, b) => a.mov - b.mov || a.participant.id.localeCompare(b.participant.id));
   const slowestPreyMov = preySorted[0]?.mov ?? minAllMov;
-  const slowestPreyPosition = Math.max(2, maxChaserPosition + 2);
+  const slowestPreyPosition = Math.max(initialLead, maxChaserPosition + initialLead);
 
   const chaseParticipants: ChaseParticipantState[] = rows.map((row) => {
     const maxActionPoints = 1 + (row.mov - minAllMov);

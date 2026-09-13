@@ -265,7 +265,11 @@ async function handleAction(
       const chaseResult = startChase(runtime.pack, runtime.state, {
         preyId: actor.id,
         chaserIds: chasers,
-        trackLength: 10
+        trackLength: 10,
+        // 从已有战斗中逃跑：不是从远处起跑，先给 1 格接触距离；
+        // 且不能凭速度检定直接脱战，必须进入追逐流程由追逐规则决定胜负。
+        initialLead: 1,
+        allowImmediateEscape: false
       });
       if (chaseResult.ok === false) {
         ack({ ok: false, error: chaseResult.error ?? "无法建立追逐" });

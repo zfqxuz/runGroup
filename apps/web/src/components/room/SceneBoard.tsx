@@ -177,7 +177,7 @@ function TokenHoverCard(props: TokenHoverCardProps) {
             href={combatHref}
             className="rounded border border-red-400/50 bg-red-400/10 px-2 py-1 text-[10px] text-red-200 transition hover:bg-red-400/20"
           >
-            发起战斗
+            {props.canControlAll ? "直接开战" : "申请战斗"}
           </Link>
         ) : null}
         {props.member === null || isOwn || props.member.role === "KP" ? null : (

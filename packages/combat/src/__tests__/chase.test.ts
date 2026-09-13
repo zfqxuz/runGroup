@@ -96,6 +96,26 @@ describe("COC7 追逐", () => {
     expect(chase.order[0]).toBe("prey");
   });
 
+  it("从战斗接触中逃跑时不能凭 MOV 优势直接脱身", () => {
+    const { state, prey, chaser } = makeChaseState();
+    const result = startChase(coc7, state, {
+      preyId: prey.id,
+      chaserIds: [chaser.id],
+      trackLength: 10,
+      speedRolls: { prey: 1, chaser: 100 },
+      initialLead: 1,
+      allowImmediateEscape: false
+    });
+    expect(result.ok).toBe(true);
+    expect(result.escapedImmediately).toBeUndefined();
+    const chase = state.chase;
+    if (chase === null) throw new Error("missing chase");
+    const preyEntry = chase.participants.find((item) => item.id === prey.id);
+    const chaserEntry = chase.participants.find((item) => item.id === chaser.id);
+    if (preyEntry === undefined || chaserEntry === undefined) throw new Error("missing chase participant");
+    expect(preyEntry.position - chaserEntry.position).toBeGreaterThanOrEqual(1);
+  });
+
   it("逃离者调整后 MOV 高于最快追逐者时直接逃离", () => {
     const { state, prey, chaser } = makeChaseState();
     const result = startChase(coc7, state, {
