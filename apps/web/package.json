@@ -26,6 +26,7 @@
     "verify:room-ready": "tsx --env-file=.env scripts/verify-room-ready.ts",
     "verify:room-collab": "tsx --env-file=.env scripts/verify-room-collab.ts",
     "verify:game-state": "tsx --env-file=.env scripts/verify-game-state.ts",
+    "verify:kp-skill": "tsx --env-file=.env scripts/verify-kp-skill.ts",
     "verify:module-gallery": "tsx --env-file=.env scripts/verify-module-gallery.ts",
     "verify:game-history": "tsx --env-file=.env scripts/verify-game-history.ts",
     "verify:scene-board": "tsx --env-file=.env scripts/verify-scene-board.ts",

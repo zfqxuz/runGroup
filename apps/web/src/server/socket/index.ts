@@ -1,9 +1,15 @@
 import type { Server as HttpServer } from "node:http";
 import { Server as SocketServer, type Socket } from "socket.io";
 import { cryptoRng, normalizeDiceExpression, parseDice, rollDice } from "@touhou/formula";
+import { isSuccess, resolveCheck } from "@touhou/rules";
+import { buildEffectiveSkills } from "@/server/character/skills";
+import { loadEffectivePack } from "@/server/rules/loader";
 import { prisma } from "@/server/db/prisma";
 import { gameStateView } from "@/server/game/view";
 import { loadRoomMemberViews } from "@/server/room/member-view";
+import { loadCombatRuntime } from "@/server/combat/runtime";
+import { saveCombatState } from "@/server/combat/setup";
+import { broadcastCombat } from "./combat";
 import { registerCombatHandlers } from "./combat";
 import { registerSceneHandlers } from "./scene";
 import { verifyTicket } from "./ticket";
@@ -64,6 +70,59 @@ function toChatMessage(row: MessageRow): ChatMessage {
     targetId: row.targetId,
     createdAt: row.createdAt.toISOString()
   };
+}
+
+const KP_ATTRIBUTE_KEYS = ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"] as const;
+const KP_VITAL_FIELDS = ["hp", "maxHp", "mp", "maxMp", "san", "maxSan", "dp", "maxDp"] as const;
+
+type KpUnitRef = { readonly kind: "CHARACTER" | "NPC"; readonly id: string };
+
+function parseKpUnitRef(value: unknown): KpUnitRef | null {
+  if (typeof value !== "string") return null;
+  if (value.startsWith("character:")) return { kind: "CHARACTER", id: value.slice(10) };
+  if (value.startsWith("npc:")) return { kind: "NPC", id: value.slice(4) };
+  return null;
+}
+
+function finiteNumber(value: unknown, min: number, max: number): number | undefined {
+  const number = typeof value === "number" ? value : Number(value);
+  if (Number.isFinite(number) === false) return undefined;
+  return Math.max(min, Math.min(max, Math.floor(number)));
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
+}
+
+interface KpAdjustValues {
+  readonly vitals: Partial<Record<(typeof KP_VITAL_FIELDS)[number], number>>;
+  readonly attributes: Partial<Record<(typeof KP_ATTRIBUTE_KEYS)[number], number>>;
+  readonly skills: Record<string, number>;
+}
+
+function parseKpAdjustValues(value: unknown): KpAdjustValues {
+  const record = recordOf(value);
+  const vitals: Partial<Record<(typeof KP_VITAL_FIELDS)[number], number>> = {};
+  for (const field of KP_VITAL_FIELDS) {
+    const parsed = finiteNumber(record[field], 0, 999999);
+    if (parsed !== undefined) vitals[field] = parsed;
+  }
+  const attributes: Partial<Record<(typeof KP_ATTRIBUTE_KEYS)[number], number>> = {};
+  const rawAttributes = recordOf(record.attributes);
+  for (const key of KP_ATTRIBUTE_KEYS) {
+    const parsed = finiteNumber(rawAttributes[key], 0, 999);
+    if (parsed !== undefined) attributes[key] = parsed;
+  }
+  const skills: Record<string, number> = {};
+  const rawSkills = recordOf(record.skills);
+  for (const [key, raw] of Object.entries(rawSkills)) {
+    const id = key.trim().slice(0, 120);
+    if (id.length === 0) continue;
+    const parsed = finiteNumber(raw, 0, 999);
+    if (parsed !== undefined) skills[id] = parsed;
+  }
+  return { vitals, attributes, skills };
 }
 
 async function loadMembership(roomId: string, userId: string) {
@@ -360,6 +419,351 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
       } catch (error) {
         console.error("dice:roll failed", error);
         reply({ ok: false, error: "掷骰失败，请重试" });
+      }
+    });
+
+    socket.on("dice:skill-check", async (payload: unknown, ack: (result: Ack) => void) => {
+      let replied = false;
+      const reply = (result: Ack): void => {
+        if (replied) return;
+        replied = true;
+        ack(result);
+      };
+      try {
+        const input = payload as {
+          roomId?: unknown;
+          characterId?: unknown;
+          skillId?: unknown;
+          visibility?: unknown;
+        };
+        if (
+          typeof input?.roomId !== "string" ||
+          typeof input.characterId !== "string" ||
+          typeof input.skillId !== "string"
+        ) {
+          reply({ ok: false, error: "参数不合法" });
+          return;
+        }
+        const roomId = input.roomId;
+        const characterId = input.characterId;
+        const skillId = input.skillId;
+        const visibility: DiceVisibility =
+          input.visibility === "DARK" || input.visibility === "SECRET" ? input.visibility : "PUBLIC";
+
+        const membership = await loadMembership(roomId, me.userId);
+        if (membership === null) {
+          reply({ ok: false, error: "你不在这个房间里" });
+          return;
+        }
+        if (membership.room.status === "LOBBY" || membership.room.status === "ENDED") {
+          reply({
+            ok: false,
+            error: membership.room.status === "ENDED" ? "房间已归档，不能发起技能检定" : "准备阶段不能发起技能检定"
+          });
+          return;
+        }
+
+        const activeGame = await prisma.game.findFirst({
+          where: { roomId, status: { in: ["PLAYING", "COMBAT", "PAUSED"] } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true }
+        });
+        if (activeGame === null) {
+          reply({ ok: false, error: "当前没有进行中的局，不能用技能检定模式" });
+          return;
+        }
+
+        const character = await prisma.character.findUnique({ where: { id: characterId } });
+        if (character === null) {
+          reply({ ok: false, error: "角色不存在" });
+          return;
+        }
+        if (character.userId !== me.userId && membership.role !== "KP") {
+          reply({ ok: false, error: "只能为自己的角色进行技能检定" });
+          return;
+        }
+        const gameCharacter = await prisma.gameCharacter.findUnique({
+          where: { gameId_characterId: { gameId: activeGame.id, characterId } }
+        });
+        if (gameCharacter === null) {
+          reply({ ok: false, error: "该角色不在当前局中" });
+          return;
+        }
+
+        const room = await prisma.room.findUnique({
+          where: { id: roomId },
+          select: { system: true, rulePackVersionId: true, ruleOverride: true }
+        });
+        if (room === null) {
+          reply({ ok: false, error: "房间不存在" });
+          return;
+        }
+        const pack = await loadEffectivePack({
+          id: roomId,
+          system: room.system,
+          rulePackVersionId: room.rulePackVersionId,
+          ruleOverride: room.ruleOverride
+        });
+        const skill = pack.compiled.skills.find((item) => item.id === skillId);
+        if (skill === undefined) {
+          reply({ ok: false, error: "规则包中没有这个技能" });
+          return;
+        }
+
+        const values = buildEffectiveSkills(pack.compiled, character);
+        const target = values[skillId] ?? 0;
+        const roll = rollDice(parseDice("1d100"), cryptoRng).total;
+        const check = resolveCheck(pack.compiled, roll, target);
+        const success = isSuccess(check.result);
+
+        const view: DiceRollView = {
+          expression: "1d100",
+          total: roll,
+          terms: ["1d100[" + roll + "]"],
+          min: 1,
+          max: 100
+        };
+        const label = "【技能检定】" + character.name + " · " + skill.name;
+        let text =
+          label +
+          " 1d100 = " +
+          roll +
+          " / 目标 " +
+          target +
+          " → " +
+          check.result +
+          (success ? "（成功）" : "（失败）");
+
+        if (success) {
+          const note = "技能检定成功自动标记";
+          const existing = await prisma.growthCheck.findUnique({
+            where: { gameId_characterId_skillId: { gameId: activeGame.id, characterId, skillId } }
+          });
+          if (existing === null) {
+            await prisma.growthCheck.create({
+              data: {
+                gameId: activeGame.id,
+                characterId,
+                skillId,
+                skillName: skill.name,
+                beforeValue: target,
+                note,
+                createdBy: me.userId
+              }
+            });
+            text += " · 已计入成长池";
+          } else if (existing.state === "CANCELLED") {
+            await prisma.growthCheck.update({
+              where: { id: existing.id },
+              data: {
+                state: "PENDING",
+                skillName: skill.name,
+                beforeValue: target,
+                note,
+                roll: null,
+                gain: null,
+                resolvedAt: null,
+                resolvedBy: null,
+                advancementId: null,
+                createdBy: me.userId
+              }
+            });
+            text += " · 已重新计入成长池";
+          } else if (existing.state === "PENDING") {
+            text += " · 已在成长池中";
+          } else {
+            text += " · 本局已结算过该技能成长";
+          }
+        }
+
+        let messageChannel: ChatChannel = "OOC";
+        let targetId: string | null = null;
+        if (visibility !== "PUBLIC") {
+          messageChannel = "WHISPER";
+          targetId = me.userId;
+          if (visibility === "DARK") {
+            const kp = await prisma.roomMember.findFirst({
+              where: { roomId, role: "KP" },
+              orderBy: { joinedAt: "asc" },
+              select: { userId: true }
+            });
+            if (kp !== null) targetId = kp.userId;
+          }
+        }
+
+        const row = await prisma.message.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            targetId,
+            channel: messageChannel,
+            type: "DICE",
+            content: { text, kind: "DICE", dice: { ...view, terms: [...view.terms] } }
+          },
+          include: { user: { select: { username: true, displayName: true } } }
+        });
+        await prisma.diceRoll.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            expression: "1d100",
+            results: { total: view.total, terms: [...view.terms], min: view.min, max: view.max, skillId, target, success },
+            total: view.total,
+            visibility,
+            seed: "crypto"
+          }
+        });
+
+        const message = toChatMessage(row as MessageRow);
+        if (messageChannel === "WHISPER" && targetId !== null) {
+          io.to(userChannel(me.userId)).emit("chat:message", message);
+          if (targetId !== me.userId) io.to(userChannel(targetId)).emit("chat:message", message);
+        } else {
+          io.to(roomChannel(roomId)).emit("chat:message", message);
+        }
+        if (success) {
+          io.to(roomChannel(roomId)).emit("room:advancement:update", {
+            roomId,
+            gameId: activeGame.id,
+            characterId
+          });
+        }
+        reply({ ok: true });
+      } catch (error) {
+        console.error("dice:skill-check failed", error);
+        reply({ ok: false, error: "技能检定失败，请重试" });
+      }
+    });
+
+    socket.on("room:adjust-values", async (payload: unknown, ack: (result: Ack) => void) => {
+      try {
+        const input = payload as { roomId?: unknown; unitRef?: unknown; values?: unknown };
+        if (typeof input?.roomId !== "string") {
+          ack({ ok: false, error: "参数不合法" });
+          return;
+        }
+        const roomId = input.roomId;
+        const unit = parseKpUnitRef(input.unitRef);
+        if (unit === null) {
+          ack({ ok: false, error: "单位引用不合法" });
+          return;
+        }
+        const values = parseKpAdjustValues(input.values);
+        const hasAny =
+          Object.keys(values.vitals).length > 0 ||
+          Object.keys(values.attributes).length > 0 ||
+          Object.keys(values.skills).length > 0;
+        if (hasAny === false) {
+          ack({ ok: false, error: "没有要修改的数值" });
+          return;
+        }
+        const membership = await loadMembership(roomId, me.userId);
+        if (membership === null || membership.role !== "KP") {
+          ack({ ok: false, error: "只有 KP 可以修改单位数值" });
+          return;
+        }
+
+        let combatAdjusted = false;
+        const activeCombat = await prisma.combat.findFirst({
+          where: { roomId, endedAt: null },
+          select: { id: true }
+        });
+        if (activeCombat !== null) {
+          const runtime = await loadCombatRuntime(activeCombat.id);
+          if (runtime !== null) {
+            const participant =
+              unit.kind === "CHARACTER"
+                ? runtime.state.participants.find((item) => item.characterId === unit.id)
+                : runtime.state.participants.find((item) => item.id === unit.id);
+            if (participant !== undefined) {
+              for (const [field, value] of Object.entries(values.vitals)) {
+                if (field === "hp" || field === "maxHp" || field === "mp" || field === "maxMp" || field === "san" || field === "maxSan" || field === "dp" || field === "maxDp") {
+                  participant[field] = value;
+                }
+              }
+              for (const [key, value] of Object.entries(values.attributes)) {
+                (participant.attributes as unknown as Record<string, number>)[key] = value;
+                participant.vars[key] = value;
+              }
+              participant.skills = { ...participant.skills, ...values.skills };
+              await saveCombatState(activeCombat.id, runtime.state);
+              await broadcastCombat(io, runtime);
+              combatAdjusted = true;
+            }
+          }
+        }
+
+        if (unit.kind === "CHARACTER") {
+          const entry = await prisma.roomCharacterEntry.findFirst({
+            where: { roomId, characterId: unit.id, status: "APPROVED" },
+            select: { id: true }
+          });
+          if (entry === null) {
+            ack({ ok: false, error: "该角色不在本房间中" });
+            return;
+          }
+          const character = await prisma.character.findUnique({ where: { id: unit.id } });
+          if (character === null) {
+            ack({ ok: false, error: "角色不存在" });
+            return;
+          }
+          await prisma.character.update({
+            where: { id: unit.id },
+            data: {
+              ...values.attributes,
+              skills: { ...(recordOf(character.skills)), ...values.skills } as never,
+              ...(values.vitals.maxHp === undefined ? {} : { maxHp: values.vitals.maxHp }),
+              ...(values.vitals.maxMp === undefined ? {} : { maxMp: values.vitals.maxMp }),
+              ...(values.vitals.maxSan === undefined ? {} : { maxSan: values.vitals.maxSan }),
+              ...(values.vitals.maxDp === undefined ? {} : { maxDp: values.vitals.maxDp }),
+              ...(values.vitals.hp === undefined ? {} : { hp: values.vitals.hp }),
+              ...(values.vitals.mp === undefined ? {} : { mp: values.vitals.mp }),
+              ...(values.vitals.san === undefined ? {} : { san: values.vitals.san }),
+              ...(values.vitals.dp === undefined ? {} : { dp: values.vitals.dp })
+            } as never
+          });
+          const game = await prisma.game.findFirst({
+            where: { roomId, status: { in: ["PLAYING", "COMBAT", "PAUSED"] } },
+            orderBy: { createdAt: "desc" },
+            select: { id: true }
+          });
+          if (game !== null) {
+            await prisma.gameCharacter.updateMany({
+              where: { gameId: game.id, characterId: unit.id },
+              data: {
+                ...(values.vitals.hp === undefined ? {} : { currentHp: values.vitals.hp }),
+                ...(values.vitals.mp === undefined ? {} : { currentMp: values.vitals.mp }),
+                ...(values.vitals.san === undefined ? {} : { currentSan: values.vitals.san }),
+                ...(values.vitals.dp === undefined ? {} : { currentDp: values.vitals.dp })
+              }
+            });
+          }
+        } else {
+          const card = await prisma.card.findUnique({ where: { id: unit.id } });
+          if (card === null || card.roomId !== roomId || card.type !== "NPC") {
+            ack({ ok: false, error: "NPC 卡不存在或不属于本房间" });
+            return;
+          }
+          const stats = recordOf(card.stats);
+          const rawAttributes = recordOf(stats.attributes);
+          const rawSkills = recordOf(stats.skills);
+          const merged = {
+            ...stats,
+            attributes: { ...rawAttributes, ...values.attributes },
+            skills: { ...rawSkills, ...values.skills },
+            ...(values.vitals.maxHp === undefined ? {} : { maxHp: values.vitals.maxHp }),
+            ...(values.vitals.maxMp === undefined ? {} : { maxMp: values.vitals.maxMp }),
+            ...(values.vitals.maxSan === undefined ? {} : { maxSan: values.vitals.maxSan }),
+            ...(values.vitals.maxDp === undefined ? {} : { maxDp: values.vitals.maxDp })
+          };
+          await prisma.card.update({ where: { id: unit.id }, data: { stats: merged as never } });
+        }
+
+        io.to(roomChannel(roomId)).emit("room:refresh", { roomId, reason: "kp-values" });
+        ack({ ok: true, combatAdjusted } as Ack & { combatAdjusted?: boolean });
+      } catch (error) {
+        console.error("room:adjust-values failed", error);
+        ack({ ok: false, error: "数值调整失败，请重试" });
       }
     });
   });

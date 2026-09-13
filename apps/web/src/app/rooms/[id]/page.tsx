@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import KpPrepPanel from "@/components/room/KpPrepPanel";
+import KpValueEditor from "@/components/room/KpValueEditor";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomInfoPanel from "@/components/room/RoomInfoPanel";
@@ -9,6 +10,7 @@ import SceneBoard from "@/components/room/SceneBoard";
 import { pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
 import { buildEffectiveSkills } from "@/server/character/skills";
+import { occupationSkillAccess, profileOccupationalSkillIds, toOccupationView } from "@/shared/occupation";
 import { prisma } from "@/server/db/prisma";
 import { advancementView, gameStateView, growthCheckView } from "@/server/game/view";
 import { loadGameModuleView } from "@/server/modules/revision";
@@ -115,7 +117,7 @@ export default async function RoomPage({
     include: {
       state: true,
       characters: {
-        include: { character: true },
+        include: { character: { include: { occupationRef: true } } },
         orderBy: { id: "asc" }
       }
     }
@@ -333,6 +335,38 @@ export default async function RoomPage({
   const playerGrowthChecks = growthChecks.filter((row) => playerOwnCharacterIds.has(row.characterId));
   const playerCharacterSkills = characterSkills.filter((row) => playerOwnCharacterIds.has(row.characterId));
   const playerGameCharacterOptions = gameCharacterOptions.filter((row) => playerOwnCharacterIds.has(row.id));
+  const skillCheckCharacters = activeGame === null
+    ? []
+    : visibleGameCharacters
+        .filter((item) => playerOwnCharacterIds.has(item.characterId))
+        .map((item) => {
+          const values = buildEffectiveSkills(effective.compiled, item.character);
+          const occupation = item.character.occupationRef === null || item.character.occupationRef === undefined
+            ? null
+            : toOccupationView(item.character.occupationRef);
+          const allocation = item.character.skillAllocation as { slots?: Record<string, readonly string[]> } | null;
+          const occupationalIds =
+            occupation === null || occupation.skillProfile === null
+              ? new Set<string>()
+              : profileOccupationalSkillIds(occupation.skillProfile, allocation?.slots ?? {});
+          const skills = effective.compiled.skills
+            .map((skill) => ({
+              id: skill.id,
+              name: skill.name,
+              value: values[skill.id] ?? 0,
+              occupational:
+                occupationalIds.has(skill.id) ||
+                (occupation !== null && occupationSkillAccess(occupation, skill.name).kind !== "NONE")
+            }))
+            .sort((a, b) => {
+              if (a.occupational !== b.occupational) return a.occupational ? -1 : 1;
+              if (a.value !== b.value) return b.value - a.value;
+              return a.name.localeCompare(b.name);
+            });
+          return { id: item.characterId, name: item.character.name, skills };
+        });
+
+
   const playerClues = isKP
     ? clues.filter(
         (clue) =>
@@ -497,6 +531,7 @@ export default async function RoomPage({
         tradeCards={myTradeCards.map((card) => ({ id: card.id, name: card.name, type: card.type }))}
         shareableClues={shareableClues}
         playerPerspective={isKP}
+        skillCheckCharacters={skillCheckCharacters}
       />
 
       </section>
@@ -614,6 +649,8 @@ export default async function RoomPage({
           房间已归档，仅保留历史数据与只读视图；发言、掷骰和战斗操作已停止。
         </p>
       ) : null}
+
+      {isKP ? <KpValueEditor roomId={room.id} units={placeableSceneUnits} /> : null}
 
       {isKpSplit ? (
         <div className="flex flex-col gap-4">

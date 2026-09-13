@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import type { CombatState } from "@touhou/combat";
 import { spellTargeting } from "@touhou/rules";
 import CombatBoard from "@/components/room/CombatBoard";
+import KpValueEditor from "@/components/room/KpValueEditor";
 import { auth } from "@/server/auth";
 import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
 import { prisma } from "@/server/db/prisma";
@@ -71,8 +72,13 @@ export default async function CombatDetailPage({
 
   const participants = await prisma.combatParticipant.findMany({
     where: { combatId: combat.id },
-    select: { id: true, isNPC: true, characterId: true }
+    select: { id: true, name: true, isNPC: true, characterId: true }
   });
+  const valueUnits = participants.map((participant) => ({
+    ref: participant.isNPC ? "npc:" + participant.id : "character:" + (participant.characterId ?? participant.id),
+    name: participant.name,
+    kind: participant.isNPC ? ("NPC" as const) : ("PLAYER" as const)
+  }));
   const characterIds = participants
     .map((participant) => participant.characterId)
     .filter((id): id is string => id !== null);
@@ -137,6 +143,8 @@ export default async function CombatDetailPage({
           </Link>
         </div>
       </header>
+
+      {isKP ? <KpValueEditor roomId={room.id} units={valueUnits} /> : null}
 
       <CombatBoard
         roomId={room.id}

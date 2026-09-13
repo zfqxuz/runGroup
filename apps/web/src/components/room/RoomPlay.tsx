@@ -37,6 +37,17 @@ interface Props {
   readonly initialTrades: readonly TradeOfferSummary[];
   readonly tradeCards: readonly RosterCardOption[];
   readonly shareableClues: readonly RosterClueOption[];
+  /** 技能检定模式可选的玩家角色与技能（已按本职优先、成功率降序） */
+  readonly skillCheckCharacters: readonly {
+    readonly id: string;
+    readonly name: string;
+    readonly skills: readonly {
+      readonly id: string;
+      readonly name: string;
+      readonly value: number;
+      readonly occupational: boolean;
+    }[];
+  }[];
   /** KP 分屏右侧固定使用玩家可见性，忽略 socket 返回的 KP 视角成员列表。 */
   readonly playerPerspective: boolean;
 }
@@ -53,7 +64,12 @@ export default function RoomPlay(props: Props) {
   const [channel, setChannel] = useState<ChatChannel>("OOC");
   const [whisperTargetId, setWhisperTargetId] = useState("");
   const [text, setText] = useState("");
+  const [diceMode, setDiceMode] = useState<"CHECK" | "FREE">("CHECK");
   const [diceExpr, setDiceExpr] = useState("1d100");
+  const [checkCharacterId, setCheckCharacterId] = useState(props.skillCheckCharacters[0]?.id ?? "");
+  const [skillQuery, setSkillQuery] = useState("");
+  const [skillId, setSkillId] = useState("");
+  const [favoriteSkillIds, setFavoriteSkillIds] = useState<Record<string, boolean>>({});
   const [diceVisibility, setDiceVisibility] = useState<DiceVisibility>("PUBLIC");
   const [conn, setConn] = useState<ConnState>("connecting");
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +185,90 @@ export default function RoomPlay(props: Props) {
     list.scrollTop = list.scrollHeight;
   }, [messages.length]);
 
+  const selectedCheckCharacter =
+    props.skillCheckCharacters.find((item) => item.id === checkCharacterId) ??
+    props.skillCheckCharacters[0] ??
+    null;
+  const normalizedSkillQuery = skillQuery.trim().toLowerCase();
+  const visibleSkillOptions = selectedCheckCharacter === null
+    ? []
+    : selectedCheckCharacter.skills
+        .filter((skill) => {
+          if (normalizedSkillQuery.length === 0) return true;
+          return (
+            skill.name.toLowerCase().includes(normalizedSkillQuery) ||
+            skill.id.toLowerCase().includes(normalizedSkillQuery)
+          );
+        })
+        .slice()
+        .sort((a, b) => {
+          const favoriteA = favoriteSkillIds[a.id] === true ? 1 : 0;
+          const favoriteB = favoriteSkillIds[b.id] === true ? 1 : 0;
+          if (favoriteA !== favoriteB) return favoriteB - favoriteA;
+          if (a.occupational !== b.occupational) return a.occupational ? -1 : 1;
+          if (a.value !== b.value) return b.value - a.value;
+          return a.name.localeCompare(b.name);
+        });
+  const effectiveSkillId = visibleSkillOptions.some((skill) => skill.id === skillId)
+    ? skillId
+    : (visibleSkillOptions[0]?.id ?? "");
+  const effectiveSkill = visibleSkillOptions.find((skill) => skill.id === effectiveSkillId) ?? null;
+
+  useEffect(() => {
+    if (selectedCheckCharacter === null) return;
+    try {
+      const raw = window.localStorage.getItem("skill-favorites:" + props.roomId + ":" + selectedCheckCharacter.id);
+      setFavoriteSkillIds(raw === null ? {} : (JSON.parse(raw) as Record<string, boolean>));
+    } catch {
+      setFavoriteSkillIds({});
+    }
+  }, [props.roomId, selectedCheckCharacter?.id]);
+
+  function toggleSkillFavorite(id: string): void {
+    if (selectedCheckCharacter === null) return;
+    setFavoriteSkillIds((prev) => {
+      const next = { ...prev, [id]: prev[id] !== true };
+      try {
+        window.localStorage.setItem(
+          "skill-favorites:" + props.roomId + ":" + selectedCheckCharacter.id,
+          JSON.stringify(next)
+        );
+      } catch {
+        // localStorage 不可用时仅保留当前会话收藏。
+      }
+      return next;
+    });
+  }
+
+  function rollSkillCheck(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    if (selectedCheckCharacter === null || effectiveSkillId.length === 0) {
+      setError("请先选择角色和技能");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "dice:skill-check",
+      {
+        roomId: props.roomId,
+        characterId: selectedCheckCharacter.id,
+        skillId: effectiveSkillId,
+        visibility: diceVisibility
+      },
+      (result: Ack) => {
+        if (result.ok === false) {
+          setError(result.error ?? "技能检定失败");
+        } else {
+          setError(null);
+        }
+      }
+    );
+  }
+
   function send(): void {
     const socket = socketRef.current;
     const value = text.trim();
@@ -196,6 +296,10 @@ export default function RoomPlay(props: Props) {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
       setError("连接已断开，请刷新页面后重试");
+      return;
+    }
+    if (diceMode === "CHECK") {
+      rollSkillCheck();
       return;
     }
     const expression = normalizeDiceExpression(diceExpr).slice(0, 120);
@@ -356,17 +460,83 @@ export default function RoomPlay(props: Props) {
           </button>
         </div>
 
-        <div className="mt-2 flex flex-wrap gap-2">
-          <input
-            value={diceExpr}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <select
+            value={diceMode}
             onChange={(event) => {
-              setDiceExpr(event.target.value);
+              setDiceMode(event.target.value === "FREE" ? "FREE" : "CHECK");
               if (error !== null) setError(null);
             }}
-            onKeyDown={(event) => { if (event.key === "Enter") roll(); }}
-            placeholder="1d100  2d6+3（回车也可掷骰）"
-            className="min-w-[200px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
-          />
+            className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+          >
+            <option value="CHECK">技能检定</option>
+            <option value="FREE">自由掷骰</option>
+          </select>
+
+          {diceMode === "CHECK" ? (
+            <>
+              {props.skillCheckCharacters.length === 0 ? (
+                <span className="text-[11px] text-white/35">当前没有可进行技能检定的角色。</span>
+              ) : (
+                <>
+                  {props.skillCheckCharacters.length > 1 ? (
+                    <select
+                      value={selectedCheckCharacter?.id ?? ""}
+                      onChange={(event) => {
+                        setCheckCharacterId(event.target.value);
+                        setSkillId("");
+                      }}
+                      className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+                    >
+                      {props.skillCheckCharacters.map((character) => (
+                        <option key={character.id} value={character.id}>{character.name}</option>
+                      ))}
+                    </select>
+                  ) : null}
+                  <input
+                    value={skillQuery}
+                    onChange={(event) => setSkillQuery(event.target.value)}
+                    onKeyDown={(event) => { if (event.key === "Enter") rollSkillCheck(); }}
+                    placeholder="检索技能"
+                    className="min-w-[140px] rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-xs outline-none focus:border-spirit-400"
+                  />
+                  <select
+                    value={effectiveSkillId}
+                    onChange={(event) => setSkillId(event.target.value)}
+                    className="min-w-[220px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+                  >
+                    {visibleSkillOptions.length === 0 ? <option value="">没有匹配技能</option> : null}
+                    {visibleSkillOptions.map((skill) => (
+                      <option key={skill.id} value={skill.id}>
+                        {favoriteSkillIds[skill.id] === true ? "★ " : ""}{skill.occupational ? "本职 · " : ""}{skill.name}（{skill.value}）
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => { if (effectiveSkillId.length > 0) toggleSkillFavorite(effectiveSkillId); }}
+                    disabled={effectiveSkillId.length === 0}
+                    className="rounded-lg border border-amber-400/40 px-3 py-2 text-xs text-amber-200 transition hover:bg-amber-400/10 disabled:opacity-40"
+                  >
+                    {favoriteSkillIds[effectiveSkillId] === true ? "取消收藏" : "收藏技能"}
+                  </button>
+                  <span className="rounded border border-white/15 px-2 py-1 font-mono text-[11px] text-white/50">1d100</span>
+                </>
+              )}
+            </>
+          ) : (
+            <input
+              value={diceExpr}
+              onChange={(event) => {
+                setDiceExpr(event.target.value);
+                if (error !== null) setError(null);
+              }}
+              onKeyDown={(event) => { if (event.key === "Enter") roll(); }}
+              placeholder="1d100  2d6+3（回车也可掷骰）"
+              className="min-w-[200px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
+            />
+          )}
+
           <select
             value={diceVisibility}
             onChange={(event) => setDiceVisibility(event.target.value as DiceVisibility)}
@@ -379,10 +549,10 @@ export default function RoomPlay(props: Props) {
           <button
             type="button"
             onClick={roll}
-            disabled={conn === "online" ? false : true}
+            disabled={conn !== "online" || (diceMode === "CHECK" && (selectedCheckCharacter === null || effectiveSkillId.length === 0))}
             className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            掷骰
+            {diceMode === "CHECK" && effectiveSkill !== null ? "检定 " + effectiveSkill.name : "掷骰"}
           </button>
         </div>
       </div>

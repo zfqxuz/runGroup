@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import SceneBoard from "@/components/room/SceneBoard";
+import KpValueEditor from "@/components/room/KpValueEditor";
 import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import {
@@ -1003,6 +1004,8 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
 
       <RoomNpcPanel roomId={room.id} isKP={isKP} />
+
+      {isKP ? <KpValueEditor roomId={room.id} units={sceneUnitsForPrepare} /> : null}
 
       {activeSceneForPrepare === null ? (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
