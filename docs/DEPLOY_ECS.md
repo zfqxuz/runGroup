@@ -40,7 +40,7 @@ sudo chown -R 10001:10001 uploads
 `.env` 里至少需要：
 
 ```bash
-APP_IMAGE=registry.cn-hangzhou.aliyuncs.com/<你的 ACR 命名空间>/touhou-trpg:latest
+APP_IMAGE=ghcr.io/zfqxuz/rungroup:latest
 POSTGRES_USER=touhou
 POSTGRES_PASSWORD=<强密码，建议只含 URL 安全字符>
 POSTGRES_DB=touhou_trpg
@@ -120,31 +120,29 @@ docker compose -f docker-compose.prod.yml exec -T db \
 
 | Secret | 说明 |
 | --- | --- |
-| `ACR_USERNAME` | 阿里云容器镜像服务用户名 |
-| `ACR_PASSWORD` | ACR 固定密码 / 访问凭证 |
-| `ACR_NAMESPACE` | ACR 命名空间 |
 | `ECS_HOST` | `8.141.16.85` |
 | `ECS_USER` | ECS 登录用户，Alibaba Cloud Linux 常见为 `root`，以实际镜像为准 |
 | `ECS_SSH_KEY` | 登录私钥内容（例如 `admin.pem` 全文，包含 BEGIN/END 行） |
 | `ECS_PORT` | 可选，默认 22 |
 
+GHCR 不需要额外 secret：build job 用 `GITHUB_TOKEN` 推送，deploy job 用临时 `GITHUB_TOKEN` 在 ECS 上登录 GHCR 拉取，健康检查结束后会 `docker logout`。
+
 ### 3.2 Repository variables（可选）
 
 | Variable | 说明 |
 | --- | --- |
-| `ACR_REGISTRY` | 默认 `registry.cn-hangzhou.aliyuncs.com`，ECS 不在杭州时按地域改 |
 | `DEPLOY_DIR` | 默认 `/opt/touhou-trpg` |
 
 ### 3.3 GitHub Environment
 
-给 `production` environment 加保护规则（例如需要 reviewer 才能部署），并确保 `ECS_*` / `ACR_*` secrets 不对普通 PR 暴露。
+给 `production` environment 加保护规则（例如需要 reviewer 才能部署），并确保 `ECS_*` secrets 不对普通 PR 暴露。
 
 ## 4. 部署流程
 
 `push main` 或手动触发 `Deploy Production`：
 
 1. `verify`：类型检查 + 测试；
-2. `build-and-push`：构建 `apps/web/Dockerfile`，推送到 ACR；
+2. `build-and-push`：构建 `apps/web/Dockerfile`，推送到 GHCR (`ghcr.io/zfqxuz/rungroup`)；
 3. `deploy`：SSH 到 ECS，更新 `.env` 中的 `APP_IMAGE`，`docker compose pull app`、`up -d`；
 4. 默认执行 `prisma migrate deploy` 作为后续 schema 变更手段。
    - **首次数据迁移**：手动触发 workflow，把 `run_migrations` 设为 `false`，等恢复完数据后再让应用启动；下次正常部署再设回 `true`。
