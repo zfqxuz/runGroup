@@ -1,4 +1,5 @@
 import { getSocketServer } from "@/server/socket/io";
+import type { RoomBgmView } from "@/shared/bgm";
 import type { SceneMapView, SceneTokenView } from "@/shared/scene";
 
 export type BroadcastRoomStatus = "LOBBY" | "PLAYING" | "PAUSED" | "COMBAT" | "ENDED";
@@ -57,4 +58,8 @@ export function emitSceneFogUpdate(roomId: string, sceneId: string, fogRevealed:
 /** 房间内任意可见状态变化：通知所有在线成员刷新服务端组件。 */
 export function emitRoomRefresh(roomId: string, reason = "update"): void {
   getSocketServer()?.to(roomChannel(roomId)).emit("room:refresh", { roomId, reason });
+}
+
+export function emitRoomBgmUpdate(roomId: string, bgm: RoomBgmView | null): void {
+  getSocketServer()?.to(roomChannel(roomId)).emit("room:bgm:update", { roomId, bgm });
 }

@@ -1,0 +1,52 @@
+# 阿里云 ECS 单机生产部署：应用 + PostgreSQL 都在 Docker 里。
+# 使用前提：
+#   1. 服务器 /opt/touhou-trpg/.env 写好生产变量（参考 apps/web/.env.production.example）
+#   2. 服务器已 docker login 过 ACR（GitHub Actions 部署时会自动 login）
+#   3. 应用镜像由 GitHub Actions 构建并推送，服务器只 pull 运行
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: touhou-trpg-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-touhou}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?请在 .env 中设置 POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-touhou_trpg}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-touhou} -d ${POSTGRES_DB:-touhou_trpg}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    # 生产默认不把 5432 暴露到公网。只在服务器本机备份时可改为：
+    # ports:
+    #   - "127.0.0.1:5433:5432"
+
+  app:
+    image: ${APP_IMAGE:?请在 .env 中设置 APP_IMAGE}
+    container_name: touhou-trpg-app
+    restart: unless-stopped
+    # 与 Dockerfile 中固定 UID 保持一致；绑定的 ./uploads 需要 chown 成 10001:10001
+    user: "10001:10001"
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3000"
+      UPLOAD_DIR: /data/uploads
+      DATABASE_URL: postgresql://${POSTGRES_USER:-touhou}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:-touhou_trpg}?schema=public
+    ports:
+      # 首次切换先直出公网 IP:3000，方便验证；后续挂 Nginx / HTTPS 后
+      # 建议改成 "127.0.0.1:3000:3000" 并只在安全组放行 80/443。
+      - "3000:3000"
+    volumes:
+      - ./uploads:/data/uploads
+
+volumes:
+  pgdata:

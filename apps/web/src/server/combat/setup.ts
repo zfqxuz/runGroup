@@ -384,7 +384,13 @@ export async function saveCombatState(combatId: string, state: CombatState): Pro
             currentMp: participant.mp,
             currentSan: participant.san,
             currentDp: participant.dp,
-            status: participant.hp <= 0 ? "DEAD" : "ALIVE"
+            status: participant.dead === true
+              ? "DEAD"
+              : participant.dying === true
+                ? "DYING"
+                : participant.unconscious === true || participant.hp <= 0
+                  ? "UNCONSCIOUS"
+                  : "ALIVE"
           }
         });
       }

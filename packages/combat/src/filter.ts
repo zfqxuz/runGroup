@@ -21,6 +21,12 @@ export interface ParticipantView {
   readonly isSelf: boolean;
   readonly isReady: boolean;
   readonly defeated: boolean;
+  /** COC7 重伤 / 倒地 / 昏迷 / 濒死 / 死亡状态。 */
+  readonly majorWound: boolean;
+  readonly prone: boolean;
+  readonly unconscious: boolean;
+  readonly dying: boolean;
+  readonly dead: boolean;
   readonly hp: number | null;
   readonly maxHp: number | null;
   readonly hpText: string | null;
@@ -32,6 +38,10 @@ export interface ParticipantView {
   readonly controlActions: number;
   readonly hasDeclaration: boolean;
   readonly declarationHp: number | null;
+  /** 当前展开符卡的名字；未识别时隐藏。 */
+  readonly declarationName: string | null;
+  /** 当前展开符卡对应的卡牌 id；前端据此匹配弹幕演出。 */
+  readonly declarationCardId: string | null;
   readonly atbValue: number;
   readonly atbMax: number;
   readonly speed: number;
@@ -114,6 +124,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       (participant.kind === "PLAYER" && canSeePartyStats);
     if (identityKnown) identifiedIds.add(participant.id);
     const declaration = participant.declaration;
+    const visibleDeclaration = declaration !== null && identityKnown ? declaration : null;
 
     return {
       id: participant.id,
@@ -123,6 +134,11 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       isSelf,
       isReady: participant.isReady,
       defeated: participant.defeated,
+      majorWound: participant.majorWound === true,
+      prone: participant.prone === true,
+      unconscious: participant.unconscious === true,
+      dying: participant.dying === true,
+      dead: participant.dead === true,
       hp: showNumbers ? participant.hp : null,
       maxHp: showNumbers ? participant.maxHp : null,
       hpText: showNumbers ? describeHp(participant.hp, participant.maxHp) : null,
@@ -138,6 +154,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       controlActions: isKP || isSelf ? participant.controlActions ?? 0 : 0,
       hasDeclaration: declaration !== null,
       declarationHp: showNumbers ? (declaration?.hp ?? null) : null,
+      declarationName: visibleDeclaration?.name ?? null,
+      declarationCardId: visibleDeclaration?.cardId ?? null,
       atbValue: participant.atbValue,
       atbMax: participant.atbMax,
       speed: participant.speed,

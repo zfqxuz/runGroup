@@ -61,16 +61,25 @@ export async function POST(request: Request): Promise<NextResponse> {
   const model = DEEPSEEK_MODELS.some((item) => item.id === modelRaw) ? modelRaw : "";
 
   // 公网穿透 / 反向代理通常会切断 30-60 秒以上的长请求，AI 导入改为后台任务 + 轮询。
-  const jobId = startAiImportJob({
-    files,
-    roomId,
-    userId: session.user.id,
-    author: session.user.name ?? session.user.username,
-    requestedSystem: system,
-    requestedEra: era,
-    instructions,
-    requestedModel: model
-  });
+  // startAiImportJob 会把上传素材落到磁盘，并启动 detached worker；dev server 重启也不会丢任务。
+  let jobId: string;
+  try {
+    jobId = await startAiImportJob({
+      files,
+      roomId,
+      userId: session.user.id,
+      author: session.user.name ?? session.user.username,
+      requestedSystem: system,
+      requestedEra: era,
+      instructions,
+      requestedModel: model
+    });
+  } catch (error) {
+    return NextResponse.json(
+      { ok: false, error: "无法创建后台任务：" + (error instanceof Error ? error.message : "未知错误") },
+      { status: 500 }
+    );
+  }
 
   return NextResponse.json(
     {
@@ -95,7 +104,7 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json({ ok: false, error: "缺少 jobId" }, { status: 400 });
   }
 
-  const job = getAiImportJob(jobId, session.user.id);
+  const job = await getAiImportJob(jobId, session.user.id);
   if (job === null) {
     return NextResponse.json({ ok: false, error: "任务不存在或已过期，请重新发起" }, { status: 404 });
   }

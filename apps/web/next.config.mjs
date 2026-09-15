@@ -8,7 +8,11 @@ const nextConfig = {
   transpilePackages: ["@touhou/formula", "@touhou/rules"],
   experimental: {
     // PDF 整页渲染需要原生 canvas，必须作为外部依赖交给 Node 运行，不能进 webpack bundle。
-    serverComponentsExternalPackages: ["@napi-rs/canvas"]
+    serverComponentsExternalPackages: ["@napi-rs/canvas"],
+    // 线索图片随 Server Action 一起提交；默认 1MB 撑不住 8MB 原图。
+    serverActions: {
+      bodySizeLimit: "10mb"
+    }
   }
 };
 

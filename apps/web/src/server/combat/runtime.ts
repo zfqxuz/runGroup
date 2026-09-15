@@ -7,8 +7,10 @@ import {
   type DefenseReaction
 } from "@touhou/combat";
 import { compileRulePack, type CompiledRulePack } from "@touhou/rules";
-import { loadAttackSkillsByParticipant } from "./options";
+import { loadAttackOptionsByParticipant, type CombatAttackOption } from "./options";
+import { loadSpellcardsByParticipant } from "./spellcards";
 import { prisma } from "@/server/db/prisma";
+import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 
 export type RuntimeRole = "KP" | "PLAYER" | "SPECTATOR";
 
@@ -23,6 +25,10 @@ export interface CombatRuntime {
   /** 房间 PRIVATE 时，主动公开角色数值的玩家角色 id。 */
   readonly publicCharacterIds: ReadonlySet<string>;
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
+  /** participant.id -> 攻击技能与实际伤害表达式（来自角色装备卡）。 */
+  readonly attackOptions: ReadonlyMap<string, readonly CombatAttackOption[]>;
+  /** participant.id -> 已装备的符卡。只在 TOUHOU 房间填充。 */
+  readonly spellcardsByParticipant: ReadonlyMap<string, readonly CombatSpellCardOption[]>;
   pendingReactions: Map<string, string>;
   reactions: Record<string, DefenseReaction>;
   /** 追逐中等待目标应对的一次攻击；null 表示没有待结算攻击。 */
@@ -49,6 +55,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     include: {
       room: {
         select: {
+          system: true,
           characterVisibility: true,
           members: { select: { userId: true, role: true, statsPublic: true, activeCharacterId: true } }
         }
@@ -97,13 +104,26 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       controllers.set(participant.id, kpIds);
     }
   }
-  const attackSkills = await loadAttackSkillsByParticipant(
+  const attackOptions = await loadAttackOptionsByParticipant(
     pack,
     state.participants.map((participant) => ({
       id: participant.id,
       kind: participant.kind,
       characterId: participant.characterId,
       skills: participant.skills
+    }))
+  );
+  const attackSkills = new Map<string, readonly string[]>(
+    [...attackOptions.entries()].map(([participantId, options]) => [
+      participantId,
+      options.map((option) => option.skillId)
+    ])
+  );
+  const spellcardsByParticipant = await loadSpellcardsByParticipant(
+    combat.room.system === "TOUHOU" && pack.system === "TOUHOU" ? "TOUHOU" : "COC7",
+    state.participants.map((participant) => ({
+      id: participant.id,
+      characterId: participant.characterId
     }))
   );
   const publicCharacterIds = new Set<string>();
@@ -122,6 +142,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     partyStatsVisible: combat.room.characterVisibility !== "PRIVATE",
     publicCharacterIds,
     attackSkills,
+    attackOptions,
+    spellcardsByParticipant,
     pendingReactions: new Map(),
     reactions: {},
     chaseAttack: null,

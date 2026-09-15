@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import type { CombatView, ParticipantView } from "@touhou/combat";
+import DanmakuStage from "@/components/danmaku/DanmakuStage";
+import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 import type {
   Ack,
   CombatActionPayload,
@@ -15,6 +17,13 @@ import type {
 interface SkillOption {
   readonly id: string;
   readonly name: string;
+}
+
+export interface CombatAttackOption {
+  readonly skillId: string;
+  readonly damage: string;
+  readonly weaponName: string | null;
+  readonly source: "WEAPON" | "UNARMED" | "DEFAULT";
 }
 
 interface MagicSpellOption {
@@ -38,9 +47,13 @@ interface Props {
   readonly canCounter: boolean;
   readonly canOutOfRule: boolean;
   readonly canCastMagic: boolean;
+  readonly canCastSpellcard: boolean;
   readonly magicSpells: readonly MagicSpellOption[];
-  readonly attackSkillsByParticipant: Readonly<Record<string, readonly string[]>>;
+  /** combatParticipant.id -> 攻击技能与实际伤害；伤害只读，由服务端装备数据生成。 */
+  readonly attackOptionsByParticipant: Readonly<Record<string, readonly CombatAttackOption[]>>;
   readonly spellIdsByParticipant: Readonly<Record<string, readonly string[]>>;
+  /** combatParticipant.id -> 已装备的符卡（仅 TOUHOU）。 */
+  readonly spellCardsByParticipant: Readonly<Record<string, readonly CombatSpellCardOption[]>>;
   /** combatParticipant.id -> 立绘 / 头像 URL。 */
   readonly portraits: Readonly<Record<string, string>>;
 }
@@ -72,14 +85,13 @@ export default function CombatBoard(props: Props) {
   const [error, setError] = useState<string | null>(null);
   const [targetId, setTargetId] = useState("");
   const [skill, setSkill] = useState("");
-  const [damage, setDamage] = useState("1d6");
   const [outName, setOutName] = useState("规则外法术");
   const [spellId, setSpellId] = useState("");
   const [spellTargetId, setSpellTargetId] = useState("");
+  const [spellCardId, setSpellCardId] = useState("");
   const [actorId, setActorId] = useState("");
   const [chaseTargetId, setChaseTargetId] = useState("");
   const [chaseSkill, setChaseSkill] = useState("");
-  const [chaseDamage, setChaseDamage] = useState("1d6");
   const [reactionOptions, setReactionOptions] = useState<Record<string, readonly CombatReactionPayload["type"][]>>({});
   const [reactionDrafts, setReactionDrafts] = useState<Record<string, ReactionDraft>>({});
   const router = useRouter();
@@ -195,10 +207,26 @@ export default function CombatBoard(props: Props) {
     return target !== undefined && isControlled(target) === false;
   });
 
+  function attackSkillsFor(participantId: string): readonly string[] {
+    return (props.attackOptionsByParticipant[participantId] ?? []).map((option) => option.skillId);
+  }
+
+  function attackOptionFor(participantId: string, skillId: string): CombatAttackOption | null {
+    return (
+      (props.attackOptionsByParticipant[participantId] ?? []).find(
+        (option) => option.skillId === skillId
+      ) ?? null
+    );
+  }
+
   const actorSkills = selectedActor?.skills ?? {};
-  const allowedAttackSkillIds = props.attackSkillsByParticipant[selectedActorId] ?? [];
+  const allowedAttackSkillIds = attackSkillsFor(selectedActorId);
   const attackSkills = props.skillOptions.filter((option) => allowedAttackSkillIds.includes(option.id));
   const activeSkill = attackSkills.some((option) => option.id === skill) ? skill : (attackSkills[0]?.id ?? "");
+  const activeAttackOption = selectedActor === null ? null : attackOptionFor(selectedActor.id, activeSkill);
+  const activeAttackDamage = activeAttackOption?.damage ?? "1d6";
+  const activeAttackSourceLabel =
+    activeAttackOption?.weaponName ?? (activeAttackOption?.source === "UNARMED" ? "徒手" : "默认攻击");
   const targetOptions = alive.filter((item) => item.id !== selectedActorId);
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
   const allowedSpellIds =
@@ -206,6 +234,13 @@ export default function CombatBoard(props: Props) {
   const actorMagicSpells = props.magicSpells.filter((spell) => allowedSpellIds.includes(spell.id));
   const activeSpell = actorMagicSpells.some((item) => item.id === spellId) ? spellId : (actorMagicSpells[0]?.id ?? "");
   const selectedSpell = actorMagicSpells.find((item) => item.id === activeSpell) ?? null;
+  const actorSpellCards =
+    selectedActor === null ? [] : (props.spellCardsByParticipant[selectedActor.id] ?? []);
+  const activeSpellCardId = actorSpellCards.some((item) => item.cardId === spellCardId)
+    ? spellCardId
+    : (actorSpellCards[0]?.cardId ?? "");
+  const selectedSpellCard =
+    actorSpellCards.find((item) => item.cardId === activeSpellCardId) ?? null;
   const spellTargetOptions = selectedSpell === null || selectedActor === null
     ? []
     : selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
@@ -243,13 +278,18 @@ export default function CombatBoard(props: Props) {
     ? chaseTargetId
     : (chaseTargetOptions[0]?.id ?? "");
   const chaseActorIdForSkills = chaseActiveParticipant?.id ?? "";
-  const chaseAttackSkillIds = props.attackSkillsByParticipant[chaseActorIdForSkills] ?? [];
+  const chaseAttackSkillIds = attackSkillsFor(chaseActorIdForSkills);
   const chaseAttackSkills = props.skillOptions.filter((option) =>
     chaseAttackSkillIds.includes(option.id)
   );
   const activeChaseSkill = chaseAttackSkills.some((option) => option.id === chaseSkill)
     ? chaseSkill
     : (chaseAttackSkills[0]?.id ?? "");
+  const activeChaseAttackOption =
+    chaseActiveParticipant === null ? null : attackOptionFor(chaseActiveParticipant.id, activeChaseSkill);
+  const activeChaseDamage = activeChaseAttackOption?.damage ?? "1d6";
+  const activeChaseSourceLabel =
+    activeChaseAttackOption?.weaponName ?? (activeChaseAttackOption?.source === "UNARMED" ? "徒手" : "默认攻击");
 
   function reactionLabel(type: CombatReactionPayload["type"]): string {
     if (type === "FLEE") return "逃跑（进入追逐）";
@@ -289,7 +329,7 @@ export default function CombatBoard(props: Props) {
         // COC7 反击 = 格斗（斗殴）检定，基础值 25。
         return props.skillOptions.filter((option) => option.id === "FIGHTING_BRAWL");
       }
-      const ids = props.attackSkillsByParticipant[targetIdValue] ?? [];
+      const ids = attackSkillsFor(targetIdValue);
       return props.skillOptions.filter((option) => ids.includes(option.id));
     }
     return [];
@@ -393,7 +433,7 @@ export default function CombatBoard(props: Props) {
         actorId: actorIdForAttack,
         targetId: activeChaseTargetId,
         skill: activeChaseSkill,
-        damage: chaseDamage
+        damage: activeChaseDamage
       },
       (result: Ack) => {
         if (result.ok === false) setError(result.error ?? "追逐攻击失败");
@@ -503,6 +543,12 @@ export default function CombatBoard(props: Props) {
 
   return (
     <div className="grid gap-5 lg:grid-cols-[1fr_340px]">
+      {props.canCastSpellcard ? (
+        <div className="lg:col-span-2">
+          <DanmakuStage view={view} spellCardsByParticipant={props.spellCardsByParticipant} />
+        </div>
+      ) : null}
+
       <section className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-4 py-3">
           <div>
@@ -687,12 +733,17 @@ export default function CombatBoard(props: Props) {
                               </option>
                             ))}
                           </select>
-                          <input
-                            value={chaseDamage}
-                            onChange={(event) => setChaseDamage(event.target.value)}
-                            placeholder="1d6 / 1d4+db"
-                            className={inputClass + " w-28 font-mono"}
-                          />
+                          <label className="flex min-w-[120px] flex-col gap-0.5">
+                            <span className="text-[10px] text-white/35">
+                              伤害 · {activeChaseSourceLabel}
+                            </span>
+                            <input
+                              value={activeChaseDamage}
+                              readOnly
+                              title="伤害由角色实际装备决定，不可修改"
+                              className={inputClass + " w-28 cursor-not-allowed font-mono opacity-70"}
+                            />
+                          </label>
                           <button
                             type="button"
                             disabled={
@@ -792,6 +843,21 @@ export default function CombatBoard(props: Props) {
                     </div>
                   ) : null}
                   <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                    {item.dead ? (
+                      <span className="rounded border border-red-500/60 bg-red-500/10 px-1.5 py-0.5 text-[10px] text-red-300">死亡</span>
+                    ) : null}
+                    {item.dying ? (
+                      <span className="rounded border border-red-400/60 bg-red-400/10 px-1.5 py-0.5 text-[10px] text-red-200">濒死</span>
+                    ) : null}
+                    {item.majorWound && item.dead === false ? (
+                      <span className="rounded border border-orange-400/50 bg-orange-400/10 px-1.5 py-0.5 text-[10px] text-orange-200">重伤</span>
+                    ) : null}
+                    {item.prone ? (
+                      <span className="rounded border border-white/20 px-1.5 py-0.5 text-[10px] text-white/50">倒地</span>
+                    ) : null}
+                    {item.unconscious && item.dying === false && item.dead === false ? (
+                      <span className="rounded border border-sky-400/50 bg-sky-400/10 px-1.5 py-0.5 text-[10px] text-sky-200">昏迷</span>
+                    ) : null}
                     {(item.stunActions ?? 0) > 0 ? (
                       <span className="rounded border border-amber-400/40 px-1.5 py-0.5 text-[10px] text-amber-300">眩晕×{item.stunActions}</span>
                     ) : null}
@@ -946,12 +1012,14 @@ export default function CombatBoard(props: Props) {
                   </select>
                 </label>
                 <label className="flex flex-col gap-1.5 sm:col-span-2">
-                  <span className="text-[11px] text-white/40">伤害表达式</span>
+                  <span className="text-[11px] text-white/40">
+                    伤害 · {activeAttackSourceLabel}（由角色实际装备决定，不可修改）
+                  </span>
                   <input
-                    value={damage}
-                    onChange={(event) => setDamage(event.target.value)}
-                    placeholder="2d6+3 / 1d4+db"
-                    className={inputClass + " font-mono"}
+                    value={activeAttackDamage}
+                    readOnly
+                    title="伤害由角色实际装备决定，不可修改"
+                    className={inputClass + " cursor-not-allowed font-mono opacity-70"}
                   />
                 </label>
               </div>
@@ -959,7 +1027,7 @@ export default function CombatBoard(props: Props) {
                 <button
                   type="button"
                   disabled={attackSkills.length === 0}
-                  onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage })}
+                  onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage: activeAttackDamage })}
                   className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
                 >
                   攻击
@@ -984,6 +1052,45 @@ export default function CombatBoard(props: Props) {
                   逃跑 / 发起追逐
                 </button>
               </div>
+
+              {props.canCastSpellcard && actorSpellCards.length > 0 ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-sakura-500/30 bg-sakura-500/5 p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={activeSpellCardId}
+                      onChange={(event) => setSpellCardId(event.target.value)}
+                      className={inputClass + " flex-1"}
+                    >
+                      {actorSpellCards.map((card) => (
+                        <option key={card.cardId} value={card.cardId}>
+                          {card.name}（{card.mode === "DECLARATION" ? "展开" : "消费"} · MP {card.mpCost}）
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={
+                        activeSpellCardId.length === 0 ||
+                        (selectedSpellCard?.mode === "DECLARATION" && selectedActor?.hasDeclaration === true)
+                      }
+                      onClick={() => emitAction({ kind: "SPELLCARD", spellCardId: activeSpellCardId })}
+                      className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
+                    >
+                      释放符卡
+                    </button>
+                  </div>
+                  {selectedSpellCard === null ? null : (
+                    <p className="text-[10px] text-sakura-200/70">
+                      {selectedSpellCard.mode === "DECLARATION"
+                        ? "展开型：生成独立 HP，被击破时会清弹；弹幕演出循环到被击破。"
+                        : "消费型：发动一次并附带消弹；弹幕演出只播放一次。"}
+                      {selectedSpellCard.mode === "DECLARATION" && selectedActor !== null && selectedSpellCard.hpRatio !== null
+                        ? " 独立 HP 约 " + Math.max(1, Math.round((selectedActor.maxHp ?? 0) * selectedSpellCard.hpRatio)) + "。"
+                        : ""}
+                    </p>
+                  )}
+                </div>
+              ) : null}
               {props.canOutOfRule ? (
                 <div className="flex flex-wrap items-center gap-2">
                   <input value={outName} onChange={(event) => setOutName(event.target.value)} className={inputClass + " flex-1"} />

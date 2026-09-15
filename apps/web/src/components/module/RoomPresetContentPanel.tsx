@@ -42,7 +42,14 @@ export default async function RoomPresetContentPanel({ roomId, moduleId }: Props
       : prisma.card.findMany({ where: { id: { in: cardIds } }, orderBy: { createdAt: "asc" } }),
     clueIds.length === 0
       ? Promise.resolve([])
-      : prisma.clue.findMany({ where: { id: { in: clueIds } }, orderBy: { createdAt: "asc" }, include: { shares: { select: { userId: true } } } }),
+      : prisma.clue.findMany({
+          where: { id: { in: clueIds } },
+          orderBy: { createdAt: "asc" },
+          include: {
+            shares: { select: { userId: true } },
+            asset: { select: { url: true } }
+          }
+        }),
     sceneIds.length === 0
       ? Promise.resolve([])
       : prisma.scene.findMany({ where: { id: { in: sceneIds } }, orderBy: { orderIndex: "asc" }, select: { id: true, name: true, description: true, isActive: true } }),
@@ -105,10 +112,23 @@ export default async function RoomPresetContentPanel({ roomId, moduleId }: Props
                   <span className="text-sm text-white/80">{clue.title}</span>
                   <span className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/40">{clue.isPublic ? "公开" : "KP 可见"}</span>
                 </div>
-                <p className="mt-1 whitespace-pre-wrap text-xs text-white/50">{clue.content}</p>
+                {clue.content.length === 0 ? null : (
+                  <p className="mt-1 whitespace-pre-wrap text-xs text-white/50">{clue.content}</p>
+                )}
+                {clue.asset?.url === null || clue.asset?.url === undefined ? null : (
+                  <a
+                    href={clue.asset.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-ink-900/60"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={clue.asset.url} alt={clue.title} className="max-h-80 w-full object-contain" />
+                  </a>
+                )}
                 <ClueAdminControls
                   roomId={roomId}
-                  clue={{ id: clue.id, title: clue.title, content: clue.content, isPublic: clue.isPublic }}
+                  clue={{ id: clue.id, title: clue.title, content: clue.content, imageUrl: clue.asset?.url ?? null, isPublic: clue.isPublic }}
                   members={memberOptions}
                   sharedUserIds={clue.shares.map((share) => share.userId)}
                   returnTo={returnTo}

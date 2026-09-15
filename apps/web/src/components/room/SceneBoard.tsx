@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import ImageUpload from "@/components/upload/ImageUpload";
-import { applyMapBackgroundAction, createSceneTokenAction } from "@/server/actions/scene";
+import { activateSceneAction, applyMapBackgroundAction, createSceneTokenAction } from "@/server/actions/scene";
 import { shareClueWithMemberAction } from "@/server/actions/room-info";
 import { createTradeOfferAction } from "@/server/actions/trade";
 import { toggleVisionShareAction } from "@/server/actions/vision";
@@ -405,11 +405,66 @@ export default function SceneBoard(props: Props) {
     emitTokenMove(current.tokenId, snapped);
   }
 
+  const sceneSwitcher = props.isKP && props.readOnly === false && props.scenes.length > 0 ? (
+    <form action={activateSceneAction} className="flex flex-wrap items-end gap-2">
+      <input type="hidden" name="roomId" value={props.roomId} />
+      <input type="hidden" name="returnTo" value={props.returnTo} />
+      <label className="flex flex-col gap-0.5">
+        <span className="text-[10px] text-white/35">切换场景</span>
+        <select
+          key={props.scene.id}
+          name="sceneId"
+          defaultValue={props.scene.id}
+          className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75"
+        >
+          {props.scenes.map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.name}{item.isActive ? "（当前）" : ""}
+            </option>
+          ))}
+        </select>
+      </label>
+      <button
+        type="submit"
+        className="rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10"
+      >
+        切换场景
+      </button>
+    </form>
+  ) : null;
+
+  const placementForm = props.readOnly === false && props.units.length > 0 ? (
+    <form action={createSceneTokenAction} className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-ink-900/60 p-3">
+      <input type="hidden" name="roomId" value={props.roomId} />
+      <input type="hidden" name="sceneId" value={props.scene.id} />
+      <input type="hidden" name="returnTo" value={props.returnTo} />
+      <label className="flex min-w-[200px] flex-1 flex-col gap-1">
+        <span className="text-[10px] text-white/35">
+          {props.isKP ? "放置玩家 / NPC Token" : "放置我的角色 Token"}
+        </span>
+        <select name="unitRef" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75">
+          {props.units.map((unit) => (
+            <option key={unit.ref} value={unit.ref}>
+              {unit.name}（{unit.kind === "NPC" ? "NPC" : "PC"}）
+            </option>
+          ))}
+        </select>
+      </label>
+      <button type="submit" className="rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10">
+        放置到本场景
+      </button>
+    </form>
+  ) : null;
+
   if (map === null) {
     return (
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">战术棋盘 · {props.scene.name}</h2>
-        <p className="mt-2 text-xs text-white/45">当前场景还没有配置地图，请先在团本编辑器中为场景设置背景图。</p>
+        <p className="mt-2 text-xs text-white/45">
+          当前场景还没有配置地图；先放置 Token 会自动建立空白地图，KP 之后再补背景图。
+        </p>
+        {sceneSwitcher}
+        {placementForm}
       </section>
     );
   }
@@ -477,6 +532,7 @@ export default function SceneBoard(props: Props) {
             {props.scene.description === null ? "" : " · " + props.scene.description}
           </p>
         </div>
+        {sceneSwitcher}
       </div>
 
       {props.isKP && props.readOnly === false ? (
@@ -519,28 +575,7 @@ export default function SceneBoard(props: Props) {
         </div>
       ) : null}
 
-      {props.readOnly === false && props.units.length > 0 ? (
-        <form action={createSceneTokenAction} className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-white/10 bg-ink-900/60 p-3">
-          <input type="hidden" name="roomId" value={props.roomId} />
-          <input type="hidden" name="sceneId" value={props.scene.id} />
-          <input type="hidden" name="returnTo" value={props.returnTo} />
-          <label className="flex min-w-[200px] flex-1 flex-col gap-1">
-            <span className="text-[10px] text-white/35">
-              {props.isKP ? "放置全部 PC / NPC Token" : "放置我的角色 Token"}
-            </span>
-            <select name="unitRef" className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75">
-              {props.units.map((unit) => (
-                <option key={unit.ref} value={unit.ref}>
-                  {unit.name}（{unit.kind === "NPC" ? "NPC" : "PC"}）
-                </option>
-              ))}
-            </select>
-          </label>
-          <button type="submit" className="rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300 transition hover:bg-spirit-400/10">
-            放置到本场景
-          </button>
-        </form>
-      ) : null}
+      {placementForm}
 
       {props.isKP === false && shareableMembers.length > 0 ? (
         <div className="mt-4 rounded-xl border border-white/10 bg-ink-900/60 p-3">

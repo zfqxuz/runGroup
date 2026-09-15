@@ -240,6 +240,17 @@ TOUHOU_EXT.combat = {
       label: "规则外施法",
       description: "相当于施放 COC 法术，同时消耗灵力与理智",
       params: { mpCost: "20" }
+    },
+    // 重伤 / 濒死按 COC7 规则书实现，东方包默认关闭；需要的房间可单独覆盖开启。
+    MAJOR_WOUND: {
+      label: "重伤（COC7）",
+      description: "COC7 规则：单次伤害达到最大生命值一半时受伤，CON 失败昏迷；达到最大生命值立即死亡。东方房默认关闭",
+      defaultEnabled: false
+    },
+    DYING: {
+      label: "濒死（COC7）",
+      description: "COC7 规则：受重伤且 HP 归零后每轮结束 CON 检定，失败死亡。东方房默认关闭",
+      defaultEnabled: false
     }
   }
 };

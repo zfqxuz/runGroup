@@ -1920,3 +1920,51 @@ MagicEffect =
 - 分块提取仍是“语义整理”，不是逐字复制；覆盖检查负责兜底标题、编号、标记、清单等结构信息，普通描述性文字仍可能被合理压缩。
 - 整页渲染只对“文字少且没有大图”的页面触发；如果整本 PDF 都是长文字 + 小矢量图，仍以内嵌图 / 文字为主。
 - `@napi-rs/canvas` 是原生依赖，部署环境需要能安装对应平台的预编译包（本机 Linux x64 已验证）。
+
+## 47. KP 备团布局 / 日志高度 / 实际伤害 / 重伤濒死 / 玩家 Token 入口（本轮）
+
+### 1. KP 备团区固定在左侧
+- `apps/web/src/app/rooms/[id]/page.tsx` 的 KP 分屏断点从 `xl`（1280px）提前到 `lg`（1024px），并把侧栏 sticky 偏移改为避开顶部导航。
+- 普通桌面宽度下，备团区（KpPrepPanel 与 KP 行动面板）稳定显示在玩家房间视角的左侧；窄屏才回退为上下排列。
+
+### 2. 跑团日志固定高度滚动
+- `apps/web/src/components/room/RoomPlay.tsx` 日志容器改为固定高度 420 / 480 / 560 / 620px（按断点），加 `overflow-hidden`，消息列表保持 `overflow-y-auto overscroll-contain`。
+- 移除了 `lg:h-full`，避免消息增多后把整页越撑越长。
+
+### 3. 攻击伤害由角色实际装备决定，战斗页不可修改
+- 新增 `CombatAttackOption` 与 `loadAttackOptionsByParticipant`（`apps/web/src/server/combat/options.ts`）：
+  - 玩家读取已装备武器卡，取 `stats.damage` 作为实际伤害；
+  - 近战 / 枪械 / 弓的技能推断沿用现有规则；
+  - 无武器时 COC7 徒手为 `1d3+db`，其余回退 `1d6`；
+  - 多选题式枪械伤害（如 `4D6/2D6/1D6`）会取第一个可解析档位（近距离）。
+- `CombatBoard` 的攻击 / 追逐攻击伤害输入改为只读，并标注武器名或徒手；技能切换时显示对应伤害。
+- `server/socket/combat.ts` 在结算前强制用服务端 `attackOptions` 覆盖客户端提交的 `damage`，客户端无法篡改伤害。
+- 验证：`verify:combat-options` 增加武器伤害 / 徒手 / 多档伤害断言；`verify:combat` 增加「客户端提交 2d6+2，服务端按实际装备覆盖为 1d6」的断言并通过。
+
+### 4. COC7 重伤 / 濒死规则进入规则集
+- `packages/rules/src/packs/coc7-baseline.ts` 新增两个可开关事件：
+  - `MAJOR_WOUND`：`threshold = maxHp / 2`，`instantDeathThreshold = maxHp`，CON 检定目标 `con`；
+  - `DYING`：第一次检定在下一轮结束（`firstCheckDelayRounds = 2`），之后每轮结束 CON 检定，失败死亡。
+- `packages/rules/src/compile.ts` 的 `CompiledCombat.events` 开始编译并保存事件 `params`，规则包可以覆盖数值。
+- `packages/combat/src/combat.ts` 实现：
+  - HP 不会低于 0；
+  - 单次伤害 >= 最大 HP：当场死亡；
+  - 单次伤害 >= 最大 HP 一半：获得重伤标记、倒地，CON 失败则昏迷；
+  - 未重伤 HP 归零：只昏迷，不会进入濒死；
+  - 已重伤 HP 归零：进入濒死，在下一轮结束与之后每轮结束 CON 检定，失败立即死亡；
+  - `ParticipantView` / 战斗卡增加死亡、濒死、重伤、倒地、昏迷状态徽章；
+  - KP 数值面板把 HP 调回正数视作急救处理，可解除濒死 / 昏迷；回到最大 HP 一半以上时移除重伤标记。
+- 东方包默认关闭这两个 COC7 事件，避免改变原有 ATB 战斗手感；房间可单独覆盖开启。
+- 新增 `packages/combat/src/__tests__/major-wound.test.ts`，覆盖阈值、瞬间死亡、濒死进入与 CON 成功 / 失败。
+
+### 5. 普通玩家 Token 放置入口修复
+- `apps/web/src/app/rooms/[id]/page.tsx` 合并 `GameCharacter` 与房间 `RoomCharacterEntry(APPROVED)` 两套来源，开局后才入房 / 补交角色卡的玩家不再因为缺少 `GameCharacter` 而没有可放置单位。
+- `SceneBoard` 在场景尚无地图时也渲染玩家放置表单（先放 Token 会自动建立空白地图）；并恢复 KP 的准备页「切换场景」下拉框。
+- 新增 `SceneBoard` 玩家 / KP 放置文案区分：普通玩家看到「放置我的角色 Token」，KP 看到「放置玩家 / NPC Token」。
+- 验证：`verify:scene-ops` 增加普通玩家在准备页与跑团页都必须看到「放置我的角色 Token / 放置到本场景」的断言并通过。
+
+### 验证
+- `npm run typecheck` PASS。
+- `npm test` PASS（198 tests：formula 50 / rules 75 / combat 73）。
+- `npm run build --workspace @touhou/web` PASS。
+- `verify:combat-options`、`verify:combat`、`verify:combat-rounds`、`verify:scene-ops`、`verify:realtime-sync` PASS。

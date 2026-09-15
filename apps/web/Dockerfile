@@ -25,7 +25,8 @@ FROM base AS runner
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3000
-RUN addgroup -S app && adduser -S app -G app
+ARG APP_UID=10001
+RUN addgroup -S -g ${APP_UID} app && adduser -S -D -H -u ${APP_UID} -G app app
 
 COPY --from=builder --chown=app:app /repo/node_modules ./node_modules
 COPY --from=builder --chown=app:app /repo/package.json ./package.json

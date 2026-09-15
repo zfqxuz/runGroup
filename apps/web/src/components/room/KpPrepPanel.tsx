@@ -1,11 +1,13 @@
 import Link from "next/link";
 import ClueAdminControls, { type ClueMemberOption } from "@/components/room/ClueAdminControls";
+import KpBgmPanel from "@/components/room/KpBgmPanel";
 import KpCombatRequestPanel from "@/components/room/KpCombatRequestPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
 import ImageUpload from "@/components/upload/ImageUpload";
 import { setGameSceneAction } from "@/server/actions/game";
 import { applyMapBackgroundAction, createSceneTokenAction, setSceneFogAction } from "@/server/actions/scene";
 import { createClueAction, setAllCluesPrivateAction } from "@/server/actions/room-info";
+import type { RoomBgmView } from "@/shared/bgm";
 import type { GameStateView } from "@/shared/game";
 
 export interface KpPrepOption {
@@ -18,6 +20,7 @@ export interface KpPrepClueOption {
   readonly id: string;
   readonly title: string;
   readonly content: string;
+  readonly imageUrl: string | null;
   readonly isPublic: boolean;
   readonly discoveredCount: number;
   readonly sharedWithIds: readonly string[];
@@ -28,6 +31,8 @@ interface Props {
   readonly gameId: string;
   readonly gameTitle: string;
   readonly state: GameStateView;
+  readonly bgm: RoomBgmView | null;
+  readonly bgmStatus: string | null;
   readonly sceneOptions: readonly KpPrepOption[];
   readonly sections: readonly string[];
   readonly chapterOptions: readonly KpPrepOption[];
@@ -248,6 +253,8 @@ export default function KpPrepPanel(props: Props) {
         </div>
       </section>
 
+      <KpBgmPanel roomId={props.roomId} gameId={props.gameId} bgm={props.bgm} status={props.bgmStatus} />
+
       <section className="rounded-xl border border-red-400/30 bg-red-400/5 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -283,11 +290,17 @@ export default function KpPrepPanel(props: Props) {
           </form>
         </div>
 
-        <form action={createClueAction} className="mt-4 flex flex-col gap-2 border-b border-white/10 pb-4">
+        <form action={createClueAction} encType="multipart/form-data" className="mt-4 flex flex-col gap-2 border-b border-white/10 pb-4">
           <input type="hidden" name="roomId" value={props.roomId} />
           <input type="hidden" name="returnTo" value={"/rooms/" + props.roomId + "?clue=created#room-info"} />
           <input name="title" placeholder="线索标题" className={inputClass} />
-          <textarea name="content" rows={3} placeholder="线索内容" className={inputClass} />
+          <textarea name="content" rows={3} placeholder="线索内容（可只上传图片）" className={inputClass} />
+          <input
+            type="file"
+            name="image"
+            accept="image/png,image/jpeg,image/webp"
+            className="text-[11px] text-white/45 file:mr-2 file:rounded file:border file:border-white/15 file:bg-ink-800 file:px-2 file:py-1 file:text-[11px] file:text-white/60"
+          />
           <label className="flex items-center gap-2 text-[11px] text-white/50">
             <input type="checkbox" name="isPublic" value="1" />
             对所有成员公开（默认仅 KP 可见）
@@ -313,10 +326,23 @@ export default function KpPrepPanel(props: Props) {
                     已发现 {clue.discoveredCount}
                   </span>
                 </div>
-                <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
+                {clue.content.length === 0 ? null : (
+                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
+                )}
+                {clue.imageUrl === null ? null : (
+                  <a
+                    href={clue.imageUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-ink-900/60"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={clue.imageUrl} alt={clue.title} className="max-h-80 w-full object-contain" />
+                  </a>
+                )}
                 <ClueAdminControls
                   roomId={props.roomId}
-                  clue={{ id: clue.id, title: clue.title, content: clue.content, isPublic: clue.isPublic }}
+                  clue={{ id: clue.id, title: clue.title, content: clue.content, imageUrl: clue.imageUrl, isPublic: clue.isPublic }}
                   members={props.members}
                   sharedUserIds={clue.sharedWithIds}
                   returnTo={"/rooms/" + props.roomId + "?clue=updated#room-info"}

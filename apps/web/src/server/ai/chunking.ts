@@ -1,4 +1,5 @@
 import { REQUIRED_MODULE_SECTIONS } from "@/server/modules/format";
+import { npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
 
 export const DEFAULT_CHUNK_TARGET = 8000;
 export const DEFAULT_CHUNK_MAX = 12000;
@@ -299,6 +300,15 @@ function mergeKindEntries(
     const normalizedName = normalizeName(name);
     let index = state.idIndex.get(originalId);
     if (index === undefined && normalizedName.length > 0) index = state.nameIndex.get(normalizedName);
+    if (index === undefined && state.kind === "npc") {
+      for (let item = 0; item < state.entries.length; item += 1) {
+        const existing = state.entries[item];
+        if (existing !== undefined && npcRecordsLikelySame(existing, raw)) {
+          index = item;
+          break;
+        }
+      }
+    }
     if (index === undefined) {
       let finalId = originalId;
       let suffix = 2;
@@ -315,6 +325,8 @@ function mergeKindEntries(
     }
     const existingIdBefore = cleanText(state.entries[index]?.id);
     state.entries[index] = mergeObjects(state.entries[index] ?? {}, raw);
+    const mergedNameKey = normalizeName(entryName(state.kind, state.entries[index] ?? {}));
+    if (mergedNameKey.length > 0) state.nameIndex.set(mergedNameKey, index);
     const existingIdAfter = cleanText(state.entries[index]?.id);
     if (existingIdBefore.length > 0 && originalId !== existingIdBefore) {
       state.idAlias.set(originalId, existingIdBefore);

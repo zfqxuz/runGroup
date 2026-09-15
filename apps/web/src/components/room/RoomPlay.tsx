@@ -347,7 +347,7 @@ export default function RoomPlay(props: Props) {
 
   return (
     <>
-      <section className="relative flex h-[420px] min-h-0 flex-col rounded-xl border border-white/10 bg-ink-800/50 lg:h-full">
+      <section className="relative flex h-[420px] min-h-0 flex-col overflow-hidden rounded-xl border border-white/10 bg-ink-800/50 sm:h-[480px] lg:h-[560px] xl:h-[620px]">
         <header className="flex items-center justify-between border-b border-white/10 px-4 py-3">
           <h2 className="text-sm font-medium text-white/80">跑团日志</h2>
           <div className="flex items-center gap-2">
@@ -365,7 +365,7 @@ export default function RoomPlay(props: Props) {
           </div>
         </header>
 
-        <ul ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        <ul ref={listRef} className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain px-4 py-4">
           {messages.length === 0 ? (
             <li className="py-10 text-center text-sm text-white/30">还没有消息，说点什么吧</li>
           ) : (

@@ -12,6 +12,7 @@ import {
   allowedAttackSkills,
   allowedReactionTypes,
   allowedReactionTypesForParticipant,
+  attackOptionsForParticipant,
   combatFeatureFlags,
   validateCombatAction
 } from "../src/server/combat/options";
@@ -48,6 +49,27 @@ function main(): void {
   expectIds(handgun, ["FIREARMS_HANDGUN"], "COC 中距武器应映射到手枪");
   const axe = allowedAttackSkills(coc, cocPlayer, [{ name: "消防斧", stats: { range: "MELEE" } }]);
   expectIds(axe, ["FIGHTING_AXE"], "COC 近战斧应映射到斧");
+
+  const handgunOptions = attackOptionsForParticipant(coc, cocPlayer, [
+    { name: "测试手枪", stats: { range: "NEAR", damage: "1d10" } }
+  ]);
+  ensure(handgunOptions.length === 1, "手枪应生成一个攻击选项");
+  ensure(handgunOptions[0]?.skillId === "FIREARMS_HANDGUN", "手枪攻击选项应映射到手枪技能");
+  ensure(handgunOptions[0]?.damage === "1d10", "攻击伤害应取武器卡 damage");
+  ensure(handgunOptions[0]?.weaponName === "测试手枪", "攻击选项应保留武器名称");
+  ensure(handgunOptions[0]?.source === "WEAPON", "武器攻击来源应为 WEAPON");
+
+  const shotgunOptions = attackOptionsForParticipant(coc, cocPlayer, [
+    { name: "猎枪", stats: { range: "FAR", damage: "4D6/2D6/1D6" } }
+  ]);
+  ensure(shotgunOptions.length === 1, "多档伤害武器应生成一个攻击选项");
+  ensure(shotgunOptions[0]?.damage === "4D6", "多档伤害应取第一个可解析档位");
+
+  const unarmedOptions = attackOptionsForParticipant(coc, cocPlayer, []);
+  ensure(unarmedOptions.length === 1, "无武器时应有徒手攻击选项");
+  ensure(unarmedOptions[0]?.skillId === "FIGHTING_BRAWL", "无武器时攻击技能应为斗殴");
+  ensure(unarmedOptions[0]?.damage === "1d3+db", "COC7 徒手伤害应为 1d3+db");
+  ensure(unarmedOptions[0]?.weaponName === "徒手", "无武器时应标记为徒手");
 
   const cocFlags = combatFeatureFlags(coc);
   ensure(cocFlags.canCounter === true, "COC7 应支持反击");

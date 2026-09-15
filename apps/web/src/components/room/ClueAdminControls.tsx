@@ -17,6 +17,7 @@ interface Props {
     readonly id: string;
     readonly title: string;
     readonly content: string;
+    readonly imageUrl: string | null;
     readonly isPublic: boolean;
   };
   readonly members: readonly ClueMemberOption[];
@@ -66,16 +67,28 @@ export default function ClueAdminControls({ roomId, clue, members, sharedUserIds
 
       <details className="rounded border border-white/10 bg-ink-900/40 p-2">
         <summary className="cursor-pointer text-[11px] text-white/45">编辑线索</summary>
-        <form action={updateClueAction} className="mt-2 flex flex-col gap-2">
+        <form action={updateClueAction} encType="multipart/form-data" className="mt-2 flex flex-col gap-2">
           <input type="hidden" name="roomId" value={roomId} />
           <input type="hidden" name="clueId" value={clue.id} />
           <input type="hidden" name="returnTo" value={returnTo} />
           <input name="title" defaultValue={clue.title} className={inputClass} />
-          <textarea name="content" rows={3} defaultValue={clue.content} className={inputClass} />
+          <textarea name="content" rows={3} defaultValue={clue.content} placeholder="线索内容（可只上传图片）" className={inputClass} />
+          <input
+            type="file"
+            name="image"
+            accept="image/png,image/jpeg,image/webp"
+            className="text-[11px] text-white/45 file:mr-2 file:rounded file:border file:border-white/15 file:bg-ink-800 file:px-2 file:py-1 file:text-[11px] file:text-white/60"
+          />
           <label className="flex items-center gap-2 text-[11px] text-white/50">
             <input type="checkbox" name="isPublic" value="1" defaultChecked={clue.isPublic} />
             对所有成员公开
           </label>
+          {clue.imageUrl === null ? null : (
+            <label className="flex items-center gap-2 text-[11px] text-white/50">
+              <input type="checkbox" name="removeImage" value="1" />
+              删除现有图片
+            </label>
+          )}
           <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-900">
             保存线索
           </button>

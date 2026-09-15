@@ -90,7 +90,26 @@ export const COC7_BASELINE: RulePackInput = {
       },
       DEATH_AT_ZERO_HP: {
         label: "倒地判定",
-        description: "HP 归零即失去战斗能力"
+        description: "HP 归零即失去战斗能力；若已受重伤则进入濒死，规则书另有说明时除外"
+      },
+      MAJOR_WOUND: {
+        label: "重伤",
+        description: "单次攻击伤害达到最大生命值一半时受重伤：倒地，并进行 CON 检定，失败则昏迷；若随后 HP 归零则进入濒死；单次伤害达到最大生命值立即死亡",
+        defaultEnabled: true,
+        params: {
+          threshold: "maxHp / 2",
+          instantDeathThreshold: "maxHp",
+          checkTarget: "con"
+        }
+      },
+      DYING: {
+        label: "濒死",
+        description: "已受重伤且 HP 归零时进入濒死：昏迷，并在下一轮结束及之后每轮结束进行 CON 检定，失败即死亡",
+        defaultEnabled: true,
+        params: {
+          firstCheckDelayRounds: "2",
+          checkTarget: "con"
+        }
       },
       FUMBLE_CONSEQUENCE: {
         label: "大失败附加后果",

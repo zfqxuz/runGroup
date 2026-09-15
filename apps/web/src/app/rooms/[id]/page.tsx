@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import KpPrepPanel from "@/components/room/KpPrepPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
+import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomInfoPanel from "@/components/room/RoomInfoPanel";
 import RoomPlay from "@/components/room/RoomPlay";
@@ -17,6 +18,8 @@ import { loadGameModuleView } from "@/server/modules/revision";
 import { loadRoomMemberViews } from "@/server/room/member-view";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { loadSceneView } from "@/server/scene/load";
+import type { RoomBgmView } from "@/shared/bgm";
+import { readRoomBgm } from "@/shared/bgm";
 import type { ChatChannel, ChatKind, ChatMessage, TradeOfferSummary } from "@/shared/socket";
 
 export const dynamic = "force-dynamic";
@@ -32,7 +35,7 @@ export default async function RoomPage({
   searchParams
 }: {
   params: { id: string };
-  searchParams: { state?: string; advancement?: string; growth?: string; error?: string; clue?: string; note?: string };
+  searchParams: { state?: string; advancement?: string; growth?: string; error?: string; clue?: string; note?: string; bgm?: string };
 }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -123,6 +126,7 @@ export default async function RoomPage({
     }
   });
   const gameState = activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state);
+  const roomBgm: RoomBgmView | null = gameState === null ? null : readRoomBgm(gameState.custom);
   const gameModule = await loadGameModuleView(activeGame);
   const activeScene = await loadSceneView(room.id, undefined, { userId: session.user.id, isKP });
   const canSeeAllCharacters = isKP || room.characterVisibility !== "PRIVATE";
@@ -247,6 +251,7 @@ export default async function RoomPage({
           ]
         },
     include: {
+      asset: { select: { url: true, thumbnailUrl: true } },
       _count: { select: { discoveredBy: true } },
       discoveredBy: { where: { userId: session.user.id }, select: { userId: true } },
       shares: { select: { userId: true } }
@@ -286,14 +291,20 @@ export default async function RoomPage({
     include: { character: { select: { name: true, userId: true } } },
     orderBy: { submittedAt: "asc" }
   });
-  const allCharacterUnits = gameCharacterUnits.length > 0
-    ? gameCharacterUnits
-    : approvedEntriesForUnits.map((entry) => ({
-        ref: "character:" + entry.characterId,
-        name: entry.character.name,
-        kind: "PLAYER" as const,
-        userId: entry.character.userId
-      }));
+  const approvedCharacterUnits = approvedEntriesForUnits.map((entry) => ({
+    ref: "character:" + entry.characterId,
+    name: entry.character.name,
+    kind: "PLAYER" as const,
+    userId: entry.character.userId
+  }));
+  // 开局后才入房 / 补交角色卡的玩家可能没有 GameCharacter，
+  // 但 Token 放置只要求房间审核通过；两种来源合并，保证普通玩家始终有入口。
+  const allCharacterUnits = [
+    ...gameCharacterUnits,
+    ...approvedCharacterUnits.filter(
+      (entry) => gameCharacterUnits.some((gameUnit) => gameUnit.ref === entry.ref) === false
+    )
+  ];
   const npcUnits = sceneNpcCards.map((card) => ({
     ref: "npc:" + card.id,
     name: card.name,
@@ -439,6 +450,7 @@ export default async function RoomPage({
     id: clue.id,
     title: clue.title,
     content: clue.content,
+    imageUrl: clue.asset?.url ?? null,
     isPublic: clue.isPublic,
     discoveredCount: clue._count.discoveredBy,
     sharedWithIds: clue.shares.map((share) => share.userId)
@@ -447,6 +459,8 @@ export default async function RoomPage({
 
   const playerContent = (
     <div className="flex min-w-0 flex-col gap-6">
+      <RoomBgmPlayer roomId={room.id} initialBgm={roomBgm} />
+
       {activeCombat === null ? null : (
         <section className="mx-auto w-full max-w-4xl rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -546,6 +560,7 @@ export default async function RoomPage({
           id: clue.id,
           title: clue.title,
           content: clue.content,
+          imageUrl: clue.asset?.url ?? null,
           isPublic: clue.isPublic,
           discoveredByMe: clue.discoveredBy.length > 0,
           discoveredCount: clue._count.discoveredBy,
@@ -659,8 +674,8 @@ export default async function RoomPage({
           <p className="rounded-xl border border-sakura-500/30 bg-sakura-500/5 px-4 py-2 text-xs text-sakura-200">
             KP 分屏模式：左侧为准备区（场景切换、线索公布），右侧为玩家实际看到的房间视角。
           </p>
-          <div className="grid items-start gap-6 xl:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
-            <aside className="flex flex-col gap-6 xl:sticky xl:top-6 xl:max-h-[calc(100vh-3rem)] xl:overflow-y-auto xl:pr-1">
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+            <aside className="flex flex-col gap-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
               {kpActionPanel}
               {activeGame === null || gameState === null ? (
                 <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5 text-xs text-white/50">
@@ -680,6 +695,8 @@ export default async function RoomPage({
                   encounterTitle={kpEncounterTitle}
                   clues={kpPrepClues}
                   members={clueMemberOptions}
+                  bgm={roomBgm}
+                  bgmStatus={searchParams.bgm ?? null}
                   sceneId={activeScene?.id ?? null}
                   mapId={activeScene?.map?.id ?? null}
                   mapBackgroundUrl={activeScene?.map?.backgroundUrl ?? null}

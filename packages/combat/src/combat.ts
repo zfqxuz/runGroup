@@ -135,6 +135,12 @@ export function addParticipant(
     speed: init.speed,
     isReady: false,
     defeated: false,
+    majorWound: false,
+    prone: false,
+    unconscious: false,
+    dying: false,
+    dead: false,
+    dyingSinceRound: 0,
     hp: init.derived.maxHp,
     maxHp: init.derived.maxHp,
     mp: init.derived.maxMp,
@@ -250,7 +256,8 @@ function expireTimedEffects(
         kind: "SPELLCARD",
         actorId: participant.id,
         targetId: null,
-        text: `${participant.name} 的符卡「${declaration.name}」持续时间结束`
+        text: `${participant.name} 的符卡「${declaration.name}」持续时间结束`,
+        data: { event: "EXPIRE", name: declaration.name, cardId: declaration.cardId }
       });
     }
   }
@@ -363,7 +370,8 @@ function breakDeclaration(ctx: ResolveContext, owner: CombatParticipantState): v
     kind: "SPELLCARD",
     actorId: owner.id,
     targetId: null,
-    text: `${owner.name} 的符卡「${declaration.name}」被击破`
+    text: `${owner.name} 的符卡「${declaration.name}」被击破`,
+    data: { event: "BREAK", name: declaration.name, cardId: declaration.cardId, hp: 0 }
   });
 
   const rules = ctx.pack.pack.spellcard;
@@ -372,11 +380,32 @@ function breakDeclaration(ctx: ResolveContext, owner: CombatParticipantState): v
   if (clearEvent && clearEvent.defaultEnabled === false) return;
   if (rules.declaration.onBreakClearDanmaku === false) return;
 
-  const mode = rules.declaration.clearTargets;
+  const mode = declaration.clearTargets;
   for (const submission of ctx.queue) {
     if (submission.kind !== "DANMAKU") continue;
     if (mode === "OTHERS_ONLY" && submission.actorId === owner.id) continue;
     ctx.cancelled.add(submission.actorId);
+  }
+}
+
+function combatEventEnabled(pack: CompiledRulePack, eventId: string): boolean {
+  return pack.system === "COC7" && pack.combat.events[eventId]?.defaultEnabled === true;
+}
+
+function combatEventParam(
+  pack: CompiledRulePack,
+  eventId: string,
+  key: string,
+  vars: Readonly<Record<string, number>>,
+  fallback: number
+): number {
+  const expression = pack.combat.events[eventId]?.params[key];
+  if (expression === undefined) return fallback;
+  try {
+    const value = evaluate(expression, { vars, consts: pack.pack.const });
+    return Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
   }
 }
 
@@ -397,24 +426,188 @@ function applyDamageToParticipant(
     if (declaration.hp <= 0) breakDeclaration(ctx, target);
   }
 
-  let toHp = 0;
-  if (remaining > 0) {
-    toHp = Math.min(target.hp, remaining);
-    target.hp -= toHp;
-    if (target.hp <= 0) {
+  if (remaining <= 0) return { toDeclaration, toHp: 0 };
+
+  const bodyDamage = remaining;
+  const hpBefore = target.hp;
+  const toHp = Math.min(hpBefore, bodyDamage);
+  target.hp = hpBefore - toHp;
+
+  if (combatEventEnabled(ctx.pack, "MAJOR_WOUND")) {
+    const threshold = combatEventParam(
+      ctx.pack,
+      "MAJOR_WOUND",
+      "threshold",
+      target.vars,
+      Math.ceil(target.maxHp / 2)
+    );
+    const instantDeathThreshold = combatEventParam(
+      ctx.pack,
+      "MAJOR_WOUND",
+      "instantDeathThreshold",
+      target.vars,
+      target.maxHp
+    );
+
+    if (bodyDamage >= instantDeathThreshold) {
       target.hp = 0;
+      target.majorWound = true;
+      target.prone = true;
+      target.unconscious = true;
+      target.dead = true;
+      target.dying = false;
       target.defeated = true;
       target.isReady = false;
       pushLog(ctx.state, {
         kind: "DEFEAT",
         actorId: target.id,
         targetId: target.id,
-        text: `${target.name} 失去战斗能力`
+        text: target.name + " 单次受到 " + bodyDamage + " 点伤害，达到最大生命值 " + target.maxHp + "，当场死亡",
+        data: { rollType: "INSTANT_DEATH", damage: bodyDamage, maxHp: target.maxHp }
+      });
+      return { toDeclaration, toHp };
+    }
+
+    if (bodyDamage >= threshold) {
+      target.majorWound = true;
+      target.prone = true;
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 单次受到 " + bodyDamage + " 点伤害（重伤阈值 " + threshold + "），受到重伤并倒地",
+        data: { rollType: "MAJOR_WOUND", damage: bodyDamage, threshold }
+      });
+
+      const conTarget = combatEventParam(
+        ctx.pack,
+        "MAJOR_WOUND",
+        "checkTarget",
+        target.vars,
+        target.attributes.con
+      );
+      const rng = nextRollRng(ctx.state, "major-wound:" + target.id + ":" + ctx.state.round);
+      const roll = rollDie(rng, 100);
+      const check = resolveCheck(ctx.pack, roll, conTarget);
+      const success = isSuccess(check.result);
+      pushLog(ctx.state, {
+        kind: "CHECK",
+        actorId: target.id,
+        targetId: target.id,
+        text: "重伤 CON 检定：" + target.name + " 掷 1d100 = " + roll + "，目标值 " + conTarget + " → " + check.result,
+        data: { rollType: "MAJOR_WOUND_CON", roll, target: conTarget, result: check.result }
+      });
+      if (success === false) {
+        target.unconscious = true;
+        target.defeated = true;
+        target.isReady = false;
+        pushLog(ctx.state, {
+          kind: "ACTION",
+          actorId: target.id,
+          targetId: null,
+          text: target.name + " 重伤后失去意识。",
+          data: { rollType: "MAJOR_WOUND_UNCONSCIOUS" }
+        });
+      }
+    }
+
+    if (target.hp <= 0) {
+      target.hp = 0;
+      target.prone = true;
+      target.unconscious = true;
+      target.defeated = true;
+      target.isReady = false;
+      if (combatEventEnabled(ctx.pack, "DYING") && target.majorWound === true) {
+        if (target.dying !== true) target.dyingSinceRound = ctx.state.round;
+        target.dying = true;
+        pushLog(ctx.state, {
+          kind: "DEFEAT",
+          actorId: target.id,
+          targetId: target.id,
+          text: target.name + " 已受重伤且 HP 归零，进入濒死；将在下一轮结束开始进行 CON 检定",
+          data: { rollType: "DYING", sinceRound: target.dyingSinceRound ?? ctx.state.round }
+        });
+      } else {
+        pushLog(ctx.state, {
+          kind: "DEFEAT",
+          actorId: target.id,
+          targetId: target.id,
+          text: target.name + (target.majorWound === true
+            ? " 已受重伤且 HP 归零，但本房未开启濒死规则，失去战斗能力"
+            : " HP 归零，陷入昏迷；因其未受重伤，本次不会死亡"),
+          data: { rollType: "UNCONSCIOUS", majorWound: target.majorWound === true }
+        });
+      }
+    }
+    return { toDeclaration, toHp };
+  }
+
+  if (target.hp <= 0) {
+    target.hp = 0;
+    target.defeated = true;
+    target.isReady = false;
+    pushLog(ctx.state, {
+      kind: "DEFEAT",
+      actorId: target.id,
+      targetId: target.id,
+      text: target.name + " 失去战斗能力"
+    });
+  }
+  return { toDeclaration, toHp };
+}
+
+/**
+ * COC7 濒死结算：进入濒死后的下一轮结束，以及之后每轮结束，各进行一次 CON 检定。
+ * 失败立即死亡；成功则继续撑住，直到被急救 / 医学稳定或治疗。
+ */
+export function resolveDyingChecks(pack: CompiledRulePack, state: CombatState): void {
+  if (combatEventEnabled(pack, "DYING") === false) return;
+  for (const participant of state.participants) {
+    if (participant.dying !== true || participant.dead === true) continue;
+    const delayRounds = combatEventParam(
+      pack,
+      "DYING",
+      "firstCheckDelayRounds",
+      participant.vars,
+      2
+    );
+    const sinceRound = participant.dyingSinceRound ?? state.round - 1;
+    if (state.round < sinceRound + delayRounds) continue;
+
+    const conTarget = combatEventParam(
+      pack,
+      "DYING",
+      "checkTarget",
+      participant.vars,
+      participant.attributes.con
+    );
+    const rng = nextRollRng(state, "dying:" + participant.id + ":" + state.round);
+    const roll = rollDie(rng, 100);
+    const check = resolveCheck(pack, roll, conTarget);
+    const success = isSuccess(check.result);
+    pushLog(state, {
+      kind: "CHECK",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: "濒死 CON 检定：" + participant.name + " 掷 1d100 = " + roll + "，目标值 " + conTarget + " → " + check.result,
+      data: { rollType: "DYING_CON", roll, target: conTarget, result: check.result }
+    });
+    if (success === false) {
+      participant.dead = true;
+      participant.dying = false;
+      participant.unconscious = true;
+      participant.prone = true;
+      participant.defeated = true;
+      participant.isReady = false;
+      pushLog(state, {
+        kind: "DEFEAT",
+        actorId: participant.id,
+        targetId: participant.id,
+        text: participant.name + " 濒死 CON 检定失败，死亡",
+        data: { rollType: "DYING_DEATH", roll }
       });
     }
   }
-
-  return { toDeclaration, toHp };
 }
 
 function compiledSkillBase(
@@ -599,9 +792,11 @@ function resolveSpellcard(
   const name = submission.name ?? "无名符卡";
   const mode = submission.spellcardMode ?? "DECLARATION";
   const mpCost = Math.max(0, submission.mpCost ?? 0);
+  const cardId = submission.spellCardId ?? null;
+  const usedKey = cardId ?? name;
 
   if (mode === "CONSUMPTION") {
-    if (rules.consumption.oncePerCombat === true && actor.usedSpellCards.includes(name)) {
+    if (rules.consumption.oncePerCombat === true && actor.usedSpellCards.includes(usedKey)) {
       pushLog(state, {
         kind: "SYSTEM",
         actorId: actor.id,
@@ -610,13 +805,20 @@ function resolveSpellcard(
       });
       return;
     }
-    actor.usedSpellCards = [...actor.usedSpellCards, name];
+    actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
     actor.mp = Math.max(0, actor.mp - mpCost);
     pushLog(state, {
       kind: "SPELLCARD",
       actorId: actor.id,
       targetId: submission.targetId ?? null,
-      text: `${actor.name} 发动消费型符卡「${name}」，附带消弹`
+      text: `${actor.name} 发动消费型符卡「${name}」，附带消弹`,
+      data: {
+        event: "CONSUME",
+        mode: "CONSUMPTION",
+        name,
+        mpCost,
+        cardId
+      }
     });
     for (const queued of ctx.queue) {
       if (queued.kind !== "DANMAKU") continue;
@@ -657,14 +859,19 @@ function resolveSpellcard(
 
   actor.mp -= mpCost;
   const rawDuration = Math.max(0, Math.floor(submission.declarationDurationTicks ?? 0));
-  const durationTicks = rawDuration > 0 ? Math.max(1, rawDuration) : Number.POSITIVE_INFINITY;
+  // 不传持续 tick 视为“持续到被击破”。不能用 Infinity：CombatState 会写入
+  // JSON 快照，Infinity 会被序列化成 null 导致重载后立刻过期。
+  const perpetual = rawDuration <= 0;
+  const durationTicks = perpetual ? 1_000_000_000 : Math.max(1, rawDuration);
 
+  const clearTargets = submission.declarationClearTargets ?? rules.declaration.clearTargets;
   actor.declaration = {
     name,
     hp: declarationHp,
     maxHp: declarationHp,
     expiresAtTick: state.tick + durationTicks,
-    clearTargets: rules.declaration.clearTargets,
+    clearTargets,
+    cardId,
     damageMultiplier: 1
   };
 
@@ -673,7 +880,14 @@ function resolveSpellcard(
     actorId: actor.id,
     targetId: null,
     text: `${actor.name} 展开符卡「${name}」，独立 HP ${declarationHp}`,
-    data: { name, hp: declarationHp, durationTicks: Number.isFinite(durationTicks) ? durationTicks : -1 }
+    data: {
+      event: "DECLARE",
+      mode: "DECLARATION",
+      name,
+      hp: declarationHp,
+      durationTicks: perpetual ? -1 : durationTicks,
+      cardId
+    }
   });
 }
 
@@ -1284,6 +1498,7 @@ export function resolvePending(
   }
 
   state.round += 1;
+  resolveDyingChecks(pack, state);
   state.phase = checkEnd(state) ? "ENDED" : "ATB_CHARGING";
 
   return {
@@ -1379,6 +1594,7 @@ export function endTurn(
     state.initiativeOrder = buildInitiativeOrder(pack, state);
     state.activeIndex = 0;
     state.round += 1;
+    resolveDyingChecks(pack, state);
     state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
     syncInitiativeReady(state);
     return { roundAdvanced: true, nextActorId: currentActorId(state) };

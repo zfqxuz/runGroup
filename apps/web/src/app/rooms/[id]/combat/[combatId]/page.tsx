@@ -3,11 +3,16 @@ import { notFound, redirect } from "next/navigation";
 import type { CombatState } from "@touhou/combat";
 import { spellTargeting } from "@touhou/rules";
 import CombatBoard from "@/components/room/CombatBoard";
+import KpBgmPanel from "@/components/room/KpBgmPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
+import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import { auth } from "@/server/auth";
-import { combatFeatureFlags, loadAttackSkillsByParticipant } from "@/server/combat/options";
+import { combatFeatureFlags, loadAttackOptionsByParticipant, type CombatAttackOption } from "@/server/combat/options";
+import { loadSpellcardsByParticipant } from "@/server/combat/spellcards";
+import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
+import { readRoomBgm } from "@/shared/bgm";
 import { magicSpellEffectLabels } from "@/shared/magic";
 
 export const dynamic = "force-dynamic";
@@ -46,11 +51,12 @@ export default async function CombatDetailPage({
     orderBy: { seq: "desc" },
     select: { state: true }
   });
-  const attackSkillsByParticipant: Record<string, readonly string[]> = {};
+  const attackOptionsByParticipant: Record<string, readonly CombatAttackOption[]> = {};
   const spellIdsByParticipant: Record<string, readonly string[]> = {};
+  const spellCardsByParticipant: Record<string, readonly CombatSpellCardOption[]> = {};
   if (snapshot !== null) {
     const state = snapshot.state as unknown as CombatState;
-    const attackSkills = await loadAttackSkillsByParticipant(
+    const attackOptions = await loadAttackOptionsByParticipant(
       effective.compiled,
       state.participants.map((participant) => ({
         id: participant.id,
@@ -59,14 +65,27 @@ export default async function CombatDetailPage({
         skills: participant.skills
       }))
     );
-    for (const [participantId, skillIds] of attackSkills) {
-      attackSkillsByParticipant[participantId] = skillIds;
+    for (const [participantId, options] of attackOptions) {
+      attackOptionsByParticipant[participantId] = options;
     }
     for (const participant of state.participants) {
       const raw = (participant as unknown as { spells?: unknown }).spells;
       spellIdsByParticipant[participant.id] = Array.isArray(raw)
         ? raw.filter((item): item is string => typeof item === "string")
         : [];
+    }
+
+    if (room.system === "TOUHOU") {
+      const spellCards = await loadSpellcardsByParticipant(
+        "TOUHOU",
+        state.participants.map((participant) => ({
+          id: participant.id,
+          characterId: participant.characterId
+        }))
+      );
+      for (const [participantId, cards] of spellCards) {
+        spellCardsByParticipant[participantId] = cards;
+      }
     }
   }
 
@@ -114,6 +133,13 @@ export default async function CombatDetailPage({
     if (url !== null && url !== undefined) portraits[participant.id] = url;
   }
 
+  const bgmGame = await prisma.game.findFirst({
+    where: { roomId: room.id, status: { in: ["PLAYING", "COMBAT"] } },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, state: { select: { custom: true } } }
+  });
+  const roomBgm = bgmGame?.state === null || bgmGame?.state === undefined ? null : readRoomBgm(bgmGame.state.custom);
+
   const combatFeatures = combatFeatureFlags(effective.compiled);
   const isKP = membership.role === "KP";
 
@@ -144,6 +170,18 @@ export default async function CombatDetailPage({
         </div>
       </header>
 
+      <RoomBgmPlayer roomId={room.id} initialBgm={roomBgm} />
+
+      {isKP && bgmGame !== null ? (
+        <KpBgmPanel
+          roomId={room.id}
+          gameId={bgmGame.id}
+          bgm={roomBgm}
+          status={null}
+          returnTo={"/rooms/" + room.id + "/combat/" + combat.id}
+        />
+      ) : null}
+
       {isKP ? <KpValueEditor roomId={room.id} units={valueUnits} /> : null}
 
       <CombatBoard
@@ -155,6 +193,7 @@ export default async function CombatDetailPage({
         canCounter={combatFeatures.canCounter}
         canOutOfRule={combatFeatures.canOutOfRule}
         canCastMagic={combatFeatures.canCastMagic}
+        canCastSpellcard={combatFeatures.canCastSpellcard}
         magicSpells={(effective.compiled.pack.magic?.spells ?? []).map((spell) => ({
           id: spell.id,
           name: spell.name,
@@ -166,8 +205,9 @@ export default async function CombatDetailPage({
           targeting: spellTargeting(spell),
           effects: magicSpellEffectLabels(spell)
         }))}
-        attackSkillsByParticipant={attackSkillsByParticipant}
+        attackOptionsByParticipant={attackOptionsByParticipant}
         spellIdsByParticipant={spellIdsByParticipant}
+        spellCardsByParticipant={spellCardsByParticipant}
         portraits={portraits}
       />
     </main>

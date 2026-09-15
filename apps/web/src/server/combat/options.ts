@@ -1,4 +1,5 @@
 import type { ActionSubmission } from "@touhou/combat";
+import { parseDice } from "@touhou/formula";
 import { spellTargeting, type CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 
@@ -14,6 +15,39 @@ export interface CombatOptionParticipant {
 interface WeaponLike {
   readonly name: string;
   readonly stats: unknown;
+}
+
+export interface CombatAttackOption {
+  readonly skillId: string;
+  readonly damage: string;
+  readonly weaponName: string | null;
+  readonly source: "WEAPON" | "UNARMED" | "DEFAULT";
+}
+
+/**
+ * 从武器卡的伤害文本中取第一个可解析的表达式。
+ * 例如猎枪的 "4D6/2D6/1D6" 按近距离伤害 4D6 处理；"1D10+DB" 保留 DB 交给战斗引擎替换。
+ */
+function weaponDamageOf(weapon: WeaponLike): string | null {
+  const stats = (weapon.stats ?? {}) as { readonly damage?: unknown };
+  const damage = nonEmptyString(stats.damage);
+  if (damage === null) return null;
+  const candidates = damage.split(/[/／;；|]/).map((part) => part.trim()).filter((part) => part.length > 0);
+  for (const candidate of candidates) {
+    try {
+      parseDice(candidate.replace(/db/gi, "0"));
+      return candidate;
+    } catch {
+      // 尝试下一个伤害档位。
+    }
+  }
+  return null;
+}
+
+function defaultDamageFor(pack: CompiledRulePack, skillId: string): string {
+  // COC7 徒手攻击按规则书为 1D3+DB；其余无武器数据时沿用旧的 1D6 保底。
+  if (pack.system === "COC7" && skillId === "FIGHTING_BRAWL") return "1d3+db";
+  return "1d6";
 }
 
 function hasSkill(participant: CombatOptionParticipant, skillId: string): boolean {
@@ -105,10 +139,43 @@ export function allowedAttackSkills(
   return unique.length > 0 ? unique : fallbackAttackSkills(pack, participant);
 }
 
-export async function loadAttackSkillsByParticipant(
+/** 把可用技能与实际装备武器合并成可结算的攻击选项（纯函数，便于测试）。 */
+export function attackOptionsForParticipant(
+  pack: CompiledRulePack,
+  participant: CombatOptionParticipant,
+  equipped: readonly WeaponLike[]
+): readonly CombatAttackOption[] {
+  const allowedSkills = allowedAttackSkills(pack, participant, equipped);
+  const weaponBySkill = new Map<string, WeaponLike>();
+  for (const weapon of equipped) {
+    const skillId = inferWeaponSkillId(pack, weapon);
+    if (skillId === null) continue;
+    if (weaponBySkill.has(skillId)) continue;
+    weaponBySkill.set(skillId, weapon);
+  }
+  return allowedSkills.map((skillId) => {
+    const weapon = weaponBySkill.get(skillId) ?? null;
+    const damage = weapon === null ? null : weaponDamageOf(weapon);
+    const unarmed = weapon === null && pack.system === "COC7" && skillId === "FIGHTING_BRAWL";
+    return {
+      skillId,
+      damage: damage ?? defaultDamageFor(pack, skillId),
+      weaponName: weapon?.name ?? (unarmed ? "徒手" : null),
+      source: weapon === null ? (unarmed ? ("UNARMED" as const) : ("DEFAULT" as const)) : ("WEAPON" as const)
+    };
+  });
+}
+
+/**
+ * 加载每个单位可用的攻击技能与实际伤害。
+ *
+ * 玩家角色：优先读取已装备武器卡；没有装备时按规则包决定徒手 / 默认攻击。
+ * 武器卡上的 damage 就是角色实际伤害，战斗页面只读展示，服务端结算时也以此为准。
+ */
+export async function loadAttackOptionsByParticipant(
   pack: CompiledRulePack,
   participants: readonly CombatOptionParticipant[]
-): Promise<Map<string, readonly string[]>> {
+): Promise<Map<string, readonly CombatAttackOption[]>> {
   const characterIds = participants
     .map((participant) => participant.characterId)
     .filter((id): id is string => typeof id === "string");
@@ -120,7 +187,8 @@ export async function loadAttackSkillsByParticipant(
           type: "WEAPON",
           isEquipped: true
         },
-        select: { characterId: true, name: true, stats: true }
+        select: { characterId: true, name: true, stats: true },
+        orderBy: { createdAt: "asc" }
       });
   const weaponsByCharacter = new Map<string, WeaponLike[]>();
   for (const row of rows) {
@@ -129,15 +197,30 @@ export async function loadAttackSkillsByParticipant(
     list.push({ name: row.name, stats: row.stats });
     weaponsByCharacter.set(row.characterId, list);
   }
-  const result = new Map<string, readonly string[]>();
+
+  const result = new Map<string, readonly CombatAttackOption[]>();
   for (const participant of participants) {
     const equipped =
       participant.kind === "PLAYER" && participant.characterId !== null
         ? weaponsByCharacter.get(participant.characterId) ?? []
         : [];
-    result.set(participant.id, allowedAttackSkills(pack, participant, equipped));
+    result.set(participant.id, attackOptionsForParticipant(pack, participant, equipped));
   }
   return result;
+}
+
+/** @deprecated 新代码请使用 loadAttackOptionsByParticipant，以便同时获得实际伤害。 */
+export async function loadAttackSkillsByParticipant(
+  pack: CompiledRulePack,
+  participants: readonly CombatOptionParticipant[]
+): Promise<Map<string, readonly string[]>> {
+  const options = await loadAttackOptionsByParticipant(pack, participants);
+  return new Map(
+    [...options.entries()].map(([participantId, list]) => [
+      participantId,
+      list.map((option) => option.skillId)
+    ])
+  );
 }
 
 export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatReactionType[] {
@@ -188,6 +271,7 @@ export interface CombatFeatureFlags {
   readonly canCounter: boolean;
   readonly canOutOfRule: boolean;
   readonly canCastMagic: boolean;
+  readonly canCastSpellcard: boolean;
 }
 
 export function combatFeatureFlags(pack: CompiledRulePack): CombatFeatureFlags {
@@ -204,7 +288,8 @@ export function combatFeatureFlags(pack: CompiledRulePack): CombatFeatureFlags {
     canCastMagic:
       pack.pack.magic === undefined
         ? false
-        : pack.pack.magic.enabled && pack.pack.magic.spells.length > 0
+        : pack.pack.magic.enabled && pack.pack.magic.spells.length > 0,
+    canCastSpellcard: pack.system === "TOUHOU" && pack.pack.spellcard !== undefined
   };
 }
 
@@ -226,8 +311,9 @@ export function validateCombatAction(
   action: ActionSubmission
 ): string | null {
   const events = context.pack.combat.events;
-  if (action.kind === "SPELLCARD" && context.pack.pack.spellcard === undefined) {
-    return "本规则包不支持符卡";
+  if (action.kind === "SPELLCARD") {
+    if (context.pack.system !== "TOUHOU") return "只有東方拓展房间可以使用符卡";
+    if (context.pack.pack.spellcard === undefined) return "本规则包不支持符卡";
   }
   if (action.kind === "MAGIC") {
     const magic = context.pack.pack.magic;

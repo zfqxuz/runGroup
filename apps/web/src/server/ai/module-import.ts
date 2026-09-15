@@ -6,6 +6,8 @@ import * as XLSX from "xlsx";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { prisma } from "@/server/db/prisma";
 import { decodeTextBuffer, readDocx } from "@/server/ai/docx";
+import { dedupeNpcRecords } from "@/server/ai/npc-dedupe";
+import { enrichNpcStatsFromSources } from "@/server/ai/npc-stats";
 import { storeImage, publicPath } from "@/server/assets/storage";
 import { REQUIRED_MODULE_SECTIONS, parseModuleMarkdown, slugifyModuleId } from "@/server/modules/format";
 import { parseStructuredBlocks } from "@/server/modules/structure";
@@ -674,7 +676,7 @@ function structuredSchemaHint(): string {
     '{"chapters":[{"id":"ch1","name":"章节名","summary":"..."}],',
     '"scenes":[{"id":"scene1","name":"场景名","description":"...","width":1600,"height":1000,"gridType":"SQUARE 或 HEX","bgColor":"#1a1a2e","background":"assets/images/xxx.png 或留空"}],',
     '"encounters":[{"id":"enc1","name":"遭遇名","sceneId":"scene1","sceneName":"场景名","chapterId":"ch1","chapterName":"章节名","trigger":"...","setup":{}}],',
-    '"npcs":[{"id":"npc1","name":"NPC 名","tier":"MINION 或 STANDARD 或 ELITE 或 BOSS","rarity":"COMMON","race":null,"tags":[],"description":"...","portrait":"assets/images/xxx.png 或留空","attributes":{"str":50,"con":50,"siz":50,"dex":50,"app":50,"int":50,"pow":50,"edu":50,"luck":50},"skills":{"DODGE":40},"maxHp":12,"maxMp":10,"maxSan":50,"maxDp":0}],',
+    '"npcs":[{"id":"npc1","name":"NPC 名","tier":"MINION 或 STANDARD 或 ELITE 或 BOSS","rarity":"COMMON","race":null,"tags":[],"description":"...","portrait":"assets/images/xxx.png 或留空","statText":"原文中的属性行 / 数值块，逐字复制，例如 STR 50 CON 60 SIZ 65 DEX 70 APP 55 INT 80 POW 70 EDU 75 HP 12 MP 14 SAN 70；没有就省略","attributes":{"str":50,"con":50,"siz":50,"dex":50,"app":50,"int":50,"pow":50,"edu":50,"luck":50},"skills":{"DODGE":40},"maxHp":12,"maxMp":10,"maxSan":50,"maxDp":0}],',
     '"clues":[{"id":"clue1","title":"线索名","content":"线索正文","image":"assets/clues/xxx.png 或留空","isPublic":false,"linkedItemId":"item1 或留空"}],',
     '"items":[{"id":"item1","name":"道具名","itemType":"WEAPON 或 ITEM 或 TOME 或 ARTIFACT 或 EVIDENCE","description":"...","rarity":"COMMON","image":"assets/images/xxx.png 或留空","quantity":1,"damage":"1d6 或留空","range":"MELEE 或 NEAR 或 FAR 或留空","skillId":"FIGHTING_BRAWL 等或留空","accuracyMod":0}],',
     '"endings":[{"id":"end1","name":"结局名","condition":"...","description":"..."}],',
@@ -704,6 +706,7 @@ function chunkExtractionPrompt(chunk: TextChunk, hints: {
   lines.push("- 如果本段出现大量乱码、替换字符或明显编码损坏，不要猜测原文内容；meta.title 填来源文件名，sections 只写一条「本段原文不可读，未生成结构化数据」说明，structured 留空。");
   lines.push("- JSON 示例里的 50、1d6、场景名、NPC 名等都只是格式示例，不是素材内容；任何字段没有在原文中明确出现就不要输出，禁止用默认值 / 猜测值补全。");
   lines.push("- NPC 的属性、技能、HP / MP / SAN 等数值只有原文明确给出时才输出对应字段；原文没写就省略，系统会按规则包处理，不要自行编数值。");
+  lines.push("- NPC 如果原文有属性行 / 数值块（STR 50、力量 60、HP 12、MP 14、SAN 70 等），必须把该行原样放进 statText，同时尽量拆进 attributes / maxHp / maxMp / maxSan；数字必须与原文完全一致。");
   lines.push("- 原文中的标题、编号 / 标记、专有名词、NPC / 场景 / 道具 / 技能 / 法术名、数字与判定值必须原样保留；压缩时只能压缩形容词，不能删除任何条目。");
   lines.push("- 叙事 / 设定按语义归入 sections 中最贴切的标准章节；实在无法归类就放入 附录。只要本段有正文，就至少输出一个 sections 字段，并尽量保留所有小节标题。");
   lines.push("- 结构化实体放入 structured；字段 id 用 slug，同一实体在不同段落请用同名 / 同 id，方便合并。");
@@ -1066,6 +1069,7 @@ function missingCoverageSnippets(chunkText: string, extraction: ChunkExtraction)
 async function generateDraftFromChunks(input: {
   readonly chunks: readonly TextChunk[];
   readonly images: readonly PreparedImage[];
+  readonly sources: readonly ExtractedSource[];
   readonly hints: { readonly system: "COC7" | "TOUHOU"; readonly era: string; readonly author: string; readonly instructions: string };
   readonly title: string;
   readonly chat: AiChatClient;
@@ -1137,6 +1141,21 @@ async function generateDraftFromChunks(input: {
     images: imageExtractions,
     validImagePaths: new Set(input.images.map((image) => image.relativePath))
   });
+
+  // 同一个 NPC 可能在不同分块 / 图片分析里以全名、简称、带括号别名重复出现。
+  const beforeDedupe = draft.structured.npcs?.length ?? 0;
+  draft.structured.npcs = dedupeNpcRecords(draft.structured.npcs ?? []);
+  const removedNpcs = beforeDedupe - draft.structured.npcs.length;
+  if (removedNpcs > 0) {
+    input.onProgress?.("已合并 " + String(removedNpcs) + " 条重复 NPC");
+  }
+
+  // 模型经常只保留 NPC 描述而丢掉属性数字；在生成 YAML 前用原文确定性回填一次。
+  const npcStatsFixed = enrichNpcStatsFromSources(draft.structured.npcs ?? [], input.sources);
+  if (npcStatsFixed > 0) {
+    input.onProgress?.("已从原文读取并校对 " + String(npcStatsFixed) + " 个 NPC 的属性数值");
+  }
+
   const markdown = assembleMarkdown(draft, input.images.map((image) => image.relativePath));
   const parsed = parseModuleMarkdown(markdown);
   if (parsed.errors.length > 0) {
@@ -1237,6 +1256,7 @@ export async function importModuleWithDeepSeek(input: {
   const generated = await generateDraftFromChunks({
     chunks,
     images: prepared.images,
+    sources: prepared.sources,
     hints: {
       system,
       era: input.requestedEra,

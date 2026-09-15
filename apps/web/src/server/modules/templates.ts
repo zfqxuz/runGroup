@@ -1,5 +1,14 @@
 import { compile, parseDice } from "@touhou/formula";
-import { builtinRegistry, RARITIES, resolveRulePack } from "@touhou/rules";
+import {
+  builtinRegistry,
+  compileParsedRulePack,
+  computeDerived,
+  RARITIES,
+  resolveRulePack
+} from "@touhou/rules";
+import type { AttributeSet } from "@touhou/rules";
+import { dedupeNpcRecords } from "@/server/ai/npc-dedupe";
+import { enrichNpcStatsFromSources } from "@/server/ai/npc-stats";
 import { prisma } from "@/server/db/prisma";
 import {
   parseStructuredBlocks,
@@ -127,15 +136,59 @@ function normalizedSkills(
   return out;
 }
 
+const ATTRIBUTE_ALIASES: Readonly<Record<string, readonly string[]>> = {
+  str: ["str", "strength", "力量"],
+  con: ["con", "constitution", "体质"],
+  siz: ["siz", "size", "体型"],
+  dex: ["dex", "dexterity", "敏捷"],
+  app: ["app", "appearance", "外貌", "魅力"],
+  int: ["int", "intelligence", "智力"],
+  pow: ["pow", "power", "意志", "意志力"],
+  edu: ["edu", "education", "教育"],
+  luck: ["luck", "幸运"]
+};
+
+function attributeValueOf(source: Record<string, unknown>, key: string): unknown {
+  for (const alias of ATTRIBUTE_ALIASES[key] ?? [key]) {
+    if (source[alias] !== undefined && source[alias] !== null && source[alias] !== "") return source[alias];
+  }
+  const lowerKey = key.toLowerCase();
+  for (const [rawKey, rawValue] of Object.entries(source)) {
+    if (rawKey.trim().toLowerCase() === lowerKey && rawValue !== undefined && rawValue !== null && rawValue !== "") return rawValue;
+  }
+  return undefined;
+}
+
 function normalizedAttributes(value: unknown, warnings: string[], label: string): Record<string, number> {
   const source = recordOf(value);
   const keys = ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"] as const;
   const out: Record<string, number> = {};
+  let matched = 0;
   for (const key of keys) {
-    out[key] = numberIn(source[key], 50, 0, 999);
+    const raw = attributeValueOf(source, key);
+    if (raw === undefined) {
+      out[key] = 50;
+      continue;
+    }
+    matched += 1;
+    out[key] = numberIn(raw, 50, 0, 999);
   }
-  if (Object.keys(source).length === 0) warnings.push(label + " 没有属性，已使用默认 50");
+  if (matched === 0) {
+    warnings.push(label + " 没有读取到属性，已使用默认 50");
+  } else if (matched < keys.length) {
+    warnings.push(label + " 只读取到 " + String(matched) + "/" + String(keys.length) + " 项属性，缺失项按 50 处理");
+  }
   return out;
+}
+
+function numberWithFallback(value: unknown, fallback: number, min: number, max: number): number {
+  const raw = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  const match = /[+-]?\d+(?![0-9dD])/.exec(raw);
+  if (match !== null) {
+    const parsed = Number(match[0]);
+    if (Number.isFinite(parsed)) return numberIn(parsed, fallback, min, max);
+  }
+  return numberIn(fallback, fallback, min, max);
 }
 
 function sourceKeyOf(entry: StructuredModuleEntry, index: number, kind: string): string {
@@ -190,7 +243,7 @@ export async function syncModuleTemplates(
 ): Promise<TemplateSyncCounts> {
   const warnings: string[] = [];
   const packId = moduleSystem === "TOUHOU" ? "touhou-ext" : "coc7-baseline";
-  const compiled = resolveRulePack(packId, builtinRegistry());
+  const compiled = compileParsedRulePack(resolveRulePack(packId, builtinRegistry()));
   const compiledPack: SkillPackLike = compiled;
 
   let chapters = 0;
@@ -228,10 +281,26 @@ export async function syncModuleTemplates(
       const name = textOf(entry.data, ["name", "title"], entry.title).slice(0, 120);
       const label = "NPC「" + name + "」";
       const statsValue = recordOf(entry.data.stats);
-      const attributesValue = recordOf(entry.data.attributes ?? statsValue.attributes);
+      const attributesValue = recordOf(entry.data.attributes ?? statsValue.attributes ?? statsValue);
       const skillsValue = entry.data.skills ?? statsValue.skills;
       const tierRaw = textOf(entry.data, ["tier", "rank"], "STANDARD").toUpperCase();
       const rarityRaw = textOf(entry.data, ["rarity"], "COMMON").toUpperCase();
+      const raceRaw = textOf(entry.data, ["race"], "");
+      const attributes = normalizedAttributes(attributesValue, warnings, label);
+      const skills = normalizedSkills(skillsValue, compiledPack, warnings, label);
+
+      let derived: Record<string, number> | null = null;
+      try {
+        const knownRace = raceRaw.length > 0 && compiled.races[raceRaw] !== undefined ? raceRaw : null;
+        derived = computeDerived(compiled, {
+          attributes: attributes as unknown as AttributeSet,
+          race: knownRace,
+          skills
+        }).derived;
+      } catch {
+        derived = null;
+      }
+
       const data = {
         moduleId,
         sourceKey,
@@ -240,14 +309,14 @@ export async function syncModuleTemplates(
         description: textOf(entry.data, ["description", "bio", "background"], "") || null,
         tier: ["MINION", "STANDARD", "ELITE", "BOSS"].includes(tierRaw) ? tierRaw : "STANDARD",
         rarity: (RARITIES as readonly string[]).includes(rarityRaw) ? rarityRaw : "COMMON",
-        race: textOf(entry.data, ["race"], "") || null,
+        race: raceRaw.length > 0 ? raceRaw : null,
         tags: stringArray(entry.data.tags),
-        attributes: normalizedAttributes(attributesValue, warnings, label),
-        skills: normalizedSkills(skillsValue, compiledPack, warnings, label),
-        maxHp: numberIn(entry.data.maxHp ?? statsValue.maxHp, 10, 1, 9999),
-        maxMp: numberIn(entry.data.maxMp ?? statsValue.maxMp, 0, 0, 99999),
-        maxSan: numberIn(entry.data.maxSan ?? statsValue.maxSan, 0, 0, 999),
-        maxDp: numberIn(entry.data.maxDp ?? statsValue.maxDp, 0, 0, 99999),
+        attributes,
+        skills,
+        maxHp: numberWithFallback(entry.data.maxHp ?? statsValue.maxHp, derived?.maxHp ?? 10, 1, 9999),
+        maxMp: numberWithFallback(entry.data.maxMp ?? statsValue.maxMp, derived?.maxMp ?? 0, 0, 99999),
+        maxSan: numberWithFallback(entry.data.maxSan ?? statsValue.maxSan, derived?.maxSan ?? 0, 0, 999),
+        maxDp: numberWithFallback(entry.data.maxDp ?? statsValue.maxDp, derived?.maxDp ?? 0, 0, 99999),
         portraitPath: textOf(entry.data, ["portrait", "portraitPath", "image"], "") || null,
         tokenPath: textOf(entry.data, ["token", "tokenPath"], "") || null,
         isPublicDefault: boolOf(entry.data.isPublic ?? entry.data.public, false),
@@ -442,9 +511,32 @@ export async function syncModuleTemplatesFromModule(moduleId: string): Promise<T
   }
   let structured = structuredOfContent(moduleRecord.content);
   const content = recordOf(moduleRecord.content);
+  const moduleText = typeof content.text === "string" ? content.text : "";
   if (structured.chapters.length === 0 && structured.scenes.length === 0 && structured.npcs.length === 0) {
-    const text = typeof content.text === "string" ? content.text : "";
-    structured = parseStructuredBlocks(text);
+    structured = parseStructuredBlocks(moduleText);
+  }
+  const dedupedNpcRecords = dedupeNpcRecords(structured.npcs.map((entry) => entry.data));
+  if (dedupedNpcRecords.length !== structured.npcs.length) {
+    structured = {
+      ...structured,
+      npcs: dedupedNpcRecords.map((data, index) => ({
+        kind: "npc",
+        id: typeof data.id === "string" && data.id.length > 0 ? data.id : "npc-" + String(index + 1),
+        title:
+          typeof data.name === "string" && data.name.length > 0
+            ? data.name
+            : typeof data.title === "string" && data.title.length > 0
+              ? data.title
+              : "npc-" + String(index + 1),
+        data
+      }))
+    };
+  }
+  if (structured.npcs.length > 0) {
+    enrichNpcStatsFromSources(
+      structured.npcs.map((entry) => entry.data),
+      moduleText.length > 0 ? [{ filename: "module-content", text: moduleText }] : []
+    );
   }
   return syncModuleTemplates(moduleId, moduleRecord.system ?? "COC7", structured);
 }

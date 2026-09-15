@@ -42,6 +42,7 @@ export {
   readyParticipants,
   recomputeSpeed,
   resolveImmediateAction,
+  resolveDyingChecks,
   resolveInitiativeTurn,
   reactionTargetIdsForAction,
   resolvePending,

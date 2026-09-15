@@ -30,6 +30,7 @@ import {
   type CombatRuntime
 } from "@/server/combat/runtime";
 import { allowedReactionTypes, allowedReactionTypesForParticipant, validateCombatAction } from "@/server/combat/options";
+import { prepareSpellcardAction } from "@/server/combat/spellcards";
 import { saveCombatState } from "@/server/combat/setup";
 import type {
   Ack,
@@ -258,22 +259,43 @@ async function handleAction(
     ack({ ok: false, error: "行动类型不合法" });
     return;
   }
-  const action: ActionSubmission = {
+  const requestedSkill = asString(raw.skill);
+  const actualAttack =
+    kind === "DANMAKU"
+      ? runtime.attackOptions.get(requestedActor)?.find((option) => option.skillId === requestedSkill)
+      : undefined;
+  let action: ActionSubmission = {
     actorId: requestedActor,
     kind: kind as ActionSubmission["kind"],
     targetId: asString(raw.targetId) ?? null,
-    skill: asString(raw.skill),
-    damage: asString(raw.damage),
+    skill: requestedSkill,
+    // 伤害不由客户端决定：服务端按角色实际装备 / 规则包覆盖客户端传来的表达式。
+    damage: actualAttack?.damage ?? asString(raw.damage),
     accuracyMod: asNumber(raw.accuracyMod),
     atbCost: asNumber(raw.atbCost),
     name: asString(raw.name),
     spellId: asString(raw.spellId),
+    spellCardId: asString(raw.spellCardId),
     mpCost: asNumber(raw.mpCost),
     sanCost: asString(raw.sanCost),
     spellcardMode: raw.spellcardMode === "DECLARATION" || raw.spellcardMode === "CONSUMPTION" ? raw.spellcardMode : undefined,
     declarationHp: asNumber(raw.declarationHp),
     declarationDurationTicks: asNumber(raw.declarationDurationTicks)
   };
+  if (action.kind === "SPELLCARD") {
+    const actor = findParticipant(runtime.state, requestedActor);
+    if (actor === undefined) {
+      ack({ ok: false, error: "行动单位不存在" });
+      return;
+    }
+    const cards = runtime.spellcardsByParticipant.get(actor.id) ?? [];
+    const prepared = prepareSpellcardAction(runtime.pack, actor, cards, action);
+    if (prepared.ok === false) {
+      ack({ ok: false, error: prepared.error });
+      return;
+    }
+    action = prepared.action;
+  }
   if (action.kind === "FLEE") {
     if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") {
       ack({ ok: false, error: "追逐进行中：请使用追逐移动或结束回合" });
@@ -635,7 +657,10 @@ async function handleChaseAttack(
   }
   const allowedSkills = runtime.attackSkills.get(actorId) ?? [];
   const skill = asString(input.skill) ?? allowedSkills[0];
-  const damage = asString(input.damage) ?? "1d6";
+  const actualAttack = runtime.attackOptions
+    .get(actorId)
+    ?.find((option) => option.skillId === skill);
+  const damage = actualAttack?.damage ?? "1d6";
   const accuracyMod = asNumber(input.accuracyMod);
   const action: ActionSubmission = {
     actorId,

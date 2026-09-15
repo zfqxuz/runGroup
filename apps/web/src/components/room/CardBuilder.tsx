@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { saveCard, type SaveCardResult } from "@/server/actions/card";
+import DanmakuPatternEditor from "@/components/danmaku/DanmakuPatternEditor";
 import {
   CARD_KIND_LABELS,
   ENHANCE_LABELS,
@@ -11,6 +12,8 @@ import {
   type CardKind,
   type EnhanceType
 } from "@/shared/card";
+import { createDefaultDanmakuPattern } from "@/shared/danmaku/presets";
+import type { DanmakuPattern } from "@/shared/danmaku/schema";
 
 interface SpellDefaults {
   hpRatio: number;
@@ -44,12 +47,12 @@ export default function CardBuilder(props: Props) {
   const [danmaku, setDanmaku] = useState("");
   const [mpCost, setMpCost] = useState(defaults?.declarationMpCost ?? 10);
   const [hpRatio, setHpRatio] = useState(defaults?.hpRatio ?? 2);
-  const [durationTicks, setDurationTicks] = useState(defaults?.durationTicks ?? 720);
   const [clearTargets, setClearTargets] = useState<"ALL" | "OTHERS_ONLY">(
     defaults?.clearTargets ?? "ALL"
   );
   const [enhanceType, setEnhanceType] = useState<EnhanceType>("DANMAKU");
   const [enhanceValue, setEnhanceValue] = useState(1.5);
+  const [pattern, setPattern] = useState<DanmakuPattern>(() => createDefaultDanmakuPattern());
 
   const [damage, setDamage] = useState("2d6");
   const [range, setRange] = useState<"MELEE" | "NEAR" | "FAR">("NEAR");
@@ -68,10 +71,13 @@ export default function CardBuilder(props: Props) {
         danmaku,
         mpCost,
         hpRatio: mode === "DECLARATION" ? hpRatio : null,
-        durationTicks: mode === "DECLARATION" ? durationTicks : null,
+        // 展开型不设定时器：服务端收到 null 后按“持续到被击破”处理；
+        // 消费型本身只结算一次，不需要持续时长。
+        durationTicks: null,
         clearTargets: mode === "DECLARATION" ? clearTargets : null,
         enhanceType,
-        enhanceValue
+        enhanceValue,
+        pattern
       };
     }
     if (kind === "WEAPON") {
@@ -165,20 +171,16 @@ export default function CardBuilder(props: Props) {
               <input type="number" value={mpCost} onChange={(event) => setMpCost(Number(event.target.value) || 0)} className={inputClass} />
             </label>
             <label className="flex flex-col gap-1.5 sm:col-span-2">
-              <span className="text-xs text-white/50">弹幕描述</span>
+              <span className="text-xs text-white/50">符卡说明（战斗日志展示用）</span>
               <input value={danmaku} onChange={(event) => setDanmaku(event.target.value)} placeholder="例：被诅咒的符札如暴雨般倾泻" className={inputClass} />
             </label>
           </div>
 
           {mode === "CONSUMPTION" ? null : (
-            <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-white/50">独立 HP 倍率（最大 HP × N）</span>
                 <input type="number" step="0.5" value={hpRatio} onChange={(event) => setHpRatio(Number(event.target.value) || 1)} className={inputClass} />
-              </label>
-              <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-white/50">持续帧数</span>
-                <input type="number" value={durationTicks} onChange={(event) => setDurationTicks(Number(event.target.value) || 1)} className={inputClass} />
               </label>
               <label className="flex flex-col gap-1.5">
                 <span className="text-xs text-white/50">被击破时清弹范围</span>
@@ -203,6 +205,10 @@ export default function CardBuilder(props: Props) {
               <span className="text-xs text-white/50">强化数值</span>
               <input type="number" step="0.1" value={enhanceValue} onChange={(event) => setEnhanceValue(Number(event.target.value) || 0)} className={inputClass} />
             </label>
+          </div>
+
+          <div className="mt-4">
+            <DanmakuPatternEditor value={pattern} onChange={setPattern} />
           </div>
         </section>
       ) : null}

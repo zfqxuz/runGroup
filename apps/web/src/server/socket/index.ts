@@ -13,6 +13,7 @@ import { broadcastCombat } from "./combat";
 import { registerCombatHandlers } from "./combat";
 import { registerSceneHandlers } from "./scene";
 import { verifyTicket } from "./ticket";
+import { readRoomBgm } from "@/shared/bgm";
 import type {
   Ack,
   ChatChannel,
@@ -20,7 +21,8 @@ import type {
   ChatMessage,
   DiceRollView,
   DiceVisibility,
-  JoinAck
+  JoinAck,
+  RoomBgmJoinAck
 } from "@/shared/socket";
 
 interface SocketAuth {
@@ -235,6 +237,28 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         gameState: activeGame?.state === null || activeGame?.state === undefined ? null : gameStateView(activeGame.state),
         activeCombatId: activeCombat?.id ?? null,
         activeCharacter: member?.activeCharacter ?? null
+      });
+    });
+
+    socket.on("room:bgm:join", async (roomId: unknown, ack: (result: RoomBgmJoinAck) => void) => {
+      if (typeof roomId !== "string") {
+        ack({ ok: false, error: "房间参数不合法" });
+        return;
+      }
+      const membership = await loadMembership(roomId, me.userId);
+      if (membership === null) {
+        ack({ ok: false, error: "你不在这个房间里" });
+        return;
+      }
+      await socket.join(roomChannel(roomId));
+      const bgmGame = await prisma.game.findFirst({
+        where: { roomId, status: { in: ["PREPARING", "PLAYING", "PAUSED", "COMBAT"] } },
+        orderBy: { createdAt: "desc" },
+        select: { state: { select: { custom: true } } }
+      });
+      ack({
+        ok: true,
+        bgm: bgmGame?.state === null || bgmGame?.state === undefined ? null : readRoomBgm(bgmGame.state.custom)
       });
     });
 
@@ -826,6 +850,19 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
               for (const [field, value] of Object.entries(values.vitals)) {
                 if (field === "hp" || field === "maxHp" || field === "mp" || field === "maxMp" || field === "san" || field === "maxSan" || field === "dp" || field === "maxDp") {
                   participant[field] = value;
+                  participant.vars[field] = value;
+                }
+              }
+              if (values.vitals.hp !== undefined && values.vitals.hp > 0 && participant.dead !== true) {
+                // KP 把 HP 调回正数视作急救 / 医学处理：解除濒死与昏迷；
+                // 回到最大 HP 一半及以上时按规则移除重伤标记。
+                participant.dying = false;
+                participant.unconscious = false;
+                participant.prone = false;
+                participant.defeated = false;
+                participant.isReady = false;
+                if (values.vitals.hp >= Math.ceil(participant.maxHp / 2)) {
+                  participant.majorWound = false;
                 }
               }
               for (const [key, value] of Object.entries(values.attributes)) {

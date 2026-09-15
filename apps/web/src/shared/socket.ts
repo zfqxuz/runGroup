@@ -1,4 +1,5 @@
 import type { ActionKind, CombatView } from "@touhou/combat";
+import type { RoomBgmView } from "./bgm";
 import type { GameStateView } from "./game";
 
 export type ChatChannel = "OOC" | "IC" | "KP_ONLY" | "WHISPER";
@@ -106,6 +107,7 @@ export interface CombatActionPayload {
   readonly accuracyMod?: number;
   readonly name?: string;
   readonly spellId?: string;
+  readonly spellCardId?: string;
   readonly mpCost?: number;
   readonly sanCost?: string;
   readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";
@@ -165,6 +167,15 @@ export interface CombatJoinAck extends Ack {
 export interface RoomRefresh {
   readonly roomId: string;
   readonly reason?: string;
+}
+
+export interface RoomBgmJoinAck extends Ack {
+  readonly bgm?: RoomBgmView | null;
+}
+
+export interface RoomBgmUpdate {
+  readonly roomId: string;
+  readonly bgm: RoomBgmView | null;
 }
 
 export interface RoomUpdate {

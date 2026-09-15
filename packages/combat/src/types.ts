@@ -28,6 +28,8 @@ export interface SpellDeclaration {
   readonly maxHp: number;
   readonly expiresAtTick: number;
   readonly clearTargets: "ALL" | "OTHERS_ONLY";
+  /** 释放这张符卡时对应的卡牌 id；用于前端匹配弹幕演出。 */
+  readonly cardId: string | null;
   /** 展开期间本体获得的比例减伤，1 表示不减。 */
   readonly damageMultiplier: number;
 }
@@ -48,6 +50,18 @@ export interface CombatParticipantState {
   speed: number;
   isReady: boolean;
   defeated: boolean;
+  /** COC7 重伤标记：单次伤害达到最大 HP 一半。 */
+  majorWound?: boolean;
+  /** 重伤后倒地（仍可能保持意识）。 */
+  prone?: boolean;
+  /** 昏迷：重伤 CON 检定失败、HP 归零或濒死时。 */
+  unconscious?: boolean;
+  /** 濒死：已受重伤且 HP 归零，每轮结束需 CON 检定。 */
+  dying?: boolean;
+  /** 已死亡（重伤濒死检定失败或单次伤害达到最大 HP）。 */
+  dead?: boolean;
+  /** 进入濒死时所在轮次，用于计算「下一轮结束」的第一次 CON 检定。 */
+  dyingSinceRound?: number;
 
   hp: number;
   maxHp: number;
@@ -92,12 +106,16 @@ export interface ActionSubmission {
   /** 符卡 / 法术。 */
   readonly name?: string;
   readonly spellId?: string;
+  /** 玩家卡库中的符卡 id；服务端会用它反查卡牌数值。 */
+  readonly spellCardId?: string;
   readonly mpCost?: number;
   readonly sanCost?: string;
   readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";
   /** 展开型符卡的独立 HP（由调用方按 RulePack 的 hpRatio 算好）。 */
   readonly declarationHp?: number;
   readonly declarationDurationTicks?: number;
+  /** 服务端从卡牌数据解析出的击破清弹范围。 */
+  readonly declarationClearTargets?: "ALL" | "OTHERS_ONLY";
   readonly status?: { readonly key: string; readonly stacks: number };
 }
 

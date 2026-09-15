@@ -277,6 +277,12 @@ async function main(): Promise<void> {
     const damageEntry = update.view.log.find((entry) => entry.kind === "DAMAGE");
 
     assert(damageEntry !== undefined, "日志中没有伤害记录");
+    // 战斗页不再允许玩家自填伤害：服务端必须按该单位实际装备覆盖客户端提交值。
+    // 该 E2E 角色没有武器卡，东方 DANMAKU 应回落到规则包默认伤害 1d6。
+    assert(
+      damageEntry.data?.expression === "1d6",
+      "伤害表达未被服务端实际装备覆盖，实际为 " + String(damageEntry.data?.expression)
+    );
 
     // 房间频道广播：战斗结束时在线玩家应收到 combat:ended 与 room:update。
     roomSocket = await connectSocket(ticket);

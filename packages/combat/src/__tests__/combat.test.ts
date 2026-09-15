@@ -164,6 +164,43 @@ describe("符卡", () => {
     expect(state.log.some((entry) => entry.text.includes("被击破"))).toBe(true);
   });
 
+  it("展开型保存卡牌 id 与自定义清弹范围", () => {
+    const { state, a } = makeCombat();
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想封印",
+      spellCardId: "card-dream",
+      spellcardMode: "DECLARATION",
+      declarationHp: 5,
+      declarationDurationTicks: 240,
+      declarationClearTargets: "OTHERS_ONLY",
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.declaration?.cardId).toBe("card-dream");
+    expect(a.declaration?.clearTargets).toBe("OTHERS_ONLY");
+    // 不能是 Infinity；CombatState 会写入 JSON 快照。
+    expect(Number.isFinite(a.declaration?.expiresAtTick ?? Number.NaN)).toBe(true);
+  });
+
+  it("消费型记录 CONSUME 事件与卡牌 id", () => {
+    const { state, a } = makeCombat();
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "指向性激光",
+      spellCardId: "card-laser",
+      spellcardMode: "CONSUMPTION",
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    const consume = state.log.find((entry) => entry.data?.event === "CONSUME");
+    expect(consume?.data?.cardId).toBe("card-laser");
+  });
+
   it("灵力不足时无法展开", () => {
     const { state, a } = makeCombat();
     forceReady(a);

@@ -64,7 +64,11 @@ export interface CompiledCombat {
   readonly initiativeKey: CompiledExpr | null;
   readonly tieBreak: 'KEY_DESC' | 'RANDOM' | 'KP';
   readonly kpAdjustsOrder: boolean;
-  readonly events: Readonly<Record<string, { readonly label: string; readonly defaultEnabled: boolean }>>;
+  readonly events: Readonly<Record<string, {
+    readonly label: string;
+    readonly defaultEnabled: boolean;
+    readonly params: Readonly<Record<string, CompiledExpr>>;
+  }>>;
 }
 
 export interface CompiledRulePack {
@@ -285,9 +289,13 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
     )
   };
 
-  const combatEvents: Record<string, { label: string; defaultEnabled: boolean }> = {};
+  const combatEvents: Record<string, { label: string; defaultEnabled: boolean; params: Record<string, CompiledExpr> }> = {};
   for (const [eventId, rule] of Object.entries(pack.combat.events)) {
-    combatEvents[eventId] = { label: rule.label, defaultEnabled: rule.defaultEnabled };
+    combatEvents[eventId] = {
+      label: rule.label,
+      defaultEnabled: rule.defaultEnabled,
+      params: compileMap('combat.events.' + eventId + '.params', rule.params, combatVars)
+    };
   }
   const combatInit = pack.combat.initiative;
   const combat: CompiledCombat = {

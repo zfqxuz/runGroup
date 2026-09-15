@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { DanmakuPatternSchema } from "./danmaku/schema";
 
 export const CARD_KINDS = ["SPELLCARD", "WEAPON", "ITEM"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
@@ -31,7 +32,9 @@ export const SpellCardStatsSchema = z.object({
   clearTargets: z.enum(["ALL", "OTHERS_ONLY"]).nullable(),
   enhanceType: z.enum(ENHANCE_TYPES),
   /** 强化倍率或加值，含义随 enhanceType 而定。 */
-  enhanceValue: z.number().min(0).max(10)
+  enhanceValue: z.number().min(0).max(10),
+  /** 结构化弹幕演出；纯视觉，不参与战斗判定。旧卡可以没有。 */
+  pattern: DanmakuPatternSchema.nullable().optional()
 });
 
 export const WeaponStatsSchema = z.object({

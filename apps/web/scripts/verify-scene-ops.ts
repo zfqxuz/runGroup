@@ -120,6 +120,7 @@ async function main(): Promise<void> {
     const kpId = await register(kpName, password);
     const plId = await register(plName, password);
     const kpJar = await login(kpName, password);
+    const plJar = await login(plName, password);
 
     const room = await prisma.room.create({
       data: {
@@ -247,12 +248,35 @@ async function main(): Promise<void> {
       throw new Error("准备页没有渲染可用的场景布置面板");
     }
 
+    // 普通玩家也必须能看到自己的 Token 放置入口（对应玩家反馈的缺失入口）。
+    const playerPreparePage = await jarCall(plJar)("/rooms/" + room.id + "/prepare");
+    expectEqual(playerPreparePage.status, 200, "GET 玩家准备页");
+    if (playerPreparePage.text.includes("放置我的角色 Token") === false) {
+      throw new Error("玩家准备页没有渲染放置我的角色 Token 入口");
+    }
+    if (playerPreparePage.text.includes("character:" + character.id) === false) {
+      throw new Error("玩家准备页没有把自己的角色列为可放置单位");
+    }
+    if (playerPreparePage.text.includes("放置玩家 / NPC Token") === true) {
+      throw new Error("玩家准备页不应出现 KP 专用批量放置入口");
+    }
+
     // 5. 跑团页 SceneBoard 应能拿到场景与 Token。
     await prisma.room.update({ where: { id: room.id }, data: { status: "PLAYING" } });
     const roomPage = await jarCall(kpJar)("/rooms/" + room.id);
     expectEqual(roomPage.status, 200, "GET 跑团页");
     if (roomPage.text.includes("场景 B") === false || roomPage.text.includes("E2E 场景 PC") === false) {
       throw new Error("跑团页没有渲染当前场景与 Token");
+    }
+
+    // 跑团阶段普通玩家同样应有放置自己 Token 的入口。
+    const playerRoomPage = await jarCall(plJar)("/rooms/" + room.id);
+    expectEqual(playerRoomPage.status, 200, "GET 玩家跑团页");
+    if (playerRoomPage.text.includes("放置我的角色 Token") === false) {
+      throw new Error("玩家跑团页没有渲染放置我的角色 Token 入口");
+    }
+    if (playerRoomPage.text.includes("放置到本场景") === false) {
+      throw new Error("玩家跑团页没有渲染放置按钮");
     }
 
     console.log("PASS 场景操作 E2E：准备阶段切换 / 背景图 / 清空墙灯 / 放置 PC·NPC Token / 重复放置拦截");

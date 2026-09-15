@@ -5,6 +5,7 @@ export interface RoomClueView {
   readonly id: string;
   readonly title: string;
   readonly content: string;
+  readonly imageUrl: string | null;
   readonly isPublic: boolean;
   readonly discoveredByMe: boolean;
   readonly discoveredCount: number;
@@ -57,6 +58,12 @@ export default function RoomInfoPanel(props: Props) {
         {props.clueStatus === "discovered" ? (
           <span className="text-[11px] text-emerald-300">已标记发现</span>
         ) : null}
+        {props.clueStatus === "image" ? (
+          <span className="text-[11px] text-red-300">图片上传失败（仅支持 PNG / JPEG / WebP，且不超过 8MB）。</span>
+        ) : null}
+        {props.clueStatus === "invalid" ? (
+          <span className="text-[11px] text-red-300">发布失败：标题不能为空，且内容与图片至少要有一项。</span>
+        ) : null}
         {props.noteStatus === "created" ? (
           <span className="text-[11px] text-emerald-300">笔记已保存</span>
         ) : null}
@@ -90,11 +97,24 @@ export default function RoomInfoPanel(props: Props) {
                       </span>
                     ) : null}
                   </div>
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
+                  {clue.content.length === 0 ? null : (
+                    <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
+                  )}
+                  {clue.imageUrl === null ? null : (
+                    <a
+                      href={clue.imageUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-ink-900/60"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={clue.imageUrl} alt={clue.title} className="max-h-80 w-full object-contain" />
+                    </a>
+                  )}
                   {props.isKP && props.readOnly === false ? (
                     <ClueAdminControls
                       roomId={props.roomId}
-                      clue={{ id: clue.id, title: clue.title, content: clue.content, isPublic: clue.isPublic }}
+                      clue={{ id: clue.id, title: clue.title, content: clue.content, imageUrl: clue.imageUrl, isPublic: clue.isPublic }}
                       members={props.members}
                       sharedUserIds={clue.sharedWithIds}
                       returnTo={"/rooms/" + props.roomId + "?clue=updated#room-info"}
@@ -118,10 +138,16 @@ export default function RoomInfoPanel(props: Props) {
           )}
 
           {props.isKP && props.readOnly === false ? (
-            <form action={createClueAction} className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-4">
+            <form action={createClueAction} encType="multipart/form-data" className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-4">
               <input type="hidden" name="roomId" value={props.roomId} />
               <input name="title" placeholder="线索标题" className={inputClass} />
-              <textarea name="content" rows={3} placeholder="线索内容" className={inputClass} />
+              <textarea name="content" rows={3} placeholder="线索内容（可只上传图片）" className={inputClass} />
+              <input
+                type="file"
+                name="image"
+                accept="image/png,image/jpeg,image/webp"
+                className="text-[11px] text-white/45 file:mr-2 file:rounded file:border file:border-white/15 file:bg-ink-800 file:px-2 file:py-1 file:text-[11px] file:text-white/60"
+              />
               <label className="flex items-center gap-2 text-[11px] text-white/50">
                 <input type="checkbox" name="isPublic" value="1" />
                 对所有成员公开（默认仅 KP 可见）
