@@ -216,6 +216,24 @@ async function main(): Promise<void> {
   );
   check(repairedResult[0]?.json.ok === true, "解析节点可修复模型返回的未转义换行 JSON");
 
+  const brokenQuoteJson = '{"meta":{"title":"修复引号"},"sections":{"关键NPC":"资料室(the "morgue")"},"structured":{}}';
+  const quoteResult = await runCode<readonly { json: { ok: boolean } }[]>(
+    parseNode?.parameters?.jsCode ?? "",
+    [{ json: { choices: [{ message: { content: brokenQuoteJson }, finish_reason: "stop" }] } }],
+    {},
+    parseDollar
+  );
+  check(quoteResult[0]?.json.ok === true, "解析节点可修复模型返回的未转义双引号 JSON");
+
+  const brokenCommaJson = '{"meta":{"title":"修复逗号"} "sections":{"关键NPC":"测试"}}';
+  const commaResult = await runCode<readonly { json: { ok: boolean } }[]>(
+    parseNode?.parameters?.jsCode ?? "",
+    [{ json: { choices: [{ message: { content: brokenCommaJson }, finish_reason: "stop" }] } }],
+    {},
+    parseDollar
+  );
+  check(commaResult[0]?.json.ok === true, "解析节点可修复模型返回的缺失逗号 JSON");
+
   const mixedBody = {
     ...webhookBody,
     requestId: "verify-n8n-mixed",

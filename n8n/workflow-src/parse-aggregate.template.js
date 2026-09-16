@@ -53,8 +53,18 @@ function repairJsonText(text) {
         continue;
       }
       if (char === '"') {
-        output += char;
-        inString = false;
+        let lookahead = index + 1;
+        while (lookahead < text.length && /\s/.test(text[lookahead])) lookahead += 1;
+        const next = text[lookahead];
+        const isClosing = next === undefined || next === "," || next === "}" || next === "]" || next === ":";
+        if (isClosing) {
+          output += char;
+          inString = false;
+        } else {
+          // 模型经常在字符串内部输出未转义的双引号，例如 the "morgue"；
+          // 这里按“下一个结构字符”判断是不是字符串结束，不是就补转义。
+          output += '\\"';
+        }
         continue;
       }
       if (char === "\n") {
@@ -98,6 +108,13 @@ function extractJsonObject(text) {
 
   let lastError = null;
   for (const candidate of candidates) {
+    if (typeof jsonrepairLib === "function") {
+      try {
+        return JSON.parse(jsonrepairLib(candidate));
+      } catch (error) {
+        lastError = error;
+      }
+    }
     try {
       return JSON.parse(candidate);
     } catch (error) {
@@ -112,7 +129,7 @@ function extractJsonObject(text) {
       }
     }
   }
-  const prefix = withoutFence.slice(0, 500);
+  const prefix = withoutFence.slice(0, 1200);
   throw new Error("模型返回 JSON 无法解析：" + (lastError instanceof Error ? lastError.message : String(lastError)) + "；内容开头：" + prefix);
 }
 

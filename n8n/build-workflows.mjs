@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 const here = dirname(fileURLToPath(import.meta.url));
 const corePath = join(here, "workflow-src", "npc-stats-core.js");
 const preparePath = join(here, "workflow-src", "prepare-requests.node.js");
+const vendorPath = join(here, "vendor", "jsonrepair.min.js");
 const parseTemplatePath = join(here, "workflow-src", "parse-aggregate.template.js");
 const outputDir = join(here, "workflows");
 const outputPath = join(outputDir, "module-import.json");
@@ -12,7 +13,20 @@ const outputPath = join(outputDir, "module-import.json");
 const core = await readFile(corePath, "utf8");
 const prepareCode = await readFile(preparePath, "utf8");
 const parseTemplate = await readFile(parseTemplatePath, "utf8");
-const parseCode = parseTemplate.replace("/*__NPC_STATS_CORE__*/", () => core);
+const vendor = await readFile(vendorPath, "utf8");
+const vendorWrapper = [
+  "// ---- jsonrepair (MIT) ----",
+  "const __jsonrepairPackage = (() => {",
+  "  const exports = {};",
+  "  const module = { exports };",
+  vendor,
+  "  return module.exports;",
+  "})();",
+  "const jsonrepairLib = typeof __jsonrepairPackage.jsonrepair === \"function\" ? __jsonrepairPackage.jsonrepair : null;",
+  "// ---- end jsonrepair ----",
+  ""
+].join("\n");
+const parseCode = vendorWrapper + parseTemplate.replace("/*__NPC_STATS_CORE__*/", () => core);
 
 if (parseCode.includes("/*__NPC_STATS_CORE__*/")) {
   throw new Error("npc-stats-core 占位符没有被替换");

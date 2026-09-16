@@ -744,6 +744,7 @@ function chunkExtractionPrompt(chunk: TextChunk, hints: {
   lines.push("- 只提取本段明确出现的事实、剧情、NPC、场景、线索、道具、法术；没有的字段直接省略，不要编造，也不要输出其他段落的内容。");
   lines.push("- 本段通常已经按场景 / 章节 / 时间戳切分，请当作一个相对独立的场景处理：有明确场景标题或地点时，在 structured.scenes 输出 scene，并把本场景关联的 npcs / clues / encounters / items / magic 一并输出。");
   lines.push("- NPC 数值优先级最高：原文有的 STR/CON/SIZ/DEX/APP/INT/POW/EDU/LUCK、HP/MP/SAN/DP、DB/Build/Move、技能、武器都要提取；技能输出 [{skill_name,value}]，武器输出 [{weapon_name,damage,range}]。");
+  lines.push("- 本段内容过多时，优先保留 NPC 数值 / 名称 / 线索 / 物品 / 法术等结构化信息，叙事描述一律压缩，禁止长篇扩写。");
   lines.push("- 如果本段出现大量乱码、替换字符或明显编码损坏，不要猜测原文内容；meta.title 填来源文件名，sections 只写一条「本段原文不可读，未生成结构化数据」说明，structured 留空。");
   lines.push("- JSON 示例里的 50、1d6、场景名、NPC 名等都只是格式示例，不是素材内容；任何字段没有在原文中明确出现就不要输出，禁止用默认值 / 猜测值补全。");
   lines.push("- NPC 的属性、技能、HP / MP / SAN 等数值只有原文明确给出时才输出对应字段；原文没写就省略，系统会按规则包处理，不要自行编数值。");
@@ -752,7 +753,7 @@ function chunkExtractionPrompt(chunk: TextChunk, hints: {
   lines.push("- 叙事 / 设定按语义归入 sections 中最贴切的标准章节；实在无法归类就放入 附录。只要本段有正文，就至少输出一个 sections 字段，并尽量保留所有小节标题。");
   lines.push("- 结构化实体放入 structured；字段 id 用 slug，同一实体在不同段落请用同名 / 同 id，方便合并。");
   lines.push("- 输出必须是单个合法 JSON 对象，不要 markdown 代码围栏，不要解释。");
-  lines.push("- 总长度控制在 4000 个中文字符以内，JSON 必须完整闭合。");
+  lines.push("- 总长度严格控制在 2500 个中文字符以内，JSON 必须完整闭合；sections 只允许写本段一句话摘要，不要扩写叙事；structured 每个数组最多 8 条，description 压缩到一句话。");
   lines.push("JSON 结构：");
   lines.push('{"meta":{"title":"...","summary":"...","background":"...","occupationRecommendation":"..."},');
   lines.push('"sections":{"元信息":"...","真相与背景":"...","剧情梗概":"...","开场钩子":"...","关键NPC":"...","地点与场景":"...","线索":"...","遭遇与战斗":"...","道具与手书":"...","怪物与神话生物":"...","结局分支":"...","奖励与成长":"...","KP备注":"...","附录":"..."},');
