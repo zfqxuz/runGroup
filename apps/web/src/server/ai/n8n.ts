@@ -1,3 +1,5 @@
+import { request as httpRequest } from "node:http";
+import { request as httpsRequest } from "node:https";
 import { isDeepSeekConfigured } from "@/server/ai/deepseek";
 import type { ChunkExtraction, ImageExtraction } from "@/server/ai/chunking";
 
@@ -97,47 +99,81 @@ function arrayOf<T>(value: unknown): readonly T[] {
   return Array.isArray(value) ? (value as T[]) : [];
 }
 
+interface JsonHttpResponse {
+  readonly status: number;
+  readonly text: string;
+}
+
+/** 用 node:http/https 发送 JSON 请求；避免 Node fetch(Undici) 默认 5 分钟 headersTimeout。 */
+function postJson(urlString: string, body: unknown, timeoutMs: number, headers: Record<string, string>): Promise<JsonHttpResponse> {
+  return new Promise((resolve, reject) => {
+    let url: URL;
+    try {
+      url = new URL(urlString);
+    } catch {
+      reject(new Error("URL 不合法：" + urlString));
+      return;
+    }
+    const payload = Buffer.from(JSON.stringify(body), "utf8");
+    const transport = url.protocol === "https:" ? httpsRequest : httpRequest;
+    const request = transport(
+      {
+        protocol: url.protocol,
+        hostname: url.hostname,
+        port: url.port.length > 0 ? Number(url.port) : url.protocol === "https:" ? 443 : 80,
+        path: url.pathname + url.search,
+        method: "POST",
+        headers: { ...headers, "Content-Length": String(payload.byteLength) }
+      },
+      (response) => {
+        const chunks: Buffer[] = [];
+        response.on("data", (chunk) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.on("end", () => {
+          resolve({ status: response.statusCode ?? 0, text: Buffer.concat(chunks).toString("utf8") });
+        });
+      }
+    );
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(new Error("请求超时"));
+    });
+    request.on("error", (error) => reject(error));
+    request.write(payload);
+    request.end();
+  });
+}
+
 export async function parseModuleWithN8n(input: N8nModuleParseInput): Promise<N8nModuleParseOutput> {
   const url = n8nModuleParseUrl();
   if (url.length === 0) throw new Error("未配置 N8N_MODULE_PARSE_URL，无法调用 n8n 工作流");
 
   const configuredTimeout = Number(process.env.N8N_REQUEST_TIMEOUT_MS ?? 1_800_000);
   const timeoutMs = Number.isFinite(configuredTimeout) ? Math.max(30_000, configuredTimeout) : 1_800_000;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   const secret = (process.env.N8N_WEBHOOK_SECRET ?? "").trim();
   if (secret.length > 0) headers["x-n8n-webhook-secret"] = secret;
 
-  let response: Response;
+  let result: JsonHttpResponse;
   try {
-    response = await fetch(url, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(input),
-      signal: controller.signal
-    });
+    result = await postJson(url, input, timeoutMs, headers);
   } catch (error) {
-    if (error instanceof Error && error.name === "AbortError") {
+    const message = error instanceof Error ? error.message : "未知错误";
+    if (message.includes("超时")) {
       throw new Error("n8n 团本解析超时（" + String(Math.round(timeoutMs / 1000)) + " 秒），请检查工作流是否卡住");
     }
-    throw new Error("无法连接 n8n 团本解析工作流：" + (error instanceof Error ? error.message : "未知错误"));
-  } finally {
-    clearTimeout(timer);
+    throw new Error("无法连接 n8n 团本解析工作流：" + message);
   }
-
-  const text = await response.text();
+  const text = result.text;
   let payload: Record<string, unknown>;
   try {
     payload = JSON.parse(text) as Record<string, unknown>;
   } catch {
-    throw new Error("n8n 返回了无法解析的响应（HTTP " + String(response.status) + "）：" + text.slice(0, 300));
+    throw new Error("n8n 返回了无法解析的响应（HTTP " + String(result.status) + "）：" + text.slice(0, 300));
   }
 
-  if (response.ok === false || payload.ok !== true) {
+  if (result.status < 200 || result.status >= 300 || payload.ok !== true) {
     const rawWarnings = arrayOf<unknown>(payload.warnings).map(stringOf).filter((item) => item.length > 0);
     const details = rawWarnings.length > 0 ? rawWarnings.join("；") : stringOf(payload.error) || text.slice(0, 300);
-    throw new Error("n8n 团本解析失败（HTTP " + String(response.status) + "）：" + details);
+    throw new Error("n8n 团本解析失败（HTTP " + String(result.status) + "）：" + details);
   }
 
   const extractions = arrayOf<ChunkExtraction>(payload.extractions);
