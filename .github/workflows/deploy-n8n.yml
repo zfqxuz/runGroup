@@ -1,0 +1,104 @@
+name: Deploy n8n Workflow (ECS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "n8n/**"
+      - ".github/workflows/deploy-n8n.yml"
+  workflow_dispatch:
+
+concurrency:
+  # 与 app 部署共用同一个 group：两个 workflow 串行，避免同时改 ECS 上的 compose。
+  group: production-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  DEPLOY_DIR: ${{ vars.DEPLOY_DIR || '/opt/touhou-trpg' }}
+
+jobs:
+  deploy-n8n:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync compose and n8n files to ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          source: "docker-compose.prod.yml,n8n/workflows/module-import.json,n8n/Caddyfile"
+          target: ${{ env.DEPLOY_DIR }}
+          overwrite: true
+          strip_components: 0
+          timeout: 60s
+
+      - name: Deploy n8n to ECS over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          DEPLOY_DIR: ${{ env.DEPLOY_DIR }}
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          command_timeout: 30m
+          envs: DEEPSEEK_API_KEY,DEPLOY_DIR
+          script: |
+            set -euo pipefail
+            cd "$DEPLOY_DIR"
+            test -f .env
+            test -f docker-compose.prod.yml
+
+            if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+              if grep -q '^DEEPSEEK_API_KEY=' .env; then
+                sed -i "s|^DEEPSEEK_API_KEY=.*|DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY|" .env
+              else
+                echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> .env
+              fi
+            fi
+
+            mkdir -p n8n/certs
+            if [ ! -f n8n/certs/n8n.crt ] || [ ! -f n8n/certs/n8n.key ]; then
+              openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 3650 \
+                -keyout n8n/certs/n8n.key \
+                -out n8n/certs/n8n.crt \
+                -subj "/CN=8.141.16.85" \
+                -addext "subjectAltName=IP:8.141.16.85"
+              chmod 600 n8n/certs/n8n.key
+            fi
+
+            # n8n 通过 bind mount 挂载 workflow；Compose 不会因文件变化自动重建，
+            # 所以这里只 force-recreate n8n / n8n-proxy，绝不碰 app / db。
+            docker compose -f docker-compose.prod.yml pull n8n n8n-proxy || true
+            docker compose -f docker-compose.prod.yml up -d --no-deps --force-recreate n8n n8n-proxy
+            docker compose -f docker-compose.prod.yml ps
+
+            for i in $(seq 1 20); do
+              if curl -k -sS -m 3 -o /dev/null https://127.0.0.1; then
+                echo "n8n proxy ready"
+                break
+              fi
+              echo "waiting for n8n proxy... ($i/20)"
+              sleep 3
+            done
+            curl -k -sS -m 3 -o /dev/null https://127.0.0.1
+
+            for i in $(seq 1 60); do
+              if docker compose -f docker-compose.prod.yml logs --tail=300 n8n 2>/dev/null | grep -q 'Activated workflow'; then
+                echo "n8n workflow activated"
+                break
+              fi
+              echo "waiting for n8n workflow... ($i/60)"
+              sleep 5
+            done
+            docker compose -f docker-compose.prod.yml logs --tail=300 n8n | grep 'Activated workflow'
+
+            echo "n8n deploy finished"

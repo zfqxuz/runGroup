@@ -1,8 +1,11 @@
-name: Deploy Production (ECS + Docker + GHCR)
+name: Deploy App (ECS + Docker + GHCR)
 
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - "n8n/**"
+      - ".github/workflows/deploy-n8n.yml"
   workflow_dispatch:
     inputs:
       run_migrations:
@@ -73,12 +76,8 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  # ---------- 3. 部署到 ECS：pull 镜像 + 重启 compose 服务 + 健康检查 ----------
-  # 服务器需要提前准备：
-  #   /opt/touhou-trpg/.env
-  #   /opt/touhou-trpg/docker-compose.prod.yml
-  #   /opt/touhou-trpg/uploads/
-  # 数据库是 compose 里的 db 容器，不需要公网放行 5432。
+  # ---------- 3. 只部署 app + db，不碰 n8n ----------
+  # n8n 工作流和容器由独立 workflow deploy-n8n.yml 负责。
   deploy:
     needs: [build-and-push]
     runs-on: ubuntu-latest
@@ -89,20 +88,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Sync compose and n8n workflow to ECS
+      - name: Sync app compose to ECS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
-          source: "docker-compose.prod.yml,n8n/workflows/module-import.json,n8n/Caddyfile"
+          source: "docker-compose.prod.yml"
           target: ${{ env.DEPLOY_DIR }}
           overwrite: true
           strip_components: 0
           timeout: 60s
 
-      - name: Deploy to ECS over SSH
+      - name: Deploy app to ECS over SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
           APP_IMAGE: ${{ needs.build-and-push.outputs.image }}
@@ -139,55 +138,26 @@ jobs:
               fi
             fi
 
-            mkdir -p n8n/certs
-            if [ ! -f n8n/certs/n8n.crt ] || [ ! -f n8n/certs/n8n.key ]; then
-              openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 3650 \
-                -keyout n8n/certs/n8n.key \
-                -out n8n/certs/n8n.crt \
-                -subj "/CN=8.141.16.85" \
-                -addext "subjectAltName=IP:8.141.16.85"
-              chmod 600 n8n/certs/n8n.key
-            fi
-
             docker compose -f docker-compose.prod.yml pull app
-            # n8n 工作流文件通过 bind mount 挂入；Docker Compose 不会因为文件内容变化自动重建 n8n，
-            # 因此每次部署都强制重建 n8n，让入口命令重新 import + publish 最新工作流。
-            docker compose -f docker-compose.prod.yml up -d --force-recreate n8n
-            docker compose -f docker-compose.prod.yml up -d
+
+            # 关键：只处理 db 和 app，不动 n8n / n8n-proxy。
+            # db 是独立数据卷，仅在停掉时拉起；n8n 是独立 deploy-n8n.yml 的职责。
+            docker compose -f docker-compose.prod.yml up -d --no-deps db
+            docker compose -f docker-compose.prod.yml up -d --no-deps app
             docker compose -f docker-compose.prod.yml ps
 
-            for i in $(seq 1 20); do
-              if curl -k -sS -m 3 -o /dev/null https://127.0.0.1; then
-                echo "n8n proxy ready"
-                break
-              fi
-              echo "waiting for n8n proxy... ($i/20)"
-              sleep 3
-            done
-            curl -k -sS -m 3 -o /dev/null https://127.0.0.1
-
-            for i in $(seq 1 60); do
-              if docker compose -f docker-compose.prod.yml logs --tail=300 n8n 2>/dev/null | grep -q 'Activated workflow'; then
-                echo "n8n workflow activated"
-                break
-              fi
-              echo "waiting for n8n workflow... ($i/60)"
-              sleep 5
-            done
-            docker compose -f docker-compose.prod.yml logs --tail=300 n8n | grep 'Activated workflow'
-
-            for i in $(seq 1 30); do
+            for i in $(seq 1 36); do
               if docker compose -f docker-compose.prod.yml exec -T app \
                 node -e "fetch('http://127.0.0.1:3000/api/health').then((response) => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"; then
-                echo "health check passed"
+                echo "app health check passed"
                 docker logout ghcr.io >/dev/null 2>&1 || true
                 exit 0
               fi
-              echo "waiting for health... ($i/30)"
+              echo "waiting for app health... ($i/36)"
               sleep 5
             done
             docker logout ghcr.io >/dev/null 2>&1 || true
-            echo "health check failed"
+            echo "app health check failed"
             exit 1
 
       # 默认每次部署都执行 Prisma 迁移（幂等）。

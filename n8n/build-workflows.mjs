@@ -106,6 +106,15 @@ const routes = [
 
 const classifyCode = [agentPrompts, classifyTemplate].join("\n");
 
+function clampConcurrency(value, fallback) {
+  const number = Number(value);
+  if (Number.isFinite(number) === false || number <= 0) return fallback;
+  return Math.max(1, Math.min(4, Math.floor(number)));
+}
+// 真正的 HTTP 并发上限由 Split In Batches 保证；n8n 的 batching 只控制启动间隔。
+const AGENT_CONCURRENCY = clampConcurrency(process.env.N8N_AGENT_CONCURRENCY, 2);
+const VALIDATION_CONCURRENCY = clampConcurrency(process.env.N8N_VALIDATION_CONCURRENCY, 2);
+
 const baseHttpParameters = {
   method: "POST",
   url: "={{ $json.url }}",
@@ -121,17 +130,12 @@ const baseHttpParameters = {
   jsonBody: "={{ JSON.stringify($json.body) }}",
   options: {
     timeout: 600000,
-    batching: { batch: { batchSize: 4, batchInterval: 500 } },
     response: { response: { neverError: false } }
   }
 };
 
 const validationHttpParameters = {
-  ...baseHttpParameters,
-  options: {
-    ...baseHttpParameters.options,
-    batching: { batch: { batchSize: 3, batchInterval: 500 } }
-  }
+  ...baseHttpParameters
 };
 
 let nodeCounter = 10;
@@ -229,6 +233,15 @@ for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
     typeVersion: 2,
     position: [x, y]
   });
+  const loopNodeName = "批次-" + route.key;
+  addNode({
+    parameters: { batchSize: AGENT_CONCURRENCY, options: {} },
+    id: nextNodeId(),
+    name: loopNodeName,
+    type: "n8n-nodes-base.splitInBatches",
+    typeVersion: 3,
+    position: [x + 130, y]
+  });
   addNode({
     parameters: baseHttpParameters,
     id: nextNodeId(),
@@ -248,8 +261,16 @@ for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
   });
 
   switchTargets.push({ node: route.buildNode, type: "main", index: 0 });
-  connections[route.buildNode] = { main: [[{ node: route.agentNode, type: "main", index: 0 }]] };
-  connections[route.agentNode] = { main: [[{ node: route.parseNode, type: "main", index: 0 }]] };
+  // build -> Loop Over Items；Loop 的 done(输出0) 汇总全部响应后交给 parse；
+  // Loop 的 loop(输出1) 每次只放 AGENT_CONCURRENCY 条进 HTTP，真正限制并发。
+  connections[route.buildNode] = { main: [[{ node: loopNodeName, type: "main", index: 0 }]] };
+  connections[loopNodeName] = {
+    main: [
+      [{ node: route.parseNode, type: "main", index: 0 }],
+      [{ node: route.agentNode, type: "main", index: 0 }]
+    ]
+  };
+  connections[route.agentNode] = { main: [[{ node: loopNodeName, type: "main", index: 0 }]] };
   connections[route.parseNode] = { main: [[{ node: "合并分支结果", type: "main", index: routeIndex }]] };
 }
 
@@ -273,6 +294,15 @@ addNode({
   type: "n8n-nodes-base.code",
   typeVersion: 2,
   position: [1300, 360]
+});
+
+addNode({
+  parameters: { batchSize: VALIDATION_CONCURRENCY, options: {} },
+  id: nextNodeId(),
+  name: "校验批次",
+  type: "n8n-nodes-base.splitInBatches",
+  typeVersion: 3,
+  position: [1430, 360]
 });
 
 addNode({
@@ -321,8 +351,14 @@ addNode({
 });
 
 connections["合并分支结果"] = { main: [[{ node: "汇总待校验", type: "main", index: 0 }]] };
-connections["汇总待校验"] = { main: [[{ node: "调用校验与重试 Agent", type: "main", index: 0 }]] };
-connections["调用校验与重试 Agent"] = { main: [[{ node: "聚合结果", type: "main", index: 0 }]] };
+connections["汇总待校验"] = { main: [[{ node: "校验批次", type: "main", index: 0 }]] };
+connections["校验批次"] = {
+  main: [
+    [{ node: "聚合结果", type: "main", index: 0 }],
+    [{ node: "调用校验与重试 Agent", type: "main", index: 0 }]
+  ]
+};
+connections["调用校验与重试 Agent"] = { main: [[{ node: "校验批次", type: "main", index: 0 }]] };
 connections["聚合结果"] = { main: [[{ node: "返回解析结果", type: "main", index: 0 }]] };
 
 const workflow = {
@@ -343,6 +379,7 @@ await mkdir(outputDir, { recursive: true });
 await writeFile(outputPath, JSON.stringify(workflow, null, 2) + "\n", "utf8");
 console.log("生成 n8n 工作流：" + outputPath);
 console.log("节点数：" + String(nodes.length));
+console.log("HTTP 并发上限：agent=" + String(AGENT_CONCURRENCY) + " validation=" + String(VALIDATION_CONCURRENCY));
 for (const route of routes) {
   console.log("分支：" + route.key + " -> " + route.buildNode + " -> " + route.agentNode + " -> " + route.parseNode);
 }
