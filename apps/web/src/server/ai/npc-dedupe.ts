@@ -73,11 +73,6 @@ function nameVariants(name: string): string[] {
   const withoutBrackets = normalizeName(stripBrackets(name));
   if (withoutBrackets.length > 0) output.add(withoutBrackets);
 
-  for (const part of name.split(/[\/、,，;；|·•]+/)) {
-    const piece = normalizeName(part);
-    if (piece.length >= 2) output.add(piece);
-  }
-
   for (const variant of [...output]) {
     for (const token of ROLE_TOKENS) {
       if (variant.startsWith(token) && variant.length > token.length) output.add(variant.slice(token.length));
@@ -91,6 +86,20 @@ function nameVariants(name: string): string[] {
 export function npcIdentityKeys(record: NpcRecord): string[] {
   const keys = new Set<string>();
   for (const name of primaryNamesOf(record)) {
+    for (const variant of nameVariants(name)) keys.add("n:" + variant);
+  }
+  return [...keys];
+}
+
+/** 只使用主名称做模糊包含匹配；别名只参与精确匹配，避免“某某的别名”污染身份。 */
+export function npcPrimaryKeys(record: NpcRecord): string[] {
+  const keys = new Set<string>();
+  const names: string[] = [];
+  for (const field of ["name", "fullName", "realName", "trueName", "commonName", "nickname"]) {
+    names.push(...stringOf(record[field]));
+  }
+  if (names.length === 0) names.push(...stringOf(record.title));
+  for (const name of names) {
     for (const variant of nameVariants(name)) keys.add("n:" + variant);
   }
   return [...keys];
@@ -140,9 +149,13 @@ export function npcRecordsLikelySame(left: NpcRecord, right: NpcRecord): boolean
   const rightKeys = npcIdentityKeys(right);
   if (leftKeys.length === 0 || rightKeys.length === 0) return false;
   const rightSet = new Set(rightKeys);
+  // 精确 id：主名称和别名都参与，用于合并“全名 / 括号别名”等同一角色。
   for (const key of leftKeys) if (rightSet.has(key)) return true;
-  for (const a of leftKeys) {
-    for (const b of rightKeys) {
+  // 模糊包含：只用主名称，避免把某个角色的别名误当成另一个角色的身份。
+  const leftPrimary = npcPrimaryKeys(left);
+  const rightPrimary = npcPrimaryKeys(right);
+  for (const a of leftPrimary) {
+    for (const b of rightPrimary) {
       if (containsLikelySameName(a.slice(2), b.slice(2))) return true;
     }
   }

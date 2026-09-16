@@ -8,6 +8,8 @@
 import { builtinRegistry, compileRulePack, resolveRulePack } from "@touhou/rules";
 import { normalizeEntityKey } from "@/server/modules/keys";
 import { mergeDraft } from "@/server/ai/chunking";
+import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
+import { npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
 import { buildNpcDamageOverrides, normalizedWeapons } from "@/server/modules/templates";
 
 let failed = 0;
@@ -79,6 +81,40 @@ const brawl = weapons.find((weapon) => weapon.name === "肉搏攻击");
 check(staff?.damage === "2d6", "共享中文二字的武器应从物品回填伤害");
 check(dagger?.damage === "1d4", "直接同名的武器应使用物品伤害");
 check(brawl?.damage === "1d3+db", "没有对应物品的武器不应被误覆盖");
+
+// ---------- 4. NPC 身份去重：别名污染不能误合并 ----------
+const polluted = npcRecordsLikelySame(
+  { name: "加布里埃尔·马卡里奥", aliases: ["特蕾莎", "可悲的小女孩"] },
+  { name: "特蕾莎·马卡里奥，可悲的小女孩" }
+);
+check(polluted === false, "共享姓氏 + 被污染的短别名不能误合并 NPC");
+const sameNpc = npcRecordsLikelySame({ name: "测试者" }, { name: "测试者（首领）" });
+check(sameNpc === true, "同一 NPC 的括号别名应合并");
+
+// ---------- 5. 原文伤害回填 ----------
+const itemEntries: Record<string, unknown>[] = [
+  { name: "测试法器", aliases: ["法器"], itemType: "ARTIFACT", damage: "1d4" },
+  { name: "普通物品", itemType: "ITEM" }
+];
+const fixed = enrichItemDamageFromSources(itemEntries, [
+  { text: "测试法器浮空攻击。\n\n它造成 2D6 + 1 的伤害。\n\n再次造成 2D6 + 1 伤害。" }
+]);
+check(fixed === 1, "原文出现多次的伤害表达式应回填到物品");
+check(itemEntries[0]?.damage === "2d6+1", "伤害表达式应归一化为 2d6+1");
+check(itemEntries[1]?.damage === undefined, "非武器物品不应被强行补充伤害");
+
+// ---------- 6. NPC 武器去重 ----------
+const dedupedWeapons = normalizedWeapons(
+  [
+    { name: "浮空匕首", damage: "1d4+2", range: "MELEE" },
+    { name: "浮空魔法匕首", damage: "1d3+db", range: "MELEE" }
+  ],
+  pack as never,
+  warnings,
+  "测试 NPC"
+);
+check(dedupedWeapons.length === 1, "名称高度相似的 NPC 武器应合并");
+check(dedupedWeapons[0]?.damage === "1d4+2", "武器合并时应保留可解析的骰式伤害");
 
 if (failed > 0) {
   console.error("verify-entity-normalization: " + String(failed) + " failure(s)");

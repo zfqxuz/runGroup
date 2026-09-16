@@ -8,6 +8,7 @@ import { prisma } from "@/server/db/prisma";
 import { decodeTextBuffer, readDocx } from "@/server/ai/docx";
 import { dedupeNpcRecords } from "@/server/ai/npc-dedupe";
 import { enrichNpcStatsFromSources } from "@/server/ai/npc-stats";
+import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
 import { storeImage, publicPath } from "@/server/assets/storage";
 import { REQUIRED_MODULE_SECTIONS, parseModuleMarkdown, slugifyModuleId } from "@/server/modules/format";
 import { parseStructuredBlocks } from "@/server/modules/structure";
@@ -1289,6 +1290,10 @@ async function generateDraftFromChunks(input: {
   }
   const npcStatsParsed = precomputed === undefined ? 0 : precomputed.npcStats.length;
   const npcStatsApplied = precomputed === undefined ? 0 : applyN8nNpcStats(draft.structured.npc ?? [], precomputed.npcStats);
+  const itemDamageFixed = enrichItemDamageFromSources(draft.structured.item ?? [], input.sources);
+  if (itemDamageFixed > 0) {
+    input.onProgress?.("已从原文校对 " + String(itemDamageFixed) + " 个物品的伤害");
+  }
   if (npcStatsApplied > 0) {
     input.onProgress?.("n8n 工作流已确定性回填 / 新增 " + String(npcStatsApplied) + " 个 NPC 的数值");
   }

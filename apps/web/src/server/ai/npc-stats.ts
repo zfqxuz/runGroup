@@ -360,6 +360,12 @@ export function enrichNpcStatsFromSources(
 
     if (best === null || isUsable(best) === false) continue;
     mergeStats(entry, best);
+    // NPC 标准属性行通常没有幸运。原文没有出现「幸运 / luck」时，
+    // 不采用模型可能编造的 luck，统一按 0 处理。
+    if (best.attributes.luck === undefined && sources.some((source) => /幸运|luck/i.test(source.text)) === false) {
+      const attributes = recordOf(entry.attributes);
+      entry.attributes = { ...attributes, luck: 0 };
+    }
     enriched += 1;
   }
   return enriched;

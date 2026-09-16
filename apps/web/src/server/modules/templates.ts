@@ -247,6 +247,48 @@ function findDamageOverride(weaponName: string, overrides: readonly NpcDamageOve
   return bestDamage;
 }
 
+function weaponNamesLikelySame(left: string, right: string): boolean {
+  const a = normalizeSkillKey(left);
+  const b = normalizeSkillKey(right);
+  if (a.length === 0 || b.length === 0) return false;
+  if (a === b) return true;
+  if (a.includes(b) || b.includes(a)) return true;
+  return sharedCjkBigrams(a, b) >= 2;
+}
+
+function preferredWeaponDamage(left: string, right: string): string {
+  const leftValid = left.length > 0 && safeDice(left) !== null;
+  const rightValid = right.length > 0 && safeDice(right) !== null;
+  if (leftValid && rightValid === false) return left;
+  if (rightValid && leftValid === false) return right;
+  return left.length > 0 ? left : right;
+}
+
+function mergeWeaponRecords(left: NormalizedNpcWeapon, right: NormalizedNpcWeapon): NormalizedNpcWeapon {
+  return {
+    name: left.name,
+    damage: preferredWeaponDamage(left.damage, right.damage),
+    range: left.range.length > 0 ? left.range : right.range,
+    skillId: left.skillId.length > 0 ? left.skillId : right.skillId,
+    attacks: left.attacks ?? right.attacks,
+    notes: left.notes.length >= right.notes.length ? left.notes : right.notes
+  };
+}
+
+function dedupeWeapons(value: readonly NormalizedNpcWeapon[]): NormalizedNpcWeapon[] {
+  const output: NormalizedNpcWeapon[] = [];
+  for (const weapon of value) {
+    const index = output.findIndex((existing) => weaponNamesLikelySame(existing.name, weapon.name));
+    if (index < 0) {
+      output.push({ ...weapon });
+      continue;
+    }
+    const existing = output[index];
+    if (existing !== undefined) output[index] = mergeWeaponRecords(existing, weapon);
+  }
+  return output;
+}
+
 export function buildNpcDamageOverrides(items: readonly StructuredModuleEntry[]): NpcDamageOverride[] {
   const output: NpcDamageOverride[] = [];
   for (const entry of items) {
@@ -310,7 +352,7 @@ export function normalizedWeapons(
         push(item, "", "", "", null, "");
       }
     }
-    return output.slice(0, 30);
+    return dedupeWeapons(output).slice(0, 30);
   }
 
   if (value !== null && typeof value === "object" && Array.isArray(value) === false) {
@@ -330,10 +372,10 @@ export function normalizedWeapons(
         );
       }
     }
-    return output.slice(0, 30);
+    return dedupeWeapons(output).slice(0, 30);
   }
 
-  return output;
+  return dedupeWeapons(output);
 }
 
 const ATTRIBUTE_ALIASES: Readonly<Record<string, readonly string[]>> = {
@@ -362,21 +404,23 @@ function attributeValueOf(source: Record<string, unknown>, key: string): unknown
 function normalizedAttributes(value: unknown, warnings: string[], label: string): Record<string, number> {
   const source = recordOf(value);
   const keys = ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"] as const;
+  const requiredKeys = keys.filter((key) => key !== "luck");
   const out: Record<string, number> = {};
   let matched = 0;
   for (const key of keys) {
     const raw = attributeValueOf(source, key);
     if (raw === undefined) {
-      out[key] = 50;
+      // NPC 标准属性块通常不写幸运；缺失的幸运按 0，其余按 50 兜底。
+      out[key] = key === "luck" ? 0 : 50;
       continue;
     }
-    matched += 1;
+    if (key !== "luck") matched += 1;
     out[key] = numberIn(raw, 50, 0, 999);
   }
   if (matched === 0) {
     warnings.push(label + " 没有读取到属性，已使用默认 50");
-  } else if (matched < keys.length) {
-    warnings.push(label + " 只读取到 " + String(matched) + "/" + String(keys.length) + " 项属性，缺失项按 50 处理");
+  } else if (matched < requiredKeys.length) {
+    warnings.push(label + " 只读取到 " + String(matched) + "/" + String(requiredKeys.length) + " 项属性，缺失项按 50 处理");
   }
   return out;
 }

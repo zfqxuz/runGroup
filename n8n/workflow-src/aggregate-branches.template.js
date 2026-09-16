@@ -195,23 +195,30 @@ function normalizeNpcSkills(value, attributes) {
     if (value <= 0) return;
     output.set(skillId, Math.max(output.get(skillId) ?? 0, value));
   };
-  add("FIGHTING_BRAWL", 25);
-  add("DODGE", Math.floor(dex / 2));
-  add("SPOT_HIDDEN", 25);
-  add("LISTEN", 20);
-  add("STEALTH", 20);
-  add("LIBRARY_USE", 20);
-  add("FIRST_AID", 30);
-  add("PSYCHOLOGY", 10);
-  add("OCCULT", 5);
   let rows = [];
   if (Array.isArray(value)) rows = value;
   else if (value !== null && typeof value === "object") rows = Object.entries(value).map(([key, item]) => ({ skill: key, value: item }));
+  // 先写入模型显式给出的技能值；默认技能只补缺失，不能用 25/闪避基础值覆盖显式低值。
   for (const raw of rows) {
     if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
     const name = asString(raw.skill ?? raw.skillId ?? raw.skill_name ?? raw.skillName ?? raw.name ?? raw.title);
     const skillId = canonicalSkillId(name);
     add(skillId, raw.value ?? raw.level ?? raw.skill_value ?? raw.score);
+  }
+  const defaults = [
+    ["FIGHTING_BRAWL", 25],
+    ["DODGE", Math.floor(dex / 2)],
+    ["SPOT_HIDDEN", 25],
+    ["LISTEN", 20],
+    ["STEALTH", 20],
+    ["LIBRARY_USE", 20],
+    ["FIRST_AID", 30],
+    ["PSYCHOLOGY", 10],
+    ["OCCULT", 5]
+  ];
+  for (const [skillId, rawValue] of defaults) {
+    if (output.has(skillId)) continue;
+    add(skillId, rawValue);
   }
   return [...output.entries()].map(([skill, value]) => ({ skill, value }));
 }
