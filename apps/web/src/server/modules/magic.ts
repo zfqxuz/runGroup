@@ -1,4 +1,5 @@
 import { deepMerge, MagicEffectSchema, type MagicEffect, type MagicSpell } from "@touhou/rules";
+import { normalizeEntityKey } from "@/server/modules/keys";
 import { compile, parseDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
@@ -51,7 +52,7 @@ function spellFromEntry(entry: StructuredModuleEntry, system: "COC7" | "TOUHOU")
   const data = entry.data;
   const name = textOf(data, ["name", "title"], entry.title);
   if (name.length === 0) return null;
-  const id = textOf(data, ["id", "spellId"], entry.id).replace(/[^a-zA-Z0-9._:-]+/g, "-").slice(0, 60) || "spell-" + entry.id;
+  const id = normalizeEntityKey(textOf(data, ["id", "spellId"], entry.id), "spell-" + entry.id, 60);
   const skillDefault = system === "COC7" ? "OCCULT" : "MAGIC";
   const targetRaw = textOf(data, ["target", "range"], "ONE").toUpperCase();
   const target = targetRaw === "SELF" || targetRaw === "ALL" ? targetRaw : "ONE";

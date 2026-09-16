@@ -278,16 +278,76 @@ function mergeObjects(
   return output;
 }
 
+function stringListOf(value: unknown): string[] {
+  if (typeof value === "string") {
+    const text = value.trim();
+    return text.length > 0 ? [text] : [];
+  }
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter((item) => item.length > 0);
+  }
+  return [];
+}
+
+/** 收集实体所有可用作合并依据的名称 / 别名，并归一化。 */
+function entityKeysOf(kind: StructuredKind, entry: Record<string, unknown>): string[] {
+  const keys = new Set<string>();
+  const add = (value: unknown): void => {
+    for (const text of stringListOf(value)) {
+      const normalized = normalizeName(text);
+      if (normalized.length >= 2) keys.add(normalized);
+    }
+  };
+  add(entryName(kind, entry));
+  add(entry.name);
+  add(entry.title);
+  for (const field of ["aliases", "alias", "aka", "alsoKnownAs", "fullName", "nickname", "trueName", "realName"]) {
+    add(entry[field]);
+  }
+  return [...keys];
+}
+
+const FUZZY_MERGE_KINDS: ReadonlySet<StructuredKind> = new Set(["npc", "magic", "item", "scene", "chapter"]);
+
+/** 两个实体的名称 / 别名之间是否存在包含关系。 */
+function keysLikelySame(left: readonly string[], right: readonly string[]): boolean {
+  for (const a of left) {
+    for (const b of right) {
+      if (a === b) return true;
+      if (a.length < 2 || b.length < 2) continue;
+      // 避免 item-1 / item-11 这类编号实体被误合并。
+      const bothEndWithDigits = /\d$/.test(a) && /\d$/.test(b);
+      if (bothEndWithDigits) continue;
+      if (a.includes(b) || b.includes(a)) return true;
+    }
+  }
+  return false;
+}
+
 interface KindMergeState {
   readonly kind: StructuredKind;
   readonly entries: Record<string, unknown>[];
   readonly idIndex: Map<string, number>;
   readonly nameIndex: Map<string, number>;
+  readonly aliasIndex: Map<string, number>;
   readonly idAlias: Map<string, string>;
 }
 
 function createKindState(kind: StructuredKind): KindMergeState {
-  return { kind, entries: [], idIndex: new Map(), nameIndex: new Map(), idAlias: new Map() };
+  return { kind, entries: [], idIndex: new Map(), nameIndex: new Map(), aliasIndex: new Map(), idAlias: new Map() };
+}
+
+function indexEntry(state: KindMergeState, index: number): void {
+  const entry = state.entries[index];
+  if (entry === undefined) return;
+  for (const key of entityKeysOf(state.kind, entry)) {
+    if (state.aliasIndex.has(key) === false) state.aliasIndex.set(key, index);
+  }
+  const nameKey = normalizeName(entryName(state.kind, entry));
+  if (nameKey.length > 0) state.nameIndex.set(nameKey, index);
 }
 
 function mergeKindEntries(
@@ -297,13 +357,32 @@ function mergeKindEntries(
   for (const raw of partial) {
     const name = entryName(state.kind, raw) || cleanText(raw.id) || "未命名";
     const originalId = cleanText(raw.id) || fallbackId(state.kind, name);
-    const normalizedName = normalizeName(name);
+    const incomingKeys = entityKeysOf(state.kind, raw);
     let index = state.idIndex.get(originalId);
-    if (index === undefined && normalizedName.length > 0) index = state.nameIndex.get(normalizedName);
+    if (index === undefined) {
+      for (const key of incomingKeys) {
+        const found = state.aliasIndex.get(key);
+        if (found !== undefined) {
+          index = found;
+          break;
+        }
+      }
+    }
     if (index === undefined && state.kind === "npc") {
       for (let item = 0; item < state.entries.length; item += 1) {
         const existing = state.entries[item];
         if (existing !== undefined && npcRecordsLikelySame(existing, raw)) {
+          index = item;
+          break;
+        }
+      }
+    }
+    if (index === undefined && FUZZY_MERGE_KINDS.has(state.kind)) {
+      for (let item = 0; item < state.entries.length; item += 1) {
+        const existing = state.entries[item];
+        if (existing === undefined) continue;
+        const existingKeys = entityKeysOf(state.kind, existing);
+        if (keysLikelySame(incomingKeys, existingKeys)) {
           index = item;
           break;
         }
@@ -319,14 +398,14 @@ function mergeKindEntries(
       index = state.entries.length;
       state.entries.push({ ...raw, id: finalId });
       state.idIndex.set(finalId, index);
-      if (normalizedName.length > 0) state.nameIndex.set(normalizedName, index);
       if (originalId !== finalId) state.idAlias.set(originalId, finalId);
+      indexEntry(state, index);
       continue;
     }
+
     const existingIdBefore = cleanText(state.entries[index]?.id);
     state.entries[index] = mergeObjects(state.entries[index] ?? {}, raw);
-    const mergedNameKey = normalizeName(entryName(state.kind, state.entries[index] ?? {}));
-    if (mergedNameKey.length > 0) state.nameIndex.set(mergedNameKey, index);
+    indexEntry(state, index);
     const existingIdAfter = cleanText(state.entries[index]?.id);
     if (existingIdBefore.length > 0 && originalId !== existingIdBefore) {
       state.idAlias.set(originalId, existingIdBefore);

@@ -16,6 +16,7 @@ import {
   type StructuredModuleData,
   type StructuredModuleEntry
 } from "@/server/modules/structure";
+import { normalizeEntityKey } from "@/server/modules/keys";
 
 export interface TemplateSyncCounts {
   readonly chapters: number;
@@ -37,13 +38,7 @@ export function moduleEntitySourceKey(input: string): string {
 }
 
 function safeKey(input: string, fallback: string): string {
-  const key = input
-    .toLowerCase()
-    .normalize("NFKD")
-    .replace(/[^a-z0-9._:-]+/g, "-")
-    .replace(/^[._-]+|[._-]+$/g, "")
-    .slice(0, 80);
-  return key.length > 0 ? key : fallback;
+  return normalizeEntityKey(input, fallback);
 }
 
 function recordOf(value: unknown): Record<string, unknown> {
@@ -196,6 +191,12 @@ export interface NormalizedNpcWeapon {
   readonly notes: string;
 }
 
+/** 物品 / 法器上声明的伤害，用于回填 NPC 武器；同一实体的多个名称/别名会各建一条。 */
+export interface NpcDamageOverride {
+  readonly name: string;
+  readonly damage: string;
+}
+
 function normalizedRange(value: unknown): string {
   const text = typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : "";
   if (text.length === 0) return "";
@@ -205,13 +206,78 @@ function normalizedRange(value: unknown): string {
   return text.slice(0, 20);
 }
 
-export function normalizedWeapons(value: unknown, compiled: SkillPackLike, warnings: string[], label: string): NormalizedNpcWeapon[] {
+function isCjkName(value: string): boolean {
+  return /[\u3400-\u9fff]/.test(value);
+}
+
+/** 中文名的共享二字片段数量；用于在没有直接包含关系时做保守相似匹配。 */
+function sharedCjkBigrams(left: string, right: string): number {
+  if (isCjkName(left) === false || isCjkName(right) === false) return 0;
+  const grams = (value: string): Set<string> => {
+    const set = new Set<string>();
+    for (let index = 0; index < value.length - 1; index += 1) set.add(value.slice(index, index + 2));
+    return set;
+  };
+  const rightGrams = grams(right);
+  let count = 0;
+  for (const gram of grams(left)) if (rightGrams.has(gram)) count += 1;
+  return count;
+}
+
+function damageOverrideScore(weaponKey: string, candidateKey: string): number {
+  if (weaponKey === candidateKey) return 100;
+  if (weaponKey.includes(candidateKey) || candidateKey.includes(weaponKey)) return 50;
+  return sharedCjkBigrams(weaponKey, candidateKey);
+}
+
+function findDamageOverride(weaponName: string, overrides: readonly NpcDamageOverride[]): string | null {
+  const target = normalizeSkillKey(weaponName);
+  if (target.length === 0) return null;
+  let bestScore = 0;
+  let bestDamage: string | null = null;
+  for (const override of overrides) {
+    const candidate = normalizeSkillKey(override.name);
+    if (candidate.length < 2) continue;
+    const score = damageOverrideScore(target, candidate);
+    if (score > bestScore && (score >= 50 || score >= 2)) {
+      bestScore = score;
+      bestDamage = override.damage;
+    }
+  }
+  return bestDamage;
+}
+
+export function buildNpcDamageOverrides(items: readonly StructuredModuleEntry[]): NpcDamageOverride[] {
+  const output: NpcDamageOverride[] = [];
+  for (const entry of items) {
+    const damage = safeDice(textOf(entry.data, ["damage", "dmg"], ""));
+    if (damage === null) continue;
+    const names = new Set<string>();
+    for (const field of ["id", "name", "title"]) {
+      const value = textOf(entry.data, [field], "");
+      if (value.length > 0) names.add(value);
+    }
+    for (const alias of stringArray(entry.data.aliases, 30)) names.add(alias);
+    for (const name of names) output.push({ name, damage });
+  }
+  return output;
+}
+
+export function normalizedWeapons(
+  value: unknown,
+  compiled: SkillPackLike,
+  warnings: string[],
+  label: string,
+  damageOverrides: readonly NpcDamageOverride[] = []
+): NormalizedNpcWeapon[] {
   const byName = skillIdsOf(compiled);
   const output: NormalizedNpcWeapon[] = [];
   const push = (rawName: unknown, rawDamage: unknown, rawRange?: unknown, rawSkill?: unknown, rawAttacks?: unknown, rawNotes?: unknown): void => {
     const name = typeof rawName === "string" ? rawName.trim().slice(0, 120) : "";
     if (name.length === 0) return;
-    const damage = typeof rawDamage === "string" ? rawDamage.trim().slice(0, 80) : typeof rawDamage === "number" ? String(rawDamage) : "";
+    const rawDamageText = typeof rawDamage === "string" ? rawDamage.trim().slice(0, 80) : typeof rawDamage === "number" ? String(rawDamage) : "";
+    const overriddenDamage = findDamageOverride(name, damageOverrides);
+    const damage = overriddenDamage !== null ? overriddenDamage : rawDamageText;
     const skillText = typeof rawSkill === "string" ? rawSkill.trim() : "";
     const skillId = skillText.length === 0 ? "" : (byName.get(normalizeSkillKey(skillText)) ?? "");
     const attacks = typeof rawAttacks === "string" || typeof rawAttacks === "number" ? rawAttacks : null;
@@ -379,6 +445,7 @@ export async function syncModuleTemplates(
   const packId = moduleSystem === "TOUHOU" ? "touhou-ext" : "coc7-baseline";
   const compiled = compileParsedRulePack(resolveRulePack(packId, builtinRegistry()));
   const compiledPack: SkillPackLike = compiled;
+  const damageOverrides = buildNpcDamageOverrides(structured.items);
 
   let chapters = 0;
   let npcs = 0;
@@ -426,7 +493,8 @@ export async function syncModuleTemplates(
         entry.data.weapons ?? entry.data.attacks ?? [],
         compiledPack,
         warnings,
-        label
+        label,
+        damageOverrides
       );
 
       let derived: Record<string, number> | null = null;

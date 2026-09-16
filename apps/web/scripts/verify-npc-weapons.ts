@@ -39,26 +39,26 @@ check(skills.STEALTH === 45, "数组格式技能映射到 STEALTH");
 
 const weapons = normalizedWeapons(
   [
-    { weapon_name: "浮空魔法匕首", damage: "1D3 + 1D4", range: "MELEE" },
-    { name: "肉搏攻击", damage: "1d4", range: "近战", skillId: "斗殴" }
+    { weapon_name: "测试长枪", damage: "1d10", range: "MELEE" },
+    { name: "徒手攻击", damage: "1d3+1d4", range: "近战", skillId: "斗殴" }
   ],
   pack,
   warnings,
   "测试 NPC"
 );
 check(weapons.length === 2, "武器数组被保留");
-check(weapons[0]?.name === "浮空魔法匕首" && weapons[0]?.damage === "1D3 + 1D4" && weapons[0]?.range === "MELEE", "武器名称 / 伤害 / 距离正确");
+check(weapons[0]?.name === "测试长枪" && weapons[0]?.damage === "1d10" && weapons[0]?.range === "MELEE", "武器名称 / 伤害 / 距离正确");
 check(weapons[1]?.skillId === "FIGHTING_BRAWL", "武器技能名映射到规则包技能 id");
 
 const fromStats = npcWeaponsFromStats({ weapons });
-check(fromStats.length === 2 && fromStats[0]?.name === "浮空魔法匕首", "NPC 卡 stats.weapons 可读回武器");
+check(fromStats.length === 2 && fromStats[0]?.name === "测试长枪", "NPC 卡 stats.weapons 可读回武器");
 const options = attackOptionsForParticipant(
   pack,
   { id: "npc-test", kind: "NPC", characterId: null, skills: { FIGHTING_BRAWL: 60 } },
   fromStats
 );
 check(
-  options.some((option) => option.weaponName === "浮空魔法匕首" && option.damage === "1D3 + 1D4"),
+  options.some((option) => option.weaponName === "测试长枪" && option.damage === "1d10"),
   "NPC 武器进入战斗攻击选项"
 );
 check(

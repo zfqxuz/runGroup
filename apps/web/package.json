@@ -51,7 +51,8 @@
     "verify:magic-effects": "tsx --env-file=.env scripts/verify-magic-effects.ts",
     "verify:ai-chunking": "tsx --env-file=.env scripts/verify-ai-chunking.ts",
     "verify:n8n-workflow": "tsx scripts/verify-n8n-workflow.ts",
-    "verify:npc-weapons": "tsx scripts/verify-npc-weapons.ts"
+    "verify:npc-weapons": "tsx scripts/verify-npc-weapons.ts",
+    "verify:entity-normalization": "tsx --env-file=.env scripts/verify-entity-normalization.ts"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",
