@@ -150,6 +150,9 @@ jobs:
             fi
 
             docker compose -f docker-compose.prod.yml pull app
+            # n8n 工作流文件通过 bind mount 挂入；Docker Compose 不会因为文件内容变化自动重建 n8n，
+            # 因此每次部署都强制重建 n8n，让入口命令重新 import + publish 最新工作流。
+            docker compose -f docker-compose.prod.yml up -d --force-recreate n8n
             docker compose -f docker-compose.prod.yml up -d
             docker compose -f docker-compose.prod.yml ps
 
