@@ -36,10 +36,12 @@ services:
       N8N_PORT: 5678
       N8N_PROTOCOL: http
       N8N_LISTEN_ADDRESS: 0.0.0.0
-      N8N_EDITOR_BASE_URL: ${N8N_PUBLIC_URL:-http://127.0.0.1:5678}
-      WEBHOOK_URL: ${N8N_PUBLIC_URL:-http://127.0.0.1:5678}
+      # 公网可视化入口由 n8n-proxy(Caddy) 提供；webhook 仍走 Docker 内网，避免应用侧改地址。
+      N8N_EDITOR_BASE_URL: ${N8N_PUBLIC_URL:-https://8.141.16.85}
+      WEBHOOK_URL: http://n8n:5678
       N8N_USER_MANAGEMENT_DISABLED: "true"
-      N8N_SECURE_COOKIE: "false"
+      N8N_SECURE_COOKIE: "true"
+      N8N_PROXY_HOPS: "1"
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
       N8N_PAYLOAD_SIZE_MAX: "200"
       N8N_DIAGNOSTICS_ENABLED: "false"
@@ -73,6 +75,21 @@ services:
       retries: 12
       start_period: 30s
 
+  n8n-proxy:
+    image: ${CADDY_IMAGE:-docker.m.daocloud.io/library/caddy:2-alpine}
+    container_name: touhou-trpg-n8n-proxy
+    restart: unless-stopped
+    depends_on:
+      n8n:
+        condition: service_started
+    ports:
+      # 只暴露 HTTPS；n8n 本身仍然只监听 127.0.0.1:5678。
+      - "443:443"
+    volumes:
+      - ./n8n/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+
   app:
     image: ${APP_IMAGE:?请在 .env 中设置 APP_IMAGE}
     container_name: touhou-trpg-app
@@ -104,3 +121,5 @@ services:
 volumes:
   pgdata:
   n8n_data:
+  caddy_data:
+  caddy_config:

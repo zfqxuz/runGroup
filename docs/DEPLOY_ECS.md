@@ -127,6 +127,7 @@ docker compose -f docker-compose.prod.yml exec -T db \
 - 应用通过 Docker 内网 `http://n8n:5678/webhook/module-parse` 调用，Webhook 路径固定为
   `/webhook/module-parse`。
 - `DEEPSEEK_API_KEY` 同时注入应用和 n8n；只要配置了 n8n 地址，应用就优先走工作流，不再直连 DeepSeek。
+- `n8n-proxy` 容器由 Caddy 提供公网 HTTPS 入口，默认 `443` 端口，开启 Basic Auth（用户名 `admin`）和自签证书；n8n 自身仍只监听宿主机 `127.0.0.1:5678`。需要在 ECS 安全组放行入方向 `443/tcp`。
 - NPC 属性 / HP / MP / SAN 等数字由 n8n Code 节点里的确定性规则从原文解析，DeepSeek 只负责正文和实体抽取；
   模型返回的数值会被原文解析结果覆盖。
 

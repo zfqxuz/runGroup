@@ -1,0 +1,16 @@
+https://8.141.16.85 {
+# 自签内部证书；首次访问浏览器会提示不受信任，继续访问即可。
+tls internal
+
+# 公网入口必须经过一层 Basic Auth，避免 n8n 编辑器裸奔。
+basic_auth {
+admin $2b$12$R/S075.Lld42jaV/8wLe4.yM676ycoXAGDcIGlH2JGqai3tjGq7QK
+}
+
+reverse_proxy n8n:5678 {
+transport http {
+read_timeout 3600s
+write_timeout 3600s
+}
+}
+}

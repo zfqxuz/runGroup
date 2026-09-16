@@ -96,7 +96,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
-          source: "docker-compose.prod.yml,n8n/workflows/module-import.json"
+          source: "docker-compose.prod.yml,n8n/workflows/module-import.json,n8n/Caddyfile"
           target: ${{ env.DEPLOY_DIR }}
           overwrite: true
           strip_components: 0
