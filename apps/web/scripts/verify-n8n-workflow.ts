@@ -130,6 +130,10 @@ async function main(): Promise<void> {
       (prepareNode?.parameters?.jsCode ?? "").includes("isSceneBoundary"),
     "工作流包含场景 / 章节边界分块逻辑"
   );
+  check(
+    (parseNode?.parameters?.jsCode ?? "").includes("repairJsonText"),
+    "解析节点包含模型 JSON 修复逻辑"
+  );
 
   const inline = core.parseNpcStatsText(
     "STR 60 CON 70 SIZ 65 DEX 50 APP 45 INT 80 POW 75 EDU 90 LUCK 55 HP 13 MP 15 SAN 80"
@@ -202,6 +206,15 @@ async function main(): Promise<void> {
   check(output?.ok === true, "解析节点返回 ok=true");
   check(output?.npcStats?.[0]?.name === "哥布林守卫", "解析节点保留 NPC 名称");
   check(output?.npcStats?.[0]?.attributes.str === 60 && output?.npcStats?.[0]?.maxHp === 13, "解析节点使用原文确定性数值覆盖模型结果");
+
+  const brokenJson = '{"meta":{"title":"修复测试"},"sections":{"关键NPC":"第一行\n第二行"},"structured":{}}';
+  const repairedResult = await runCode<readonly { json: { ok: boolean; warnings: readonly string[] } }[]>(
+    parseNode?.parameters?.jsCode ?? "",
+    [{ json: { choices: [{ message: { content: brokenJson }, finish_reason: "stop" }] } }],
+    {},
+    parseDollar
+  );
+  check(repairedResult[0]?.json.ok === true, "解析节点可修复模型返回的未转义换行 JSON");
 
   const mixedBody = {
     ...webhookBody,

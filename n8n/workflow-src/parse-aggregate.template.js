@@ -35,20 +35,85 @@ function asObjectArray(value) {
   return [];
 }
 
+function repairJsonText(text) {
+  let output = "";
+  let inString = false;
+  let escaped = false;
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index];
+    if (inString) {
+      if (escaped) {
+        output += char;
+        escaped = false;
+        continue;
+      }
+      if (char === "\\") {
+        output += char;
+        escaped = true;
+        continue;
+      }
+      if (char === '"') {
+        output += char;
+        inString = false;
+        continue;
+      }
+      if (char === "\n") {
+        output += "\\n";
+        continue;
+      }
+      if (char === "\r") {
+        output += "\\r";
+        continue;
+      }
+      if (char === "\t") {
+        output += "\\t";
+        continue;
+      }
+      output += char;
+      continue;
+    }
+    if (char === '"') {
+      inString = true;
+      output += char;
+      continue;
+    }
+    output += char;
+  }
+  // 去掉对象 / 数组结尾前多余的逗号
+  return output.replace(/,\s*([}\]])/g, "$1");
+}
+
 function extractJsonObject(text) {
   const trimmed = String(text || "").trim();
   const withoutFence = trimmed
     .replace(/^```(?:json)?\s*/i, "")
     .replace(/\s*```$/i, "")
     .trim();
-  try {
-    return JSON.parse(withoutFence);
-  } catch (error) {
-    const start = withoutFence.indexOf("{");
-    const end = withoutFence.lastIndexOf("}");
-    if (start >= 0 && end > start) return JSON.parse(withoutFence.slice(start, end + 1));
-    throw error;
+
+  const candidates = [];
+  candidates.push(withoutFence);
+  const start = withoutFence.indexOf("{");
+  const end = withoutFence.lastIndexOf("}");
+  if (start >= 0 && end > start) candidates.push(withoutFence.slice(start, end + 1));
+
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      return JSON.parse(candidate);
+    } catch (error) {
+      lastError = error;
+    }
+    const repaired = repairJsonText(candidate);
+    if (repaired !== candidate) {
+      try {
+        return JSON.parse(repaired);
+      } catch (error) {
+        lastError = error;
+      }
+    }
   }
+  const prefix = withoutFence.slice(0, 500);
+  throw new Error("模型返回 JSON 无法解析：" + (lastError instanceof Error ? lastError.message : String(lastError)) + "；内容开头：" + prefix);
 }
 
 function normalizeChunkExtraction(raw, label) {
