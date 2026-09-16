@@ -1286,19 +1286,28 @@ async function generateDraftFromChunks(input: {
     input.onProgress?.("已合并 " + String(removedNpcs) + " 条重复 NPC");
   }
 
-  // 先跑本地回填作为兜底；随后再用 n8n 的确定性结果覆盖，保证工作流优先级最高。
+  const npcStatsParsed = precomputed === undefined ? 0 : precomputed.npcStats.length;
+  const npcStatsApplied = precomputed === undefined ? 0 : applyN8nNpcStats(draft.structured.npc ?? [], precomputed.npcStats);
+  if (npcStatsApplied > 0) {
+    input.onProgress?.("n8n 工作流已确定性回填 / 新增 " + String(npcStatsApplied) + " 个 NPC 的数值");
+  }
+
+  // 再用本地原文解析做兜底：补技能、补属性、修正幸运缺省。
   const npcStatsFixed = enrichNpcStatsFromSources(draft.structured.npc ?? [], input.sources);
   if (npcStatsFixed > 0) {
     input.onProgress?.("已从原文读取并校对 " + String(npcStatsFixed) + " 个 NPC 的属性数值");
   }
-  const npcStatsParsed = precomputed === undefined ? 0 : precomputed.npcStats.length;
-  const npcStatsApplied = precomputed === undefined ? 0 : applyN8nNpcStats(draft.structured.npc ?? [], precomputed.npcStats);
   const itemDamageFixed = enrichItemDamageFromSources(draft.structured.item ?? [], input.sources);
   if (itemDamageFixed > 0) {
     input.onProgress?.("已从原文校对 " + String(itemDamageFixed) + " 个物品的伤害");
   }
-  if (npcStatsApplied > 0) {
-    input.onProgress?.("n8n 工作流已确定性回填 / 新增 " + String(npcStatsApplied) + " 个 NPC 的数值");
+
+  // n8n 确定性回填可能新增 NPC；这里再合并一次，避免 JSON 与模板表数量不一致。
+  const beforeFinalDedupe = draft.structured.npc?.length ?? 0;
+  draft.structured.npc = dedupeNpcRecords(draft.structured.npc ?? []);
+  const removedFinalNpcs = beforeFinalDedupe - draft.structured.npc.length;
+  if (removedFinalNpcs > 0) {
+    input.onProgress?.("已合并 " + String(removedFinalNpcs) + " 条重复 NPC");
   }
 
   const markdown = assembleMarkdown(draft, input.images.map((image) => image.relativePath));
