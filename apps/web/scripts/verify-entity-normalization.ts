@@ -110,6 +110,23 @@ const clustered = dedupeNpcRecords([
   { name: "科比特的鬼魂" }
 ]);
 check(clustered.length === 2, "W/老科比特应合并进主 NPC，鬼魂保持独立");
+const preservedArrays = dedupeNpcRecords([
+  { name: "测试者", skillsFromText: [], weapons: [] },
+  {
+    name: "测试者",
+    skillsFromText: [{ skill: "闪避", value: 17 }],
+    weapons: [{ name: "匕首", damage: "1d4+2" }]
+  }
+]);
+check(preservedArrays.length === 1, "同一 NPC 应合并为一条");
+check(
+  Array.isArray(preservedArrays[0]?.skillsFromText) && preservedArrays[0].skillsFromText.length === 1,
+  "合并 NPC 时不能把 skillsFromText 对象数组丢成空"
+);
+check(
+  Array.isArray(preservedArrays[0]?.weapons) && preservedArrays[0].weapons.length === 1,
+  "合并 NPC 时不能把 weapons 对象数组丢成空"
+);
 
 // ---------- 5. 原文伤害回填 ----------
 const itemEntries: Record<string, unknown>[] = [

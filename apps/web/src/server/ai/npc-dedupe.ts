@@ -238,6 +238,36 @@ function uniqueStrings(values: readonly unknown[]): string[] {
   return output;
 }
 
+/**
+ * 合并数组字段（skillsFromText / skills / weapons 等）。
+ * 字符串按归一化文本去重；对象优先按 id / name / skill / key 去重，
+ * 避免旧实现用 uniqueStrings 把所有对象都过滤掉。
+ */
+function arrayItemKey(value: unknown): string {
+  if (typeof value === "string") return "s:" + normalizeName(value);
+  if (isRecord(value)) {
+    for (const field of ["id", "skill", "name", "key"]) {
+      const raw = value[field];
+      if (typeof raw === "string" && raw.trim().length > 0) return "o:" + normalizeName(raw);
+    }
+    return "j:" + JSON.stringify(value);
+  }
+  return "p:" + String(value);
+}
+
+function mergeValueArrays(current: readonly unknown[], value: readonly unknown[]): unknown[] {
+  const output = [...current];
+  const seen = new Set(output.map(arrayItemKey));
+  for (const item of value) {
+    if (item === undefined || item === null) continue;
+    const key = arrayItemKey(item);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    output.push(item);
+  }
+  return output;
+}
+
 /** 合并 NPC 的展示别名；不修改 name 字段，只把新名称追加进 aliases。 */
 export function mergeNpcAliasNames(record: NpcRecord, names: readonly string[]): void {
   const merged = uniqueStrings([
@@ -300,7 +330,7 @@ function mergeRecords(left: NpcRecord, right: NpcRecord): NpcRecord {
     }
 
     if (Array.isArray(current) && Array.isArray(value)) {
-      output[key] = uniqueStrings([...current, ...value]);
+      output[key] = mergeValueArrays(current, value);
       continue;
     }
 
