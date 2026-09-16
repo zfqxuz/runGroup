@@ -105,12 +105,47 @@ function safeDice(value: unknown): string | null {
   }
 }
 
+function normalizeSkillKey(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[\s_\-—–·•.。:：,，、;；!！?？'"“”‘’（）()【】\[\]《》<>\/\\]+/g, "");
+}
+
 function skillIdsOf(compiled: SkillPackLike): Map<string, string> {
   const byName = new Map<string, string>();
+  const add = (key: string, skillId: string): void => {
+    const normalized = normalizeSkillKey(key);
+    if (normalized.length > 0) byName.set(normalized, skillId);
+  };
   for (const skill of compiled.skills) {
-    byName.set(skill.id.toLowerCase(), skill.id);
-    byName.set(skill.name.toLowerCase(), skill.id);
-    byName.set(skill.id, skill.id);
+    add(skill.id, skill.id);
+    add(skill.name, skill.id);
+    const alias = /^(.+?)[（(](.+?)[)）]$/.exec(skill.name);
+    if (alias !== null) {
+      add(alias[1] ?? "", skill.id);
+      add(alias[2] ?? "", skill.id);
+    }
+  }
+  const known = new Set(compiled.skills.map((skill) => skill.id));
+  const commonAliases: Readonly<Record<string, string>> = {
+    "斗殴": "FIGHTING_BRAWL",
+    "格斗": "FIGHTING_BRAWL",
+    "闪避": "DODGE",
+    "潜行": "STEALTH",
+    "侦查": "SPOT_HIDDEN",
+    "聆听": "LISTEN",
+    "图书馆使用": "LIBRARY_USE",
+    "妙手": "SLEIGHT_OF_HAND",
+    "克苏鲁神话": "CTHULHU_MYTHOS",
+    "克苏鲁神话知识": "CTHULHU_MYTHOS",
+    "魅惑": "CHARM",
+    "话术": "FAST_TALK",
+    "恐吓": "INTIMIDATE",
+    "说服": "PERSUADE"
+  };
+  for (const [alias, skillId] of Object.entries(commonAliases)) {
+    if (known.has(skillId)) add(alias, skillId);
   }
   return byName;
 }
@@ -129,7 +164,7 @@ function skillPairsOf(value: unknown): [string, unknown][] {
   return Object.entries(recordOf(value));
 }
 
-function normalizedSkills(
+export function normalizedSkills(
   value: unknown,
   compiled: SkillPackLike,
   warnings: string[],
@@ -138,7 +173,7 @@ function normalizedSkills(
   const byName = skillIdsOf(compiled);
   const out: Record<string, number> = {};
   for (const [rawKey, rawValue] of skillPairsOf(value)) {
-    const skillId = byName.get(rawKey.toLowerCase()) ?? byName.get(rawKey);
+    const skillId = byName.get(normalizeSkillKey(rawKey));
     if (skillId === undefined) {
       warnings.push(label + " 的技能「" + rawKey + "」不在当前规则包中，已忽略");
       continue;
@@ -167,7 +202,7 @@ function normalizedRange(value: unknown): string {
   return text.slice(0, 20);
 }
 
-function normalizedWeapons(value: unknown, compiled: SkillPackLike, warnings: string[], label: string): NormalizedNpcWeapon[] {
+export function normalizedWeapons(value: unknown, compiled: SkillPackLike, warnings: string[], label: string): NormalizedNpcWeapon[] {
   const byName = skillIdsOf(compiled);
   const output: NormalizedNpcWeapon[] = [];
   const push = (rawName: unknown, rawDamage: unknown, rawRange?: unknown, rawSkill?: unknown, rawAttacks?: unknown, rawNotes?: unknown): void => {
@@ -175,7 +210,7 @@ function normalizedWeapons(value: unknown, compiled: SkillPackLike, warnings: st
     if (name.length === 0) return;
     const damage = typeof rawDamage === "string" ? rawDamage.trim().slice(0, 80) : typeof rawDamage === "number" ? String(rawDamage) : "";
     const skillText = typeof rawSkill === "string" ? rawSkill.trim() : "";
-    const skillId = skillText.length === 0 ? "" : (byName.get(skillText.toLowerCase()) ?? byName.get(skillText) ?? "");
+    const skillId = skillText.length === 0 ? "" : (byName.get(normalizeSkillKey(skillText)) ?? "");
     const attacks = typeof rawAttacks === "string" || typeof rawAttacks === "number" ? rawAttacks : null;
     output.push({
       name,
