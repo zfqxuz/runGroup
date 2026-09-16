@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
-import { DEEPSEEK_MODELS, isDeepSeekConfigured } from "@/server/ai/deepseek";
+import { DEEPSEEK_MODELS } from "@/server/ai/deepseek";
+import { isAiImportConfigured } from "@/server/ai/n8n";
 import { getAiImportJob, startAiImportJob } from "@/server/ai/jobs";
 
 export const dynamic = "force-dynamic";
@@ -14,9 +15,9 @@ export async function POST(request: Request): Promise<NextResponse> {
   if (session === null) {
     return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
   }
-  if (isDeepSeekConfigured() === false) {
+  if (isAiImportConfigured() === false) {
     return NextResponse.json(
-      { ok: false, error: "未配置 DEEPSEEK_API_KEY，管理员请在 apps/web/.env 中配置后重启服务" },
+      { ok: false, error: "未配置 n8n 团本解析工作流（N8N_MODULE_PARSE_URL），也没有配置 DEEPSEEK_API_KEY；管理员请在部署环境中配置后重启服务" },
       { status: 400 }
     );
   }
@@ -139,6 +140,8 @@ export async function GET(request: Request): Promise<NextResponse> {
     moduleId: result?.moduleId,
     title: result?.title,
     model: result?.model,
+    parser: result?.parser,
+    npcStatsParsed: result?.npcStatsParsed,
     sessionId: result?.sessionId,
     attempts: result?.attempts,
     aiCalls: result?.aiCalls,

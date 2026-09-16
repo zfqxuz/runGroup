@@ -647,7 +647,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <div>
                 <p className="text-xs font-medium text-purple-200">模组魔法规则（{selectedModuleMagic.spells.length}）</p>
                 <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-                  由 DeepSeek / 团本结构化数据提前整理。开启后，本局规则包会纳入这些法术，战斗中可消耗 MP/SAN 施放。
+                  由 n8n 工作流 / 团本结构化数据提前整理。开启后，本局规则包会纳入这些法术，战斗中可消耗 MP/SAN 施放。
                 </p>
               </div>
               {isKP ? (

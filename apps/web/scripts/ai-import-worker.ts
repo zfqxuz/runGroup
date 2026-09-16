@@ -9,7 +9,7 @@
  */
 import { readFile } from "node:fs/promises";
 import path from "node:path";
-import { importModuleWithDeepSeek } from "../src/server/ai/module-import";
+import { importModule } from "../src/server/ai/module-import";
 import { prisma } from "../src/server/db/prisma";
 import {
   aiImportJobFilesDir,
@@ -60,7 +60,7 @@ async function main(): Promise<void> {
       files.push(new File([new Uint8Array(buffer)], meta.originalName, { type: meta.mimeType }));
     }
 
-    const result = await importModuleWithDeepSeek({
+    const result = await importModule({
       files,
       roomId: job.params.roomId,
       userId: job.userId,

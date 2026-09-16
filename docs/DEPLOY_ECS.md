@@ -48,9 +48,12 @@ NEXTAUTH_SECRET=<openssl rand -base64 32>
 NEXTAUTH_URL=http://8.141.16.85:3000
 HOST=0.0.0.0
 PORT=3000
-DEEPSEEK_API_KEY=<可选>
+DEEPSEEK_API_KEY=<必填，n8n 工作流调用 DeepSeek 需要>
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-flash
+N8N_IMAGE=docker.m.daocloud.io/n8nio/n8n:2.39.5
+N8N_MODULE_PARSE_URL=http://n8n:5678/webhook/module-parse
+N8N_REQUEST_TIMEOUT_MS=1800000
 ```
 
 当前 `deploy.yml` 会在每次部署时自动重写 `APP_IMAGE`，其他值保留。
@@ -113,6 +116,31 @@ docker compose -f docker-compose.prod.yml exec -T db \
 ```
 
 恢复完成后，再通过 GitHub Actions 部署应用。如果 dump 里已经包含全部 schema 和 `_prisma_migrations`，这次可以跳过 `prisma migrate deploy`。
+
+## 2.5 n8n 团本解析工作流
+
+生产 compose 会同时启动 `n8n` 容器：
+
+- 端口只绑定宿主机 `127.0.0.1:5678`，不直接暴露公网；需要编辑工作流时用 SSH 隧道访问。
+- 容器启动时自动执行 `n8n import:workflow` 和 `n8n publish:workflow`，工作流源文件来自
+  `n8n/workflows/module-import.json`，通过 GitHub Actions 部署时自动同步到服务器。
+- 应用通过 Docker 内网 `http://n8n:5678/webhook/module-parse` 调用，Webhook 路径固定为
+  `/webhook/module-parse`。
+- `DEEPSEEK_API_KEY` 同时注入应用和 n8n；只要配置了 n8n 地址，应用就优先走工作流，不再直连 DeepSeek。
+- NPC 属性 / HP / MP / SAN 等数字由 n8n Code 节点里的确定性规则从原文解析，DeepSeek 只负责正文和实体抽取；
+  模型返回的数值会被原文解析结果覆盖。
+
+首次部署后，在服务器上检查：
+
+```bash
+docker compose -f docker-compose.prod.yml ps
+docker compose -f docker-compose.prod.yml logs --tail=80 n8n
+curl -sS -X POST http://127.0.0.1:5678/webhook/module-parse \
+  -H 'content-type: application/json' \
+  -d '{"requestId":"smoke","title":"smoke","system":"COC7","era":"MODERN","author":"","instructions":"","model":"deepseek-flash","visionModel":"deepseek-flash","chunks":[],"sources":[{"filename":"smoke.md","text":"测试 NPC\nSTR 60 CON 70 SIZ 65 DEX 50\nHP 13"}],"images":[]}'
+```
+
+返回 JSON 里 `npcStats` 不应为空。实际导入会调用 DeepSeek，因此 `chunks` 不为空时需要 `DEEPSEEK_API_KEY` 可用。
 
 ## 3. GitHub Actions 需要配置什么
 

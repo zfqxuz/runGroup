@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { updateSystemSettingAction } from "@/server/actions/admin";
 import { prisma } from "@/server/db/prisma";
+import { isN8nConfigured, n8nModuleParseUrl } from "@/server/ai/n8n";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,8 @@ export default async function AdminSystemPage({
   const settingByKey = new Map(settings.map((item) => [item.key, item]));
   const hasDeepseekKey = (process.env.DEEPSEEK_API_KEY ?? "").trim().length > 0;
   const baseUrl = process.env.DEEPSEEK_BASE_URL ?? "https://api.deepseek.com";
+  const hasN8n = isN8nConfigured();
+  const n8nUrl = n8nModuleParseUrl();
 
   return (
     <div className="flex flex-col gap-6">
@@ -43,12 +46,23 @@ export default async function AdminSystemPage({
       )}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">DeepSeek 接入</h2>
+        <h2 className="text-sm font-medium text-white/80">n8n 团本解析工作流</h2>
         <p className="mt-2 text-xs text-white/45">
-          API Key：{hasDeepseekKey ? "已从环境变量 DEEPSEEK_API_KEY 读取" : "未配置（请在 apps/web/.env 设置 DEEPSEEK_API_KEY）"}
+          工作流地址：{hasN8n ? n8nUrl : "未配置（请在部署环境设置 N8N_MODULE_PARSE_URL，例如 http://n8n:5678/webhook/module-parse）"}
+        </p>
+        <p className="mt-1 text-xs text-white/45">
+          当前导入解析器：{hasN8n ? "n8n 工作流（NPC 数值走确定性解析，DeepSeek 只负责正文抽取）" : "DeepSeek 直连（旧回退路径）"}
+        </p>
+        <p className="mt-1 text-[11px] text-white/30">n8n 容器内部持有 DEEPSEEK_API_KEY，应用不再直接调用模型；n8n 端口默认只绑定 127.0.0.1。</p>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">DeepSeek 回退接入</h2>
+        <p className="mt-2 text-xs text-white/45">
+          API Key：{hasDeepseekKey ? "已从环境变量 DEEPSEEK_API_KEY 读取" : "未配置（n8n 正常时可不配置）"}
         </p>
         <p className="mt-1 text-xs text-white/45">Base URL：{baseUrl}</p>
-        <p className="mt-1 text-[11px] text-white/30">Key 永不落库、不会返回给前端；只通过服务端环境变量读取。</p>
+        <p className="mt-1 text-[11px] text-white/30">仅当 N8N_MODULE_PARSE_URL 为空时，应用才回退到 DeepSeek 直连。</p>
       </section>
 
       {COMMON_SETTINGS.map((item) => {

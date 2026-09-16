@@ -5,8 +5,9 @@
  */
 import { PrismaClient } from "@prisma/client";
 import { readFileSync } from "node:fs";
-import { DEEPSEEK_MODELS, isDeepSeekConfigured } from "../src/server/ai/deepseek";
-import { importModuleWithDeepSeek } from "../src/server/ai/module-import";
+import { DEEPSEEK_MODELS } from "../src/server/ai/deepseek";
+import { isAiImportConfigured } from "../src/server/ai/n8n";
+import { importModule } from "../src/server/ai/module-import";
 import { deleteAssetIfOrphan } from "../src/server/assets/cleanup";
 
 const prisma = new PrismaClient();
@@ -32,8 +33,8 @@ async function readOptionalImage(): Promise<Buffer> {
 }
 
 async function main(): Promise<void> {
-  if (isDeepSeekConfigured() === false) {
-    console.log("SKIP DeepSeek 智能导入：未配置 DEEPSEEK_API_KEY");
+  if (isAiImportConfigured() === false) {
+    console.log("SKIP 团本智能导入：未配置 N8N_MODULE_PARSE_URL 或 DEEPSEEK_API_KEY");
     return;
   }
 
@@ -79,7 +80,7 @@ async function main(): Promise<void> {
     const textFile = new File([toFilePart(Buffer.from(storyText, "utf8"))], "story.md", { type: "text/markdown" });
     const imageFile = new File([toFilePart(await readOptionalImage())], "red-clue.png", { type: "image/png" });
 
-    const result = await importModuleWithDeepSeek({
+    const result = await importModule({
       files: [textFile, imageFile],
       roomId: "",
       userId: user.id,
@@ -151,9 +152,9 @@ async function main(): Promise<void> {
     ensure(templateCounts.encounters >= 1, "应创建遭遇模板");
     ensure(templateCounts.magic >= 1, "应创建魔法模板");
 
-    console.log("PASS DeepSeek 智能团本导入");
+    console.log("PASS 智能团本导入");
     console.log(
-      "  model=" + result.model +
+      "  parser=" + result.parser + " model=" + result.model +
       " attempts=" + String(result.attempts) +
       " aiCalls=" + String(result.aiCalls) +
       " chunks=" + String(result.chunksCompleted) + "/" + String(result.chunks) +

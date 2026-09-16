@@ -663,7 +663,7 @@ model Game {
 - `slug`
 - `system`
 - `era`
-- `sourceType`：`NATIVE` / `IMPORTED`
+- `sourceType`：`NATIVE` / `IMPORTED` / `AI_N8N`（优先）/ `AI_DEEPSEEK`（回退）
 - `originalFilename`
 - `packagePath`
 - `metadata`

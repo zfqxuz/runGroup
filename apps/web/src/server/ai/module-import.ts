@@ -22,6 +22,11 @@ import {
   DEEPSEEK_MODELS
 } from "@/server/ai/deepseek";
 import {
+  parseModuleWithN8n,
+  isN8nConfigured,
+  type N8nNpcStat
+} from "@/server/ai/n8n";
+import {
   chunkSourceText,
   mergeDraft,
   STRUCTURED_PLURALS,
@@ -56,6 +61,10 @@ export interface AiImportResult {
   readonly moduleId: string;
   readonly title: string;
   readonly model: string;
+  /** 实际使用的解析器：n8n 工作流优先，未配置时回退 DeepSeek 直连。 */
+  readonly parser: "N8N" | "DEEPSEEK";
+  /** n8n 从原文确定性解析出的 NPC 数值块数量（回退 DeepSeek 时为 0）。 */
+  readonly npcStatsParsed: number;
   /** 本次导入专属的 AI 会话 id；每次导入都会重新生成，不复用旧上下文。 */
   readonly sessionId: string;
   /** 单次调用允许的最大重试轮次（>=1）；不再是整本只用一次。 */
@@ -72,9 +81,35 @@ export interface AiImportResult {
   readonly warnings: readonly AiImportWarning[];
 }
 
+export interface RemoteParserInput {
+  readonly chunks: readonly TextChunk[];
+  readonly sources: readonly ExtractedSource[];
+  readonly images: readonly PreparedImage[];
+  readonly hints: {
+    readonly system: "COC7" | "TOUHOU";
+    readonly era: string;
+    readonly author: string;
+    readonly instructions: string;
+  };
+  readonly title: string;
+  readonly model: string;
+  readonly visionModel: string;
+}
+
+export interface PrecomputedParse {
+  readonly extractions: readonly ChunkExtraction[];
+  readonly imageExtractions: readonly ImageExtraction[];
+  readonly npcStats: readonly N8nNpcStat[];
+  readonly aiCalls: number;
+  readonly attempts: number;
+  readonly warnings: readonly string[];
+}
+
 export interface ImportModuleDependencies {
   /** 测试用注入；默认调用真实 DeepSeek。 */
   readonly chat?: AiChatClient;
+  /** 远端解析器（n8n 工作流）；传入后不再直接调用 DeepSeek。 */
+  readonly remoteParser?: (input: RemoteParserInput) => Promise<PrecomputedParse>;
 }
 
 type ImageOrigin = "EMBEDDED" | "PAGE_RENDER" | "UPLOAD";
@@ -88,7 +123,7 @@ interface ExtractedImage {
   readonly origin?: ImageOrigin;
 }
 
-interface ExtractedSource {
+export interface ExtractedSource {
   readonly filename: string;
   readonly kind: string;
   readonly text: string;
@@ -97,7 +132,7 @@ interface ExtractedSource {
   readonly embeddedImages?: readonly ExtractedImage[];
 }
 
-interface PreparedImage {
+export interface PreparedImage {
   readonly filename: string;
   readonly relativePath: string;
   readonly dataUrl: string;
@@ -915,7 +950,7 @@ async function extractChunkWithSplit(input: {
 }
 
 function normalizeImageExtractions(raw: unknown, batch: readonly PreparedImage[]): ImageExtraction[] {
-  const records = asObjectArray(asRecord(asRecord(raw).images));
+  const records = asObjectArray(asRecord(raw).images);
   const results: ImageExtraction[] = [];
   for (let index = 0; index < batch.length; index += 1) {
     const image = batch[index];
@@ -1066,6 +1101,106 @@ function missingCoverageSnippets(chunkText: string, extraction: ChunkExtraction)
   return missing;
 }
 
+function withCoverageFallback(extraction: ChunkExtraction, chunk: TextChunk): ChunkExtraction {
+  const hasContent =
+    Object.values(extraction.sections).some((value) => value.trim().length > 0) ||
+    Object.values(extraction.structured).some((entries) => entries.length > 0);
+  const missingSnippets = missingCoverageSnippets(chunk.text, extraction);
+  const parts: string[] = [];
+  if (extraction.fallbackText !== undefined && extraction.fallbackText.trim().length > 0) {
+    parts.push(extraction.fallbackText.trim());
+  }
+  if (hasContent === false) {
+    parts.push("（本段未提取出明确章节信息，原文保留如下）\n" + chunk.text.slice(0, 2000));
+  }
+  if (missingSnippets.length > 0) {
+    parts.push(
+      "【以下原文条目在分块提取中未被模型保留，系统已自动补录，避免内容丢失】\n" +
+      missingSnippets.join("\n")
+    );
+  }
+  if (parts.length === 0) return extraction;
+  return { ...extraction, fallbackText: parts.join("\n\n") };
+}
+
+function normalizeNpcName(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[\s_\-—–·•.。:：,，、;；!！?？'"“”‘’（）()【】\[\]《》<>\/\\]+/g, "")
+    .slice(0, 120);
+}
+
+function npcEntryKeys(entry: Record<string, unknown>): string[] {
+  const names = new Set<string>();
+  for (const field of ["name", "fullName", "realName", "trueName", "commonName", "nickname", "aliases", "alias", "aka", "alsoKnownAs", "id", "title"]) {
+    const value = entry[field];
+    if (typeof value === "string" && value.trim().length > 0) {
+      names.add(value.trim());
+      continue;
+    }
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        if (typeof item === "string" && item.trim().length > 0) names.add(item.trim());
+      }
+    }
+  }
+  return [...names].map(normalizeNpcName).filter((item) => item.length >= 2);
+}
+
+function statRecordKeys(stat: N8nNpcStat): string[] {
+  const names = new Set<string>([stat.name, ...(stat.aliases ?? [])]);
+  return [...names].map(normalizeNpcName).filter((item) => item.length >= 2);
+}
+
+/** 把 n8n 确定性解析出的数值覆盖到 AI 提取的 NPC 上；AI 漏掉的 NPC 会直接补一条记录。 */
+function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8nNpcStat[]): number {
+  let applied = 0;
+  for (let index = 0; index < stats.length; index += 1) {
+    const stat = stats[index];
+    if (stat === undefined) continue;
+    const keys = new Set(statRecordKeys(stat));
+    let target = entries.find((entry) => npcEntryKeys(entry).some((key) => keys.has(key)));
+    if (target === undefined) {
+      const base = slugifyModuleId(stat.name).slice(0, 40) || ("npc-n8n-" + String(index + 1));
+      let id = base;
+      let suffix = 2;
+      while (entries.some((entry) => asString(entry.id) === id)) {
+        id = base + "-" + String(suffix);
+        suffix += 1;
+      }
+      target = {
+        id,
+        name: stat.name,
+        aliases: [...(stat.aliases ?? [])],
+        description: "（n8n 数值解析补充，正文请结合原文或 AI 提取结果使用。）",
+        attributes: { ...stat.attributes }
+      };
+      if (stat.maxHp !== null) target.maxHp = stat.maxHp;
+      if (stat.maxMp !== null) target.maxMp = stat.maxMp;
+      if (stat.maxSan !== null) target.maxSan = stat.maxSan;
+      if (stat.maxDp !== null) target.maxDp = stat.maxDp;
+      entries.push(target);
+      applied += 1;
+      continue;
+    }
+
+    const attributes: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(asRecord(target.attributes))) {
+      attributes[key.toLowerCase()] = value;
+    }
+    for (const [key, value] of Object.entries(stat.attributes)) {
+      if (typeof value === "number" && Number.isFinite(value)) attributes[key.toLowerCase()] = value;
+    }
+    if (Object.keys(attributes).length > 0) target.attributes = attributes;
+    if (stat.maxHp !== null) target.maxHp = stat.maxHp;
+    if (stat.maxMp !== null) target.maxMp = stat.maxMp;
+    if (stat.maxSan !== null) target.maxSan = stat.maxSan;
+    if (stat.maxDp !== null) target.maxDp = stat.maxDp;
+    applied += 1;
+  }
+  return applied;
+}
+
 async function generateDraftFromChunks(input: {
   readonly chunks: readonly TextChunk[];
   readonly images: readonly PreparedImage[];
@@ -1075,7 +1210,7 @@ async function generateDraftFromChunks(input: {
   readonly chat: AiChatClient;
   readonly model: string;
   readonly onProgress?: (message: string) => void;
-}): Promise<{
+}, precomputed?: PrecomputedParse): Promise<{
   readonly draft: AiDraft;
   readonly markdown: string;
   readonly warnings: readonly string[];
@@ -1083,53 +1218,48 @@ async function generateDraftFromChunks(input: {
   readonly imagesAnalyzed: number;
   readonly aiCalls: number;
   readonly attempts: number;
+  readonly npcStatsParsed: number;
 }> {
   const stats: GenerationStats = { calls: 0, maxAttempts: 1 };
   const extractions: ChunkExtraction[] = [];
-  for (let index = 0; index < input.chunks.length; index += 1) {
-    const chunk = input.chunks[index];
-    if (chunk === undefined) continue;
-    input.onProgress?.("正在解析文本段 " + String(index + 1) + "/" + String(input.chunks.length) + "（" + chunk.filename + "）…");
-    const extraction = await extractChunkWithSplit({
-      chunk,
-      hints: input.hints,
-      chat: input.chat,
-      model: input.model,
-      stats,
-      onProgress: input.onProgress
-    });
-    const hasContent =
-      Object.values(extraction.sections).some((value) => value.trim().length > 0) ||
-      Object.values(extraction.structured).some((entries) => entries.length > 0);
-    const missingSnippets = missingCoverageSnippets(chunk.text, extraction);
-    const fallbackParts: string[] = [];
-    if (hasContent === false) {
-      fallbackParts.push("（本段未提取出明确章节信息，原文保留如下）\n" + chunk.text.slice(0, 2000));
-    }
-    if (missingSnippets.length > 0) {
-      fallbackParts.push(
-        "【以下原文条目在分块提取中未被模型保留，系统已自动补录，避免内容丢失】\n" +
-        missingSnippets.join("\n")
-      );
-    }
-    extractions.push(
-      fallbackParts.length === 0
-        ? extraction
-        : { ...extraction, fallbackText: fallbackParts.join("\n\n") }
-    );
-  }
 
-  const imagesAnalyzed = input.images.length;
-  const imageExtractions = input.images.length === 0
-    ? []
-    : await analyzeImages({
-        images: input.images,
+  if (precomputed !== undefined) {
+    for (let index = 0; index < input.chunks.length; index += 1) {
+      const chunk = input.chunks[index];
+      const extraction = precomputed.extractions[index];
+      if (chunk === undefined || extraction === undefined) continue;
+      extractions.push(withCoverageFallback(extraction, chunk));
+    }
+  } else {
+    for (let index = 0; index < input.chunks.length; index += 1) {
+      const chunk = input.chunks[index];
+      if (chunk === undefined) continue;
+      input.onProgress?.("正在解析文本段 " + String(index + 1) + "/" + String(input.chunks.length) + "（" + chunk.filename + "）…");
+      const extraction = await extractChunkWithSplit({
+        chunk,
         hints: input.hints,
         chat: input.chat,
         model: input.model,
         stats,
         onProgress: input.onProgress
       });
+      extractions.push(withCoverageFallback(extraction, chunk));
+    }
+  }
+
+  const imagesAnalyzed = precomputed === undefined ? input.images.length : precomputed.imageExtractions.length;
+  const imageExtractions: readonly ImageExtraction[] = precomputed !== undefined
+    ? precomputed.imageExtractions
+    : (input.images.length === 0
+        ? []
+        : await analyzeImages({
+            images: input.images,
+            hints: input.hints,
+            chat: input.chat,
+            model: input.model,
+            stats,
+            onProgress: input.onProgress
+          }));
 
   input.onProgress?.("正在合并 " + String(input.chunks.length) + " 段文本与 " + String(imagesAnalyzed) + " 张图片的解析结果…");
   const draft = mergeDraft({
@@ -1142,18 +1272,22 @@ async function generateDraftFromChunks(input: {
     validImagePaths: new Set(input.images.map((image) => image.relativePath))
   });
 
-  // 同一个 NPC 可能在不同分块 / 图片分析里以全名、简称、带括号别名重复出现。
-  const beforeDedupe = draft.structured.npcs?.length ?? 0;
-  draft.structured.npcs = dedupeNpcRecords(draft.structured.npcs ?? []);
-  const removedNpcs = beforeDedupe - draft.structured.npcs.length;
+  const beforeDedupe = draft.structured.npc?.length ?? 0;
+  draft.structured.npc = dedupeNpcRecords(draft.structured.npc ?? []);
+  const removedNpcs = beforeDedupe - draft.structured.npc.length;
   if (removedNpcs > 0) {
     input.onProgress?.("已合并 " + String(removedNpcs) + " 条重复 NPC");
   }
 
-  // 模型经常只保留 NPC 描述而丢掉属性数字；在生成 YAML 前用原文确定性回填一次。
-  const npcStatsFixed = enrichNpcStatsFromSources(draft.structured.npcs ?? [], input.sources);
+  // 先跑本地回填作为兜底；随后再用 n8n 的确定性结果覆盖，保证工作流优先级最高。
+  const npcStatsFixed = enrichNpcStatsFromSources(draft.structured.npc ?? [], input.sources);
   if (npcStatsFixed > 0) {
     input.onProgress?.("已从原文读取并校对 " + String(npcStatsFixed) + " 个 NPC 的属性数值");
+  }
+  const npcStatsParsed = precomputed === undefined ? 0 : precomputed.npcStats.length;
+  const npcStatsApplied = precomputed === undefined ? 0 : applyN8nNpcStats(draft.structured.npc ?? [], precomputed.npcStats);
+  if (npcStatsApplied > 0) {
+    input.onProgress?.("n8n 工作流已确定性回填 / 新增 " + String(npcStatsApplied) + " 个 NPC 的数值");
   }
 
   const markdown = assembleMarkdown(draft, input.images.map((image) => image.relativePath));
@@ -1164,11 +1298,12 @@ async function generateDraftFromChunks(input: {
   return {
     draft,
     markdown,
-    warnings: parsed.warnings,
+    warnings: [...(precomputed?.warnings ?? []), ...parsed.warnings],
     chunksCompleted: input.chunks.length,
     imagesAnalyzed,
-    aiCalls: stats.calls,
-    attempts: stats.maxAttempts
+    aiCalls: precomputed?.aiCalls ?? stats.calls,
+    attempts: precomputed?.attempts ?? stats.maxAttempts,
+    npcStatsParsed
   };
 }
 
@@ -1189,7 +1324,7 @@ function cleanGeneratedTitle(raw: string, fallback: string): string {
   return collapsed.length > 0 ? collapsed.slice(0, 80) : fallback;
 }
 
-export async function importModuleWithDeepSeek(input: {
+export interface ImportModuleRequest {
   readonly files: readonly File[];
   readonly roomId: string;
   readonly userId: string;
@@ -1199,12 +1334,18 @@ export async function importModuleWithDeepSeek(input: {
   readonly instructions: string;
   readonly requestedModel: string;
   readonly onProgress?: (message: string) => void;
-}, deps: ImportModuleDependencies = {}): Promise<AiImportResult> {
+}
+
+export async function importModuleWithDeepSeek(
+  input: ImportModuleRequest,
+  deps: ImportModuleDependencies = {}
+): Promise<AiImportResult> {
   const chat = deps.chat ?? chatDeepSeek;
+  const parserKind: "N8N" | "DEEPSEEK" = deps.remoteParser === undefined ? "DEEPSEEK" : "N8N";
   if (input.files.length === 0) throw new Error("请至少上传一个素材文件");
   if (input.files.length > MAX_FILES) throw new Error("单次最多上传 " + MAX_FILES + " 个文件");
   const sessionId = randomUUID();
-  input.onProgress?.("已创建独立 AI 会话 " + sessionId.slice(0, 8) + "，本次导入不复用任何历史上下文");
+  input.onProgress?.("已创建独立解析会话 " + sessionId.slice(0, 8) + "，本次导入不复用任何历史上下文");
   const warnings: AiImportWarning[] = [];
   const prepared = await prepareSources(input.files, warnings);
   if (prepared.sources.length === 0 && prepared.images.length === 0) {
@@ -1249,8 +1390,28 @@ export async function importModuleWithDeepSeek(input: {
   if (prepared.sources.length > 0) {
     input.onProgress?.(
       "文字素材共 " + String(chunks.length) + " 段（单段上限 " + String(CHUNK_MAX_CHARS) +
-      " 字），将逐段解析并合并；不会再把整本一次性交给模型。"
+      " 字），" + (parserKind === "N8N" ? "将交给 n8n 工作流解析" : "将逐段直连 DeepSeek 解析") + "；不会再把整本一次性交给模型。"
     );
+  }
+
+  const precomputed = deps.remoteParser === undefined
+    ? undefined
+    : await deps.remoteParser({
+        chunks,
+        sources: prepared.sources,
+        images: prepared.images,
+        hints: {
+          system,
+          era: input.requestedEra,
+          author: input.author,
+          instructions: input.instructions
+        },
+        title,
+        model,
+        visionModel
+      });
+  if (precomputed !== undefined) {
+    input.onProgress?.("n8n 工作流已返回解析结果，正在做确定性合并与 NPC 数值校验…");
   }
 
   const generated = await generateDraftFromChunks({
@@ -1267,11 +1428,12 @@ export async function importModuleWithDeepSeek(input: {
     chat,
     model,
     onProgress: input.onProgress
-  });
+  }, precomputed);
 
   input.onProgress?.("分块结果合并、结构校验通过，正在写入团本…");
   const finalTitle = cleanGeneratedTitle(generated.draft.frontMatter.title, title);
   const slug = await uniqueSlug(input.roomId.length === 0 ? null : input.roomId, generated.draft.frontMatter.id || finalTitle);
+  const sourceType = parserKind === "N8N" ? "AI_N8N" : "AI_DEEPSEEK";
   const moduleRecord = await prisma.module.create({
     data: {
       ownerId: input.userId,
@@ -1285,7 +1447,7 @@ export async function importModuleWithDeepSeek(input: {
       background: generated.draft.frontMatter.background || null,
       occupationRecommendation: generated.draft.frontMatter.occupationRecommendation || null,
       version: generated.draft.frontMatter.version,
-      sourceType: "AI_DEEPSEEK",
+      sourceType,
       originalFilename: input.files.map((file) => file.name).join(", ").slice(0, 300),
       content: {
         format: "markdown",
@@ -1294,6 +1456,7 @@ export async function importModuleWithDeepSeek(input: {
         structured: parseStructuredBlocks(generated.markdown)
       } as never,
       metadata: {
+        aiParser: parserKind,
         aiModel: model,
         aiSessionId: sessionId,
         aiGeneratedAt: new Date().toISOString(),
@@ -1308,7 +1471,8 @@ export async function importModuleWithDeepSeek(input: {
         textChunksCompleted: generated.chunksCompleted,
         imagesAnalyzed: generated.imagesAnalyzed,
         aiCalls: generated.aiCalls,
-        attempts: generated.attempts
+        attempts: generated.attempts,
+        npcStatsParsed: generated.npcStatsParsed
       } as never
     },
     select: { id: true }
@@ -1367,6 +1531,8 @@ export async function importModuleWithDeepSeek(input: {
     moduleId: moduleRecord.id,
     title: finalTitle,
     model,
+    parser: parserKind,
+    npcStatsParsed: generated.npcStatsParsed,
     sessionId,
     attempts: generated.attempts,
     aiCalls: generated.aiCalls,
@@ -1376,4 +1542,55 @@ export async function importModuleWithDeepSeek(input: {
     imagesUsed: prepared.images.length,
     warnings
   };
+}
+
+export async function importModuleWithN8n(input: ImportModuleRequest): Promise<AiImportResult> {
+  return importModuleWithDeepSeek(input, {
+    remoteParser: async (remote) => {
+      const parsed = await parseModuleWithN8n({
+        requestId: randomUUID(),
+        title: remote.title,
+        system: remote.hints.system,
+        era: remote.hints.era,
+        author: remote.hints.author,
+        instructions: remote.hints.instructions,
+        model: remote.model,
+        visionModel: remote.visionModel,
+        chunks: remote.chunks.map((chunk) => ({
+          id: chunk.id,
+          filename: chunk.filename,
+          fileIndex: chunk.fileIndex,
+          fileTotal: chunk.fileTotal,
+          heading: chunk.heading,
+          text: chunk.text
+        })),
+        sources: remote.sources.map((source) => ({
+          filename: source.filename,
+          text: source.text
+        })),
+        images: remote.images.map((image) => ({
+          filename: image.filename,
+          relativePath: image.relativePath,
+          mime: image.mime,
+          dataUrl: image.dataUrl,
+          pageNumber: image.pageNumber,
+          pageText: image.pageText,
+          origin: image.origin
+        }))
+      });
+      return {
+        extractions: parsed.extractions,
+        imageExtractions: parsed.images,
+        npcStats: parsed.npcStats,
+        aiCalls: parsed.stats.aiCalls,
+        attempts: parsed.stats.attempts,
+        warnings: parsed.warnings
+      };
+    }
+  });
+}
+
+/** 统一入口：优先 n8n 工作流，未配置 N8N_MODULE_PARSE_URL 时回退 DeepSeek 直连。 */
+export async function importModule(input: ImportModuleRequest): Promise<AiImportResult> {
+  return isN8nConfigured() ? importModuleWithN8n(input) : importModuleWithDeepSeek(input);
 }

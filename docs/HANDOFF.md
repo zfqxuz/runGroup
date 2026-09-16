@@ -29,6 +29,7 @@
   - COC7 追逐战已完成第二阶段（见第 44 节）：追上不会自动掉血；同地点敌对单位可花费 1 行动点攻击，目标可闪避 / 反击，走完整攻击 / 伤害管线；击败逃离者判定 CAUGHT 并结束追逐。
   - 房间导航滚动位置与场景重连同步已修复（见第 45 节）：Server Action redirect 不再把页面顶回顶部；SceneBoard 首次连接 / 断线重连后会主动同步，避免错过 `scene:updated` 后一直停留在旧场景；日志区不再用 `scrollIntoView` 导致整页跳动。
   - DeepSeek 团本导入分块化已完成（见第 46 节）：长素材不再一次性交给模型，而是按约 8000 字切段、逐段提取、确定性合并；任意一段失败会明确报错而不是生成不完整团本；PDF 增加整页渲染与候选图排序，图片改为逐张/小批次 vision 分析。
+  - n8n 团本解析工作流已完成（见第 47 节）：生产 compose 新增 n8n 容器，部署时自动导入并发布 `n8n/workflows/module-import.json`；应用通过 `N8N_MODULE_PARSE_URL` 优先把分块和图片交给 n8n，n8n 用 HTTP Request 节点调用 DeepSeek，最终用 Code 节点从原文确定性解析 NPC 的 STR/CON/SIZ/DEX/APP/INT/POW/EDU/LUCK、HP/MP/SAN/DP，模型返回的数字会被原文结果覆盖。未配置 n8n 时保留 DeepSeek 直连回退。
 - 管理员：`bdmin` 已通过迁移与 seed 设为 `ADMIN`；后台路径 `/admin`。
 - 测试基线（2026-09-12）：`npm run typecheck` PASS；`npm test` 181 tests（formula 50 / rules 75 / combat 56）；`apps/web/scripts/verify-*.ts` 共 31 个，且全部注册为 `npm run verify:*`。本轮已验证：`verify:ai-chunking`（离线分块端到端）、`verify:ai-pdf-parse`、`verify:ai-import`（真实 DeepSeek，短素材 + `AI_IMPORT_LONG_TEST=1` 长素材 3 段）、`verify:scene-ops`、`verify:game-state`、`verify:realtime-sync`、`verify:room-ready`、`verify:chase`、`verify:combat` 等 PASS；`npm run build --workspace @touhou/web` PASS；全量未在最终 commit 上一次性重跑，接手后大改前建议重跑。
 
@@ -43,6 +44,12 @@
 - P2-4 用户 / 房间协作：hold。
 - P2-5 部署与运维：hold。用户当前通过本机 terminal 运行 Next(3100) + frpc 内网穿透使用，不需要部署其他服务器。
 - P2-6 质量与性能：除必要回归外 hold。
+
+### 最新一轮关键文件（n8n 团本解析工作流）
+- `n8n/workflow-src/npc-stats-core.js`、`n8n/workflow-src/prepare-requests.node.js`、`n8n/workflow-src/parse-aggregate.template.js`：工作流源码与确定性 NPC 数值解析核心。
+- `n8n/workflows/module-import.json`：构建产物，n8n 容器启动时自动导入并发布。
+- `apps/web/src/server/ai/n8n.ts`、`apps/web/src/server/ai/module-import.ts`：应用侧 n8n 客户端、优先 n8n 的导入入口。
+- `apps/web/scripts/verify-n8n-workflow.ts`、`apps/web/scripts/verify-ai-import.ts`：离线工作流验证与真实导入回归。
 
 ### 最新一轮关键文件（通用法术系统）
 - `packages/rules/src/magic.ts`、`packages/rules/src/schema.ts`：效果指令、目标推断、旧 `damage` 兼容。

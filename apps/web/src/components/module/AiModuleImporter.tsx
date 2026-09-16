@@ -142,7 +142,7 @@ export default function AiModuleImporter(props: Props) {
         </label>
 
         <label className="flex flex-col gap-1.5 lg:col-span-2">
-          <span className="text-xs text-white/50">模型（涉及图片素材时推荐 deepseek-flash）</span>
+          <span className="text-xs text-white/50">模型（n8n 工作流会透传给 DeepSeek；涉及图片素材时推荐 deepseek-flash）</span>
           <select name="model" defaultValue="" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500">
             <option value="">使用后台/环境默认（默认 deepseek-flash，支持 vision）</option>
             <option value="deepseek-flash">deepseek-flash（推荐 · 支持图片视觉）</option>
@@ -151,7 +151,7 @@ export default function AiModuleImporter(props: Props) {
         </label>
 
         <label className="flex flex-col gap-1.5 lg:col-span-2">
-          <span className="text-xs text-white/50">给 DeepSeek 的额外要求（可选）</span>
+          <span className="text-xs text-white/50">给 n8n 工作流的额外要求（可选）</span>
           <textarea
             name="instructions"
             rows={3}
@@ -167,7 +167,7 @@ export default function AiModuleImporter(props: Props) {
           disabled={busy}
           className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
         >
-          {busy ? "DeepSeek 整合中…" : "AI 智能整合团本"}
+          {busy ? "n8n 工作流解析中…" : "n8n 工作流解析团本"}
         </button>
         {busy ? (
           <span className="text-[11px] text-white/35">任务在后台运行，页面每 2-3 秒刷新进度；公网穿透断开或关闭页面也不会中断，生成完成后会出现在「我的团本」。</span>

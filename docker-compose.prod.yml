@@ -1,4 +1,4 @@
-# 阿里云 ECS 单机生产部署：应用 + PostgreSQL 都在 Docker 里。
+# 阿里云 ECS 单机生产部署：应用 + PostgreSQL + n8n 都在 Docker 里。
 # 使用前提：
 #   1. 服务器 /opt/touhou-trpg/.env 写好生产变量（参考 apps/web/.env.production.example）
 #   2. 服务器已 docker login 过 ACR（GitHub Actions 部署时会自动 login）
@@ -24,6 +24,55 @@ services:
     # ports:
     #   - "127.0.0.1:5433:5432"
 
+  n8n:
+    image: ${N8N_IMAGE:-docker.m.daocloud.io/n8nio/n8n:2.39.5}
+    container_name: touhou-trpg-n8n
+    restart: unless-stopped
+    # 只在本机回环暴露 n8n 编辑器；工作流由应用通过 Docker 内网地址访问。
+    ports:
+      - "127.0.0.1:5678:5678"
+    environment:
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      N8N_LISTEN_ADDRESS: 0.0.0.0
+      N8N_EDITOR_BASE_URL: ${N8N_PUBLIC_URL:-http://127.0.0.1:5678}
+      WEBHOOK_URL: ${N8N_PUBLIC_URL:-http://127.0.0.1:5678}
+      N8N_USER_MANAGEMENT_DISABLED: "true"
+      N8N_SECURE_COOKIE: "false"
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      N8N_PAYLOAD_SIZE_MAX: "200"
+      N8N_DIAGNOSTICS_ENABLED: "false"
+      N8N_VERSION_NOTIFICATIONS_ENABLED: "false"
+      N8N_TEMPLATES_ENABLED: "false"
+      N8N_DEFAULT_BINARY_DATA_MODE: filesystem
+      EXECUTIONS_DATA_PRUNE: "true"
+      EXECUTIONS_DATA_MAX_AGE: "168"
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: "none"
+      EXECUTIONS_DATA_SAVE_ON_ERROR: "all"
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
+      EXECUTIONS_TIMEOUT: "7200"
+      EXECUTIONS_TIMEOUT_MAX: "7200"
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?请在 .env 中设置 DEEPSEEK_API_KEY，n8n 工作流需要它调用模型}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./n8n/workflows:/workflows:ro
+    # 每次启动先导入并发布工作流，再启动 n8n。webhook 路径固定为 /webhook/module-parse。
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        n8n import:workflow --input=/workflows/module-import.json || true;
+        n8n publish:workflow --id=touhou-module-import || true;
+        exec n8n
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:5678/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+
   app:
     image: ${APP_IMAGE:?请在 .env 中设置 APP_IMAGE}
     container_name: touhou-trpg-app
@@ -33,6 +82,8 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      n8n:
+        condition: service_started
     env_file:
       - .env
     environment:
@@ -41,6 +92,8 @@ services:
       PORT: "3000"
       UPLOAD_DIR: /data/uploads
       DATABASE_URL: postgresql://${POSTGRES_USER:-touhou}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:-touhou_trpg}?schema=public
+      N8N_MODULE_PARSE_URL: ${N8N_MODULE_PARSE_URL:-http://n8n:5678/webhook/module-parse}
+      N8N_REQUEST_TIMEOUT_MS: ${N8N_REQUEST_TIMEOUT_MS:-1800000}
     ports:
       # 首次切换先直出公网 IP:3000，方便验证；后续挂 Nginx / HTTPS 后
       # 建议改成 "127.0.0.1:3000:3000" 并只在安全组放行 80/443。
@@ -50,3 +103,4 @@ services:
 
 volumes:
   pgdata:
+  n8n_data:

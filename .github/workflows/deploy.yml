@@ -87,19 +87,35 @@ jobs:
       contents: read
       packages: read
     steps:
+      - uses: actions/checkout@v4
+
+      - name: Sync compose and n8n workflow to ECS
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.ECS_HOST }}
+          username: ${{ secrets.ECS_USER }}
+          key: ${{ secrets.ECS_SSH_KEY }}
+          port: ${{ secrets.ECS_PORT || '22' }}
+          source: "docker-compose.prod.yml,n8n/workflows/module-import.json"
+          target: ${{ env.DEPLOY_DIR }}
+          overwrite: true
+          strip_components: 0
+          timeout: 60s
+
       - name: Deploy to ECS over SSH
         uses: appleboy/ssh-action@v1.2.0
         env:
           APP_IMAGE: ${{ needs.build-and-push.outputs.image }}
           GHCR_USER: ${{ github.actor }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
           DEPLOY_DIR: ${{ env.DEPLOY_DIR }}
         with:
           host: ${{ secrets.ECS_HOST }}
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
-          envs: APP_IMAGE,GHCR_USER,GHCR_TOKEN,DEPLOY_DIR
+          envs: APP_IMAGE,GHCR_USER,GHCR_TOKEN,DEEPSEEK_API_KEY,DEPLOY_DIR
           script: |
             set -euo pipefail
             cd "$DEPLOY_DIR"
@@ -112,6 +128,14 @@ jobs:
               sed -i "s|^APP_IMAGE=.*|APP_IMAGE=$APP_IMAGE|" .env
             else
               echo "APP_IMAGE=$APP_IMAGE" >> .env
+            fi
+
+            if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
+              if grep -q '^DEEPSEEK_API_KEY=' .env; then
+                sed -i "s|^DEEPSEEK_API_KEY=.*|DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY|" .env
+              else
+                echo "DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY" >> .env
+              fi
             fi
 
             docker compose -f docker-compose.prod.yml pull app

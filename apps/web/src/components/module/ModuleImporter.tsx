@@ -122,7 +122,7 @@ export default function ModuleImporter(props: Props) {
               : "border-white/15 text-white/50 hover:text-white")
           }
         >
-          DeepSeek 智能整合
+          n8n 工作流解析
         </button>
       </div>
       {mode === "standard" ? <StandardImporter roomId={props.roomId} /> : <AiModuleImporter roomId={props.roomId} />}
