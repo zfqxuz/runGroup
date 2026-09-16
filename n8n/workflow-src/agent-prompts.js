@@ -41,7 +41,11 @@ function imageSchemaHint() {
 }
 
 function npcSchema() {
-  return "{\"aliases\":[],\"name\":\"NPC 名\",\"tier\":\"MINION / STANDARD / ELITE / BOSS\",\"rarity\":\"COMMON\",\"race\":null,\"tags\":[],\"description\":\"...\",\"portrait\":\"\",\"statText\":\"原文属性行 / 数值块逐字复制\",\"attributes\":{\"str\":50,\"con\":50,\"siz\":50,\"dex\":50,\"app\":50,\"int\":50,\"pow\":50,\"edu\":50,\"luck\":50},\"db\":\"1d4\",\"build\":1,\"move\":8,\"skills\":[{\"skill_name\":\"...\",\"value\":40}],\"weapons\":[{\"weapon_name\":\"...\",\"damage\":\"1d6\",\"range\":\"MELEE\"}],\"maxHp\":12,\"maxMp\":10,\"maxSan\":50,\"maxDp\":0}";
+  return "{\"aliases\":[],\"name\":\"NPC 名\",\"tier\":\"MINION / STANDARD / ELITE / BOSS\",\"rarity\":\"COMMON\",\"race\":null,\"tags\":[],\"description\":\"...\",\"portrait\":\"\",\"statText\":\"原文属性行 / 数值块逐字复制\",\"attributes\":{\"str\":50,\"con\":50,\"siz\":50,\"dex\":50,\"app\":50,\"int\":50,\"pow\":50,\"edu\":50,\"luck\":50},\"db\":\"1d4\",\"build\":1,\"move\":8,\"skills\":[{\"skill\":\"FIGHTING_BRAWL\",\"value\":40}],\"weapons\":[{\"name\":\"武器或攻击名\",\"damage\":\"1d3+db\",\"range\":\"MELEE\",\"skillId\":\"FIGHTING_BRAWL\",\"attacks\":1,\"notes\":\"\"}],\"maxHp\":12,\"maxMp\":10,\"maxSan\":50,\"maxDp\":0}";
+}
+
+function magicSchema() {
+  return "{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"OCCULT\",\"mpCost\":\"1\",\"sanCost\":\"0\",\"damage\":\"\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[{\"type\":\"DAMAGE\",\"amount\":\"1d6\"}],\"description\":\"...\"}";
 }
 
 function schemaHintForRoute(route) {
@@ -62,7 +66,7 @@ function schemaHintForRoute(route) {
       "{\"structured\":{",
       "\"npcs\":[" + npcSchema() + "],",
       "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1,\"damage\":\"\",\"range\":\"\",\"skillName\":\"\",\"accuracyMod\":0}],",
-      "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC / OCCULT\",\"mpCost\":\"3\",\"sanCost\":\"1d3\",\"damage\":\"1d6\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}],",
+      "\"magic\":[" + magicSchema() + "],",
       "\"endings\":[{\"aliases\":[],\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
       "\"rewards\":[{\"aliases\":[],\"name\":\"奖励名\",\"description\":\"...\"}]",
       "}}"
@@ -76,7 +80,7 @@ function schemaHintForRoute(route) {
       "\"scenes\":[{\"aliases\":[],\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
       "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
       "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1,\"damage\":\"\",\"range\":\"\",\"skillName\":\"\",\"accuracyMod\":0}],",
-      "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC / OCCULT\",\"mpCost\":\"3\",\"sanCost\":\"1d3\",\"damage\":\"1d6\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}]",
+      "\"magic\":[" + magicSchema() + "]",
       "}}"
     ].join("");
   }
@@ -90,7 +94,7 @@ function schemaHintForRoute(route) {
       "\"npcs\":[" + npcSchema() + "],",
       "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
       "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"ITEM\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1}],",
-      "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC\",\"mpCost\":\"\",\"sanCost\":\"\",\"damage\":\"\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}],",
+      "\"magic\":[" + magicSchema() + "],",
       "\"endings\":[{\"aliases\":[],\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
       "\"rewards\":[{\"aliases\":[],\"name\":\"奖励名\",\"description\":\"...\"}]",
       "}}"
@@ -111,7 +115,7 @@ function schemaHintForRoute(route) {
     "\"npcs\":[" + npcSchema() + "],",
     "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"linkedItemName\":\"\"}],",
     "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"ITEM\",\"description\":\"...\"}],",
-    "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC\",\"description\":\"...\"}],",
+    "\"magic\":[" + magicSchema() + "],",
     "\"endings\":[{\"aliases\":[],\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
     "\"rewards\":[{\"aliases\":[],\"name\":\"奖励名\",\"description\":\"...\"}]",
     "}}"
@@ -148,6 +152,10 @@ function agentCommonRequirements(route, hints, opts) {
   lines.push("- 同一实体的不同称呼 / 化名统一放进 aliases；name / title 用原文最正式的名称，不要按称呼拆成多条。");
   lines.push("- items 只提取可携带 / 可使用的实体道具、书籍、武器、神器；文字材料、线索、档案、笔记本身请放入 clues，不要放入 items。");
   lines.push("- magic 只提取原文明确写出的法术 / 咒文；同一法术的不同译名请合并为一条。");
+
+  lines.push("- NPC 的 skills 必须使用规则包技能 ID，不要输出中文技能名或描述性技能名。常用 ID：FIGHTING_BRAWL(格斗/斗殴/肉搏/爪/牙/撕咬)、DODGE(闪避)、FIREARMS_HANDGUN(手枪)、FIREARMS_RIFLE(步枪/霰弹枪)、FIREARMS_BOW(弓)、THROW(投掷)、CLIMB(攀爬)、STEALTH(潜行)、LISTEN(聆听)、SPOT_HIDDEN(侦查)、SLEIGHT_OF_HAND(妙手)、LIBRARY_USE(图书馆使用)、OCCULT(神秘学)、CTHULHU_MYTHOS(克苏鲁神话)、LAW(法律)、FIRST_AID(急救)、PSYCHOLOGY(心理学)、CHARM(魅惑)、FAST_TALK(话术)、INTIMIDATE(恐吓)、PERSUADE(说服)、CREDIT_RATING(信用评级)。技能条目格式：{\"skill\":\"FIGHTING_BRAWL\",\"value\":40}。");
+  lines.push("- NPC 的 weapons 必须可结算：{\"name\":\"武器或攻击名\",\"damage\":\"1d3+db 或 1d6 等纯骰式\",\"range\":\"MELEE / NEAR / FAR\",\"skillId\":\"FIGHTING_BRAWL\",\"attacks\":1,\"notes\":\"\"}；不要写中文伤害描述，没有武器就省略。");
+  lines.push("- 法术 effects 必须是可执行对象数组，不要写字符串。可用 type：DAMAGE(amount 骰式)、HEAL(amount 骰式)、MP_RESTORE(amount 数字)、MP_DRAIN(amount 数字)、SAN_LOSS(amount 骰式)、SAN_RESTORE(amount 数字)、STATUS(key,stacks)、DOT(amount 骰式,durationTicks)、STUN(durationActions)、CONTROL(durationActions)、CLEANSE(keys)。mpCost 必须是数字或公式字符串；sanCost 必须是骰式或数字；没有直接战斗效果的法术 effects 可以为空，不要编造。");
   lines.push("- 如果原文明确写出结局 / 奖励 / SAN 成长 / 技能成长 / 酬金等，必须放入对应字段，不要遗漏。");
   lines.push("尽量短：sections 只写一句话摘要，structured 每个数组最多 2 条，description 压缩到一句话。");
   if (opts && opts.retry) {

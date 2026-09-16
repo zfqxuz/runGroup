@@ -10,6 +10,7 @@ const rawRoot = $("Webhook 团本解析").first().json;
 const root = (rawRoot && rawRoot.body && typeof rawRoot.body === "object") ? rawRoot.body : rawRoot;
 const sources = Array.isArray(root.sources) ? root.sources : [];
 const inputImages = Array.isArray(root.images) ? root.images : [];
+const moduleSystem = root.system === "TOUHOU" ? "TOUHOU" : "COC7";
 
 const stage1Items = [];
 /*__BRANCH_READS__*/
@@ -120,6 +121,218 @@ function slugify(value) {
   return slug;
 }
 
+const COC7_SKILL_ALIAS_PAIRS = [
+  ["斗殴", "FIGHTING_BRAWL"], ["格斗", "FIGHTING_BRAWL"], ["肉搏", "FIGHTING_BRAWL"], ["肉搏攻击", "FIGHTING_BRAWL"], ["近战", "FIGHTING_BRAWL"], ["战斗", "FIGHTING_BRAWL"], ["拳", "FIGHTING_BRAWL"], ["爪", "FIGHTING_BRAWL"], ["牙", "FIGHTING_BRAWL"], ["撕咬", "FIGHTING_BRAWL"], ["啃咬", "FIGHTING_BRAWL"],
+  ["闪避", "DODGE"], ["闪躲", "DODGE"],
+  ["手枪", "FIREARMS_HANDGUN"], ["射击（手枪）", "FIREARMS_HANDGUN"], ["射击(手枪)", "FIREARMS_HANDGUN"],
+  ["步枪", "FIREARMS_RIFLE"], ["霰弹枪", "FIREARMS_RIFLE"], ["射击（步枪）", "FIREARMS_RIFLE"], ["射击(步枪)", "FIREARMS_RIFLE"], ["射击（步枪/霰弹枪）", "FIREARMS_RIFLE"],
+  ["弓", "FIREARMS_BOW"], ["射击（弓）", "FIREARMS_BOW"], ["射击(弓)", "FIREARMS_BOW"],
+  ["投掷", "THROW"], ["攀爬", "CLIMB"], ["跳跃", "JUMP"], ["游泳", "SWIM"], ["潜行", "STEALTH"], ["聆听", "LISTEN"], ["侦查", "SPOT_HIDDEN"], ["观察", "SPOT_HIDDEN"], ["妙手", "SLEIGHT_OF_HAND"], ["锁匠", "LOCKSMITH"], ["汽车驾驶", "DRIVE_AUTO"], ["驾驶", "DRIVE_AUTO"], ["骑术", "RIDE"], ["急救", "FIRST_AID"],
+  ["会计", "ACCOUNTING"], ["人类学", "ANTHROPOLOGY"], ["估价", "APPRAISE"], ["考古学", "ARCHAEOLOGY"], ["历史", "HISTORY"], ["法律", "LAW"], ["图书馆使用", "LIBRARY_USE"], ["医学", "MEDICINE"], ["博物学", "NATURAL_WORLD"], ["导航", "NAVIGATE"], ["神秘学", "OCCULT"], ["精神分析", "PSYCHOANALYSIS"], ["心理学", "PSYCHOLOGY"], ["科学", "SCIENCE"], ["克苏鲁神话", "CTHULHU_MYTHOS"], ["克苏鲁神话知识", "CTHULHU_MYTHOS"], ["母语", "LANGUAGE_OWN"], ["外语", "LANGUAGE_OTHER"],
+  ["电子学", "ELECTRONICS"], ["计算机使用", "COMPUTER_USE"], ["电气维修", "ELECTRICAL_REPAIR"], ["机械维修", "MECHANICAL_REPAIR"], ["操作重型机械", "OPERATE_HEAVY_MACHINERY"],
+  ["魅惑", "CHARM"], ["话术", "FAST_TALK"], ["恐吓", "INTIMIDATE"], ["说服", "PERSUADE"], ["信用评级", "CREDIT_RATING"], ["乔装", "DISGUISE"], ["追踪", "TRACK"], ["生存", "SURVIVAL"], ["艺术与手艺", "ART_CRAFT"]
+];
+const COC7_SKILL_ALIAS_MAP = new Map();
+for (const pair of COC7_SKILL_ALIAS_PAIRS) {
+  COC7_SKILL_ALIAS_MAP.set(normalizeKey(pair[0]), pair[1]);
+  COC7_SKILL_ALIAS_MAP.set(normalizeKey(pair[1]), pair[1]);
+}
+function canonicalSkillId(value) {
+  const text = asString(value);
+  if (text.length === 0) return undefined;
+  return COC7_SKILL_ALIAS_MAP.get(normalizeKey(text));
+}
+function numberFrom(value, fallback) {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+function attributeDecimal(attributes, key, fallback) {
+  const record = asRecord(attributes);
+  const aliases = {
+    dex: ["dex", "DEX", "敏捷"],
+    str: ["str", "STR", "力量"],
+    con: ["con", "CON", "体质"],
+    siz: ["siz", "SIZ", "体型"],
+    app: ["app", "APP", "外貌", "魅力"],
+    int: ["int", "INT", "智力"],
+    pow: ["pow", "POW", "意志", "意志力"],
+    edu: ["edu", "EDU", "教育"],
+    luck: ["luck", "LUCK", "幸运"]
+  };
+  for (const alias of aliases[key] || [key]) {
+    const value = record[alias];
+    if (value !== undefined && value !== null && value !== "") return numberFrom(value, fallback);
+  }
+  return fallback;
+}
+function diceExpressionOf(value) {
+  const match = String(value || "").match(/(\d+)\s*[dD]\s*(\d+)(?:\s*([+-])\s*(\d+))?/);
+  if (match === null) return undefined;
+  return match[1] + "d" + match[2] + (match[3] ? match[3] + match[4] : "");
+}
+function normalizeWeaponRange(value) {
+  const text = asString(value).toUpperCase();
+  if (text.length === 0) return "";
+  if (text.includes("MELEE") || /近战|格斗|白刃|刀|棍|斧|矛|拳/.test(text)) return "MELEE";
+  if (text.includes("NEAR") || /近距离|手枪|霰弹|短枪|短/.test(text)) return "NEAR";
+  if (text.includes("FAR") || /远距离|步枪|狙击|远程|远/.test(text)) return "FAR";
+  return text.slice(0, 20);
+}
+function inferWeaponSkillId(name, range) {
+  const text = asString(name);
+  if (/斧/.test(text)) return "FIGHTING_AXE";
+  if (/刀|匕首|棍|爪|牙|拳|撕咬|踢|撞|矛|剑|近战/.test(text)) return "FIGHTING_BRAWL";
+  if (range === "NEAR") return "FIREARMS_HANDGUN";
+  if (range === "FAR") return "FIREARMS_RIFLE";
+  return "FIGHTING_BRAWL";
+}
+function normalizeNpcSkills(value, attributes) {
+  const dex = attributeDecimal(attributes, "dex", 50);
+  const output = new Map();
+  const add = (skillId, rawValue) => {
+    if (skillId === undefined) return;
+    const value = Math.max(0, Math.floor(numberFrom(rawValue, 0)));
+    if (value <= 0) return;
+    output.set(skillId, Math.max(output.get(skillId) ?? 0, value));
+  };
+  add("FIGHTING_BRAWL", 25);
+  add("DODGE", Math.floor(dex / 2));
+  add("SPOT_HIDDEN", 25);
+  add("LISTEN", 20);
+  add("STEALTH", 20);
+  add("LIBRARY_USE", 20);
+  add("FIRST_AID", 30);
+  add("PSYCHOLOGY", 10);
+  add("OCCULT", 5);
+  let rows = [];
+  if (Array.isArray(value)) rows = value;
+  else if (value !== null && typeof value === "object") rows = Object.entries(value).map(([key, item]) => ({ skill: key, value: item }));
+  for (const raw of rows) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const name = asString(raw.skill ?? raw.skillId ?? raw.skill_name ?? raw.skillName ?? raw.name ?? raw.title);
+    const skillId = canonicalSkillId(name);
+    add(skillId, raw.value ?? raw.level ?? raw.skill_value ?? raw.score);
+  }
+  return [...output.entries()].map(([skill, value]) => ({ skill, value }));
+}
+function normalizeNpcWeapons(value) {
+  const rows = Array.isArray(value) ? value : (value !== null && typeof value === "object" && !Array.isArray(value) ? Object.values(value) : []);
+  const output = [];
+  for (const raw of rows) {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const name = asString(raw.name ?? raw.weapon_name ?? raw.weaponName ?? raw.title);
+    if (name.length === 0) continue;
+    const range = normalizeWeaponRange(raw.range ?? raw.type ?? raw.attackType);
+    const skillId = canonicalSkillId(raw.skillId ?? raw.skill_id ?? raw.skill ?? raw.skillName) ?? inferWeaponSkillId(name, range);
+    output.push({
+      name: name.slice(0, 120),
+      damage: asString(raw.damage ?? raw.dmg).slice(0, 80),
+      range,
+      skillId,
+      attacks: raw.attacks ?? raw.attackCount ?? raw.count ?? null,
+      notes: asString(raw.notes ?? raw.note ?? raw.description).slice(0, 300)
+    });
+  }
+  return output.slice(0, 30);
+}
+function normalizeNpcForRules(entry) {
+  entry.skills = normalizeNpcSkills(entry.skills ?? entry.skill, entry.attributes);
+  entry.weapons = normalizeNpcWeapons(entry.weapons ?? entry.attacks);
+}
+function normalizeMagicExprNumber(value, fallback) {
+  const text = asString(value);
+  const match = text.match(/\d+/);
+  return match === null ? fallback : match[0];
+}
+function normalizeMagicDice(value, fallback) {
+  const dice = diceExpressionOf(value);
+  if (dice !== undefined) return dice;
+  const number = asString(value).match(/^\d+$/);
+  return number === null ? fallback : number[0];
+}
+function normalizeMagicTarget(value) {
+  const text = asString(value).toUpperCase();
+  if (text === "SELF" || text === "ALL") return text;
+  return "ONE";
+}
+function normalizeMagicTargeting(value, entry) {
+  const text = asString(value).toUpperCase();
+  if (text === "SELF" || text === "ALLY" || text === "ENEMY" || text === "ANY") return text;
+  const effects = Array.isArray(entry.effects) ? entry.effects : [];
+  const types = effects.map((effect) => effect && typeof effect === "object" ? asString(effect.type) : "");
+  if (types.includes("HEAL") || types.includes("MP_RESTORE") || types.includes("SAN_RESTORE") || types.includes("CLEANSE")) return "ALLY";
+  if (types.some((type) => ["DAMAGE", "DOT", "STUN", "CONTROL", "MP_DRAIN", "SAN_LOSS"].includes(type))) return "ENEMY";
+  if (normalizeMagicTarget(entry.target) === "SELF") return "SELF";
+  return "ENEMY";
+}
+function effectFromDescription(value) {
+  const text = asString(value);
+  if (text.length === 0) return null;
+  const dice = diceExpressionOf(text);
+  if (/(晕眩|眩晕|昏迷|麻痹|无法行动|跳过行动)/.test(text)) return { type: "STUN", durationActions: "1" };
+  if (/(控制|支配|服从|心智|操纵)/.test(text)) return { type: "CONTROL", durationActions: "1" };
+  if (/(持续伤害|每回合|每轮|DOT)/i.test(text)) return { type: "DOT", amount: dice ?? "1d3", durationTicks: "3" };
+  if (/(理智|SAN)/i.test(text) && /(损失|失去|扣除|减少)/.test(text)) return { type: "SAN_LOSS", amount: dice ?? "1d4" };
+  if (/(恢复|治疗|回复)/.test(text) && /(HP|生命|体力)/i.test(text)) return { type: "HEAL", amount: dice ?? "1d3" };
+  if (/(MP|魔力|魔法值)/i.test(text) && /(恢复|回复)/.test(text)) return { type: "MP_RESTORE", amount: "1" };
+  if (/(MP|魔力|魔法值)/i.test(text) && /(吸取|抽取|吸收)/.test(text)) return { type: "MP_DRAIN", amount: "1" };
+  if (/(伤害|造成|扣除|减少|HP|生命)/.test(text)) return { type: "DAMAGE", amount: dice ?? "1d6" };
+  return null;
+}
+function normalizeMagicEffects(value, entry) {
+  const output = [];
+  const push = (effect) => {
+    if (effect !== null && effect !== undefined) output.push(effect);
+  };
+  if (typeof value === "string") {
+    push(effectFromDescription(value));
+  } else if (Array.isArray(value)) {
+    for (const raw of value) {
+      if (typeof raw === "string") push(effectFromDescription(raw));
+      else if (raw !== null && typeof raw === "object" && Array.isArray(raw) === false) {
+        const type = asString(raw.type).toUpperCase();
+        if (type === "DAMAGE" || type === "HEAL" || type === "DOT" || type === "SAN_LOSS") {
+          push({ type, amount: normalizeMagicDice(raw.amount, "1d6"), ...(type === "DOT" ? { durationTicks: normalizeMagicExprNumber(raw.durationTicks, "3") } : {}) });
+        } else if (type === "MP_RESTORE" || type === "MP_DRAIN" || type === "SAN_RESTORE") {
+          push({ type, amount: normalizeMagicExprNumber(raw.amount, "1") });
+        } else if (type === "STATUS") {
+          push({ type, key: asString(raw.key) || "STATUS", stacks: normalizeMagicExprNumber(raw.stacks, "1") });
+        } else if (type === "STUN" || type === "CONTROL") {
+          push({ type, durationActions: normalizeMagicExprNumber(raw.durationActions, "1") });
+        } else if (type === "CLEANSE") {
+          push({ type, keys: Array.isArray(raw.keys) ? raw.keys.filter((key) => typeof key === "string") : [] });
+        }
+      }
+    }
+  }
+  if (output.length === 0) {
+    const fromDamage = diceExpressionOf(entry.damage);
+    if (fromDamage !== undefined) output.push({ type: "DAMAGE", amount: fromDamage });
+  }
+  if (output.length === 0) {
+    const fromDescription = effectFromDescription(entry.description);
+    if (fromDescription !== null) output.push(fromDescription);
+  }
+  const seen = new Set();
+  return output.filter((effect) => {
+    const key = JSON.stringify(effect);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+function normalizeMagicForRules(entry, system) {
+  const defaultSkill = system === "TOUHOU" ? "MAGIC" : "OCCULT";
+  const skill = canonicalSkillId(entry.skill);
+  entry.skill = system === "TOUHOU" ? (skill ?? defaultSkill) : (skill === "OCCULT" || skill === "CTHULHU_MYTHOS" ? skill : defaultSkill);
+  entry.mpCost = normalizeMagicExprNumber(entry.mpCost, "0");
+  entry.sanCost = normalizeMagicDice(entry.sanCost, "0");
+  entry.damage = normalizeMagicDice(entry.damage, "");
+  entry.target = normalizeMagicTarget(entry.target);
+  entry.effects = normalizeMagicEffects(entry.effects ?? entry.effect, entry);
+  entry.targeting = normalizeMagicTargeting(entry.targeting, entry);
+}
+
 function entryName(kind, entry) {
   if (kind === "clue") return asString(entry.title) || asString(entry.name);
   return asString(entry.name) || asString(entry.title);
@@ -223,7 +436,17 @@ function resolveEntityId(kind, name, sourceKey) {
   return id;
 }
 
-function stabilizeExtractionIds(extraction, sourceKey) {
+function normalizeItemForRules(entry) {
+  const rawType = asString(entry.itemType ?? entry.kind ?? entry.type).toUpperCase();
+  const damage = asString(entry.damage);
+  const range = normalizeWeaponRange(entry.range);
+  if (rawType !== "WEAPON" && damage.length === 0 && range.length === 0) return;
+  entry.damage = damage;
+  entry.range = range;
+  entry.skillId = canonicalSkillId(entry.skillId ?? entry.skill ?? entry.skillName) ?? inferWeaponSkillId(asString(entry.name ?? entry.title), range);
+}
+
+function stabilizeExtractionIds(extraction, sourceKey, system) {
   const structured = extraction && extraction.structured ? extraction.structured : {};
   for (const [kind, entries] of Object.entries(structured)) {
     if (!Array.isArray(entries)) continue;
@@ -231,6 +454,9 @@ function stabilizeExtractionIds(extraction, sourceKey) {
       const entry = entries[index];
       if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
       entry.id = canonicalEntityId(kind, entry, sourceKey, index);
+      if (kind === "npc") normalizeNpcForRules(entry);
+      if (kind === "magic") normalizeMagicForRules(entry, system);
+      if (kind === "item") normalizeItemForRules(entry);
       if (kind === "encounter") {
         if (asString(entry.sceneName).length > 0) entry.sceneId = resolveEntityId("scene", entry.sceneName, sourceKey);
         if (asString(entry.chapterName).length > 0) entry.chapterId = resolveEntityId("chapter", entry.chapterName, sourceKey);
@@ -249,7 +475,7 @@ function stabilizeExtractionIds(extraction, sourceKey) {
 function addTextParsed(item, parsed) {
   const sourceKey = item.chunkGroupId || item.originId || item.label || "unknown";
   const extraction = normalizeChunkExtraction(parsed, item.label || "未命名分块");
-  stabilizeExtractionIds(extraction, sourceKey);
+  stabilizeExtractionIds(extraction, sourceKey, moduleSystem);
   const hasContent =
     Object.keys(extraction.meta).length > 0 ||
     Object.keys(extraction.sections).length > 0 ||
