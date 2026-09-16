@@ -24,6 +24,7 @@ const warnings: string[] = [];
 const skills = normalizedSkills(
   [
     { skill_name: "斗殴", value: 60 },
+    { skill_name: "战斗", value: 50 },
     { skill_name: "闪避", value: 40 },
     { skill_name: "潜行", value: 45 }
   ],
@@ -32,6 +33,7 @@ const skills = normalizedSkills(
   "测试 NPC"
 );
 check(skills.FIGHTING_BRAWL === 60, "数组格式技能映射到 FIGHTING_BRAWL");
+check(skills.FIGHTING_BRAWL === 60, "战斗 / 斗殴别名映射到 FIGHTING_BRAWL");
 check(skills.DODGE === 40, "数组格式技能映射到 DODGE");
 check(skills.STEALTH === 45, "数组格式技能映射到 STEALTH");
 

@@ -131,6 +131,9 @@ function skillIdsOf(compiled: SkillPackLike): Map<string, string> {
   const commonAliases: Readonly<Record<string, string>> = {
     "斗殴": "FIGHTING_BRAWL",
     "格斗": "FIGHTING_BRAWL",
+    "战斗": "FIGHTING_BRAWL",
+    "肉搏": "FIGHTING_BRAWL",
+    "近战": "FIGHTING_BRAWL",
     "闪避": "DODGE",
     "潜行": "STEALTH",
     "侦查": "SPOT_HIDDEN",
@@ -179,7 +182,7 @@ export function normalizedSkills(
       continue;
     }
     const number = numberIn(rawValue, 0, 0, 999);
-    if (number > 0) out[skillId] = number;
+    if (number > 0) out[skillId] = Math.max(out[skillId] ?? 0, number);
   }
   return out;
 }
