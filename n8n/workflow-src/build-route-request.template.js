@@ -17,7 +17,7 @@ for (let index = 0; index < items.length; index += 1) {
     : buildAgentMessages(ROUTE_KEY, input.chunk || {}, hints, {});
   const body = {
     model: isImage ? (ctx.visionModel || ctx.model || "deepseek-flash") : (ctx.model || "deepseek-flash"),
-    temperature: isImage ? 0.1 : 0.15,
+    temperature: 0.0,
     max_tokens: ctx.maxTokens || 8192,
     stream: false,
     response_format: { type: "json_object" },

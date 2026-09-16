@@ -19,7 +19,8 @@ const STANDARD_SECTIONS = [
 function routeLabel(route) {
   const labels = {
     narrative: "剧情与场景",
-    npc: "NPC 数值",
+    npc: "NPC 与规则道具",
+    notes: "设定笔记",
     handout: "线索与手书",
     setting: "设定与规则",
     image: "图片与地图",
@@ -40,7 +41,7 @@ function imageSchemaHint() {
 }
 
 function npcSchema() {
-  return "{\"id\":\"不要输出 id\",\"name\":\"NPC 名\",\"tier\":\"MINION / STANDARD / ELITE / BOSS\",\"rarity\":\"COMMON\",\"race\":null,\"tags\":[],\"description\":\"...\",\"portrait\":\"\",\"statText\":\"原文属性行 / 数值块逐字复制\",\"attributes\":{\"str\":50,\"con\":50,\"siz\":50,\"dex\":50,\"app\":50,\"int\":50,\"pow\":50,\"edu\":50,\"luck\":50},\"db\":\"1d4\",\"build\":1,\"move\":8,\"skills\":[{\"skill_name\":\"...\",\"value\":40}],\"weapons\":[{\"weapon_name\":\"...\",\"damage\":\"1d6\",\"range\":\"MELEE\"}],\"maxHp\":12,\"maxMp\":10,\"maxSan\":50,\"maxDp\":0}";
+  return "{\"aliases\":[],\"name\":\"NPC 名\",\"tier\":\"MINION / STANDARD / ELITE / BOSS\",\"rarity\":\"COMMON\",\"race\":null,\"tags\":[],\"description\":\"...\",\"portrait\":\"\",\"statText\":\"原文属性行 / 数值块逐字复制\",\"attributes\":{\"str\":50,\"con\":50,\"siz\":50,\"dex\":50,\"app\":50,\"int\":50,\"pow\":50,\"edu\":50,\"luck\":50},\"db\":\"1d4\",\"build\":1,\"move\":8,\"skills\":[{\"skill_name\":\"...\",\"value\":40}],\"weapons\":[{\"weapon_name\":\"...\",\"damage\":\"1d6\",\"range\":\"MELEE\"}],\"maxHp\":12,\"maxMp\":10,\"maxSan\":50,\"maxDp\":0}";
 }
 
 function schemaHintForRoute(route) {
@@ -49,25 +50,33 @@ function schemaHintForRoute(route) {
       "{\"meta\":{\"title\":\"...\",\"summary\":\"...\",\"background\":\"...\",\"occupationRecommendation\":\"...\"},",
       "\"sections\":" + sectionSchema() + ",",
       "\"structured\":{",
-      "\"chapters\":[{\"name\":\"章节名\",\"summary\":\"...\"}],",
-      "\"scenes\":[{\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
-      "\"clues\":[{\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
-      "\"encounters\":[{\"name\":\"遭遇名\",\"sceneName\":\"场景名或留空\",\"chapterName\":\"章节名或留空\",\"trigger\":\"...\",\"setup\":{}}]",
+      "\"chapters\":[{\"aliases\":[],\"name\":\"章节名\",\"summary\":\"...\"}],",
+      "\"scenes\":[{\"aliases\":[],\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
+      "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
+      "\"encounters\":[{\"aliases\":[],\"name\":\"遭遇名\",\"sceneName\":\"场景名或留空\",\"chapterName\":\"章节名或留空\",\"trigger\":\"...\",\"setup\":{}}]",
       "}}"
     ].join("");
   }
   if (route === "npc") {
-    return "{\"structured\":{\"npcs\":[" + npcSchema() + "]}}";
+    return [
+      "{\"structured\":{",
+      "\"npcs\":[" + npcSchema() + "],",
+      "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1,\"damage\":\"\",\"range\":\"\",\"skillName\":\"\",\"accuracyMod\":0}],",
+      "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC / OCCULT\",\"mpCost\":\"3\",\"sanCost\":\"1d3\",\"damage\":\"1d6\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}],",
+      "\"endings\":[{\"aliases\":[],\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
+      "\"rewards\":[{\"aliases\":[],\"name\":\"奖励名\",\"description\":\"...\"}]",
+      "}}"
+    ].join("");
   }
   if (route === "handout") {
     return [
       "{\"meta\":{\"title\":\"...\",\"summary\":\"...\",\"background\":\"...\",\"occupationRecommendation\":\"\"},",
       "\"sections\":" + sectionSchema() + ",",
       "\"structured\":{",
-      "\"scenes\":[{\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
-      "\"clues\":[{\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
-      "\"items\":[{\"name\":\"道具名\",\"itemType\":\"WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1,\"damage\":\"\",\"range\":\"\",\"skillName\":\"\",\"accuracyMod\":0}],",
-      "\"magic\":[{\"name\":\"法术名\",\"skill\":\"MAGIC / OCCULT\",\"mpCost\":\"3\",\"sanCost\":\"1d3\",\"damage\":\"1d6\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}]",
+      "\"scenes\":[{\"aliases\":[],\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
+      "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
+      "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"WEAPON / ITEM / TOME / ARTIFACT / EVIDENCE\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1,\"damage\":\"\",\"range\":\"\",\"skillName\":\"\",\"accuracyMod\":0}],",
+      "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC / OCCULT\",\"mpCost\":\"3\",\"sanCost\":\"1d3\",\"damage\":\"1d6\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}]",
       "}}"
     ].join("");
   }
@@ -76,16 +85,19 @@ function schemaHintForRoute(route) {
       "{\"meta\":{\"title\":\"...\",\"summary\":\"...\",\"background\":\"...\",\"occupationRecommendation\":\"\"},",
       "\"sections\":" + sectionSchema() + ",",
       "\"structured\":{",
-      "\"chapters\":[{\"name\":\"章节名\",\"summary\":\"...\"}],",
-      "\"scenes\":[{\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
+      "\"chapters\":[{\"aliases\":[],\"name\":\"章节名\",\"summary\":\"...\"}],",
+      "\"scenes\":[{\"aliases\":[],\"name\":\"场景名\",\"description\":\"...\",\"width\":1600,\"height\":1000,\"gridType\":\"SQUARE\",\"bgColor\":\"#1a1a2e\",\"background\":\"\"}],",
       "\"npcs\":[" + npcSchema() + "],",
-      "\"clues\":[{\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
-      "\"items\":[{\"name\":\"道具名\",\"itemType\":\"ITEM\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1}],",
-      "\"magic\":[{\"name\":\"法术名\",\"skill\":\"MAGIC\",\"mpCost\":\"\",\"sanCost\":\"\",\"damage\":\"\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}],",
-      "\"endings\":[{\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
-      "\"rewards\":[{\"name\":\"奖励名\",\"description\":\"...\"}]",
+      "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"relatedNpc\":\"\",\"relatedPc\":\"\",\"linkedItemName\":\"\"}],",
+      "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"ITEM\",\"description\":\"...\",\"rarity\":\"COMMON\",\"image\":\"\",\"quantity\":1}],",
+      "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC\",\"mpCost\":\"\",\"sanCost\":\"\",\"damage\":\"\",\"target\":\"ONE\",\"targeting\":\"ENEMY\",\"effects\":[],\"description\":\"...\"}],",
+      "\"endings\":[{\"aliases\":[],\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
+      "\"rewards\":[{\"aliases\":[],\"name\":\"奖励名\",\"description\":\"...\"}]",
       "}}"
     ].join("");
+  }
+  if (route === "notes") {
+    return "{\"meta\":{\"title\":\"...\",\"summary\":\"...\",\"background\":\"...\",\"occupationRecommendation\":\"...\"},\"sections\":" + sectionSchema() + "}";
   }
   if (route === "image") return imageSchemaHint();
   // general
@@ -93,15 +105,15 @@ function schemaHintForRoute(route) {
     "{\"meta\":{\"title\":\"...\",\"summary\":\"...\",\"background\":\"...\",\"occupationRecommendation\":\"\"},",
     "\"sections\":" + sectionSchema() + ",",
     "\"structured\":{",
-    "\"chapters\":[{\"name\":\"章节名\",\"summary\":\"...\"}],",
-    "\"scenes\":[{\"name\":\"场景名\",\"description\":\"...\"}],",
-    "\"encounters\":[{\"name\":\"遭遇名\",\"sceneName\":\"\",\"chapterName\":\"\",\"trigger\":\"...\",\"setup\":{}}],",
+    "\"chapters\":[{\"aliases\":[],\"name\":\"章节名\",\"summary\":\"...\"}],",
+    "\"scenes\":[{\"aliases\":[],\"name\":\"场景名\",\"description\":\"...\"}],",
+    "\"encounters\":[{\"aliases\":[],\"name\":\"遭遇名\",\"sceneName\":\"\",\"chapterName\":\"\",\"trigger\":\"...\",\"setup\":{}}],",
     "\"npcs\":[" + npcSchema() + "],",
-    "\"clues\":[{\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"linkedItemName\":\"\"}],",
-    "\"items\":[{\"name\":\"道具名\",\"itemType\":\"ITEM\",\"description\":\"...\"}],",
-    "\"magic\":[{\"name\":\"法术名\",\"skill\":\"MAGIC\",\"description\":\"...\"}],",
-    "\"endings\":[{\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
-    "\"rewards\":[{\"name\":\"奖励名\",\"description\":\"...\"}]",
+    "\"clues\":[{\"aliases\":[],\"title\":\"线索名\",\"content\":\"...\",\"discoveryMethod\":\"...\",\"linkedItemName\":\"\"}],",
+    "\"items\":[{\"aliases\":[],\"name\":\"道具名\",\"itemType\":\"ITEM\",\"description\":\"...\"}],",
+    "\"magic\":[{\"aliases\":[],\"name\":\"法术名\",\"skill\":\"MAGIC\",\"description\":\"...\"}],",
+    "\"endings\":[{\"aliases\":[],\"name\":\"结局名\",\"condition\":\"...\",\"description\":\"...\"}],",
+    "\"rewards\":[{\"aliases\":[],\"name\":\"奖励名\",\"description\":\"...\"}]",
     "}}"
   ].join("");
 }
@@ -127,7 +139,17 @@ function agentCommonRequirements(route, hints, opts) {
   lines.push("标题、编号、专有名词、数字、判定值必须与原文完全一致；NPC 数值必须逐字保留在 statText。");
   lines.push("禁止输出 id 字段；id 由系统根据名称自动生成。sceneId / chapterId / linkedItemId 等引用字段请填对应名称，不要填机器 id。");
   lines.push("只输出一个合法 JSON 对象，不要 markdown 代码围栏，不要解释；JSON 必须完整闭合。");
-  lines.push("尽量短：sections 只写一句话摘要，structured 每个数组最多 8 条，description 压缩到一句话。");
+  lines.push("严格去重与收敛：");
+  lines.push("- 只有原文出现明确的『场景 N: / 第 N 章: / 地图节点』或独立地点标题时才输出 scene；房间、走廊、楼层、事件、NPC 都不算新场景，同一分块最多 1 个新场景。");
+  lines.push("- 每个分块独立处理：如果本段出现上述明确的场景 / 地点标题，structured.scenes 必须至少输出 1 条，不要因为可能与其他分块重复而省略；重复由系统统一去重。");
+  lines.push("- 如果原文只提到某个文字材料的标题、页码、页眉，或只指向一张图片而没有正文，不要生成空的 / 占位的 clue，交给图片分析分支处理。");
+  lines.push("- 如果原文出现 # / ## 级章节标题或明确章节名，必须放入 structured.chapters；chapter 与 scene 可以同时存在，不要因为输出了 scene 就省略 chapters。");
+  lines.push("- clues 只提取会影响调查推进、提供新信息或可交给玩家的内容；每个分块最多 2 条；普通背景、氛围描述、NPC 生平请归入 sections，不要单独列为 clue。");
+  lines.push("- 同一实体的不同称呼 / 化名统一放进 aliases；name / title 用原文最正式的名称，不要按称呼拆成多条。");
+  lines.push("- items 只提取可携带 / 可使用的实体道具、书籍、武器、神器；文字材料、线索、档案、笔记本身请放入 clues，不要放入 items。");
+  lines.push("- magic 只提取原文明确写出的法术 / 咒文；同一法术的不同译名请合并为一条。");
+  lines.push("- 如果原文明确写出结局 / 奖励 / SAN 成长 / 技能成长 / 酬金等，必须放入对应字段，不要遗漏。");
+  lines.push("尽量短：sections 只写一句话摘要，structured 每个数组最多 2 条，description 压缩到一句话。");
   if (opts && opts.retry) {
     lines.push("这是截断/失败后的重试，请进一步压缩：只保留最重要的 1-3 条记录，总长度控制在 800 个中文字符以内，并务必闭合 JSON。");
   }

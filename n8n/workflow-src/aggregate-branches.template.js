@@ -125,36 +125,122 @@ function entryName(kind, entry) {
   return asString(entry.name) || asString(entry.title);
 }
 
+function normalizeKey(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\s_\-—–·•.。:：,，、;；!！?？'"“”‘’（）()【】\[\]《》<>\/\\]+/g, "")
+    .slice(0, 120);
+}
+
+function entryAliases(kind, entry) {
+  const names = [];
+  const direct = entryName(kind, entry);
+  if (direct) names.push(direct);
+  if (Array.isArray(entry.aliases)) {
+    for (const alias of entry.aliases) if (typeof alias === "string") names.push(alias);
+  }
+  for (const candidate of [entry.name, entry.title]) {
+    if (typeof candidate === "string") names.push(candidate);
+  }
+  return [...new Set(names.map((item) => item.trim()).filter((item) => item.length > 0))];
+}
+
+const entityNameToId = new Map();
+const entityNameEntries = new Map();
+const usedEntityIds = new Set();
+
+function findMappedEntityId(kind, names) {
+  for (const name of names) {
+    const key = kind + "::" + normalizeKey(name);
+    const found = entityNameToId.get(key);
+    if (found !== undefined) return found;
+  }
+  return undefined;
+}
+
+function findSubstringEntityId(kind, names) {
+  if (kind !== "npc" && kind !== "magic" && kind !== "item" && kind !== "scene" && kind !== "chapter") return undefined;
+  const entries = entityNameEntries.get(kind) || [];
+  const targets = names.map(normalizeKey).filter((item) => item.length >= 2);
+  for (const target of targets) {
+    for (const entry of entries) {
+      const normalized = entry.normalized;
+      if (normalized.length < 2) continue;
+      if (normalized === target) return entry.id;
+      const bothEndWithDigits = /\d$/.test(normalized) && /\d$/.test(target);
+      if (bothEndWithDigits) continue;
+      if (normalized.includes(target) || target.includes(normalized)) return entry.id;
+    }
+  }
+  return undefined;
+}
+
+function canonicalEntityId(kind, entry, sourceKey, index) {
+  const names = entryAliases(kind, entry);
+  let existing = findMappedEntityId(kind, names);
+  if (existing === undefined) existing = findSubstringEntityId(kind, names);
+  if (existing !== undefined) {
+    for (const name of names) {
+      const normalized = normalizeKey(name);
+      entityNameToId.set(kind + "::" + normalized, existing);
+      const list = entityNameEntries.get(kind) || [];
+      if (list.some((item) => item.normalized === normalized) === false) list.push({ normalized, id: existing });
+      entityNameEntries.set(kind, list);
+    }
+    return existing;
+  }
+  const base = names.slice().sort((left, right) => right.length - left.length)[0] || "";
+  const slug = slugify(base) || hashString(String(sourceKey || "") + ":" + kind + ":" + String(index));
+  let id = kind + "-" + slug;
+  if (usedEntityIds.has(id)) {
+    id = id + "-" + hashString(String(sourceKey || "") + ":" + kind + ":" + String(index) + ":" + String(names.join("|")));
+  }
+  usedEntityIds.add(id);
+  for (const name of names) {
+    const normalized = normalizeKey(name);
+    entityNameToId.set(kind + "::" + normalized, id);
+    const list = entityNameEntries.get(kind) || [];
+    if (list.some((item) => item.normalized === normalized) === false) list.push({ normalized, id });
+    entityNameEntries.set(kind, list);
+  }
+  return id;
+}
+
+function resolveEntityId(kind, name, sourceKey) {
+  const clean = asString(name);
+  if (clean.length === 0) return undefined;
+  const existing = findMappedEntityId(kind, [clean]);
+  if (existing !== undefined) return existing;
+  const slug = slugify(clean) || hashString(String(sourceKey || "") + ":" + kind + ":" + clean);
+  let id = kind + "-" + slug;
+  if (usedEntityIds.has(id)) id = id + "-" + hashString(String(sourceKey || "") + ":" + clean);
+  usedEntityIds.add(id);
+  const normalized = normalizeKey(clean);
+  entityNameToId.set(kind + "::" + normalized, id);
+  const list = entityNameEntries.get(kind) || [];
+  if (list.some((item) => item.normalized === normalized) === false) list.push({ normalized, id });
+  entityNameEntries.set(kind, list);
+  return id;
+}
+
 function stabilizeExtractionIds(extraction, sourceKey) {
-  const nameFields = {
-    chapter: "name",
-    scene: "name",
-    encounter: "name",
-    npc: "name",
-    clue: "title",
-    item: "name",
-    ending: "name",
-    reward: "name",
-    magic: "name"
-  };
   const structured = extraction && extraction.structured ? extraction.structured : {};
   for (const [kind, entries] of Object.entries(structured)) {
     if (!Array.isArray(entries)) continue;
-    const field = nameFields[kind] || "name";
     for (let index = 0; index < entries.length; index += 1) {
       const entry = entries[index];
       if (entry === null || typeof entry !== "object" || Array.isArray(entry)) continue;
-      const name = asString(entry[field]) || asString(entry.name) || asString(entry.title);
-      const slug = slugify(name) || hashString(String(sourceKey || "") + ":" + kind + ":" + String(index));
-      entry.id = kind + "-" + slug;
+      entry.id = canonicalEntityId(kind, entry, sourceKey, index);
       if (kind === "encounter") {
-        if (asString(entry.sceneName).length > 0) entry.sceneId = "scene-" + slugify(entry.sceneName);
-        if (asString(entry.chapterName).length > 0) entry.chapterId = "chapter-" + slugify(entry.chapterName);
+        if (asString(entry.sceneName).length > 0) entry.sceneId = resolveEntityId("scene", entry.sceneName, sourceKey);
+        if (asString(entry.chapterName).length > 0) entry.chapterId = resolveEntityId("chapter", entry.chapterName, sourceKey);
       }
       if (kind === "clue") {
-        const linkedName = asString(entry.linkedItemName);
-        if (linkedName.length > 0) entry.linkedItemId = "item-" + slugify(linkedName);
-        else if (asString(entry.linkedItemId).length > 0) entry.linkedItemId = "item-" + slugify(entry.linkedItemId);
+        const linkedName = asString(entry.linkedItemName) || asString(entry.linkedItemId);
+        if (linkedName.length > 0 && linkedName.startsWith("item-") === false) {
+          const linkedId = resolveEntityId("item", linkedName, sourceKey);
+          if (linkedId !== undefined) entry.linkedItemId = linkedId;
+        }
       }
     }
   }
@@ -260,8 +346,7 @@ for (const item of stage1Items) {
   if (item && item.kind === "chunk" && item.chunkGroupId) chunkGroups.add(item.chunkGroupId);
 }
 const realStage2Requests = pendingRequests.filter((request) => request && request.stage2Kind !== "noop");
-let initialCalls = 0;
-/*__INITIAL_CALL_COUNTS__*/
+const initialCallCount = new Set(stage1Items.map((item) => item && item.originId).filter((item) => item !== undefined && item !== null && item !== "")).size;
 
 return [{
   json: {
@@ -271,7 +356,7 @@ return [{
     npcStats,
     warnings,
     stats: {
-      aiCalls: initialCalls + realStage2Requests.length,
+      aiCalls: initialCallCount + realStage2Requests.length,
       attempts: realStage2Requests.length > 0 ? 2 : 1,
       chunks: chunkGroups.size,
       chunksCompleted: completedChunkGroups.size,

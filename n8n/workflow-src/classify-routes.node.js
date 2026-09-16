@@ -44,7 +44,10 @@ function contentScores(text) {
   const itemMagicHits = (value.match(/(道具|物品|法术|魔法|咒文|魔导书|仪式|武器|装备|宝物|神器)/g) || []).length;
   const settingHits = (value.match(/(设定|规则|附录|背景|历史|地理|组织|参考|说明|时间线|年表)/g) || []).length;
   const sceneHeadings = (value.match(/^(#{1,6}\s*)?(场景|第\s*[一二三四五六七八九十百0-9]+\s*[幕章节]|chapter|act\b)/gim) || []).length;
-  return { statHits, narrativeHits, clueHits, itemMagicHits, settingHits, sceneHeadings };
+  const commentaryHits = (value.match(/(相比|为什么不|能否|能不能|是否|建议|如果|问题|新手|KP|玩家|此模组|本模组|改进|调整|设计)/gi) || []).length;
+  const endingHits = (value.match(/(结局|结尾|收尾|最终|胜利|失败|存活|死亡|逃出|解决)/g) || []).length;
+  const rewardHits = (value.match(/(奖励|成长|报酬|酬金|SAN\s*值|理智值|技能成长|恢复)/gi) || []).length;
+  return { statHits, narrativeHits, clueHits, itemMagicHits, settingHits, sceneHeadings, commentaryHits, endingHits, rewardHits };
 }
 
 function classifySource(source) {
@@ -60,6 +63,7 @@ function classifySource(source) {
   if (/(设定|规则|附录|参考资料|reference|rules?|setting|appendix)/i.test(lower)) return "SETTING";
 
   const density = text.length > 0 ? scores.statHits / Math.max(1, text.length / 1000) : 0;
+  if (text.length > 0 && text.length <= 3500 && scores.sceneHeadings === 0 && scores.statHits < 2 && scores.commentaryHits >= 4) return "COMMENTARY";
   if (text.length > 0 && text.length <= 4000 && scores.statHits >= 12 && density >= 5 && scores.narrativeHits <= 3) return "NPC_SHEET";
   if (text.length > 0 && text.length <= 2500 && scores.statHits < 2 && scores.clueHits + scores.itemMagicHits >= 2) return "HANDOUT";
   return "MODULE";
@@ -69,6 +73,7 @@ function chooseRoutes(docType, chunk) {
   const text = String(chunk && chunk.text ? chunk.text : "");
   const scores = contentScores(text);
   if (docType === "NPC_SHEET") return ["npc"];
+  if (docType === "COMMENTARY") return ["notes"];
   if (docType === "HANDOUT") return ["handout"];
   if (docType === "SETTING") {
     if (scores.statHits >= 4 && scores.narrativeHits <= 1) return ["npc"];
@@ -77,7 +82,7 @@ function chooseRoutes(docType, chunk) {
 
   const routes = [];
   const narrativeCue = scores.narrativeHits >= 1 || scores.sceneHeadings >= 1 || text.length > 900;
-  const structuredCue = scores.statHits >= 2;
+  const structuredCue = scores.statHits >= 2 || scores.itemMagicHits >= 1 || scores.endingHits >= 1 || scores.rewardHits >= 1;
   const handoutCue = scores.clueHits + scores.itemMagicHits >= 2;
 
   if (narrativeCue) routes.push("narrative");

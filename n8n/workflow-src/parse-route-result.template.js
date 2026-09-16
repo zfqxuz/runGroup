@@ -12,6 +12,18 @@ function capText(value, limit) {
   return text.length > limit ? text.slice(0, limit) : text;
 }
 
+function lightImageBatch(batch) {
+  if (!Array.isArray(batch)) return [];
+  return batch.map((image) => ({
+    filename: image && image.filename ? image.filename : "",
+    relativePath: image && image.relativePath ? image.relativePath : "",
+    mime: image && image.mime ? image.mime : "",
+    pageNumber: image && image.pageNumber !== undefined ? image.pageNumber : null,
+    pageText: image && typeof image.pageText === "string" ? image.pageText.slice(0, 1200) : "",
+    origin: image && image.origin ? image.origin : ""
+  }));
+}
+
 function splitTextForRetry(rawText) {
   const text = String(rawText || "");
   if (text.trim().length === 0) return [""];
@@ -51,7 +63,7 @@ function buildRetryBody(request, chunk, splitIndex, splitTotal, isImage) {
       role: "user",
       content: "注意：上一次调用因 max_tokens 截断或失败。本次请只输出最精简的合法 JSON：images 数组最多 1 条，禁止解释，必须在 1200 个中文字符内闭合。"
     });
-    return Object.assign({}, base, { temperature: 0.05, messages });
+    return Object.assign({}, base, { temperature: 0.0, messages });
   }
   const chunkLike = {
     filename: (chunk && chunk.filename) || (request && request.label) || "素材",
@@ -69,7 +81,7 @@ function buildRetryBody(request, chunk, splitIndex, splitTotal, isImage) {
   return Object.assign({}, base, {
     model: ctx.model || base.model,
     max_tokens: ctx.maxTokens || base.max_tokens || 8192,
-    temperature: 0.05,
+    temperature: 0.0,
     messages
   });
 }
@@ -115,7 +127,7 @@ for (let index = 0; index < requestItems.length; index += 1) {
             kind: "chunk",
             label: label + "（重试 " + String(partIndex + 1) + "/" + String(parts.length) + "）",
             chunk: subChunk,
-            imageBatch: [],
+            imageBatch: lightImageBatch([]),
             chunkGroupId: request.chunkGroupId || "",
             url: request.url,
             body: buildRetryBody(request, subChunk, partIndex, parts.length, false),
@@ -135,7 +147,7 @@ for (let index = 0; index < requestItems.length; index += 1) {
           kind,
           label: label + "（重试）",
           chunk: request.chunk || null,
-          imageBatch: request.imageBatch || [],
+          imageBatch: lightImageBatch(request.imageBatch || []),
           chunkGroupId: request.chunkGroupId || "",
           url: request.url,
           body: buildRetryBody(request, request.chunk || {}, 0, 1, kind === "image"),
@@ -160,7 +172,7 @@ for (let index = 0; index < requestItems.length; index += 1) {
         label,
         parsed,
         chunk: request.chunk || null,
-        imageBatch: request.imageBatch || [],
+        imageBatch: lightImageBatch(request.imageBatch || []),
         chunkGroupId: request.chunkGroupId || "",
         fallbackText: kind === "chunk" && request.chunk ? capText(request.chunk.text, 4000) : ""
       }
@@ -179,7 +191,7 @@ for (let index = 0; index < requestItems.length; index += 1) {
       kind,
       label,
       chunk: request.chunk || null,
-      imageBatch: request.imageBatch || [],
+      imageBatch: lightImageBatch(request.imageBatch || []),
       chunkGroupId: request.chunkGroupId || "",
       url: request.url,
       body: buildValidatorBody(request, rawContent),

@@ -79,12 +79,20 @@ const routes = [
     position: [520, 540]
   },
   {
+    key: "notes",
+    label: "设定笔记",
+    buildNode: "构建笔记请求",
+    agentNode: "调用笔记 Agent",
+    parseNode: "解析笔记结果",
+    position: [520, 720]
+  },
+  {
     key: "image",
     label: "图片与地图",
     buildNode: "构建图片请求",
     agentNode: "调用图片 Agent",
     parseNode: "解析图片结果",
-    position: [520, 720]
+    position: [520, 900]
   },
   {
     key: "general",
@@ -92,7 +100,7 @@ const routes = [
     buildNode: "构建综合请求",
     agentNode: "调用综合 Agent",
     parseNode: "解析综合结果",
-    position: [520, 900]
+    position: [520, 1080]
   }
 ];
 
@@ -195,7 +203,8 @@ addNode({
 });
 
 const switchTargets = [];
-for (const route of routes) {
+for (let routeIndex = 0; routeIndex < routes.length; routeIndex += 1) {
+  const route = routes[routeIndex];
   const [x, y] = route.position;
   const buildCode = [
     agentPrompts,
@@ -241,7 +250,7 @@ for (const route of routes) {
   switchTargets.push({ node: route.buildNode, type: "main", index: 0 });
   connections[route.buildNode] = { main: [[{ node: route.agentNode, type: "main", index: 0 }]] };
   connections[route.agentNode] = { main: [[{ node: route.parseNode, type: "main", index: 0 }]] };
-  connections[route.parseNode] = { main: [[{ node: "汇总待校验", type: "main", index: 0 }]] };
+  connections[route.parseNode] = { main: [[{ node: "合并分支结果", type: "main", index: routeIndex }]] };
 }
 
 connections["Webhook 团本解析"] = { main: [[{ node: "分类与分块", type: "main", index: 0 }]] };
@@ -249,12 +258,21 @@ connections["分类与分块"] = { main: [[{ node: "按内容类型路由", type
 connections["按内容类型路由"] = { main: switchTargets.map((target) => [target]) };
 
 addNode({
+  parameters: { mode: "append", numberInputs: routes.length },
+  id: nextNodeId(),
+  name: "合并分支结果",
+  type: "n8n-nodes-base.merge",
+  typeVersion: 3.2,
+  position: [1040, 360]
+});
+
+addNode({
   parameters: { mode: "runOnceForAllItems", jsCode: filterCode },
   id: nextNodeId(),
   name: "汇总待校验",
   type: "n8n-nodes-base.code",
   typeVersion: 2,
-  position: [1100, 360]
+  position: [1300, 360]
 });
 
 addNode({
@@ -263,13 +281,12 @@ addNode({
   name: "调用校验与重试 Agent",
   type: "n8n-nodes-base.httpRequest",
   typeVersion: 4.2,
-  position: [1360, 360],
+  position: [1560, 360],
   onError: "continueRegularOutput"
 });
 
 let aggregateCode = [vendorWrapper, core, jsonExtract, aggregateTemplate].join("\n");
 const branchReads = [];
-const initialCounts = [];
 for (const route of routes) {
   branchReads.push(
     "try {",
@@ -278,12 +295,8 @@ for (const route of routes) {
     "  }",
     "} catch (error) { /* branch not executed */ }"
   );
-  initialCounts.push(
-    "try { initialCalls += $(" + JSON.stringify(route.buildNode) + ").all().length; } catch (error) { /* branch not executed */ }"
-  );
 }
 aggregateCode = aggregateCode.replace("/*__BRANCH_READS__*/", branchReads.join("\n"));
-aggregateCode = aggregateCode.replace("/*__INITIAL_CALL_COUNTS__*/", initialCounts.join("\n"));
 
 addNode({
   parameters: { mode: "runOnceForAllItems", jsCode: aggregateCode },
@@ -291,7 +304,7 @@ addNode({
   name: "聚合结果",
   type: "n8n-nodes-base.code",
   typeVersion: 2,
-  position: [1620, 360]
+  position: [1820, 360]
 });
 
 addNode({
@@ -304,9 +317,10 @@ addNode({
   name: "返回解析结果",
   type: "n8n-nodes-base.respondToWebhook",
   typeVersion: 1,
-  position: [1880, 360]
+  position: [2080, 360]
 });
 
+connections["合并分支结果"] = { main: [[{ node: "汇总待校验", type: "main", index: 0 }]] };
 connections["汇总待校验"] = { main: [[{ node: "调用校验与重试 Agent", type: "main", index: 0 }]] };
 connections["调用校验与重试 Agent"] = { main: [[{ node: "聚合结果", type: "main", index: 0 }]] };
 connections["聚合结果"] = { main: [[{ node: "返回解析结果", type: "main", index: 0 }]] };
@@ -320,7 +334,7 @@ const workflow = {
   settings: { executionOrder: "v1" },
   staticData: null,
   pinData: {},
-  versionId: "touhou-module-import-v3",
+  versionId: "touhou-module-import-v4",
   meta: { templateCredsSetupCompleted: true },
   tags: []
 };
