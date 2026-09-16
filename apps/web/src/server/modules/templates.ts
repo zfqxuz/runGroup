@@ -115,16 +115,29 @@ function skillIdsOf(compiled: SkillPackLike): Map<string, string> {
   return byName;
 }
 
+function skillPairsOf(value: unknown): [string, unknown][] {
+  if (Array.isArray(value)) {
+    const pairs: [string, unknown][] = [];
+    for (const item of value) {
+      const record = recordOf(item);
+      const name = textOf(record, ["skill_name", "skillName", "name", "skill", "title"], "");
+      const raw = record.value ?? record.level ?? record.skill_value ?? record.score;
+      if (name.length > 0) pairs.push([name, raw]);
+    }
+    return pairs;
+  }
+  return Object.entries(recordOf(value));
+}
+
 function normalizedSkills(
   value: unknown,
   compiled: SkillPackLike,
   warnings: string[],
   label: string
 ): Record<string, number> {
-  const source = recordOf(value);
   const byName = skillIdsOf(compiled);
   const out: Record<string, number> = {};
-  for (const [rawKey, rawValue] of Object.entries(source)) {
+  for (const [rawKey, rawValue] of skillPairsOf(value)) {
     const skillId = byName.get(rawKey.toLowerCase()) ?? byName.get(rawKey);
     if (skillId === undefined) {
       warnings.push(label + " 的技能「" + rawKey + "」不在当前规则包中，已忽略");
@@ -134,6 +147,89 @@ function normalizedSkills(
     if (number > 0) out[skillId] = number;
   }
   return out;
+}
+
+export interface NormalizedNpcWeapon {
+  readonly name: string;
+  readonly damage: string;
+  readonly range: string;
+  readonly skillId: string;
+  readonly attacks: string | number | null;
+  readonly notes: string;
+}
+
+function normalizedRange(value: unknown): string {
+  const text = typeof value === "string" ? value.trim() : typeof value === "number" ? String(value) : "";
+  if (text.length === 0) return "";
+  if (/^(melee|近战|格斗|白刃|刀|棍|斧|矛|拳)/i.test(text)) return "MELEE";
+  if (/^(near|近距离|手枪|霰弹|短枪|短)/i.test(text)) return "NEAR";
+  if (/^(far|远距离|步枪|狙击|远程|远)/i.test(text)) return "FAR";
+  return text.slice(0, 20);
+}
+
+function normalizedWeapons(value: unknown, compiled: SkillPackLike, warnings: string[], label: string): NormalizedNpcWeapon[] {
+  const byName = skillIdsOf(compiled);
+  const output: NormalizedNpcWeapon[] = [];
+  const push = (rawName: unknown, rawDamage: unknown, rawRange?: unknown, rawSkill?: unknown, rawAttacks?: unknown, rawNotes?: unknown): void => {
+    const name = typeof rawName === "string" ? rawName.trim().slice(0, 120) : "";
+    if (name.length === 0) return;
+    const damage = typeof rawDamage === "string" ? rawDamage.trim().slice(0, 80) : typeof rawDamage === "number" ? String(rawDamage) : "";
+    const skillText = typeof rawSkill === "string" ? rawSkill.trim() : "";
+    const skillId = skillText.length === 0 ? "" : (byName.get(skillText.toLowerCase()) ?? byName.get(skillText) ?? "");
+    const attacks = typeof rawAttacks === "string" || typeof rawAttacks === "number" ? rawAttacks : null;
+    output.push({
+      name,
+      damage,
+      range: normalizedRange(rawRange),
+      skillId,
+      attacks,
+      notes: typeof rawNotes === "string" ? rawNotes.trim().slice(0, 300) : ""
+    });
+    if (skillText.length > 0 && skillId.length === 0) {
+      warnings.push(label + " 的武器「" + name + "」技能「" + skillText + "」不在规则包中，战斗时将按武器距离推断");
+    }
+  };
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const record = recordOf(item);
+      if (Object.keys(record).length > 0) {
+        push(
+          textOf(record, ["weapon_name", "weaponName", "name", "title"], ""),
+          textOf(record, ["damage", "dmg", "伤害"], ""),
+          record.range ?? record.type ?? record.attackType,
+          record.skillId ?? record.skill_id ?? record.skillName ?? record.skill,
+          record.attacks ?? record.attackCount ?? record.count,
+          record.notes ?? record.note ?? record.description
+        );
+      } else if (typeof item === "string") {
+        push(item, "", "", "", null, "");
+      }
+    }
+    return output.slice(0, 30);
+  }
+
+  if (value !== null && typeof value === "object" && Array.isArray(value) === false) {
+    const record = value as Record<string, unknown>;
+    for (const [rawName, rawValue] of Object.entries(record)) {
+      if (typeof rawValue === "string" || typeof rawValue === "number") {
+        push(rawName, rawValue, "", "", null, "");
+      } else {
+        const detail = recordOf(rawValue);
+        push(
+          textOf(detail, ["weapon_name", "weaponName", "name", "title"], rawName),
+          textOf(detail, ["damage", "dmg", "伤害"], ""),
+          detail.range ?? detail.type,
+          detail.skillId ?? detail.skill ?? detail.skillName,
+          detail.attacks ?? detail.attackCount,
+          detail.notes ?? detail.description
+        );
+      }
+    }
+    return output.slice(0, 30);
+  }
+
+  return output;
 }
 
 const ATTRIBUTE_ALIASES: Readonly<Record<string, readonly string[]>> = {
@@ -288,6 +384,12 @@ export async function syncModuleTemplates(
       const raceRaw = textOf(entry.data, ["race"], "");
       const attributes = normalizedAttributes(attributesValue, warnings, label);
       const skills = normalizedSkills(skillsValue, compiledPack, warnings, label);
+      const weapons = normalizedWeapons(
+        entry.data.weapons ?? entry.data.attacks ?? [],
+        compiledPack,
+        warnings,
+        label
+      );
 
       let derived: Record<string, number> | null = null;
       try {
@@ -313,6 +415,7 @@ export async function syncModuleTemplates(
         tags: stringArray(entry.data.tags),
         attributes,
         skills,
+        weapons: weapons as never,
         maxHp: numberWithFallback(entry.data.maxHp ?? statsValue.maxHp, derived?.maxHp ?? 10, 1, 9999),
         maxMp: numberWithFallback(entry.data.maxMp ?? statsValue.maxMp, derived?.maxMp ?? 0, 0, 99999),
         maxSan: numberWithFallback(entry.data.maxSan ?? statsValue.maxSan, derived?.maxSan ?? 0, 0, 999),

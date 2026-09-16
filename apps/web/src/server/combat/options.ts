@@ -12,7 +12,7 @@ export interface CombatOptionParticipant {
   readonly skills: Readonly<Record<string, number>> | null;
 }
 
-interface WeaponLike {
+export interface WeaponLike {
   readonly name: string;
   readonly stats: unknown;
 }
@@ -125,7 +125,10 @@ export function allowedAttackSkills(
   };
 
   if (participant.kind === "NPC") {
-    return addCoc7BrawlBase(offensiveSkillIds(pack, participant));
+    const inferred = equippedWeapons
+      .map((weapon) => inferWeaponSkillId(pack, weapon))
+      .filter((skillId): skillId is string => skillId !== null);
+    return addCoc7BrawlBase([...new Set([...offensiveSkillIds(pack, participant), ...inferred])]);
   }
   const skillIds: string[] = [];
   for (const weapon of equippedWeapons) {
@@ -166,15 +169,51 @@ export function attackOptionsForParticipant(
   });
 }
 
+export function npcWeaponsFromStats(value: unknown): readonly WeaponLike[] {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return [];
+  const raw = (value as Record<string, unknown>).weapons;
+  if (Array.isArray(raw) === false) return [];
+  const output: WeaponLike[] = [];
+  for (const item of raw) {
+    if (item === null || typeof item !== "object" || Array.isArray(item)) continue;
+    const record = item as Record<string, unknown>;
+    const name = nonEmptyString(record.name) ?? nonEmptyString(record.weapon_name) ?? nonEmptyString(record.weaponName);
+    if (name === null) continue;
+    output.push({ name, stats: record });
+  }
+  return output.slice(0, 30);
+}
+
+/** 从 CombatParticipant.npcData 中读取团本 NPC 自带的武器 / 攻击方式。 */
+export async function loadNpcWeaponsByParticipant(
+  combatId: string,
+  participants: readonly { readonly id: string; readonly kind: "PLAYER" | "NPC" }[]
+): Promise<Map<string, readonly WeaponLike[]>> {
+  const npcIds = participants.filter((participant) => participant.kind === "NPC").map((participant) => participant.id);
+  if (npcIds.length === 0) return new Map();
+  const rows = await prisma.combatParticipant.findMany({
+    where: { combatId, id: { in: npcIds } },
+    select: { id: true, npcData: true }
+  });
+  const output = new Map<string, readonly WeaponLike[]>();
+  for (const row of rows) {
+    const weapons = npcWeaponsFromStats(row.npcData);
+    if (weapons.length > 0) output.set(row.id, weapons);
+  }
+  return output;
+}
+
 /**
  * 加载每个单位可用的攻击技能与实际伤害。
  *
  * 玩家角色：优先读取已装备武器卡；没有装备时按规则包决定徒手 / 默认攻击。
- * 武器卡上的 damage 就是角色实际伤害，战斗页面只读展示，服务端结算时也以此为准。
+ * 团本 NPC：优先读取卡片 stats.weapons；没有武器时按已有战斗技能 / 徒手。
+ * 武器上的 damage 就是实际伤害，战斗页面只读展示，服务端结算时也以此为准。
  */
 export async function loadAttackOptionsByParticipant(
   pack: CompiledRulePack,
-  participants: readonly CombatOptionParticipant[]
+  participants: readonly CombatOptionParticipant[],
+  npcWeaponsByParticipant: ReadonlyMap<string, readonly WeaponLike[]> = new Map()
 ): Promise<Map<string, readonly CombatAttackOption[]>> {
   const characterIds = participants
     .map((participant) => participant.characterId)
@@ -203,7 +242,9 @@ export async function loadAttackOptionsByParticipant(
     const equipped =
       participant.kind === "PLAYER" && participant.characterId !== null
         ? weaponsByCharacter.get(participant.characterId) ?? []
-        : [];
+        : participant.kind === "NPC"
+          ? npcWeaponsByParticipant.get(participant.id) ?? []
+          : [];
     result.set(participant.id, attackOptionsForParticipant(pack, participant, equipped));
   }
   return result;

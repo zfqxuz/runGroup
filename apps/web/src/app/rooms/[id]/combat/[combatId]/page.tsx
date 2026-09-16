@@ -7,7 +7,7 @@ import KpBgmPanel from "@/components/room/KpBgmPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import { auth } from "@/server/auth";
-import { combatFeatureFlags, loadAttackOptionsByParticipant, type CombatAttackOption } from "@/server/combat/options";
+import { combatFeatureFlags, loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "@/server/combat/options";
 import { loadSpellcardsByParticipant } from "@/server/combat/spellcards";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 import { prisma } from "@/server/db/prisma";
@@ -56,6 +56,10 @@ export default async function CombatDetailPage({
   const spellCardsByParticipant: Record<string, readonly CombatSpellCardOption[]> = {};
   if (snapshot !== null) {
     const state = snapshot.state as unknown as CombatState;
+    const npcWeaponsByParticipant = await loadNpcWeaponsByParticipant(
+      combat.id,
+      state.participants.map((participant) => ({ id: participant.id, kind: participant.kind }))
+    );
     const attackOptions = await loadAttackOptionsByParticipant(
       effective.compiled,
       state.participants.map((participant) => ({
@@ -63,7 +67,8 @@ export default async function CombatDetailPage({
         kind: participant.kind,
         characterId: participant.characterId,
         skills: participant.skills
-      }))
+      })),
+      npcWeaponsByParticipant
     );
     for (const [participantId, options] of attackOptions) {
       attackOptionsByParticipant[participantId] = options;

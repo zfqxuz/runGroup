@@ -7,7 +7,7 @@ import {
   type DefenseReaction
 } from "@touhou/combat";
 import { compileRulePack, type CompiledRulePack } from "@touhou/rules";
-import { loadAttackOptionsByParticipant, type CombatAttackOption } from "./options";
+import { loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "./options";
 import { loadSpellcardsByParticipant } from "./spellcards";
 import { prisma } from "@/server/db/prisma";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
@@ -104,6 +104,10 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       controllers.set(participant.id, kpIds);
     }
   }
+  const npcWeaponsByParticipant = await loadNpcWeaponsByParticipant(
+    combatId,
+    state.participants.map((participant) => ({ id: participant.id, kind: participant.kind }))
+  );
   const attackOptions = await loadAttackOptionsByParticipant(
     pack,
     state.participants.map((participant) => ({
@@ -111,7 +115,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       kind: participant.kind,
       characterId: participant.characterId,
       skills: participant.skills
-    }))
+    })),
+    npcWeaponsByParticipant
   );
   const attackSkills = new Map<string, readonly string[]>(
     [...attackOptions.entries()].map(([participantId, options]) => [

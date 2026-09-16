@@ -1,0 +1,2 @@
+ALTER TABLE "NpcTemplate"
+ADD COLUMN "weapons" JSONB NOT NULL DEFAULT '[]';

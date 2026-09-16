@@ -103,6 +103,16 @@ export default async function RoomNpcPanel(props: Props) {
                         技能：{Object.entries(stats.skills).slice(0, 10).map(([id, value]) => id + " " + String(value)).join(" · ")}
                       </p>
                     )}
+                    {stats.weapons.length === 0 ? null : (
+                      <p className="mt-1 line-clamp-2 text-[10px] text-white/35">
+                        武器 / 攻击：{stats.weapons.slice(0, 8).map((weapon) => {
+                          const parts = [weapon.name];
+                          if (weapon.damage.length > 0) parts.push(weapon.damage);
+                          if (weapon.range.length > 0) parts.push("(" + weapon.range + ")");
+                          return parts.join(" ");
+                        }).join(" · ")}
+                      </p>
+                    )}
                   </>
                 )}
                 {props.isKP ? (

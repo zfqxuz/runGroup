@@ -1278,6 +1278,7 @@ model NpcTemplate {
   tags           Json     @default("[]")
   attributes     Json     @default("{}")
   skills         Json     @default("{}")
+  weapons        Json     @default("[]")
   maxHp          Int      @default(10)
   maxMp          Int      @default(0)
   maxSan         Int      @default(0)
