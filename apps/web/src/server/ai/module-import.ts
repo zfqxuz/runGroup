@@ -103,6 +103,10 @@ export interface PrecomputedParse {
   readonly aiCalls: number;
   readonly attempts: number;
   readonly warnings: readonly string[];
+  /** n8n 场景级分块总数。 */
+  readonly chunks: number;
+  /** n8n 成功完成结构化提取的场景块数。 */
+  readonly chunksCompleted: number;
 }
 
 export interface ImportModuleDependencies {
@@ -694,7 +698,7 @@ function assembleMarkdown(draft: AiDraft, imagePaths: readonly string[]): string
 const CHUNK_SYSTEM_MESSAGE: DeepSeekMessage = {
   role: "system",
   content:
-    "你是严谨的中文 TRPG 团本编辑。当前任务是分块提取素材，每次调用都是完全独立的导入任务，" +
+    "你是严谨的中文 TRPG 团本编辑。当前任务是按场景 / 章节分块提取素材，每次调用都是完全独立的导入任务，" +
     "不继承任何历史上下文；只依据本次用户消息中的素材片段输出严格 JSON，不要续写、不要解释。"
 };
 
@@ -711,8 +715,8 @@ function structuredSchemaHint(): string {
     '{"chapters":[{"id":"ch1","name":"章节名","summary":"..."}],',
     '"scenes":[{"id":"scene1","name":"场景名","description":"...","width":1600,"height":1000,"gridType":"SQUARE 或 HEX","bgColor":"#1a1a2e","background":"assets/images/xxx.png 或留空"}],',
     '"encounters":[{"id":"enc1","name":"遭遇名","sceneId":"scene1","sceneName":"场景名","chapterId":"ch1","chapterName":"章节名","trigger":"...","setup":{}}],',
-    '"npcs":[{"id":"npc1","name":"NPC 名","tier":"MINION 或 STANDARD 或 ELITE 或 BOSS","rarity":"COMMON","race":null,"tags":[],"description":"...","portrait":"assets/images/xxx.png 或留空","statText":"原文中的属性行 / 数值块，逐字复制，例如 STR 50 CON 60 SIZ 65 DEX 70 APP 55 INT 80 POW 70 EDU 75 HP 12 MP 14 SAN 70；没有就省略","attributes":{"str":50,"con":50,"siz":50,"dex":50,"app":50,"int":50,"pow":50,"edu":50,"luck":50},"skills":{"DODGE":40},"maxHp":12,"maxMp":10,"maxSan":50,"maxDp":0}],',
-    '"clues":[{"id":"clue1","title":"线索名","content":"线索正文","image":"assets/clues/xxx.png 或留空","isPublic":false,"linkedItemId":"item1 或留空"}],',
+    '"npcs":[{"id":"npc1","name":"NPC 名","tier":"MINION 或 STANDARD 或 ELITE 或 BOSS","rarity":"COMMON","race":null,"tags":[],"description":"...","portrait":"assets/images/xxx.png 或留空","statText":"原文中的属性行 / 数值块，逐字复制，例如 STR 50 CON 60 SIZ 65 DEX 70 APP 55 INT 80 POW 70 EDU 75 HP 12 MP 14 SAN 70\nDB 1d4 Build 1 Move 8","attributes":{"str":50,"con":50,"siz":50,"dex":50,"app":50,"int":50,"pow":50,"edu":50,"luck":50},"db":"1d4","build":1,"move":8,"skills":[{"skill_name":"DODGE","value":40}],"weapons":[{"weapon_name":"棍棒","damage":"1d6","range":"MELEE"}],"maxHp":12,"maxMp":10,"maxSan":50,"maxDp":0}],',
+    '"clues":[{"id":"clue1","title":"线索名","content":"线索正文","image":"assets/clues/xxx.png 或留空","isPublic":false,"linkedItemId":"item1 或留空","discoveryMethod":"侦察 / 图书馆使用 / 对话等","relatedNpc":"关联 NPC 名或留空","relatedPc":"发现线索的调查员或留空"}],',
     '"items":[{"id":"item1","name":"道具名","itemType":"WEAPON 或 ITEM 或 TOME 或 ARTIFACT 或 EVIDENCE","description":"...","rarity":"COMMON","image":"assets/images/xxx.png 或留空","quantity":1,"damage":"1d6 或留空","range":"MELEE 或 NEAR 或 FAR 或留空","skillId":"FIGHTING_BRAWL 等或留空","accuracyMod":0}],',
     '"endings":[{"id":"end1","name":"结局名","condition":"...","description":"..."}],',
     '"rewards":[{"id":"reward1","name":"奖励名","description":"..."}],',
@@ -738,6 +742,8 @@ function chunkExtractionPrompt(chunk: TextChunk, hints: {
   );
   lines.push("要求：");
   lines.push("- 只提取本段明确出现的事实、剧情、NPC、场景、线索、道具、法术；没有的字段直接省略，不要编造，也不要输出其他段落的内容。");
+  lines.push("- 本段通常已经按场景 / 章节 / 时间戳切分，请当作一个相对独立的场景处理：有明确场景标题或地点时，在 structured.scenes 输出 scene，并把本场景关联的 npcs / clues / encounters / items / magic 一并输出。");
+  lines.push("- NPC 数值优先级最高：原文有的 STR/CON/SIZ/DEX/APP/INT/POW/EDU/LUCK、HP/MP/SAN/DP、DB/Build/Move、技能、武器都要提取；技能输出 [{skill_name,value}]，武器输出 [{weapon_name,damage,range}]。");
   lines.push("- 如果本段出现大量乱码、替换字符或明显编码损坏，不要猜测原文内容；meta.title 填来源文件名，sections 只写一条「本段原文不可读，未生成结构化数据」说明，structured 留空。");
   lines.push("- JSON 示例里的 50、1d6、场景名、NPC 名等都只是格式示例，不是素材内容；任何字段没有在原文中明确出现就不要输出，禁止用默认值 / 猜测值补全。");
   lines.push("- NPC 的属性、技能、HP / MP / SAN 等数值只有原文明确给出时才输出对应字段；原文没写就省略，系统会按规则包处理，不要自行编数值。");
@@ -1224,12 +1230,7 @@ async function generateDraftFromChunks(input: {
   const extractions: ChunkExtraction[] = [];
 
   if (precomputed !== undefined) {
-    for (let index = 0; index < input.chunks.length; index += 1) {
-      const chunk = input.chunks[index];
-      const extraction = precomputed.extractions[index];
-      if (chunk === undefined || extraction === undefined) continue;
-      extractions.push(withCoverageFallback(extraction, chunk));
-    }
+    extractions.push(...precomputed.extractions);
   } else {
     for (let index = 0; index < input.chunks.length; index += 1) {
       const chunk = input.chunks[index];
@@ -1261,7 +1262,8 @@ async function generateDraftFromChunks(input: {
             onProgress: input.onProgress
           }));
 
-  input.onProgress?.("正在合并 " + String(input.chunks.length) + " 段文本与 " + String(imagesAnalyzed) + " 张图片的解析结果…");
+  const chunkCount = precomputed === undefined ? input.chunks.length : precomputed.chunks;
+  input.onProgress?.("正在合并 " + String(chunkCount) + " 个场景块与 " + String(imagesAnalyzed) + " 张图片的解析结果…");
   const draft = mergeDraft({
     title: input.title,
     system: input.hints.system,
@@ -1299,7 +1301,7 @@ async function generateDraftFromChunks(input: {
     draft,
     markdown,
     warnings: [...(precomputed?.warnings ?? []), ...parsed.warnings],
-    chunksCompleted: input.chunks.length,
+    chunksCompleted: precomputed === undefined ? input.chunks.length : precomputed.chunksCompleted,
     imagesAnalyzed,
     aiCalls: precomputed?.aiCalls ?? stats.calls,
     attempts: precomputed?.attempts ?? stats.maxAttempts,
@@ -1389,8 +1391,9 @@ export async function importModuleWithDeepSeek(
   }
   if (prepared.sources.length > 0) {
     input.onProgress?.(
-      "文字素材共 " + String(chunks.length) + " 段（单段上限 " + String(CHUNK_MAX_CHARS) +
-      " 字），" + (parserKind === "N8N" ? "将交给 n8n 工作流解析" : "将逐段直连 DeepSeek 解析") + "；不会再把整本一次性交给模型。"
+      (parserKind === "N8N"
+        ? "文字素材共 " + String(prepared.sources.filter((source) => source.text.trim().length > 0).length) + " 个文本文件，将交给 n8n 按场景 / 章节 / 时间戳重新分块并逐块结构化提取。"
+        : "文字素材共 " + String(chunks.length) + " 段（单段上限 " + String(CHUNK_MAX_CHARS) + " 字），将逐段直连 DeepSeek 解析；不会再把整本一次性交给模型。")
     );
   }
 
@@ -1467,7 +1470,7 @@ export async function importModuleWithDeepSeek(
         warnings: [...warnings, ...generated.warnings.map((text) => ({ filename: "AI 校验", message: text }))],
         sourceCount: prepared.sources.length,
         imageCount: prepared.images.length,
-        textChunks: chunks.length,
+        textChunks: precomputed === undefined ? chunks.length : precomputed.chunks,
         textChunksCompleted: generated.chunksCompleted,
         imagesAnalyzed: generated.imagesAnalyzed,
         aiCalls: generated.aiCalls,
@@ -1536,7 +1539,7 @@ export async function importModuleWithDeepSeek(
     sessionId,
     attempts: generated.attempts,
     aiCalls: generated.aiCalls,
-    chunks: chunks.length,
+    chunks: precomputed === undefined ? chunks.length : precomputed.chunks,
     chunksCompleted: generated.chunksCompleted,
     imagesAnalyzed: generated.imagesAnalyzed,
     imagesUsed: prepared.images.length,
@@ -1584,7 +1587,9 @@ export async function importModuleWithN8n(input: ImportModuleRequest): Promise<A
         npcStats: parsed.npcStats,
         aiCalls: parsed.stats.aiCalls,
         attempts: parsed.stats.attempts,
-        warnings: parsed.warnings
+        warnings: parsed.warnings,
+        chunks: parsed.stats.chunks,
+        chunksCompleted: parsed.stats.chunksCompleted
       };
     }
   });

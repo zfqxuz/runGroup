@@ -9,15 +9,10 @@
 
 const rawRoot = $("Webhook 团本解析").first().json;
 const root = (rawRoot && rawRoot.body && typeof rawRoot.body === "object") ? rawRoot.body : rawRoot;
-const chunks = Array.isArray(root.chunks) ? root.chunks : [];
-const images = Array.isArray(root.images) ? root.images : [];
 const sources = Array.isArray(root.sources) ? root.sources : [];
-const chunkItems = chunks.filter((chunk) => chunk && String(chunk.text || "").trim().length > 0);
-const imageBatchSize = 2;
-const imageBatches = [];
-for (let offset = 0; offset < images.length; offset += imageBatchSize) {
-  imageBatches.push(images.slice(offset, offset + imageBatchSize));
-}
+const images = Array.isArray(root.images) ? root.images : [];
+const requestItems = $("按场景分块").all().map((item) => (item && item.json) ? item.json : {});
+const chunkRequestCount = requestItems.filter((item) => item.kind !== "image").length;
 
 const SECTION_SET = new Set([
   "元信息", "真相与背景", "剧情梗概", "开场钩子", "关键NPC", "地点与场景", "线索", "遭遇与战斗", "道具与手书", "怪物与神话生物", "结局分支", "奖励与成长", "KP备注", "附录"
@@ -118,37 +113,31 @@ const extractions = [];
 const imageExtractions = [];
 const warnings = [];
 let aiCalls = 0;
-let cursor = 0;
 
 for (let index = 0; index < items.length; index += 1) {
   const response = items[index] && items[index].json ? items[index].json : {};
+  const request = requestItems[index] || {};
+  const isImage = request.kind === "image";
+  const label = String(request.label || (isImage ? "图片分析" : "文本场景段"));
+  const batch = Array.isArray(request.imageBatch) ? request.imageBatch : [];
   const choice = Array.isArray(response.choices) ? response.choices[0] : null;
   const finishReason = choice ? choice.finish_reason : "";
   const content = choice && choice.message ? choice.message.content : "";
-  const isChunk = cursor < chunkItems.length;
-  const chunk = isChunk ? chunkItems[cursor] : null;
-  const batch = isChunk ? null : imageBatches[cursor - chunkItems.length];
 
   if (finishReason === "length") {
-    const label = isChunk && chunk
-      ? "文本段 " + chunk.filename + " " + String(chunk.fileIndex) + "/" + String(chunk.fileTotal)
-      : "图片分析 " + (batch || []).map((image) => image.filename).join("、");
     throw new Error(label + " 触发 max_tokens 截断；请拆分素材后重试");
   }
   if (typeof content !== "string" || content.trim().length === 0) {
-    warnings.push("模型第 " + String(cursor + 1) + " 次调用没有返回正文，已跳过");
-    cursor += 1;
+    warnings.push("模型第 " + String(index + 1) + " 次调用没有返回正文，已跳过");
     continue;
   }
 
   aiCalls += 1;
-  if (isChunk && chunk) {
-    const label = "文本段 " + chunk.filename + " " + String(chunk.fileIndex) + "/" + String(chunk.fileTotal);
+  if (isImage) {
+    if (batch.length > 0) imageExtractions.push(...normalizeImageExtractions(extractJsonObject(content), batch));
+  } else {
     extractions.push(normalizeChunkExtraction(extractJsonObject(content), label));
-  } else if (batch && batch.length > 0) {
-    imageExtractions.push(...normalizeImageExtractions(extractJsonObject(content), batch));
   }
-  cursor += 1;
 }
 
 const npcEntries = [];
@@ -168,7 +157,7 @@ return [{
     stats: {
       aiCalls,
       attempts: 1,
-      chunks: chunkItems.length,
+      chunks: chunkRequestCount,
       chunksCompleted: extractions.length,
       imagesAnalyzed: imageExtractions.length,
       imagesUsed: images.length,

@@ -43,7 +43,7 @@ const workflow = {
         jsCode: prepareCode
       },
       id: "10000000-0000-4000-8000-000000000002",
-      name: "构建模型请求",
+      name: "按场景分块",
       type: "n8n-nodes-base.code",
       typeVersion: 2,
       position: [260, 0]
@@ -103,9 +103,9 @@ const workflow = {
   ],
   connections: {
     "Webhook 团本解析": {
-      main: [[{ node: "构建模型请求", type: "main", index: 0 }]]
+      main: [[{ node: "按场景分块", type: "main", index: 0 }]]
     },
-    "构建模型请求": {
+    "按场景分块": {
       main: [[{ node: "调用 DeepSeek", type: "main", index: 0 }]]
     },
     "调用 DeepSeek": {
