@@ -10,7 +10,7 @@ import { normalizeEntityKey } from "@/server/modules/keys";
 import { mergeDraft } from "@/server/ai/chunking";
 import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
 import { enrichNpcStatsFromSources, parseNpcStatsText } from "@/server/ai/npc-stats";
-import { npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
+import { dedupeNpcRecords, mergeNpcAliasNames, npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
 import { buildNpcDamageOverrides, normalizedSkills, normalizedWeapons } from "@/server/modules/templates";
 
 let failed = 0;
@@ -91,6 +91,25 @@ const polluted = npcRecordsLikelySame(
 check(polluted === false, "共享姓氏 + 被污染的短别名不能误合并 NPC");
 const sameNpc = npcRecordsLikelySame({ name: "测试者" }, { name: "测试者（首领）" });
 check(sameNpc === true, "同一 NPC 的括号别名应合并");
+const nicknameMerged = npcRecordsLikelySame(
+  { name: "W·科比特" },
+  { name: "沃尔特·科比特，不死的恶魔", aliases: ["科比特"] }
+);
+check(nicknameMerged === true, "W·科比特应通过显式别名精确合并到主 NPC");
+const honorificMerged = npcRecordsLikelySame(
+  { name: "老科比特" },
+  { name: "沃尔特·科比特，不死的恶魔", aliases: ["科比特"] }
+);
+check(honorificMerged === true, "老科比特应通过显式别名精确合并到主 NPC");
+const ghostSeparate = npcRecordsLikelySame({ name: "W·科比特" }, { name: "科比特的鬼魂" });
+check(ghostSeparate === false, "W·科比特不能与科比特的鬼魂误合并");
+const clustered = dedupeNpcRecords([
+  { name: "W·科比特", aliases: ["科比特的鬼魂"] },
+  { name: "老科比特" },
+  { name: "沃尔特·科比特，不死的恶魔", aliases: ["科比特"] },
+  { name: "科比特的鬼魂" }
+]);
+check(clustered.length === 2, "W/老科比特应合并进主 NPC，鬼魂保持独立");
 
 // ---------- 5. 原文伤害回填 ----------
 const itemEntries: Record<string, unknown>[] = [
@@ -142,6 +161,22 @@ const luckEntry: Record<string, unknown> = {
 };
 enrichNpcStatsFromSources([luckEntry], [{ text: "测试 NPC\n\nSTR 50 CON 50 SIZ 50 DEX 50 APP 50 INT 50 POW 50 EDU 50\n战斗 50%" }]);
 check((luckEntry.attributes as Record<string, unknown>).luck === 0, "原文没有幸运时应按 0 而不是模型值");
+
+// ---------- 9. n8n 别名先合并，再按原文回填技能 ----------
+const englishNamedNpc: Record<string, unknown> = { name: "Walter Corbitt", aliases: [] };
+mergeNpcAliasNames(englishNamedNpc, ["沃尔特·科比特，不死的恶魔", "科比特"]);
+const aliasEnriched = enrichNpcStatsFromSources([englishNamedNpc], [{
+  text: "沃尔特·科比特，不死的恶魔\n\nSTR 90 CON 115 SIZ 55 DEX 35 APP 05 INT 80 POW 90 EDU 80\nHP: 16\nMP: 18\nSAN: 0\n战斗 50%\n闪避 17%"
+}]);
+check(aliasEnriched === 1, "n8n 别名合并后，英文名 NPC 应能命中原文窗口");
+const textSkillMap = new Map(
+  (Array.isArray(englishNamedNpc.skillsFromText) ? englishNamedNpc.skillsFromText : [])
+    .filter((item): item is { skill: string; value: number } => {
+      return item !== null && typeof item === "object" && typeof (item as { skill?: unknown }).skill === "string" && typeof (item as { value?: unknown }).value === "number";
+    })
+    .map((item) => [item.skill, item.value])
+);
+check(textSkillMap.get("闪避") === 17, "原文技能应在合并别名后写入 skillsFromText");
 
 if (failed > 0) {
   console.error("verify-entity-normalization: " + String(failed) + " failure(s)");

@@ -29,6 +29,35 @@ const ROLE_TOKENS = [
   "女仆"
 ];
 
+/** 「某人/某物的鬼魂」这类描述性称呼不能当作独立身份别名。 */
+const GENERIC_ALIAS_SUFFIXES = new Set([
+  "鬼魂",
+  "幽灵",
+  "亡魂",
+  "亡灵",
+  "怨灵",
+  "恶灵",
+  "灵魂",
+  "魂魄",
+  "影子",
+  "化身",
+  "分身",
+  "尸体",
+  "躯壳",
+  "记忆",
+  "声音",
+  "幻影",
+  "幻象",
+  "形象"
+]);
+
+function isIdentityAlias(value: string): boolean {
+  const index = value.lastIndexOf("的");
+  if (index < 0) return true;
+  const suffix = value.slice(index + 1).trim();
+  return suffix.length > 0 && GENERIC_ALIAS_SUFFIXES.has(suffix) === false;
+}
+
 function isRecord(value: unknown): value is NpcRecord {
   return value !== null && typeof value === "object" && Array.isArray(value) === false;
 }
@@ -58,7 +87,7 @@ function primaryNamesOf(record: NpcRecord): string[] {
     names.push(...stringOf(record[field]));
   }
   for (const field of ["aliases", "alias", "aka", "alsoKnownAs"]) {
-    names.push(...stringOf(record[field]));
+    names.push(...stringOf(record[field]).filter(isIdentityAlias));
   }
   if (names.length === 0) {
     names.push(...stringOf(record.title));
@@ -83,10 +112,42 @@ function nameVariants(name: string): string[] {
   return [...output].filter((item) => item.length >= 2).slice(0, 24);
 }
 
+/**
+ * 只用于精确身份匹配的昵称变体：
+ * - "W·科比特" -> "科比特"
+ * - "老科比特" / "小科比特" -> "科比特"
+ *
+ * 这些变体不进入 npcPrimaryKeys，避免 "科比特" 这种短名通过模糊包含
+ * 把 "科比特的鬼魂" 这种独立实体也吸进同一个身份簇。
+ */
+function identityAliasesOfName(name: string): string[] {
+  const output = new Set<string>();
+  const trimmed = name.trim();
+
+  const withoutLatinInitial = trimmed.match(
+    /^[A-Za-z][\s·•.。:：,，、;；!！?？'"“”‘’（）()【】\[\]《》<>\/\\\-—–]*([\p{Script=Han}][\p{Script=Han}\p{N}·•\-—–]*)$/u
+  );
+  if (withoutLatinInitial?.[1] !== undefined) {
+    const variant = normalizeName(withoutLatinInitial[1]);
+    if (variant.length >= 2 && GENERIC_NAME_TOKENS.has(variant) === false) output.add(variant);
+  }
+
+  const withoutHonorific = trimmed.match(
+    /^(老|小|大|阿)([\p{Script=Han}][\p{Script=Han}\p{N}·•\-—–]*)$/u
+  );
+  if (withoutHonorific?.[2] !== undefined) {
+    const variant = normalizeName(withoutHonorific[2]);
+    if (variant.length >= 2 && GENERIC_NAME_TOKENS.has(variant) === false) output.add(variant);
+  }
+
+  return [...output];
+}
+
 export function npcIdentityKeys(record: NpcRecord): string[] {
   const keys = new Set<string>();
   for (const name of primaryNamesOf(record)) {
     for (const variant of nameVariants(name)) keys.add("n:" + variant);
+    for (const alias of identityAliasesOfName(name)) keys.add("n:" + alias);
   }
   return [...keys];
 }
@@ -175,6 +236,18 @@ function uniqueStrings(values: readonly unknown[]): string[] {
     output.push(text);
   }
   return output;
+}
+
+/** 合并 NPC 的展示别名；不修改 name 字段，只把新名称追加进 aliases。 */
+export function mergeNpcAliasNames(record: NpcRecord, names: readonly string[]): void {
+  const merged = uniqueStrings([
+    ...stringOf(record.aliases),
+    ...stringOf(record.alias),
+    ...stringOf(record.aka),
+    ...stringOf(record.alsoKnownAs),
+    ...names
+  ]);
+  if (merged.length > 0) record.aliases = merged;
 }
 
 function mergeRecords(left: NpcRecord, right: NpcRecord): NpcRecord {

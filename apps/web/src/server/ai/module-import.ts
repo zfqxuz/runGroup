@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { prisma } from "@/server/db/prisma";
 import { decodeTextBuffer, readDocx } from "@/server/ai/docx";
-import { dedupeNpcRecords } from "@/server/ai/npc-dedupe";
+import { dedupeNpcRecords, mergeNpcAliasNames } from "@/server/ai/npc-dedupe";
 import { enrichNpcStatsFromSources } from "@/server/ai/npc-stats";
 import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
 import { storeImage, publicPath } from "@/server/assets/storage";
@@ -1179,7 +1179,7 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
       target = {
         id,
         name: stat.name,
-        aliases: [...(stat.aliases ?? [])],
+        aliases: [],
         description: "（n8n 数值解析补充，正文请结合原文或 AI 提取结果使用。）",
         attributes: Object.fromEntries(
           Object.entries(stat.attributes).filter(([key]) => key.toLowerCase() !== "luck")
@@ -1189,6 +1189,7 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
       if (stat.maxMp !== null) target.maxMp = stat.maxMp;
       if (stat.maxSan !== null) target.maxSan = stat.maxSan;
       if (stat.maxDp !== null) target.maxDp = stat.maxDp;
+      mergeNpcAliasNames(target, [stat.name, ...(stat.aliases ?? [])]);
       entries.push(target);
       applied += 1;
       continue;
@@ -1207,6 +1208,9 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
     if (stat.maxMp !== null) target.maxMp = stat.maxMp;
     if (stat.maxSan !== null) target.maxSan = stat.maxSan;
     if (stat.maxDp !== null) target.maxDp = stat.maxDp;
+    // n8n 的名称/别名是本地原文回填的关键线索：AI 可能只给了英文名，
+    // 先合并进来，后面的 enrichNpcStatsFromSources 才能按中文名找到原文窗口。
+    mergeNpcAliasNames(target, [stat.name, ...(stat.aliases ?? [])]);
     applied += 1;
   }
   return applied;
