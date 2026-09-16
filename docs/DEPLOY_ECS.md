@@ -128,6 +128,15 @@ docker compose -f docker-compose.prod.yml exec -T db \
   `/webhook/module-parse`。
 - `DEEPSEEK_API_KEY` 同时注入应用和 n8n；只要配置了 n8n 地址，应用就优先走工作流，不再直连 DeepSeek。
 - `n8n-proxy` 容器由 Caddy 提供公网 HTTPS 入口，默认 `443` 端口，开启 Basic Auth（用户名 `admin`）和自签证书；n8n 自身仍只监听宿主机 `127.0.0.1:5678`。需要在 ECS 安全组放行入方向 `443/tcp`。
+
+### 公网访问 n8n
+
+- 地址：`https://<ECS_PUBLIC_IP>`
+- 用户名：`admin`
+- 密码：部署后由管理员单独保存；修改密码可在服务器执行
+  `docker run --rm docker.m.daocloud.io/library/caddy:2-alpine caddy hash-password --plaintext '新密码'`，
+  然后把输出哈希写进 `/opt/touhou-trpg/n8n/Caddyfile` 的 `basic_auth`。
+- 首次访问会提示自签证书不受信任，继续访问即可；如需受信任证书，给 ECS 绑域名后用 Caddy 自动申请 Let's Encrypt。
 - NPC 属性 / HP / MP / SAN 等数字由 n8n Code 节点里的确定性规则从原文解析，DeepSeek 只负责正文和实体抽取；
   模型返回的数值会被原文解析结果覆盖。
 

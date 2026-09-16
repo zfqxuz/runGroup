@@ -15,3 +15,5 @@ apps/web/public/uploads/
 .vscode/
 .DS_Store
 uploads/
+
+n8n/certs/

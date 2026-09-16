@@ -1,16 +1,17 @@
-https://8.141.16.85 {
-# 自签内部证书；首次访问浏览器会提示不受信任，继续访问即可。
-tls internal
+# 生产 n8n 公网入口：固定监听 443，使用标准 RSA 自签证书。
+# 直接用 IP 访问时，浏览器/客户端通常不会发送 SNI；这里不能使用 tls internal。
+:443 {
+	tls /etc/caddy/certs/n8n.crt /etc/caddy/certs/n8n.key
 
-# 公网入口必须经过一层 Basic Auth，避免 n8n 编辑器裸奔。
-basic_auth {
-admin $2b$12$R/S075.Lld42jaV/8wLe4.yM676ycoXAGDcIGlH2JGqai3tjGq7QK
-}
+	# 公网入口先过一层 Basic Auth，避免 n8n 编辑器裸露。
+	basic_auth {
+		admin $2b$12$R/S075.Lld42jaV/8wLe4.yM676ycoXAGDcIGlH2JGqai3tjGq7QK
+	}
 
-reverse_proxy n8n:5678 {
-transport http {
-read_timeout 3600s
-write_timeout 3600s
-}
-}
+	reverse_proxy n8n:5678 {
+		transport http {
+			read_timeout 3600s
+			write_timeout 3600s
+		}
+	}
 }

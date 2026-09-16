@@ -139,9 +139,29 @@ jobs:
               fi
             fi
 
+            mkdir -p n8n/certs
+            if [ ! -f n8n/certs/n8n.crt ] || [ ! -f n8n/certs/n8n.key ]; then
+              openssl req -x509 -nodes -newkey rsa:2048 -sha256 -days 3650 \
+                -keyout n8n/certs/n8n.key \
+                -out n8n/certs/n8n.crt \
+                -subj "/CN=8.141.16.85" \
+                -addext "subjectAltName=IP:8.141.16.85"
+              chmod 600 n8n/certs/n8n.key
+            fi
+
             docker compose -f docker-compose.prod.yml pull app
             docker compose -f docker-compose.prod.yml up -d
             docker compose -f docker-compose.prod.yml ps
+
+            for i in $(seq 1 20); do
+              if curl -k -sS -m 3 -o /dev/null https://127.0.0.1; then
+                echo "n8n proxy ready"
+                break
+              fi
+              echo "waiting for n8n proxy... ($i/20)"
+              sleep 3
+            done
+            curl -k -sS -m 3 -o /dev/null https://127.0.0.1
 
             for i in $(seq 1 20); do
               if docker compose -f docker-compose.prod.yml logs --tail=200 n8n 2>/dev/null | grep -q 'Activated workflow'; then
