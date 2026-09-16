@@ -48,8 +48,8 @@ const VITAL_GROUPS: readonly LabelGroup<VitalKey>[] = [
 ];
 
 const SEPARATORS = "[ \\t:：=,，;；|/()（）为是值可有达到]{0,12}";
-const NUMBER_PATTERN = "(\\d{1,4})(?![0-9dD])";
-const SIGNED_NUMBER_PATTERN = "([+-]?\\d{1,5})(?![0-9dD])";
+const NUMBER_PATTERN = "(\\d{1,4})(?![0-9])(?![dD]\\d)";
+const SIGNED_NUMBER_PATTERN = "([+-]?\\d{1,5})(?![0-9])(?![dD]\\d)";
 
 export interface NpcStatSource {
   readonly filename?: string;
@@ -90,10 +90,8 @@ function collectDirectMatches<T extends string>(
   const numberPattern = signed ? SIGNED_NUMBER_PATTERN : NUMBER_PATTERN;
 
   if (english.length > 0) {
-    const pattern = new RegExp(
-      "\\b(" + english.map(escapeRegExp).join("|") + ")\\b" + SEPARATORS + numberPattern,
-      "gi"
-    );
+    const labelPattern = "(?<![a-z])(" + english.map(escapeRegExp).join("|") + ")(?![a-z])";
+    const pattern = new RegExp(labelPattern + SEPARATORS + numberPattern, "gi");
     for (const match of text.matchAll(pattern)) {
       const key = groupValue(groups, match[1] ?? "");
       if (key === undefined || output.has(key)) continue;
@@ -121,7 +119,7 @@ function containsValueAfterLabel(line: string, groups: readonly LabelGroup<strin
   const english = aliases.filter((alias) => /^[a-z0-9 ]+$/i.test(alias));
   const chinese = aliases.filter((alias) => /^[a-z0-9 ]+$/i.test(alias) === false);
   const patterns: RegExp[] = [];
-  if (english.length > 0) patterns.push(new RegExp("\\b(?:" + english.map(escapeRegExp).join("|") + ")\\b" + SEPARATORS + NUMBER_PATTERN, "i"));
+  if (english.length > 0) patterns.push(new RegExp("(?<![a-z])(?:" + english.map(escapeRegExp).join("|") + ")(?![a-z])" + SEPARATORS + NUMBER_PATTERN, "i"));
   if (chinese.length > 0) patterns.push(new RegExp("(?:" + chinese.map(escapeRegExp).join("|") + ")" + SEPARATORS + NUMBER_PATTERN));
   return patterns.some((pattern) => pattern.test(line));
 }
@@ -131,7 +129,7 @@ function labelsInOrder(line: string, groups: readonly LabelGroup<string>[]): str
   const english = aliases.filter((alias) => /^[a-z0-9 ]+$/i.test(alias));
   const chinese = aliases.filter((alias) => /^[a-z0-9 ]+$/i.test(alias) === false);
   const patternParts: string[] = [];
-  if (english.length > 0) patternParts.push("\\b(?:" + english.map(escapeRegExp).join("|") + ")\\b");
+  if (english.length > 0) patternParts.push("(?<![a-z])(?:" + english.map(escapeRegExp).join("|") + ")(?![a-z])");
   if (chinese.length > 0) patternParts.push("(?:" + chinese.map(escapeRegExp).join("|") + ")");
   if (patternParts.length === 0) return [];
   const pattern = new RegExp(patternParts.join("|"), "gi");
