@@ -11,12 +11,18 @@
 export const NPC_STAT_ATTRIBUTE_KEYS = ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"] as const;
 export type NpcStatAttributeKey = (typeof NPC_STAT_ATTRIBUTE_KEYS)[number];
 
+export interface ParsedNpcSkill {
+  readonly name: string;
+  readonly value: number;
+}
+
 export interface ParsedNpcStats {
   readonly attributes: Partial<Record<NpcStatAttributeKey, number>>;
   readonly maxHp: number | null;
   readonly maxMp: number | null;
   readonly maxSan: number | null;
   readonly maxDp: number | null;
+  readonly skills: readonly ParsedNpcSkill[];
   readonly matchedAttributes: number;
   readonly matchedVitals: number;
 }
@@ -142,7 +148,7 @@ function extractAlignedPairs(text: string): Map<string, number> {
   const allGroups: readonly LabelGroup<string>[] = [...ATTRIBUTE_GROUPS, ...VITAL_GROUPS] as readonly LabelGroup<string>[];
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    if (line.length > 240 || containsValueAfterLabel(line, allGroups)) continue;
+    if (line.length > 240 || /[。！？!?；;]/.test(line) || containsValueAfterLabel(line, allGroups)) continue;
     const keys = labelsInOrder(line, allGroups);
     if (keys.length < 1) continue;
     for (let offset = 1; offset <= 2; offset += 1) {
@@ -163,6 +169,35 @@ function extractAlignedPairs(text: string): Map<string, number> {
     }
   }
   return output;
+}
+
+const SKILL_STOPWORDS = new Set([
+  "困难",
+  "极端",
+  "奖励",
+  "惩罚",
+  "成功",
+  "失败",
+  "大成功",
+  "大失败",
+  "自动成功",
+  "幸运"
+]);
+
+function parseSkillValues(text: string): ParsedNpcSkill[] {
+  const map = new Map<string, ParsedNpcSkill>();
+  // 「战斗: 50%」「聆听 60%」「克苏鲁神话知识 17%」等通用技能写法。
+  const pattern = /([\p{L}][\p{L}\p{N}_·\-]{1,15})\s*[:：]?\s*(\d{1,3})\s*%/gu;
+  for (const match of text.matchAll(pattern)) {
+    const name = (match[1] ?? "").trim();
+    const value = Number(match[2]);
+    if (name.length < 2 || Number.isFinite(value) === false || value < 0 || value > 100) continue;
+    if (SKILL_STOPWORDS.has(name) || /^(困难|极端|奖励|惩罚)/.test(name)) continue;
+    const key = name.toLowerCase();
+    const existing = map.get(key);
+    if (existing === undefined || value > existing.value) map.set(key, { name, value: Math.floor(value) });
+  }
+  return [...map.values()];
 }
 
 export function parseNpcStatsText(raw: string): ParsedNpcStats {
@@ -202,13 +237,14 @@ export function parseNpcStatsText(raw: string): ParsedNpcStats {
     maxMp: vitalValues.mp ?? null,
     maxSan: vitalValues.san ?? null,
     maxDp: vitalValues.dp ?? null,
+    skills: parseSkillValues(text),
     matchedAttributes,
     matchedVitals
   };
 }
 
 function scoreOf(parsed: ParsedNpcStats): number {
-  return parsed.matchedAttributes * 10 + parsed.matchedVitals * 4;
+  return parsed.matchedAttributes * 10 + parsed.matchedVitals * 4 + parsed.skills.length * 2;
 }
 
 function isUsable(parsed: ParsedNpcStats): boolean {
@@ -315,11 +351,16 @@ function mergeStats(entry: Record<string, unknown>, parsed: ParsedNpcStats): voi
     const value = parsed.attributes[key];
     if (value !== undefined) attributes[key] = value;
   }
+  // NPC 标准属性行不写幸运；原文没有解析到幸运时按 0，避免模型编造。
+  if (parsed.attributes.luck === undefined) attributes.luck = 0;
   if (Object.keys(attributes).length > 0) entry.attributes = attributes;
   if (parsed.maxHp !== null) entry.maxHp = parsed.maxHp;
   if (parsed.maxMp !== null) entry.maxMp = parsed.maxMp;
   if (parsed.maxSan !== null) entry.maxSan = parsed.maxSan;
   if (parsed.maxDp !== null) entry.maxDp = parsed.maxDp;
+  if (parsed.skills.length > 0) {
+    entry.skillsFromText = parsed.skills.map((skill) => ({ skill: skill.name, value: skill.value }));
+  }
 }
 
 /**
@@ -360,12 +401,6 @@ export function enrichNpcStatsFromSources(
 
     if (best === null || isUsable(best) === false) continue;
     mergeStats(entry, best);
-    // NPC 标准属性行通常没有幸运。原文没有出现「幸运 / luck」时，
-    // 不采用模型可能编造的 luck，统一按 0 处理。
-    if (best.attributes.luck === undefined && sources.some((source) => /幸运|luck/i.test(source.text)) === false) {
-      const attributes = recordOf(entry.attributes);
-      entry.attributes = { ...attributes, luck: 0 };
-    }
     enriched += 1;
   }
   return enriched;

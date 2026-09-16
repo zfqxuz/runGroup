@@ -9,8 +9,9 @@ import { builtinRegistry, compileRulePack, resolveRulePack } from "@touhou/rules
 import { normalizeEntityKey } from "@/server/modules/keys";
 import { mergeDraft } from "@/server/ai/chunking";
 import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
+import { enrichNpcStatsFromSources, parseNpcStatsText } from "@/server/ai/npc-stats";
 import { npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
-import { buildNpcDamageOverrides, normalizedWeapons } from "@/server/modules/templates";
+import { buildNpcDamageOverrides, normalizedSkills, normalizedWeapons } from "@/server/modules/templates";
 
 let failed = 0;
 
@@ -115,6 +116,32 @@ const dedupedWeapons = normalizedWeapons(
 );
 check(dedupedWeapons.length === 1, "名称高度相似的 NPC 武器应合并");
 check(dedupedWeapons[0]?.damage === "1d4+2", "武器合并时应保留可解析的骰式伤害");
+
+// ---------- 7. 技能百分比解析与优先级 ----------
+const parsedStats = parseNpcStatsText(
+  "测试 NPC\n\nSTR 50 CON 50 SIZ 50 DEX 50 APP 50 INT 50 POW 50 EDU 50\n战斗: 50% (困难25% / 极端10%)\n闪避 17%\n技能: 聆听 60%，潜行 90%"
+);
+const skillMap = new Map(parsedStats.skills.map((skill) => [skill.name, skill.value]));
+check(skillMap.get("战斗") === 50, "应解析出「战斗 50%」");
+check(skillMap.get("闪避") === 17, "应解析出「闪避 17%」");
+check(skillMap.get("聆听") === 60 && skillMap.get("潜行") === 90, "应解析多技能百分比");
+const mergedSkills = normalizedSkills(
+  [{ skill: "FIGHTING_BRAWL", value: 25 }, { skill: "DODGE", value: 25 }],
+  pack as never,
+  warnings,
+  "测试 NPC",
+  [{ skill: "战斗", value: 50 }, { skill: "闪避", value: 17 }]
+);
+check(mergedSkills.FIGHTING_BRAWL === 50 && mergedSkills.DODGE === 17, "原文技能值应覆盖模型默认 25");
+
+// ---------- 8. 幸运缺省值 ----------
+const luckEntry: Record<string, unknown> = {
+  name: "测试 NPC",
+  attributes: { str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, luck: 10 },
+  statText: "STR 50 CON 50 SIZ 50 DEX 50 APP 50 INT 50 POW 50 EDU 50\n战斗 50%"
+};
+enrichNpcStatsFromSources([luckEntry], [{ text: "测试 NPC\n\nSTR 50 CON 50 SIZ 50 DEX 50 APP 50 INT 50 POW 50 EDU 50\n战斗 50%" }]);
+check((luckEntry.attributes as Record<string, unknown>).luck === 0, "原文没有幸运时应按 0 而不是模型值");
 
 if (failed > 0) {
   console.error("verify-entity-normalization: " + String(failed) + " failure(s)");

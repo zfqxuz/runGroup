@@ -166,7 +166,8 @@ export function normalizedSkills(
   value: unknown,
   compiled: SkillPackLike,
   warnings: string[],
-  label: string
+  label: string,
+  authoritative?: unknown
 ): Record<string, number> {
   const byName = skillIdsOf(compiled);
   const out: Record<string, number> = {};
@@ -178,6 +179,13 @@ export function normalizedSkills(
     }
     const number = numberIn(rawValue, 0, 0, 999);
     if (number > 0) out[skillId] = Math.max(out[skillId] ?? 0, number);
+  }
+  // 原文确定性解析出的技能值优先于模型给的默认值。
+  for (const [rawKey, rawValue] of skillPairsOf(authoritative)) {
+    const skillId = byName.get(normalizeSkillKey(rawKey));
+    if (skillId === undefined) continue;
+    const number = numberIn(rawValue, 0, 0, 999);
+    if (number > 0) out[skillId] = number;
   }
   return out;
 }
@@ -532,7 +540,13 @@ export async function syncModuleTemplates(
       const rarityRaw = textOf(entry.data, ["rarity"], "COMMON").toUpperCase();
       const raceRaw = textOf(entry.data, ["race"], "");
       const attributes = normalizedAttributes(attributesValue, warnings, label);
-      const skills = normalizedSkills(skillsValue, compiledPack, warnings, label);
+      const skills = normalizedSkills(
+        skillsValue,
+        compiledPack,
+        warnings,
+        label,
+        entry.data.skillsFromText ?? entry.data.sourceSkills
+      );
       const weapons = normalizedWeapons(
         entry.data.weapons ?? entry.data.attacks ?? [],
         compiledPack,

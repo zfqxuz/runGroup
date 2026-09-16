@@ -1181,7 +1181,9 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
         name: stat.name,
         aliases: [...(stat.aliases ?? [])],
         description: "（n8n 数值解析补充，正文请结合原文或 AI 提取结果使用。）",
-        attributes: { ...stat.attributes }
+        attributes: Object.fromEntries(
+          Object.entries(stat.attributes).filter(([key]) => key.toLowerCase() !== "luck")
+        )
       };
       if (stat.maxHp !== null) target.maxHp = stat.maxHp;
       if (stat.maxMp !== null) target.maxMp = stat.maxMp;
@@ -1197,6 +1199,7 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
       attributes[key.toLowerCase()] = value;
     }
     for (const [key, value] of Object.entries(stat.attributes)) {
+      if (key.toLowerCase() === "luck") continue;
       if (typeof value === "number" && Number.isFinite(value)) attributes[key.toLowerCase()] = value;
     }
     if (Object.keys(attributes).length > 0) target.attributes = attributes;
