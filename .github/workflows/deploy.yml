@@ -115,6 +115,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
+          command_timeout: 30m
           envs: APP_IMAGE,GHCR_USER,GHCR_TOKEN,DEEPSEEK_API_KEY,DEPLOY_DIR
           script: |
             set -euo pipefail
@@ -167,6 +168,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
+          command_timeout: 30m
           script: |
             set -euo pipefail
             cd "${{ env.DEPLOY_DIR }}"
