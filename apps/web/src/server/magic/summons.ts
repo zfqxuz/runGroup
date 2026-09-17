@@ -35,7 +35,11 @@ export function summonOriginOf(card: { readonly stats: unknown }): SummonOrigin 
   };
 }
 
-function statsOfTemplate(template: SummonTemplate, origin: SummonOrigin): Record<string, unknown> {
+function statsOfTemplate(
+  template: SummonTemplate,
+  origin: SummonOrigin,
+  durationTicks: number | undefined
+): Record<string, unknown> {
   return {
     presetId: null,
     tier: "STANDARD",
@@ -56,6 +60,7 @@ function statsOfTemplate(template: SummonTemplate, origin: SummonOrigin): Record
     tags: ["SUMMON"],
     rarity: "COMMON",
     summoned: true,
+    ...(durationTicks !== undefined && durationTicks > 0 ? { summonDurationTicks: durationTicks } : {}),
     summonOrigin: {
       ...origin,
       createdAt: new Date().toISOString()
@@ -111,8 +116,10 @@ export async function createPersistentSummonCard(input: {
   readonly pack: CompiledRulePack;
   readonly template: SummonTemplate;
   readonly origin: SummonOrigin;
+  /** 战斗外召唤的持续行动轮次；0 / 缺省表示永久。 */
+  readonly durationTicks?: number;
 }): Promise<void> {
-  const stats = statsOfTemplate(input.template, input.origin);
+  const stats = statsOfTemplate(input.template, input.origin, input.durationTicks);
   await prisma.card.upsert({
     where: { id: input.id },
     update: {

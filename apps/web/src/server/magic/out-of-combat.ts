@@ -315,6 +315,7 @@ export async function castOutsideCombat(input: OutOfCombatCastInput): Promise<Ou
           ownerId: null,
           pack: input.pack,
           template,
+          durationTicks: rounds,
           origin: { spellId: input.spell.id, spellName: input.spell.name, casterId: input.caster.id, casterName: caster.name }
         });
         log.push("召唤了「" + template.name + "」" + (rounds > 0 ? "（" + rounds + " 轮）" : ""));

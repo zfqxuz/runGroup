@@ -47,6 +47,13 @@ async function setup(): Promise<void> {
     await prisma.token.create({ data: { roomId: room.id, mapId: map.id, cardId: card.id, name: card.name, x: 200 + card.id.length, y: 200 } });
     return card;
   }
+  // 一张未放入地图的 NPC：用于验证选择器「尚未放入地图」置灰。
+  await prisma.card.create({
+    data: {
+      roomId: room.id, scope: "ROOM", type: "NPC", name: "E2E-UI 未入场",
+      system: sourceNpc.system, stats: sourceNpc.stats as never
+    }
+  });
   for (const index of [1, 2]) {
     const ally = await makeCard("E2E-UI 我方" + String(index));
     const enemy = await makeCard("E2E-UI 敌方" + String(index));

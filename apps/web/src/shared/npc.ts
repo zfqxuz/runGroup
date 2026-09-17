@@ -58,7 +58,9 @@ export const NpcStatsSchema = z.object({
   /** 稳定召唤 key，用于跨译名匹配。 */
   summonKey: z.string().max(120).optional(),
   /** 别名列表：召唤 / 查找时可参与匹配。 */
-  aliases: z.array(z.string().max(120)).max(20).optional()
+  aliases: z.array(z.string().max(120)).max(20).optional(),
+  /** 召唤物剩余持续行动轮次；0 / 缺省表示永久（直到被击杀或魔法结束）。 */
+  summonDurationTicks: z.number().int().min(0).max(9999).optional()
 });
 
 export type NpcStats = z.output<typeof NpcStatsSchema>;

@@ -2074,3 +2074,29 @@ MagicEffect =
 ### 仍未完成
 - `CombatUnitPicker` 尚未把「未入场 / 已在其它战斗」的单位置灰；冲突仍由服务端返回明确错误。
 - 战斗进行中对参战 Token 的跨场景移动目前没有独立入口，未额外加锁定。
+
+## 50. 战斗单位选择器置灰 + 战斗外限时召唤（本轮）
+
+### 1. 选择器参战资格
+- `listSelectableUnits` 返回的 `SelectableUnit` 增加 `sceneId / sceneName / activeCombatId / eligible / ineligibleReason`。
+- 新增导出 `activeCombatSeats(roomId)`：读取所有进行中战斗的最新快照，返回 `entityId -> combatId`。
+- `CombatUnitPicker`：
+  - 「尚未放入地图」和「已在另一场进行中的战斗」的单位直接置灰，显示原因，不提供我方 / 敌方按钮；
+  - 每个单位显示所在场景名；
+  - 已选单位跨场景时给出「所选单位不在同一场景，无法开战」提示；
+  - 预设选中会过滤掉不可参战单位。
+
+### 2. 战斗外限时召唤
+- `NpcStatsSchema` 增加 `summonDurationTicks`；`createPersistentSummonCard` 支持 `durationTicks`。
+- 战斗外 SUMMON 的 `durationTicks > 0` 会写入召唤卡 `stats.summonDurationTicks`。
+- 该召唤卡作为 NPC 再次参战时，`buildNpcInit` 把它转成 `summonExpiresAtRound`，从第 1 轮开始倒计时；
+  同时标记 `summonedBy / summonedName`，保证到期 / 击杀后能进入 `cleanupDefeatedSummons` 清理。
+- `saveCombatState` 的 `writeNpcConditions` 会把剩余轮次写回 `summonDurationTicks`，战斗未打完时下次参战继续倒计时。
+- `durationTicks = 0` 仍表示永久（直到被击杀或魔法结束）。
+
+### 3. 真实 E2E
+- `scripts/e2e-real-magic.ts` 扩展到 34 项，新增：
+  - 选择器资格（已在其它战斗 / 未入场置灰、空闲可选）；
+  - 战斗外限时召唤 → 作为真实 NPC 卡参战 → 第 1 轮后剩余 1 → 第 2 轮后从战斗移除 → 卡与 Token 清理；
+  - 三场战斗同时进行时的 `Room.status` 重算。
+- 结果：`passed=34 failed=0`；测试数据全部清理。

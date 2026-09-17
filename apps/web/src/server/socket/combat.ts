@@ -169,12 +169,15 @@ async function syncSummonedParticipants(
       weapons: summonTemplate?.weapons,
       armorExpression: summonTemplate?.armorExpression ?? String(participant.armor)
     };
+    const expiresAt = participant.summonExpiresAtRound ?? null;
+    const remainingRounds = expiresAt === null ? 0 : Math.max(0, expiresAt - runtime.state.round);
     await createPersistentSummonCard({
       id: participant.id,
       roomId: runtime.roomId,
       ownerId: null,
       pack: runtime.pack,
       template,
+      durationTicks: remainingRounds,
       origin
     }).catch(() => undefined);
     runtime.summonCardIds.add(participant.id);
@@ -182,8 +185,8 @@ async function syncSummonedParticipants(
   return created;
 }
 
-/** 召唤物在战斗中被击杀后，把持久 NPC 卡和地图 Token 一起清掉。 */
-async function cleanupDefeatedSummons(runtime: CombatRuntime): Promise<void> {
+/** 召唤物在战斗中被击杀 / 到期后，把持久 NPC 卡和地图 Token 一起清掉。 */
+export async function cleanupDefeatedSummons(runtime: CombatRuntime): Promise<void> {
   for (const id of [...runtime.summonCardIds]) {
     const participant = findParticipant(runtime.state, id);
     if (participant === undefined || participant.defeated === true) {

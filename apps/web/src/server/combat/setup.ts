@@ -39,6 +39,15 @@ export interface SelectableUnit {
   readonly subtitle: string | null;
   readonly hp: number;
   readonly ownerId: string | null;
+  /** 当前 Token 所在场景；null 表示尚未放入地图。 */
+  readonly sceneId: string | null;
+  readonly sceneName: string | null;
+  /** 已在某场进行中的战斗里；null 表示空闲。 */
+  readonly activeCombatId: string | null;
+  /** 是否可以直接参战（未入场 / 已在其它战斗中会被置灰）。 */
+  readonly eligible: boolean;
+  /** 不可参战的原因；eligible=true 时为 null。 */
+  readonly ineligibleReason: string | null;
 }
 
 export interface UnitSelection {
@@ -99,30 +108,73 @@ export async function listSelectableUnits(
       orderBy: { createdAt: "asc" }
     })
   ]);
+  const characterIds = entries
+    .filter((entry) => role === "KP" || entry.character.userId === userId)
+    .map((entry) => entry.characterId);
+  const cardIds = role === "KP" ? cards.map((card) => card.id) : [];
+  const tokens = await prisma.token.findMany({
+    where: {
+      roomId,
+      OR: [
+        ...(characterIds.length === 0 ? [] : [{ characterId: { in: [...new Set(characterIds)] } }]),
+        ...(cardIds.length === 0 ? [] : [{ cardId: { in: [...new Set(cardIds)] } }])
+      ]
+    },
+    select: {
+      characterId: true,
+      cardId: true,
+      map: { select: { sceneId: true, scene: { select: { name: true } } } }
+    }
+  });
+  const sceneByEntity = new Map<string, { id: string; name: string }>();
+  for (const token of tokens) {
+    const entityId = token.characterId ?? token.cardId;
+    if (entityId === null) continue;
+    sceneByEntity.set(entityId, { id: token.map.sceneId, name: token.map.scene.name });
+  }
+  const seats = await activeCombatSeats(roomId);
+  const decorate = (
+    base: Omit<SelectableUnit, "sceneId" | "sceneName" | "activeCombatId" | "eligible" | "ineligibleReason">
+  ): SelectableUnit => {
+    const entityId = base.ref.startsWith("character:") ? base.ref.slice(10) : base.ref.slice(4);
+    const scene = sceneByEntity.get(entityId) ?? null;
+    const activeCombatId = seats.get(entityId) ?? null;
+    const reasons: string[] = [];
+    if (scene === null) reasons.push("尚未放入地图");
+    if (activeCombatId !== null) reasons.push("已在另一场进行中的战斗");
+    return {
+      ...base,
+      sceneId: scene?.id ?? null,
+      sceneName: scene?.name ?? null,
+      activeCombatId,
+      eligible: reasons.length === 0,
+      ineligibleReason: reasons.length === 0 ? null : reasons.join("；")
+    };
+  };
   const units: SelectableUnit[] = [];
   for (const entry of entries) {
     const character = entry.character;
     if (role === "KP" || character.userId === userId) {
-      units.push({
+      units.push(decorate({
         ref: characterRef(character.id),
         kind: "CHARACTER",
         name: character.name,
         subtitle: character.occupation,
         hp: character.maxHp,
         ownerId: character.userId
-      });
+      }));
     }
   }
   if (role === "KP") {
     for (const card of cards) {
-      units.push({
+      units.push(decorate({
         ref: npcRef(card.id),
         kind: "NPC",
         name: card.name,
         subtitle: card.subtitle,
         hp: maxHpOfCard(card),
         ownerId: card.ownerId
-      });
+      }));
     }
   }
   return units;
@@ -205,6 +257,9 @@ function buildNpcInit(
     maxDp: parsed.data.maxDp
   };
   const vars: Record<string, number> = { ...attributes, ...derived };
+  const summonOrigin = parsed.data.summonOrigin ?? {};
+  const originCasterId = typeof summonOrigin.casterId === "string" ? summonOrigin.casterId : null;
+  const isPersistentSummon = parsed.data.summoned === true;
   return {
     id: card.id,
     name: card.name,
@@ -213,6 +268,9 @@ function buildNpcInit(
     faction,
     attributes,
     derived,
+    // 持久召唤卡再次参战时仍标记为召唤物，便于到期 / 击杀后清理卡与 Token。
+    summonedBy: isPersistentSummon ? originCasterId ?? card.id : null,
+    summonedName: isPersistentSummon ? card.name : null,
     skills: { ...parsed.data.skills },
     spells: parsed.data.spells.length > 0 ? [...parsed.data.spells] : [...defaultSpells],
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(attributes.str + attributes.siz) : "0",
@@ -220,7 +278,12 @@ function buildNpcInit(
     speed: computeBaseSpeed(pack, vars),
     isIdentified: false,
     isPublic: card.isPublic,
-    conditions: parsed.data.conditions
+    conditions: parsed.data.conditions,
+    // 战斗外召唤留下的持续轮次：进入战斗后从第 1 轮开始倒计时。
+    summonExpiresAtRound:
+      parsed.data.summonDurationTicks !== undefined && parsed.data.summonDurationTicks > 0
+        ? 1 + parsed.data.summonDurationTicks
+        : null
   };
 }
 
@@ -286,14 +349,14 @@ async function resolveParticipantScenes(
   return result;
 }
 
-/** 找出房间内进行中的战斗已占用的实体，避免同一单位同时参加多场战斗。 */
-async function activeCombatEntityIds(roomId: string): Promise<Set<string>> {
+/** 找出房间内进行中的战斗已占用的实体（entityId -> combatId），避免同一单位同时参加多场战斗。 */
+export async function activeCombatSeats(roomId: string): Promise<Map<string, string>> {
   const active = await prisma.combat.findMany({
     where: { roomId, endedAt: null },
     select: { id: true }
   });
-  const ids = new Set<string>();
-  if (active.length === 0) return ids;
+  const seats = new Map<string, string>();
+  if (active.length === 0) return seats;
   const snapshots = await prisma.combatSnapshot.findMany({
     where: { combatId: { in: active.map((combat) => combat.id) } },
     orderBy: [{ combatId: "asc" }, { seq: "desc" }],
@@ -307,10 +370,14 @@ async function activeCombatEntityIds(roomId: string): Promise<Set<string>> {
     if (Array.isArray(state.participants) === false) continue;
     for (const participant of state.participants) {
       const id = (participant as { id?: unknown }).id;
-      if (typeof id === "string") ids.add(id);
+      if (typeof id === "string" && seats.has(id) === false) seats.set(id, snapshot.combatId);
     }
   }
-  return ids;
+  return seats;
+}
+
+async function activeCombatEntityIds(roomId: string): Promise<Set<string>> {
+  return new Set((await activeCombatSeats(roomId)).keys());
 }
 
 /** 把 ref 换成可读名字，错误提示里不暴露内部 id。 */
@@ -570,6 +637,11 @@ async function writeNpcConditions(db: Prisma.TransactionClient, state: CombatSta
         ? { ...(card.stats as Record<string, unknown>) }
         : {};
     base.conditions = persistableConditions(participant);
+    if (participant.summonExpiresAtRound !== null && participant.summonExpiresAtRound !== undefined) {
+      const remaining = Math.max(0, participant.summonExpiresAtRound - state.round);
+      if (remaining > 0) base.summonDurationTicks = remaining;
+      else delete base.summonDurationTicks;
+    }
     await db.card.update({ where: { id: card.id }, data: { stats: base as never } });
   }
 }

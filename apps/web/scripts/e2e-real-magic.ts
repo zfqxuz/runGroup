@@ -12,7 +12,7 @@
  */
 import { prisma } from "../src/server/db/prisma";
 import { loadEffectivePack } from "../src/server/rules/loader";
-import { characterRef, createCombatRecord, npcRef, saveCombatState } from "../src/server/combat/setup";
+import { characterRef, createCombatRecord, listSelectableUnits, npcRef, saveCombatState } from "../src/server/combat/setup";
 import { loadCombatRuntime, clearCombatRuntime } from "../src/server/combat/runtime";
 import {
   consumePossessCharge,
@@ -21,6 +21,7 @@ import {
 } from "../src/server/magic/conditions";
 import { castOutsideCombat } from "../src/server/magic/out-of-combat";
 import { removeSummonCards } from "../src/server/magic/summons";
+import { cleanupDefeatedSummons } from "../src/server/socket/combat";
 import { findCondition, parseConditions } from "@touhou/rules";
 import { endCombat, resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
 
@@ -44,6 +45,7 @@ const MAGIC_SPELLS = [
   { id: "e2e-heal", name: "E2E治疗术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ALLY", effects: [{ type: "HEAL", amount: "1d6" }] },
   { id: "e2e-possess", name: "E2E夺舍术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ENEMY", effects: [{ type: "POSSESS", durationTurns: "3" }] },
   { id: "e2e-summon", name: "E2E召唤术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "SELF", targeting: "SELF", effects: [{ type: "SUMMON", name: "异次元蹒跚者", count: "1", durationTicks: "0" }] },
+  { id: "e2e-summon-duration", name: "E2E限时召唤术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "SELF", targeting: "SELF", effects: [{ type: "SUMMON", name: "异次元蹒跚者", count: "1", durationTicks: "2" }] },
   { id: "e2e-damage", name: "E2E伤害术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ENEMY", effects: [{ type: "DAMAGE", amount: "1d6" }] }
 ];
 
@@ -155,6 +157,7 @@ async function main(): Promise<void> {
   const npcOtherScene = await cloneNpc("E2E·食尸鬼B");
   const npcNoToken = await cloneNpc("E2E·食尸鬼C");
   const npcSecondFight = await cloneNpc("E2E·食尸鬼D");
+  const npcThirdFight = await cloneNpc("E2E·食尸鬼E");
   const summonSource = await cloneNpc("异次元蹒跚者");
 
   // 真实场景 / 地图 / Token
@@ -167,6 +170,7 @@ async function main(): Promise<void> {
   await prisma.token.create({ data: { roomId: room.id, mapId: mapB.id, cardId: npcOtherScene.id, name: npcOtherScene.name, x: 100, y: 100 } });
   await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, characterId: playerSecond.id, name: playerSecond.name, x: 200, y: 200 } });
   await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, cardId: npcSecondFight.id, name: npcSecondFight.name, x: 400, y: 200 } });
+  await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, cardId: npcThirdFight.id, name: npcThirdFight.name, x: 500, y: 200 } });
 
   const effective = await loadEffectivePack({
     id: room.id, system: room.system, rulePackVersionId: room.rulePackVersionId, ruleOverride: room.ruleOverride
@@ -192,6 +196,30 @@ async function main(): Promise<void> {
     // ---------- 3. 席位互斥 ----------
     const duplicate = await createCombatRecord(room.id, effective, [characterRef(player.id)], [npcRef(npcSameScene.id)]);
     check(duplicate.ok === false && String(duplicate.error ?? "").includes("另一场"), "同一单位不能同时参加两场战斗", duplicate.error);
+
+    // ---------- 3.5 选择器资格：未入场 / 已在其它战斗置灰 ----------
+    const options = await listSelectableUnits(room.id, user.id, "KP");
+    const optionByRef = new Map(options.map((option) => [option.ref, option]));
+    const playerOption = optionByRef.get(characterRef(player.id));
+    const noTokenOption = optionByRef.get(npcRef(npcNoToken.id));
+    const freeOption = optionByRef.get(npcRef(npcOtherScene.id));
+    check(
+      playerOption?.eligible === false && playerOption?.activeCombatId === combatId &&
+        String(playerOption?.ineligibleReason ?? "").includes("另一场"),
+      "已在其它战斗的单位在选择器里被标记为不可参战",
+      playerOption
+    );
+    check(
+      noTokenOption?.sceneId === null && noTokenOption?.eligible === false &&
+        String(noTokenOption?.ineligibleReason ?? "").includes("尚未放入地图"),
+      "未入场单位在选择器里被标记为不可参战",
+      noTokenOption
+    );
+    check(
+      freeOption?.eligible === true && freeOption?.activeCombatId === null && freeOption?.sceneName !== null,
+      "已入场且空闲的单位可选择",
+      freeOption
+    );
 
     // ---------- 4. 战斗内夺舍：真实 runtime + 真实结算函数 ----------
     const runtime = await loadCombatRuntime(combatId);
@@ -295,6 +323,62 @@ async function main(): Promise<void> {
     const summonCardAfter = summonCard === undefined ? null : await prisma.card.findUnique({ where: { id: summonCard.id } });
     check(removed >= 1 && summonCardAfter === null && summonTokenAfter === null, "关闭魔法清理召唤卡与地图 Token", { removed });
 
+    // ---------- 7.5 战斗外限时召唤：进入战斗后按轮到期并清理 ----------
+    const durationSpell = spellById.get("e2e-summon-duration");
+    if (durationSpell === undefined) {
+      check(false, "找到限时召唤法术");
+      return;
+    }
+    const durationCast = await castOutsideCombat({
+      roomId: room.id, pack: effective.compiled, spell: durationSpell,
+      caster: { kind: "CHARACTER", id: player.id }, target: { kind: "CHARACTER", id: player.id }
+    });
+    const durationCards = await prisma.card.findMany({ where: { roomId: room.id, name: "异次元蹒跚者" } });
+    const durationCard = durationCards.find((card) => {
+      const stats = card.stats as Record<string, unknown>;
+      return stats.summoned === true && stats.summonDurationTicks === 2;
+    });
+    check(durationCast.ok === true && durationCard !== undefined, "战斗外限时召唤记录持续 2 轮", {
+      log: durationCast.log, found: durationCard !== undefined
+    });
+    if (durationCard === undefined) return;
+
+    const third = await createCombatRecord(room.id, effective, [npcRef(npcThirdFight.id)], [npcRef(durationCard.id)]);
+    check(third.ok === true && third.combatId !== undefined, "限时召唤物作为真实 NPC 卡加入战斗", third.error);
+    if (third.combatId === undefined) return;
+    const rt3 = await loadCombatRuntime(third.combatId);
+    if (rt3 === null) {
+      check(false, "限时召唤战斗 runtime 可加载");
+      return;
+    }
+    const summonParticipant = rt3.state.participants.find((participant) => participant.id === durationCard.id);
+    check(summonParticipant?.summonExpiresAtRound === 3, "进入战斗后剩余持续 2 轮", {
+      expiresAt: summonParticipant?.summonExpiresAtRound
+    });
+
+    function advanceOneRound(runtime: NonNullable<typeof rt3>): void {
+      runtime.state.initiativeOrder = runtime.state.participants.map((participant) => participant.id);
+      runtime.state.activeIndex = Math.max(0, runtime.state.initiativeOrder.length - 1);
+      runtime.state.phase = "AWAITING_ACTION";
+      for (const participant of runtime.state.participants) participant.isReady = false;
+      endTurn(runtime.pack, runtime.state);
+    }
+    advanceOneRound(rt3);
+    await saveCombatState(third.combatId, rt3.state);
+    const cardAfterOneRound = await prisma.card.findUnique({ where: { id: durationCard.id } });
+    check((cardAfterOneRound?.stats as Record<string, unknown> | undefined)?.summonDurationTicks === 1, "走完 1 轮后剩余持续 1 轮并回写卡片", {
+      stats: cardAfterOneRound?.stats
+    });
+
+    advanceOneRound(rt3);
+    check(rt3.state.participants.some((participant) => participant.id === durationCard.id) === false, "持续轮次耗尽后从战斗移除");
+    await cleanupDefeatedSummons(rt3);
+    const cardAfterExpire = await prisma.card.findUnique({ where: { id: durationCard.id } });
+    const tokenAfterExpire = await prisma.token.findFirst({ where: { roomId: room.id, cardId: durationCard.id } });
+    check(cardAfterExpire === null && tokenAfterExpire === null, "到期后清理持久召唤卡与地图 Token", {
+      card: cardAfterExpire?.id ?? null, token: tokenAfterExpire?.id ?? null
+    });
+
     // ---------- 8. 同房间多场战斗 + 状态重算 ----------
     const second = await createCombatRecord(room.id, effective, [characterRef(playerSecond.id)], [npcRef(npcSecondFight.id)]);
     check(second.ok === true && second.combatId !== undefined, "同一房间可以同时开第二场战斗（不同单位）", second.error);
@@ -316,6 +400,13 @@ async function main(): Promise<void> {
         endCombat(runtimeTwo.state, "E2E 结束第二场");
         await saveCombatState(second.combatId, runtimeTwo.state);
       }
+      // 第三场（限时召唤战斗）仍在进行中，此时房间应保持 COMBAT。
+      const roomAfterSecondEnd = await prisma.room.findUniqueOrThrow({ where: { id: room.id } });
+      check(roomAfterSecondEnd.status === "COMBAT", "仍有第三场时房间保持 COMBAT", { status: roomAfterSecondEnd.status });
+
+      if (rt3.state.phase !== "ENDED") endCombat(rt3.state, "E2E 结束第三场");
+      // 即使引擎已因召唤物到期自动结束，也要落库一次，否则 DB 里仍是进行中。
+      await saveCombatState(third.combatId, rt3.state);
       const roomAfterAllEnd = await prisma.room.findUniqueOrThrow({ where: { id: room.id } });
       check(roomAfterAllEnd.status === "PLAYING", "全部战斗结束后房间回到 PLAYING", { status: roomAfterAllEnd.status });
     }
