@@ -14,6 +14,7 @@ import {
   type AttributeSet
 } from "@touhou/rules";
 import ImageUpload from "@/components/upload/ImageUpload";
+import BackstoryPanel from "@/components/character/BackstoryPanel";
 import DeleteCharacterButton from "@/components/character/DeleteCharacterButton";
 import { characterEquipmentOf } from "@/shared/character-equipment";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
@@ -385,6 +386,8 @@ export default async function CharacterDetailPage({
           </div>
         )}
       </section>
+
+      <BackstoryPanel value={character.backstory} />
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">

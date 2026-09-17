@@ -102,6 +102,8 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
   const maxSan = finalOutcome.derived.maxSan;
   const san = Math.max(0, Math.min(attributes.pow, maxSan));
 
+  const spellNames = parsed.spells.map((spell) => spell.name);
+
   const character = await prisma.character.create({
     data: {
       userId: session.user.id,
@@ -135,7 +137,22 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
         skills: parsed.skills,
         weapons: parsed.weapons,
         items: parsed.items,
-        assets: parsed.assets
+        assets: parsed.assets,
+        // 背景故事 / 经历 / 法术 / 伙伴的原始解析结果
+        backstory: parsed.backstory,
+        experiences: parsed.experiences,
+        mythosExperiences: parsed.mythosExperiences,
+        spells: spellNames,
+        spellDetails: parsed.spells,
+        companions: parsed.companions
+      } as never,
+      backstory: {
+        ...parsed.backstory,
+        experiences: parsed.experiences,
+        mythosExperiences: parsed.mythosExperiences,
+        spells: spellNames,
+        spellDetails: parsed.spells,
+        companions: parsed.companions
       } as never,
       hp: finalOutcome.derived.maxHp,
       maxHp: finalOutcome.derived.maxHp,

@@ -13,6 +13,7 @@ import {
   type AttributeKey,
   type AttributeSet
 } from "@touhou/rules";
+import BackstoryPanel from "@/components/character/BackstoryPanel";
 import { unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
@@ -216,6 +217,8 @@ export default async function CharacterPage({
           </div>
         )}
       </section>
+
+      <BackstoryPanel value={character.backstory} />
 
       {canManage === false ? null : (
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

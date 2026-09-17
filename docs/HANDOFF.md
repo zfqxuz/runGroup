@@ -2297,3 +2297,50 @@ MagicEffect =
 ### 仍未完成
 - 角色卡背景故事 / 调查员经历 / 法术一览 / 调查员伙伴的解析：完整解析结果已整理，等确认字段映射后再改解析器。
 - 装备时可选的 UI 目前是「装备表单内勾选」，已装备卡暂不能在原地改选（需卸下再装）。
+
+## 60. 角色卡背景故事 / 经历 / 法术 / 伙伴解析（本轮）
+
+用户确认字段映射后，补齐 `parseCharacterWorkbook` 此前完全没解析的背景故事区块。
+
+### 1. 字段映射（已确认）
+```
+Character.backstory:
+  appearance            <- W「个人描述 / 角色外貌」
+  beliefs               <- W「思想与信念」
+  significantPeople     <- W「重要之人」
+  meaningfulPlaces      <- W「意义非凡之地」
+  treasuredPossessions  <- W「宝贵之物」
+  traits                <- W「特质」
+  secrets               <- W「难言之隐」
+  scars                 <- W「伤口和疤痕」
+  phobias               <- W「恐惧症和狂躁症」
+  experiences[]         <- 调查员经历（B 经历模组 / J 人物变化描述）
+  mythosExperiences[]   <- 神话相关（W 遇到了 / AA 获得的结果 / AK 备注 / AR 累计）
+  spells[]              <- 法术一览（Y 法术名称，供持有判定）
+  spellDetails[]        <- 法术一览（W 编号 / Y 名称 / AC 使用代价 / AH 作用）
+  companions[]          <- 调查员伙伴（W 姓名 / AA 玩家 / AD 注释 / AL 造成改变 / AP 相遇模组）
+sourceData:
+  backstory / experiences / mythosExperiences / spells / spellDetails / companions（原始解析结果）
+  weapons / items / assets（已有）
+```
+
+### 2. 解析实现（`server/character/import-xlsx.ts`）
+- 标题按 W 列文本定位（`findLabelRow`），不写死行号；插行 / 删行也能解析。
+- 三个子表分别按列读取：调查员经历（B/J）、神话相关（W/AA/AK/AR）、法术一览（W/Y/AC/AH）、调查员伙伴（W/AA/AD/AL/AP）。
+- 过滤模板占位行：`例：…`、`无`、`——`、空值；本卡「灰色束缚 / 米-戈 / 大熊」等示例不会被导入。
+- 已用真实 `COC7zfq.xlsx` 与 `丰饶之海-角色卡-埃里克.xlsx` 验证：背景故事 9 项、真实经历、神话遭遇、真实法术、3 名伙伴都能正确解析，示例卡则全部解析为空。
+
+### 3. 持久化与展示
+- `importCharacterAction` 写入 `Character.backstory` 与 `sourceData`；`backstory.spells` 存法术名称数组，战斗外施法 / 战斗内施法按名字匹配规则包法术，导入卡上写到的法术真的能施放。
+- 新增 `shared/backstory.ts`（宽容读取，旧角色没有数据时返回 null）。
+- 新增 `components/character/BackstoryPanel.tsx`：角色外貌等 9 项 + 调查员经历 + 神话相关 + 法术一览（含代价 / 作用）+ 调查员伙伴。
+- 已接入 `/characters/[id]` 与 `/rooms/[id]/characters/[characterId]` 两个页面。
+
+### 4. 验证
+- `verify-character-import` 扩展为：构造含 9 项背景故事、经历、神话、法术、伙伴的最小 xlsx → 走真实导入 server action → 断言 DB 落库 → 实际 GET 角色详情页断言渲染。
+- 结果：`PASS 人物卡导入 E2E：属性 / 职业 / 技能 / 武器 / 背景故事与经历落库并在角色页展示`。
+- 真实角色卡 `COC7zfq.xlsx` 在部署产物里解析：9 项背景故事全部命中，示例行（灰色束缚 / 米-戈 / 大熊）全部正确忽略。
+
+### 仍未完成
+- 背景故事的编辑 UI（目前只在导入时写入并展示，角色编辑页暂不能改这 9 项 + 经历 / 伙伴）。
+- `简化卡` 工作表的交叉校验（精简属性 / 技能成功率）暂未使用。

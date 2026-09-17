@@ -149,7 +149,46 @@ function buildWorkbookBuffer(): Buffer {
   put("AG54", "7");
   put("AJ54", "100");
 
-  sheet["!ref"] = "A1:HX74";
+  // 背景故事 9 项（标题在 W 列、内容在 AA 列）
+  put("W61", "个人描述\n角色外貌");
+  put("AA61", "E2E 外貌");
+  put("W63", "思想与信念");
+  put("AA63", "E2E 信念");
+  put("W65", "重要之人");
+  put("AA65", "E2E 重要之人");
+  put("W67", "意义非凡之地");
+  put("AA67", "E2E 之地");
+  put("W69", "宝贵之物");
+  put("AA69", "E2E 宝物");
+  put("W71", "特质");
+  put("AA71", "E2E 特质");
+  put("W73", "难言之隐");
+  put("AA73", "E2E 秘密");
+  put("W75", "伤口和疤痕");
+  put("AA75", "E2E 疤痕");
+  put("W77", "恐惧症和狂躁症");
+  put("AA77", "E2E 恐惧");
+  // 调查员经历
+  put("B97", "E2E 模组");
+  put("J97", "E2E 角色变化");
+  // 神话相关
+  put("W98", "E2E 神话遭遇");
+  put("AA98", "E2E 结果");
+  put("AK98", "E2E 备注");
+  put("AR98", "3");
+  // 法术一览
+  put("W114", "1");
+  put("Y114", "E2E 法术");
+  put("AC114", "3mp");
+  put("AH114", "E2E 作用");
+  // 调查员伙伴
+  put("W130", "E2E 伙伴");
+  put("AA130", "E2E 玩家");
+  put("AD130", "E2E 注释");
+  put("AL130", "E2E 改变");
+  put("AP130", "E2E 相遇");
+
+  sheet["!ref"] = "A1:HX160";
   const workbook = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(workbook, sheet, "人物卡");
   return XLSX.write(workbook, { type: "buffer", bookType: "xlsx", compression: true }) as Buffer;
@@ -201,7 +240,41 @@ async function main(): Promise<void> {
     expectEqual(weapons.length, 1, "武器数量");
     expectEqual(weapons[0]?.name, "E2E 猎枪", "武器名称");
 
-    console.log("PASS 人物卡导入 E2E：属性 / 职业 / 技能 / 武器落库");
+    const backstory = (character.backstory ?? {}) as Record<string, unknown>;
+    expectEqual(backstory.appearance, "E2E 外貌", "背景故事-角色外貌");
+    expectEqual(backstory.beliefs, "E2E 信念", "背景故事-思想与信念");
+    expectEqual(backstory.significantPeople, "E2E 重要之人", "背景故事-重要之人");
+    expectEqual(backstory.meaningfulPlaces, "E2E 之地", "背景故事-意义非凡之地");
+    expectEqual(backstory.treasuredPossessions, "E2E 宝物", "背景故事-宝贵之物");
+    expectEqual(backstory.traits, "E2E 特质", "背景故事-特质");
+    expectEqual(backstory.secrets, "E2E 秘密", "背景故事-难言之隐");
+    expectEqual(backstory.scars, "E2E 疤痕", "背景故事-伤口和疤痕");
+    expectEqual(backstory.phobias, "E2E 恐惧", "背景故事-恐惧症和狂躁症");
+    const experiences = (backstory.experiences ?? []) as Array<Record<string, unknown>>;
+    expectEqual(experiences.length, 1, "调查员经历数量");
+    expectEqual(experiences[0]?.module, "E2E 模组", "调查员经历-模组");
+    expectEqual(experiences[0]?.change, "E2E 角色变化", "调查员经历-人物变化");
+    const mythos = (backstory.mythosExperiences ?? []) as Array<Record<string, unknown>>;
+    expectEqual(mythos.length, 1, "神话相关数量");
+    expectEqual(mythos[0]?.name, "E2E 神话遭遇", "神话相关-遇到了");
+    expectEqual(mythos[0]?.result, "E2E 结果", "神话相关-获得结果");
+    const spells = (backstory.spells ?? []) as string[];
+    expectEqual(spells.length, 1, "法术一览数量");
+    expectEqual(spells[0], "E2E 法术", "法术一览-名称");
+    const companions = (backstory.companions ?? []) as Array<Record<string, unknown>>;
+    expectEqual(companions.length, 1, "调查员伙伴数量");
+    expectEqual(companions[0]?.name, "E2E 伙伴", "调查员伙伴-姓名");
+    expectEqual(companions[0]?.module, "E2E 相遇", "调查员伙伴-相遇模组");
+
+    const detail = await call(jar, "/characters/" + character.id);
+    expectEqual(detail.status, 200, "GET 角色详情页");
+    ensure(detail.text.includes("背景故事与经历"), "详情页应显示背景故事区块");
+    ensure(detail.text.includes("E2E 外貌"), "详情页应显示角色外貌");
+    ensure(detail.text.includes("E2E 模组"), "详情页应显示调查员经历区块");
+    ensure(detail.text.includes("E2E 法术"), "详情页应显示法术一览");
+    ensure(detail.text.includes("E2E 伙伴"), "详情页应显示调查员伙伴");
+
+    console.log("PASS 人物卡导入 E2E：属性 / 职业 / 技能 / 武器 / 背景故事与经历落库并在角色页展示");
     console.log("  角色 " + character.id + "，武器 " + (weapons[0]?.id ?? "无"));
   } finally {
     await prisma.card.deleteMany({ where: { ownerId: player.id, name: "E2E 猎枪" } });
