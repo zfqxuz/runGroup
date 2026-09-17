@@ -270,7 +270,7 @@ export default function CardBuilder(props: Props) {
           type="button"
           disabled={[busy, name.trim().length === 0].includes(true)}
           onClick={submit}
-          className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
+          className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
         >
           {busy ? "保存中…" : "保存卡牌"}
         </button>

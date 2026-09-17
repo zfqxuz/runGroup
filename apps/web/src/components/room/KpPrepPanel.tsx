@@ -151,7 +151,7 @@ export default function KpPrepPanel(props: Props) {
               </select>
               <button
                 type="submit"
-                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400"
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400"
               >
                 切换场景
               </button>
@@ -265,7 +265,7 @@ export default function KpPrepPanel(props: Props) {
           </div>
           <Link
             href={"/rooms/" + props.roomId + "/combat/new"}
-            className="rounded-lg bg-red-400 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-red-300"
+            className="rounded-lg bg-red-400 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-red-300"
           >
             直接发起战斗
           </Link>
@@ -305,7 +305,7 @@ export default function KpPrepPanel(props: Props) {
             <input type="checkbox" name="isPublic" value="1" />
             对所有成员公开（默认仅 KP 可见）
           </label>
-          <button type="submit" className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400">
+          <button type="submit" className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">
             发布线索
           </button>
         </form>

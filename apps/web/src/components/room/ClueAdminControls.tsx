@@ -89,7 +89,7 @@ export default function ClueAdminControls({ roomId, clue, members, sharedUserIds
               删除现有图片
             </label>
           )}
-          <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-900">
+          <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-onAccent">
             保存线索
           </button>
         </form>

@@ -360,7 +360,7 @@ export default async function CharacterDetailPage({
           </label>
           <button
             type="submit"
-            className="rounded-lg bg-spirit-400 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-spirit-300"
+            className="rounded-lg bg-spirit-400 px-3 py-1.5 text-xs font-medium text-ink-onAccent transition hover:bg-spirit-300"
           >
             筛选
           </button>

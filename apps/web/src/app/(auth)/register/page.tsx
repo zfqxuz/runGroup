@@ -97,7 +97,7 @@ export default function RegisterPage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-50"
+          className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-50"
         >
           {busy ? "注册中…" : "注册并登录"}
         </button>

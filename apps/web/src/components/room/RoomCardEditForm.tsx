@@ -54,7 +54,7 @@ export default function RoomCardEditForm({ card, returnTo }: Props) {
           <span className="text-[10px] text-white/35">stats JSON（伤害、射程、技能等）</span>
           <textarea name="stats" rows={6} defaultValue={statsText} className={inputClass + " font-mono"} />
         </label>
-        <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-900">
+        <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-onAccent">
           保存卡片
         </button>
       </form>

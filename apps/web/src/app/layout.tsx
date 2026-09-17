@@ -25,7 +25,16 @@ export default async function RootLayout({
         };
 
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-theme="night" suppressHydrationWarning>
+      <head>
+        {/* 在首屏绘制前应用已保存的主题，避免闪烁。 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html:
+              "(function(){try{var t=localStorage.getItem('ui-theme');if(t==='day'||t==='night'){document.documentElement.setAttribute('data-theme',t);}}catch(e){}})();"
+          }}
+        />
+      </head>
       <body className="min-h-screen antialiased">
         <Suspense fallback={null}>
           <ScrollRestoration />

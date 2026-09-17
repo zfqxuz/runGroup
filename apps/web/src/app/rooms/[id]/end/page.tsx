@@ -184,7 +184,7 @@ export default async function EndGamePage({
             <input type="hidden" name="rows" value="[]" />
             <button
               type="submit"
-              className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+              className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
             >
               结束并重置房间
             </button>
@@ -251,7 +251,7 @@ export default async function EndGamePage({
                 <input type="hidden" name="returnTo" value={"/rooms/" + room.id + "/end"} />
                 <button
                   type="submit"
-                  className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-amber-300"
+                  className="rounded-lg bg-amber-400 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-amber-300"
                 >
                   进行成长检定（{pendingRows.length}）
                 </button>

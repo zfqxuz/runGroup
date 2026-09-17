@@ -233,7 +233,7 @@ export default async function NewNpcPage({
 
           <button
             type="submit"
-            className="self-start rounded-lg bg-sakura-500 px-6 py-3 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+            className="self-start rounded-lg bg-sakura-500 px-6 py-3 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
           >
             创建本场 NPC
           </button>

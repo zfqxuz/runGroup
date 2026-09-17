@@ -70,7 +70,7 @@ export default async function MyModulesPage({
                 <option value="FANTASY">幻想乡</option>
               </select>
             </label>
-            <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400">
+            <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400">
               新建空白团本
             </button>
           </form>

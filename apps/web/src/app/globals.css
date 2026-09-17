@@ -2,9 +2,35 @@
 @tailwind components;
 @tailwind utilities;
 
-:root {
+/* 夜间（默认）：当前配色 */
+:root,
+[data-theme="night"] {
   --bg: 11 10 20;
   --fg: 236 235 245;
+  --ink-900: 11 10 20;
+  --ink-800: 20 18 34;
+  --ink-700: 29 26 48;
+  --ink-600: 42 38 67;
+  --ink-500: 59 53 96;
+  --white: 255 255 255;
+}
+
+/* 白天：浅色底 + 深色前景；white 变量翻转为深色，保证对比度 */
+[data-theme="day"] {
+  --bg: 242 243 249;
+  --fg: 26 28 40;
+  --ink-900: 255 255 255;
+  --ink-800: 248 249 253;
+  --ink-700: 238 240 248;
+  --ink-600: 223 227 238;
+  --ink-500: 205 210 226;
+  --white: 28 30 44;
+}
+
+/* 白天模式下滚动条也跟随 */
+[data-theme="day"] ::selection {
+  background-color: #ff7fb0;
+  color: #14161f;
 }
 
 html,

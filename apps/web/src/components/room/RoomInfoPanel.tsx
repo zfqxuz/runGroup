@@ -154,7 +154,7 @@ export default function RoomInfoPanel(props: Props) {
               </label>
               <button
                 type="submit"
-                className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400"
+                className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400"
               >
                 发布线索
               </button>

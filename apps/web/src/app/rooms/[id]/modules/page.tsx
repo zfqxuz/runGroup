@@ -59,7 +59,7 @@ export default async function ModuleListPage({
               <input type="hidden" name="roomId" value={params.id} />
               <button
                 type="submit"
-                className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400"
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
               >
                 新建空白团本
               </button>

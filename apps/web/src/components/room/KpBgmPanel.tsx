@@ -53,7 +53,7 @@ export default function KpBgmPanel(props: Props) {
         />
         <button
           type="submit"
-          className="self-start rounded-lg bg-spirit-400 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-spirit-300"
+          className="self-start rounded-lg bg-spirit-400 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-spirit-300"
         >
           解析并播放
         </button>

@@ -281,7 +281,7 @@ export default function KpValueEditor(props: Props) {
         <button
           type="button"
           onClick={submit}
-          className="rounded-lg bg-purple-400 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-purple-300"
+          className="rounded-lg bg-purple-400 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-purple-300"
         >
           应用数值
         </button>

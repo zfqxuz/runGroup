@@ -663,7 +663,7 @@ export default function CombatBoard(props: Props) {
                             chaseActiveParticipant.position >= chase.trackLength - 1
                           }
                           onClick={() => emitChaseMove(1)}
-                          className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-emerald-300 disabled:opacity-40"
+                          className="rounded-lg bg-emerald-400 px-3 py-1.5 text-xs font-medium text-ink-onAccent transition hover:bg-emerald-300 disabled:opacity-40"
                         >
                           前进 1 格
                         </button>
@@ -752,7 +752,7 @@ export default function CombatBoard(props: Props) {
                               activeChaseTargetId.length === 0
                             }
                             onClick={emitChaseAttack}
-                            className="rounded-lg bg-red-400 px-4 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-red-300 disabled:opacity-40"
+                            className="rounded-lg bg-red-400 px-4 py-1.5 text-xs font-medium text-ink-onAccent transition hover:bg-red-300 disabled:opacity-40"
                           >
                             攻击同地点目标（1 AP）
                           </button>
@@ -929,7 +929,7 @@ export default function CombatBoard(props: Props) {
                       <button
                         type="button"
                         onClick={() => submitReaction(pending.targetId)}
-                        className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-medium text-ink-900 transition hover:bg-amber-300"
+                        className="rounded-lg bg-amber-400 px-3 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-amber-300"
                       >
                         提交应对
                       </button>
@@ -1028,7 +1028,7 @@ export default function CombatBoard(props: Props) {
                   type="button"
                   disabled={attackSkills.length === 0}
                   onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage: activeAttackDamage })}
-                  className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
+                  className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
                 >
                   攻击
                 </button>
@@ -1074,7 +1074,7 @@ export default function CombatBoard(props: Props) {
                         (selectedSpellCard?.mode === "DECLARATION" && selectedActor?.hasDeclaration === true)
                       }
                       onClick={() => emitAction({ kind: "SPELLCARD", spellCardId: activeSpellCardId })}
-                      className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-40"
+                      className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
                     >
                       释放符卡
                     </button>
@@ -1129,7 +1129,7 @@ export default function CombatBoard(props: Props) {
                               : activeSpellTargetId;
                         emitAction({ kind: "MAGIC", targetId: castTargetId, spellId: activeSpell, name: selectedSpell.name });
                       }}
-                      className="rounded-lg bg-purple-400 px-4 py-2 text-sm font-medium text-ink-900 transition hover:bg-purple-300 disabled:opacity-40"
+                      className="rounded-lg bg-purple-400 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-purple-300 disabled:opacity-40"
                     >
                       施法
                     </button>

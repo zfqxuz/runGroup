@@ -198,7 +198,7 @@ export default async function AdminRulePackDetailPage({
               />
             </label>
             <div>
-              <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-sakura-400">保存草稿版本</button>
+              <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">保存草稿版本</button>
             </div>
           </form>
         </div>
@@ -219,7 +219,7 @@ export default async function AdminRulePackDetailPage({
                 name="file"
                 accept="application/json,.json"
                 required
-                className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs text-white/60 file:mr-3 file:rounded file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-[11px] file:text-ink-900"
+                className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs text-white/60 file:mr-3 file:rounded file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-[11px] file:text-ink-onAccent"
               />
             </label>
             <div>

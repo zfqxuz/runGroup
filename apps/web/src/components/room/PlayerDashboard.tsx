@@ -61,6 +61,29 @@ const CONDITION_LABELS: Record<string, string> = {
 
 const POSITIVE_TYPES = new Set(["ARMOR", "STATUS:HASTE", "HEAL"]);
 
+interface StatTone {
+  readonly bar: string;
+  readonly text: string;
+  readonly card: string;
+}
+
+/** 健康比例对应的强调色；低血量走战斗界面同款 黄 / 红 阈值。 */
+const HEALTHY_TONES: Record<string, StatTone> = {
+  emerald: { bar: "bg-emerald-400", text: "text-emerald-300", card: "border-emerald-400/40 bg-emerald-400/10" },
+  sky: { bar: "bg-sky-400", text: "text-sky-300", card: "border-sky-400/40 bg-sky-400/10" },
+  violet: { bar: "bg-violet-400", text: "text-violet-300", card: "border-violet-400/40 bg-violet-400/10" },
+  amber: { bar: "bg-amber-400", text: "text-amber-300", card: "border-amber-400/40 bg-amber-400/10" }
+};
+const MID_TONE: StatTone = { bar: "bg-amber-400", text: "text-amber-300", card: "border-amber-400/50 bg-amber-400/15" };
+const LOW_TONE: StatTone = { bar: "bg-red-400", text: "text-red-300", card: "border-red-400/60 bg-red-400/15" };
+
+function statTone(current: number, max: number, healthy: string): StatTone {
+  const ratio = max > 0 ? current / max : 0;
+  if (ratio <= 0.25) return LOW_TONE;
+  if (ratio <= 0.5) return MID_TONE;
+  return HEALTHY_TONES[healthy] ?? MID_TONE;
+}
+
 function conditionLabel(type: string): string {
   if (type.startsWith("STATUS:")) return "状态 " + type.slice(7);
   return CONDITION_LABELS[type] ?? type;
@@ -183,11 +206,11 @@ export default function PlayerDashboard(props: Props) {
 
   if (props.data === null || vitals === null) return null;
 
-  const rows: readonly { readonly label: string; readonly current: number; readonly max: number; readonly tone: string }[] = [
-    { label: "HP", current: vitals.hp, max: vitals.maxHp, tone: "bg-red-400/70" },
-    { label: "MP", current: vitals.mp, max: vitals.maxMp, tone: "bg-sky-400/70" },
-    { label: "SAN", current: vitals.san, max: vitals.maxSan, tone: "bg-violet-400/70" },
-    { label: "DP", current: vitals.dp, max: vitals.maxDp, tone: "bg-amber-400/70" }
+  const rows: readonly { readonly label: string; readonly current: number; readonly max: number; readonly healthy: string }[] = [
+    { label: "HP", current: vitals.hp, max: vitals.maxHp, healthy: "emerald" },
+    { label: "MP", current: vitals.mp, max: vitals.maxMp, healthy: "sky" },
+    { label: "SAN", current: vitals.san, max: vitals.maxSan, healthy: "violet" },
+    { label: "DP", current: vitals.dp, max: vitals.maxDp, healthy: "amber" }
   ];
 
   return (
@@ -197,18 +220,21 @@ export default function PlayerDashboard(props: Props) {
         <p className="mt-0.5 truncate text-[11px] text-white/35">{props.data.occupation ?? "我的角色"}</p>
       </header>
 
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2">
         {rows.map((row) => {
           const ratio = row.max > 0 ? Math.max(0, Math.min(1, row.current / row.max)) : 0;
+          const tone = statTone(row.current, row.max, row.healthy);
+          const percent = (ratio * 100).toFixed(1);
           return (
-            <div key={row.label}>
-              <div className="flex items-center justify-between text-[11px] text-white/55">
-                <span>{row.label}</span>
-                <span className="font-mono">{row.current}/{row.max}</span>
+            <div key={row.label} className={"rounded-lg border px-2.5 py-2 " + tone.card}>
+              <div className="flex items-baseline justify-between gap-1">
+                <span className="text-[10px] font-medium uppercase tracking-wide text-white/55">{row.label}</span>
+                <span className={"font-mono text-lg font-semibold leading-none " + tone.text}>{row.current}</span>
               </div>
-              <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white/10">
-                <div className={row.tone} style={{ width: (ratio * 100).toFixed(1) + "%" }} />
+              <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-white/10">
+                <div className={"h-full rounded-full " + tone.bar} style={{ width: percent + "%" }} />
               </div>
+              <p className="mt-1 text-right font-mono text-[10px] text-white/40">/ {row.max}</p>
             </div>
           );
         })}

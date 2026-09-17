@@ -236,7 +236,7 @@ export default function RoomMemberRoster(props: Props) {
                             placeholder="交易留言（可选）"
                             className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-[11px] text-white/75 outline-none"
                           />
-                          <button type="submit" className="self-start rounded bg-emerald-400 px-2 py-1 text-[10px] font-medium text-ink-900">
+                          <button type="submit" className="self-start rounded bg-emerald-400 px-2 py-1 text-[10px] font-medium text-ink-onAccent">
                             发出交易
                           </button>
                         </form>
@@ -258,7 +258,7 @@ export default function RoomMemberRoster(props: Props) {
                               </option>
                             ))}
                           </select>
-                          <button type="submit" className="self-start rounded bg-sakura-500 px-2 py-1 text-[10px] font-medium text-ink-900">
+                          <button type="submit" className="self-start rounded bg-sakura-500 px-2 py-1 text-[10px] font-medium text-ink-onAccent">
                             发送情报
                           </button>
                         </form>
@@ -286,7 +286,7 @@ export default function RoomMemberRoster(props: Props) {
                   <form action={respondTradeOfferAction}>
                     <input type="hidden" name="offerId" value={trade.id} />
                     <input type="hidden" name="decision" value="accept" />
-                    <button type="submit" className="rounded bg-emerald-400 px-2 py-1 text-[10px] font-medium text-ink-900">
+                    <button type="submit" className="rounded bg-emerald-400 px-2 py-1 text-[10px] font-medium text-ink-onAccent">
                       接受
                     </button>
                   </form>

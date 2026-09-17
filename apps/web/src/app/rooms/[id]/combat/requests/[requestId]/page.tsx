@@ -134,7 +134,7 @@ export default async function CombatRequestPage({
             </div>
             <button
               type="submit"
-              className="self-start rounded-lg bg-emerald-500 px-6 py-3 text-sm font-medium text-ink-900 transition hover:bg-emerald-400"
+              className="self-start rounded-lg bg-emerald-500 px-6 py-3 text-sm font-medium text-ink-onAccent transition hover:bg-emerald-400"
             >
               通过并开战
             </button>

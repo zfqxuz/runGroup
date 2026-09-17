@@ -31,7 +31,7 @@ function SubmitButton({ children }: { readonly children: React.ReactNode }) {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-ink-900 transition hover:bg-sakura-400 disabled:opacity-50"
+      className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-50"
     >
       {pending ? "保存中…" : children}
     </button>
@@ -64,8 +64,24 @@ export default function UserMenu({ user }: Props) {
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("menu");
   const [avatarBusy, setAvatarBusy] = useState(false);
+  const [theme, setTheme] = useState<"night" | "day">("night");
   const [avatarMessage, setAvatarMessage] = useState<string | null>(null);
   const [avatarError, setAvatarError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const current = document.documentElement.getAttribute("data-theme");
+    setTheme(current === "day" ? "day" : "night");
+  }, []);
+
+  function applyTheme(next: "night" | "day"): void {
+    setTheme(next);
+    document.documentElement.setAttribute("data-theme", next);
+    try {
+      localStorage.setItem("ui-theme", next);
+    } catch {
+      // 忽略隐私模式下的存储失败
+    }
+  }
 
   const [nameState, nameAction] = useFormState(updateDisplayNameAction, INITIAL_STATE);
   const [passwordState, passwordAction] = useFormState(updatePasswordAction, INITIAL_STATE);
@@ -219,6 +235,27 @@ export default function UserMenu({ user }: Props) {
                 >
                   修改密码
                 </button>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg bg-ink-900/70 px-3 py-2">
+                <span className="text-xs text-white/70">界面主题</span>
+                <div className="flex items-center gap-1">
+                  {(["night", "day"] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => applyTheme(mode)}
+                      className={
+                        "rounded-md border px-2 py-1 text-[11px] transition " +
+                        (theme === mode
+                          ? "border-sakura-500/60 bg-sakura-500/15 text-sakura-300"
+                          : "border-white/15 text-white/50 hover:border-white/35")
+                      }
+                    >
+                      {mode === "night" ? "🌙 夜间" : "☀️ 白天"}
+                    </button>
+                  ))}
+                </div>
               </div>
 
               <form action={signOutAction} className="border-t border-white/10 pt-2">

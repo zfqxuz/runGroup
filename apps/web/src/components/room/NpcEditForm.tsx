@@ -101,7 +101,7 @@ export default function NpcEditForm({ roomId, card, returnTo }: Props) {
           <span className="text-[10px] text-white/35">技能（示例：FIGHTING_BRAWL:60, DODGE:40）</span>
           <input name="skills" defaultValue={skillsText(stats.skills)} className={inputClass + " font-mono"} />
         </label>
-        <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-900">
+        <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-ink-onAccent">
           保存 NPC
         </button>
       </form>

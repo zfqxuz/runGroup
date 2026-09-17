@@ -2141,3 +2141,25 @@ MagicEffect =
 - ECS 实例只有约 1.6GB 内存，`next dev`（webpack 编译 + 常驻进程）直接把内存 / CPU 打满，导致 SSH banner 超时、实例重启。
 - 恢复方式：实例重启后容器自动拉起；事后清理了残留测试房间与用户。
 - 结论：UI 验证必须等正式镜像部署完成后，用真实会话（curl + NextAuth）访问 **已部署的 3000 端口**；不要在生产容器里跑 dev server。
+
+## 54. 白天 / 夜间主题切换 + 玩家看板数值强化（本轮）
+
+### 1. 主题系统（CSS 变量驱动，尽量少改组件）
+- `apps/web/tailwind.config.ts`：
+  - `ink-900~500` 改为 `rgb(var(--ink-*) / <alpha-value>)`；
+  - 重写 `white` 为 `rgb(var(--white) / <alpha-value>)`，作为「前景反色」：夜间=白、白天=深色，因此全站 `text-white/70` / `border-white/10` / `bg-white/5` 会自动跟随主题；
+  - 新增固定色 `ink.onAccent`（`#0b0a14`）：亮色强调按钮上的深色文字；全仓库把 69 处 `text-ink-900` 替换为 `text-ink-onAccent`，避免白天模式下 `ink-900` 翻白导致按钮文字消失。
+- `apps/web/src/app/globals.css`：`:root / [data-theme="night"]` 与 `[data-theme="day"]` 两套变量；白天=浅灰底 + 深色文字、卡片/输入框为白色。
+- `apps/web/src/app/layout.tsx`：`<html data-theme="night" suppressHydrationWarning>` + 首屏前的内联脚本从 `localStorage['ui-theme']` 恢复主题，避免闪烁。
+- `apps/web/src/components/layout/UserMenu.tsx`：右上角下拉菜单新增「界面主题：🌙 夜间 / ☀️ 白天」，写入 `data-theme` 与 `localStorage`。
+
+### 2. 玩家看板数值强化
+- `PlayerDashboard` 的 HP / MP / SAN / DP 改为 2×2 大号数值卡片：
+  - 数值 `text-lg font-semibold` + 按比例着色；
+  - 比例阈值与战斗界面一致：≤25% 红、≤50% 黄、否则用各自健康色（HP 绿 / MP 蓝 / SAN 紫 / DP 琥珀）；
+  - 进度条加粗到 `h-2`，卡片边框与底色同样按比例着色。
+
+### 3. 验证
+- `npm run typecheck`、`npm test`（214）、`next build` PASS。
+- 编译产物 CSS 已确认包含 `[data-theme=day]` 变量块、`rgb(var(--white))` 与 `text-ink-onAccent`。
+- 真实会话 HTTP 验证（部署后执行）：房间页 200、看板大号数值卡片、右上角主题切换按钮存在。
