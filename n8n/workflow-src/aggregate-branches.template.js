@@ -309,6 +309,10 @@ function effectFromDescription(value) {
     return { type: "CLEANSE", keys: [] };
   }
   if (/(晕眩|眩晕|昏迷|麻痹|无法行动|跳过行动)/.test(text)) return { type: "STUN", durationActions: "1" };
+  if (/(夺舍|附身|占据|占据身体|操纵目标)/.test(text)) {
+    const turns = /(\d+)\s*(?:个)?\s*(?:行动)?轮/.exec(text);
+    return { type: "POSSESS", durationTurns: turns && turns[1] !== undefined ? turns[1] : "1" };
+  }
   if (/(控制|支配|服从|心智|操纵)/.test(text)) return { type: "CONTROL", durationActions: "1" };
   const armor = armorEffectFromDescription(text);
   if (armor !== null) return armor;
@@ -346,6 +350,8 @@ function normalizeMagicEffects(value, entry) {
         } else if (type === "SUMMON") {
           const summonName = asString(raw.name) || "召唤物";
           push({ type, name: summonName, key: normalizeKey(asString(raw.key) || summonName), cardId: asString(raw.cardId) || undefined, count: normalizeMagicExprNumber(raw.count, "1"), durationTicks: normalizeMagicExprNumber(raw.durationTicks, "0") });
+        } else if (type === "POSSESS") {
+          push({ type, durationTurns: normalizeMagicExprNumber(raw.durationTurns, "1") });
         } else if (type === "STUN" || type === "CONTROL") {
           push({ type, durationActions: normalizeMagicExprNumber(raw.durationActions, "1") });
         } else if (type === "CLEANSE") {

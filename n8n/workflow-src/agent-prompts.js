@@ -155,9 +155,9 @@ function agentCommonRequirements(route, hints, opts) {
 
   lines.push("- NPC 的 skills 必须使用规则包技能 ID，不要输出中文技能名或描述性技能名。常用 ID：FIGHTING_BRAWL(格斗/斗殴/肉搏/爪/牙/撕咬)、DODGE(闪避)、FIREARMS_HANDGUN(手枪)、FIREARMS_RIFLE(步枪/霰弹枪)、FIREARMS_BOW(弓)、THROW(投掷)、CLIMB(攀爬)、STEALTH(潜行)、LISTEN(聆听)、SPOT_HIDDEN(侦查)、SLEIGHT_OF_HAND(妙手)、LIBRARY_USE(图书馆使用)、OCCULT(神秘学)、CTHULHU_MYTHOS(克苏鲁神话)、LAW(法律)、FIRST_AID(急救)、PSYCHOLOGY(心理学)、CHARM(魅惑)、FAST_TALK(话术)、INTIMIDATE(恐吓)、PERSUADE(说服)、CREDIT_RATING(信用评级)。技能条目格式：{\"skill\":\"FIGHTING_BRAWL\",\"value\":40}。");
   lines.push("- NPC 的 weapons 必须可结算：{\"name\":\"武器或攻击名\",\"damage\":\"1d3+db 或 1d6 等纯骰式\",\"range\":\"MELEE / NEAR / FAR\",\"skillId\":\"FIGHTING_BRAWL\",\"attacks\":1,\"notes\":\"\"}；不要写中文伤害描述，没有武器就省略。");
-  lines.push("- 法术 effects 必须是可执行对象数组，不要写字符串。可用 type：DAMAGE(amount 骰式)、HEAL(amount 骰式)、MP_RESTORE(amount 数字)、MP_DRAIN(amount 数字)、SAN_LOSS(amount 骰式)、SAN_RESTORE(amount 数字)、STATUS(key,stacks)、ARMOR(amount 骰式,durationTicks=0)、SUMMON(name,count,durationTicks=0)、DOT(amount 骰式,durationTicks)、STUN(durationActions)、CONTROL(durationActions)、CLEANSE(keys)。mpCost 必须是数字或公式字符串；sanCost 必须是骰式或数字；没有直接战斗效果的法术 effects 可以为空，不要编造。");
+  lines.push("- 法术 effects 必须是可执行对象数组，不要写字符串。可用 type：DAMAGE(amount 骰式)、HEAL(amount 骰式)、MP_RESTORE(amount 数字)、MP_DRAIN(amount 数字)、SAN_LOSS(amount 骰式)、SAN_RESTORE(amount 数字)、STATUS(key,stacks)、ARMOR(amount 骰式,durationTicks=0)、SUMMON(name,count,durationTicks=0)、POSSESS(durationTurns=1)、DOT(amount 骰式,durationTicks)、STUN(durationActions)、CONTROL(durationActions)、CLEANSE(keys)。mpCost 必须是数字或公式字符串；sanCost 必须是骰式或数字；没有直接战斗效果的法术 effects 可以为空，不要编造。");
   lines.push("- 一条法术的 effects 可以是任意多个基础效果的组合，按数组顺序结算；例如 DAMAGE + STUN + ARMOR 是合法的，不要只输出一个效果。");
-  lines.push("- 给护甲 / 防护物理伤害的法术写 ARMOR，不要写成 DAMAGE；召唤类法术写 SUMMON，name 填召唤物名，count 填数量；召唤物会优先匹配房间内独立 NPC 卡。");
+  lines.push("- 给护甲 / 防护物理伤害的法术写 ARMOR，不要写成 DAMAGE；召唤类法术写 SUMMON，name 填召唤物名，count 填数量；召唤物会优先匹配房间内独立 NPC 卡；夺舍 / 附身 / 操纵目标行动的法术写 POSSESS，durationTurns 填操纵轮次。");
   lines.push("- 如果原文明确写出结局 / 奖励 / SAN 成长 / 技能成长 / 酬金等，必须放入对应字段，不要遗漏。");
   lines.push("尽量短：sections 只写一句话摘要，structured 每个数组最多 2 条，description 压缩到一句话。");
   if (opts && opts.retry) {
