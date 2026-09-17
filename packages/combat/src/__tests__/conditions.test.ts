@@ -82,10 +82,13 @@ describe("战斗 / 局内状态桥接", () => {
     expect(all.find((condition) => condition.type === "ARMOR")?.duration.remaining).toBe(2);
     expect(all.find((condition) => condition.type === "POSSESS")?.duration.remaining).toBe(2);
 
-    const persisted = persistableConditions(participant).map((condition) => condition.type);
-    expect(persisted).toContain("POSSESS");
-    expect(persisted).not.toContain("ARMOR");
-    expect(persisted).not.toContain("STUN");
+    const persisted = persistableConditions(participant, state.round);
+    const persistedTypes = persisted.map((condition) => condition.type);
+    expect(persistedTypes).toContain("POSSESS");
+    // 护甲作为可持久化的魔法状态写回（进入下一次战斗仍生效）。
+    expect(persistedTypes).toContain("ARMOR");
+    expect(persisted.find((condition) => condition.type === "ARMOR")?.duration.remaining).toBe(2);
+    expect(persistedTypes).not.toContain("STUN");
 
     const view = filterCombatForViewer(state, { userId: "kp", role: "KP", characterId: null });
     const viewParticipant = view.participants[0]!;

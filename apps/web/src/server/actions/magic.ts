@@ -5,20 +5,11 @@ import { revalidatePath } from "next/cache";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
-import { castOutsideCombat, parseMagicRef } from "@/server/magic/out-of-combat";
+import { castOutsideCombat, listOutOfCombatMagic, parseMagicRef } from "@/server/magic/out-of-combat";
 import { emitRoomRefresh } from "@/server/realtime";
 
 function errorUrl(roomId: string, message: string): string {
   return "/rooms/" + roomId + "?magicError=" + encodeURIComponent(message);
-}
-
-async function tokenSceneOf(roomId: string, ref: ReturnType<typeof parseMagicRef>): Promise<string | null> {
-  if (ref === null) return null;
-  const token = await prisma.token.findFirst({
-    where: ref.kind === "CHARACTER" ? { roomId, characterId: ref.id } : { roomId, cardId: ref.id },
-    select: { map: { select: { sceneId: true } } }
-  });
-  return token?.map.sceneId ?? null;
 }
 
 /** 战斗外施法：只允许不依赖战斗结算的法术。 */
@@ -58,18 +49,29 @@ export async function castOutsideCombatAction(formData: FormData): Promise<void>
     rulePackVersionId: room.rulePackVersionId,
     ruleOverride: room.ruleOverride
   });
-  const spell = effective.compiled.pack.magic?.spells.find(
-    (item) => item.id === spellId || item.name === spellId
-  );
-  if (spell === undefined) redirect(errorUrl(room.id, "没有找到这个法术"));
 
-  const [casterScene, targetScene] = await Promise.all([
-    tokenSceneOf(room.id, caster),
-    tokenSceneOf(room.id, target)
-  ]);
-  if (casterScene !== null && targetScene !== null && casterScene !== targetScene) {
-    redirect(errorUrl(room.id, "施法者与目标不在同一场景"));
+  // 服务端权威校验：施法者必须持有该法术、在当前场景，且目标在当前场景内合法。
+  const view = await listOutOfCombatMagic({
+    roomId: room.id,
+    userId: session.user.id,
+    isKP,
+    pack: effective.compiled
+  });
+  const casterRef = String(formData.get("casterRef") ?? "");
+  const targetRef = String(formData.get("targetRef") ?? "");
+  const casterOption = view.casters.find((item) => item.ref === casterRef);
+  if (casterOption === undefined) {
+    redirect(errorUrl(room.id, "当前场景没有可施法的角色 / 召唤物，或你没有持有可施放的法术"));
   }
+  const spellOption = casterOption.spells.find((item) => item.id === spellId || item.name === spellId);
+  if (spellOption === undefined) {
+    redirect(errorUrl(room.id, "该施法者没有持有这个法术，或当前场景没有合法目标"));
+  }
+  if (spellOption.targetRefs.includes(targetRef) === false) {
+    redirect(errorUrl(room.id, "目标不在当前场景，或不是该法术的合法目标"));
+  }
+  const spell = effective.compiled.pack.magic?.spells.find((item) => item.id === spellOption.id);
+  if (spell === undefined) redirect(errorUrl(room.id, "没有找到这个法术"));
 
   const result = await castOutsideCombat({
     roomId: room.id,
@@ -77,7 +79,7 @@ export async function castOutsideCombatAction(formData: FormData): Promise<void>
     spell,
     caster,
     target,
-    sceneId: casterScene ?? targetScene
+    sceneId: view.sceneId
   });
   if (result.ok === false) {
     redirect(errorUrl(room.id, result.error ?? "施法失败"));

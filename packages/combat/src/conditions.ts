@@ -92,12 +92,20 @@ export function participantConditions(participant: CombatParticipantState, round
  * - ARMOR 作为战斗临时护甲不写回局内（局内护甲由角色卡 / 预施法字段表达）；
  * - 眩晕 / 控制 / DOT 这类战斗临时状态不写回。
  */
-export function persistableConditions(participant: CombatParticipantState): GameCondition[] {
+export function persistableConditions(participant: CombatParticipantState, round = 1): GameCondition[] {
   const core = coreConditionsFromParticipant(participant);
   const keepTypes = new Set(["POISON", "DISEASE", "CURSE", "INSANITY", "BOUND", "SILENCE"]);
-  const custom = (participant.conditions ?? []).filter((condition) => keepTypes.has(condition.type));
+  const custom = (participant.conditions ?? []).filter(
+    (condition) =>
+      keepTypes.has(condition.type) ||
+      condition.type.startsWith("STATUS:") ||
+      condition.type === "ARMOR"
+  );
   const possess = possessConditionOf(participant);
-  return [...core, ...custom, ...(possess === null ? [] : [possess])];
+  const armor = armorConditionOf(participant, round);
+  // 护甲由战斗内护甲池重新派生，避免保留过期副本。
+  const withoutArmor = custom.filter((condition) => condition.type !== "ARMOR");
+  return [...core, ...withoutArmor, ...(possess === null ? [] : [possess]), ...(armor === null ? [] : [armor])];
 }
 
 /** 从局内状态里提取夺舍初值（持久状态 → 战斗运行时）。 */

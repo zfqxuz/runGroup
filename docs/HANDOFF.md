@@ -2109,3 +2109,29 @@ MagicEffect =
 - 战斗全部结束后自动解锁（`sceneHasActiveCombat` 变 false）。
 - 注意：用户明确说过「战斗状态的对象本来就不能跨场景移动 Token」，因此没有额外做 Token 跨场景拖动拦截。
 - 真实 E2E 扩展到 36 项：战斗绑定场景时锁定、空闲场景不受影响、全部战斗结束后解锁。
+
+## 52. 战斗外施法可见性 / 门槛 + 玩家看板（本轮）
+
+### 1. 战斗外施法不再公开
+用户反馈：局外面板对所有人可见、且列出全房法术。已按以下规则重做：
+- **持有者限定**：法术必须在该单位自己的 `spells` 里（角色读 `sourceData.spells / backstory.spells`，NPC / 召唤物读 `card.stats.spells`）。
+- **普通玩家只能看到自己角色**的施法者与法术；KP 可以看到全部。
+- **必须在当前激活场景**：施法者 Token 要落在当前激活场景。
+- **必须有合法目标**：按法术级 `targeting` 计算当前场景内的合法目标（SELF 只有自己；ALLY 含自己；ENEMY / ANY 需要场上有其它单位）；没有合法目标的法术直接不展示。
+- **战斗中的单位不出现在战斗外面板**（避免绕过战斗行动）。
+- 服务端 `castOutsideCombatAction` 复用同一套 `listOutOfCombatMagic` 校验，绕过 UI 直接提交也会被拒绝。
+
+### 2. 玩家看板（地图左侧）
+- 新增 `apps/web/src/components/room/PlayerDashboard.tsx`：
+  - 只显示当前视角**自己的角色**（HP / MP / SAN / DP 进度条、属性、buff / debuff 状态）；
+  - 状态标签按类型着色，显示剩余轮次 / 充能；
+  - 订阅 socket：`room:join` + 对所有进行中战斗 `combat:join`，收到 `combat:update` 时实时更新自己的数值与状态；`room:refresh` / `room:update` / `combat:started` 触发服务端刷新。
+- 房间页布局改为「看板 1fr | 地图 3fr | 跑团日志 1fr」三列（`lg` 断点），看板在左、日志在右，左右对称；没有自己角色时不渲染，地图恢复原来的两列布局。
+
+### 3. 顺带修复：魔法状态跨战斗保留
+- `persistableConditions(participant, round)` 现在会保留 `ARMOR` 与 `STATUS:*`；护甲由战斗内护甲池重新派生。
+- `addParticipant` 会把存档里的 `ARMOR` 条件转成初始护甲池（`armor` / `armorExpiresAtRound`），战斗外获得的护甲进入战斗后真实生效。
+
+### 4. 真实 E2E
+- `scripts/e2e-real-magic.ts` 扩展到 40 项，新增：普通玩家只看自己施法者 / 只看自己持有法术、KP 能看到 NPC 持有法术、场景内无合法敌方目标时过滤敌方指向法术。
+- 结果：`passed=40 failed=0`，测试数据全部清理。

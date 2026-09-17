@@ -5,12 +5,14 @@ import {
   makeCondition,
   parseConditions,
   spellEffectsOf,
+  spellTargeting,
   type CompiledRulePack,
   type GameCondition,
   type MagicSpell
 } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 import { createPersistentSummonCard } from "@/server/magic/summons";
+import { activeCombatSeats } from "@/server/combat/setup";
 import { findSummonCard, summonTemplateFromCard, type SummonCardLike } from "@/server/combat/summon";
 
 export interface MagicActorRef {
@@ -332,22 +334,40 @@ export async function castOutsideCombat(input: OutOfCombatCastInput): Promise<Ou
   return { ok: true, log };
 }
 
-export interface MagicUnitOption {
+export interface OutOfCombatTargetOption {
   readonly ref: string;
   readonly name: string;
-  readonly subtitle: string | null;
-  readonly hp: number;
-  readonly maxHp: number;
-  readonly isOwn: boolean;
+  readonly isSelf: boolean;
   readonly isSummon: boolean;
 }
 
-export interface MagicSpellOption {
+export interface OutOfCombatSpellOption {
   readonly id: string;
   readonly name: string;
   readonly mpCost: string;
   readonly sanCost: string;
   readonly summary: string;
+  readonly targeting: string;
+  /** 当前场景内该法术的合法目标 ref。 */
+  readonly targetRefs: readonly string[];
+}
+
+export interface OutOfCombatCasterOption {
+  readonly ref: string;
+  readonly name: string;
+  readonly subtitle: string | null;
+  readonly hp: number;
+  readonly maxHp: number;
+  readonly isSummon: boolean;
+  /** 该持有者当前持有的、可在战斗外施放且当前场景存在合法目标的法术。 */
+  readonly spells: readonly OutOfCombatSpellOption[];
+}
+
+export interface OutOfCombatMagicView {
+  readonly sceneId: string | null;
+  readonly sceneName: string | null;
+  readonly casters: readonly OutOfCombatCasterOption[];
+  readonly targets: readonly OutOfCombatTargetOption[];
 }
 
 function unitRef(kind: "CHARACTER" | "CARD", id: string): string {
@@ -360,59 +380,164 @@ export function parseMagicRef(ref: string): MagicActorRef | null {
   return null;
 }
 
-/** 列出战斗外施法可选的角色 / NPC / 召唤物 / 可用法术。 */
+interface SceneUnit {
+  readonly ref: string;
+  readonly name: string;
+  readonly isSummon: boolean;
+  /** 该单位持有的法术 id / 名称。 */
+  readonly heldSpellKeys: readonly string[];
+  readonly hp: number;
+  readonly maxHp: number;
+  readonly subtitle: string | null;
+}
+
+function spellKeysOf(value: unknown): string[] {
+  if (Array.isArray(value) === false) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+}
+
+function heldSpellsOfCharacter(character: { sourceData: unknown; backstory: unknown }): string[] {
+  const sourceData = recordOf(character.sourceData);
+  const fromSource = spellKeysOf(sourceData.spells);
+  if (fromSource.length > 0) return fromSource;
+  const backstory = recordOf(character.backstory);
+  return spellKeysOf(backstory.spells);
+}
+
+function legalTargetRefs(spell: MagicSpell, casterRef: string, sceneRefs: readonly string[]): string[] {
+  const targeting = spellTargeting(spell);
+  if (targeting === "SELF") return [casterRef];
+  if (targeting === "ENEMY") return sceneRefs.filter((ref) => ref !== casterRef);
+  // ALLY / ANY：本规则里 ALLY 可以对自己施放，因此场景内所有单位都是合法对象。
+  return [...sceneRefs];
+}
+
+/**
+ * 列出当前视角可用的战斗外施法者与法术。
+ *
+ * 规则：
+ * - 施法者必须持有该法术（角色卡 / NPC 卡上的 spells）；
+ * - 施法者必须在当前激活场景；
+ * - 该法术在当前场景内必须存在合法目标；
+ * - 普通玩家只能看到自己角色的法术；KP 可以看到全部。
+ */
 export async function listOutOfCombatMagic(input: {
   readonly roomId: string;
   readonly userId: string;
   readonly isKP: boolean;
   readonly pack: CompiledRulePack;
-}): Promise<{ casters: MagicUnitOption[]; targets: MagicUnitOption[]; spells: MagicSpellOption[] }> {
-  const gameId = await activeGameId(input.roomId);
-  const [rows, cards] = await Promise.all([
+}): Promise<OutOfCombatMagicView> {
+  const [activeScene, gameId] = await Promise.all([
+    prisma.scene.findFirst({
+      where: { roomId: input.roomId, isActive: true },
+      select: { id: true, name: true }
+    }),
+    activeGameId(input.roomId)
+  ]);
+  if (activeScene === null) {
+    return { sceneId: null, sceneName: null, casters: [], targets: [] };
+  }
+
+  const [tokens, rows, cards, seats] = await Promise.all([
+    prisma.token.findMany({
+      where: { roomId: input.roomId, map: { sceneId: activeScene.id } },
+      select: { characterId: true, cardId: true }
+    }),
     gameId === null
       ? Promise.resolve([])
-      : prisma.gameCharacter.findMany({
-          where: { gameId },
-          include: { character: true },
-          orderBy: { id: "asc" }
-        }),
-    prisma.card.findMany({ where: { roomId: input.roomId, scope: "ROOM", type: "NPC" }, orderBy: { createdAt: "asc" } })
+      : prisma.gameCharacter.findMany({ where: { gameId }, include: { character: true }, orderBy: { id: "asc" } }),
+    prisma.card.findMany({
+      where: { roomId: input.roomId, scope: "ROOM", type: "NPC" },
+      orderBy: { createdAt: "asc" }
+    }),
+    activeCombatSeats(input.roomId)
   ]);
-  const casters: MagicUnitOption[] = [];
+
+  const inSceneCharacterIds = new Set(tokens.map((token) => token.characterId).filter((id): id is string => id !== null));
+  const inSceneCardIds = new Set(tokens.map((token) => token.cardId).filter((id): id is string => id !== null));
+
+  const units: SceneUnit[] = [];
   for (const row of rows) {
-    if (input.isKP === false && row.userId !== input.userId) continue;
-    casters.push({
+    if (inSceneCharacterIds.has(row.characterId) === false) continue;
+    // 已在进行中的战斗里的单位不在战斗外面板出现（避免绕过战斗行动）。
+    if (seats.has(row.characterId)) continue;
+    units.push({
       ref: unitRef("CHARACTER", row.characterId),
       name: row.character.name,
       subtitle: row.character.occupation,
+      isSummon: false,
+      heldSpellKeys: heldSpellsOfCharacter(row.character),
       hp: row.currentHp,
-      maxHp: row.character.maxHp,
-      isOwn: row.userId === input.userId,
-      isSummon: false
+      maxHp: row.character.maxHp
     });
   }
   for (const card of cards) {
-    if (input.isKP === false) continue;
+    if (inSceneCardIds.has(card.id) === false) continue;
+    if (seats.has(card.id)) continue;
     const stats = recordOf(card.stats);
-    casters.push({
+    units.push({
       ref: unitRef("CARD", card.id),
       name: card.name,
       subtitle: card.subtitle,
+      isSummon: stats.summoned === true,
+      heldSpellKeys: spellKeysOf(stats.spells),
       hp: numberField(stats, "currentHp", numberField(stats, "maxHp")),
-      maxHp: numberField(stats, "maxHp"),
-      isOwn: false,
-      isSummon: stats.summoned === true
+      maxHp: numberField(stats, "maxHp")
     });
   }
-  const targets = [...casters];
-  const spells: MagicSpellOption[] = (input.pack.pack.magic?.spells ?? [])
-    .filter((spell) => canCastOutsideCombat(spell))
-    .map((spell) => ({
-      id: spell.id,
-      name: spell.name,
-      mpCost: spell.mpCost,
-      sanCost: spell.sanCost,
-      summary: spellEffectsOf(spell).map((effect) => effect.type).join(" + ")
-    }));
-  return { casters, targets, spells };
+  const sceneRefs = units.map((unit) => unit.ref);
+  const targets: OutOfCombatTargetOption[] = units.map((unit) => ({
+    ref: unit.ref,
+    name: unit.name,
+    isSelf: false,
+    isSummon: unit.isSummon
+  }));
+  const targetByRef = new Map(targets.map((target) => [target.ref, target]));
+
+  const knownSpells = (input.pack.pack.magic?.spells ?? []).filter((spell) => canCastOutsideCombat(spell));
+  const casters: OutOfCombatCasterOption[] = [];
+  for (const unit of units) {
+    if (input.isKP === false) {
+      const ownerUserId = rows.find((row) => unitRef("CHARACTER", row.characterId) === unit.ref)?.userId ?? null;
+      const isOwnCharacter = ownerUserId === input.userId;
+      // 普通玩家只能看到自己角色的法术；NPC / 召唤物对他们不可见。
+      if (isOwnCharacter === false || unit.ref.startsWith("character:") === false) continue;
+    }
+    const held = new Set(unit.heldSpellKeys);
+    const spells: OutOfCombatSpellOption[] = [];
+    for (const spell of knownSpells) {
+      if (held.has(spell.id) === false && held.has(spell.name) === false) continue;
+      const legalRefs = legalTargetRefs(spell, unit.ref, sceneRefs);
+      if (legalRefs.length === 0) continue;
+      spells.push({
+        id: spell.id,
+        name: spell.name,
+        mpCost: spell.mpCost,
+        sanCost: spell.sanCost,
+        summary: spellEffectsOf(spell).map((effect) => effect.type).join(" + "),
+        targeting: spellTargeting(spell),
+        targetRefs: legalRefs
+      });
+    }
+    if (spells.length === 0) continue;
+    casters.push({
+      ref: unit.ref,
+      name: unit.name,
+      subtitle: unit.subtitle,
+      hp: unit.hp,
+      maxHp: unit.maxHp,
+      isSummon: unit.isSummon,
+      spells
+    });
+  }
+
+  return {
+    sceneId: activeScene.id,
+    sceneName: activeScene.name,
+    casters,
+    targets: targets.map((target) => ({ ...target, isSelf: false }))
+  };
 }

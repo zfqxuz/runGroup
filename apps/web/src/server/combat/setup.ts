@@ -188,7 +188,7 @@ function stringArrayOf(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
-function characterSpellsOf(character: Character): string[] {
+export function characterSpellsOf(character: Character): string[] {
   const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
   const sourceSpells = stringArrayOf(sourceData.spells);
   if (sourceSpells.length > 0) return sourceSpells;
@@ -636,7 +636,7 @@ async function writeNpcConditions(db: Prisma.TransactionClient, state: CombatSta
       card.stats !== null && typeof card.stats === "object" && Array.isArray(card.stats) === false
         ? { ...(card.stats as Record<string, unknown>) }
         : {};
-    base.conditions = persistableConditions(participant);
+    base.conditions = persistableConditions(participant, state.round);
     if (participant.summonExpiresAtRound !== null && participant.summonExpiresAtRound !== undefined) {
       const remaining = Math.max(0, participant.summonExpiresAtRound - state.round);
       if (remaining > 0) base.summonDurationTicks = remaining;
@@ -692,7 +692,7 @@ export async function saveCombatState(combatId: string, state: CombatState): Pro
             currentMp: participant.mp,
             currentSan: participant.san,
             currentDp: participant.dp,
-            conditions: persistableConditions(participant) as never,
+            conditions: persistableConditions(participant, state.round) as never,
             status: participant.dead === true
               ? "DEAD"
               : participant.dying === true

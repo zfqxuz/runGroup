@@ -1,23 +1,46 @@
 "use client";
 
-import { useState } from "react";
-import type { MagicSpellOption, MagicUnitOption } from "@/server/magic/out-of-combat";
+import { useMemo, useState } from "react";
+import type { OutOfCombatMagicView } from "@/server/magic/out-of-combat";
 import { castOutsideCombatAction } from "@/server/actions/magic";
 
 interface Props {
   readonly roomId: string;
-  readonly casters: readonly MagicUnitOption[];
-  readonly targets: readonly MagicUnitOption[];
-  readonly spells: readonly MagicSpellOption[];
+  readonly view: OutOfCombatMagicView;
   readonly message: string | null;
   readonly error: string | null;
 }
 
-/** 战斗外施法面板：只列出不依赖战斗结算的法术。 */
+const TARGETING_LABEL: Record<string, string> = {
+  SELF: "自身",
+  ALLY: "友方",
+  ENEMY: "敌方",
+  ANY: "任意"
+};
+
+/**
+ * 战斗外施法面板。
+ *
+ * 只展示「当前视角自己持有」的法术；施法者必须在当前场景，且法术在当前场景存在合法目标。
+ * 没有任何可用法术时整个面板不渲染。
+ */
 export default function RoomMagicPanel(props: Props) {
-  const [spellId, setSpellId] = useState(props.spells[0]?.id ?? "");
-  if (props.spells.length === 0 || props.casters.length === 0) return null;
-  const spell = props.spells.find((item) => item.id === spellId) ?? props.spells[0]!;
+  const casters = props.view.casters;
+  const [casterRef, setCasterRef] = useState(casters[0]?.ref ?? "");
+  const caster = casters.find((item) => item.ref === casterRef) ?? casters[0] ?? null;
+  const [spellId, setSpellId] = useState(caster?.spells[0]?.id ?? "");
+  const spell = caster?.spells.find((item) => item.id === spellId) ?? caster?.spells[0] ?? null;
+  const targetNameByRef = useMemo(
+    () => new Map(props.view.targets.map((target) => [target.ref, target.name])),
+    [props.view.targets]
+  );
+
+  if (caster === null || spell === null) return null;
+  const legalTargets = spell.targetRefs.map((ref) => ({
+    ref,
+    name: targetNameByRef.get(ref) ?? ref,
+    isSelf: ref === caster.ref
+  }));
 
   return (
     <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
@@ -25,7 +48,7 @@ export default function RoomMagicPanel(props: Props) {
         <div>
           <h2 className="text-sm font-semibold text-white/80">战斗外施法</h2>
           <p className="mt-0.5 text-[11px] text-white/35">
-            只允许治疗 / 回复 / 护甲 / 状态 / 净化 / 召唤 / 夺舍这类不依赖战斗轮次的法术。
+            仅显示当前视角自己持有的法术；施法者需在「{props.view.sceneName ?? "当前场景"}」，且存在合法目标。
           </p>
         </div>
       </header>
@@ -45,43 +68,48 @@ export default function RoomMagicPanel(props: Props) {
           施法者
           <select
             name="casterRef"
+            value={caster.ref}
+            onChange={(event) => {
+              const nextRef = event.target.value;
+              setCasterRef(nextRef);
+              const nextCaster = casters.find((item) => item.ref === nextRef);
+              setSpellId(nextCaster?.spells[0]?.id ?? "");
+            }}
             className="rounded-md border border-white/15 bg-ink-900 px-2 py-1.5 text-sm text-white/80"
-            defaultValue={props.casters[0]!.ref}
           >
-            {props.casters.map((unit) => (
-              <option key={unit.ref} value={unit.ref}>
-                {unit.name}
-                {unit.isSummon ? "（召唤物）" : ""} · HP {unit.hp}/{unit.maxHp}
+            {casters.map((item) => (
+              <option key={item.ref} value={item.ref}>
+                {item.name}
+                {item.isSummon ? "（召唤物）" : ""} · HP {item.hp}/{item.maxHp}
               </option>
             ))}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-white/45">
-          目标
+          法术
           <select
-            name="targetRef"
+            name="spellId"
+            value={spell.id}
+            onChange={(event) => setSpellId(event.target.value)}
             className="rounded-md border border-white/15 bg-ink-900 px-2 py-1.5 text-sm text-white/80"
-            defaultValue={props.targets[0]!.ref}
           >
-            {props.targets.map((unit) => (
-              <option key={unit.ref} value={unit.ref}>
-                {unit.name}
-                {unit.isSummon ? "（召唤物）" : ""} · HP {unit.hp}/{unit.maxHp}
+            {caster.spells.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.name}（{item.summary}）
               </option>
             ))}
           </select>
         </label>
         <label className="flex flex-col gap-1 text-[11px] text-white/45 sm:col-span-2">
-          法术
+          目标 · {TARGETING_LABEL[spell.targeting] ?? spell.targeting}
           <select
-            name="spellId"
-            value={spellId}
-            onChange={(event) => setSpellId(event.target.value)}
+            name="targetRef"
             className="rounded-md border border-white/15 bg-ink-900 px-2 py-1.5 text-sm text-white/80"
           >
-            {props.spells.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.name}（{item.summary}）
+            {legalTargets.map((target) => (
+              <option key={target.ref} value={target.ref}>
+                {target.name}
+                {target.isSelf ? "（自己）" : ""}
               </option>
             ))}
           </select>

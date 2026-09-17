@@ -13,6 +13,7 @@ import SceneBoard from "@/components/room/SceneBoard";
 import { pauseGameAction } from "@/server/actions/room";
 import { auth } from "@/server/auth";
 import { buildEffectiveSkills } from "@/server/character/skills";
+import { parseConditions } from "@touhou/rules";
 import { occupationSkillAccess, profileOccupationalSkillIds, toOccupationView } from "@/shared/occupation";
 import { prisma } from "@/server/db/prisma";
 import { advancementView, gameStateView, growthCheckView } from "@/server/game/view";
@@ -20,6 +21,7 @@ import { loadGameModuleView } from "@/server/modules/revision";
 import { loadRoomMemberViews } from "@/server/room/member-view";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { listOutOfCombatMagic } from "@/server/magic/out-of-combat";
+import PlayerDashboard, { type DashboardData } from "@/components/room/PlayerDashboard";
 import { loadActiveCombatSummaries } from "@/server/combat/room-view";
 import { loadSceneView } from "@/server/scene/load";
 import type { RoomBgmView } from "@/shared/bgm";
@@ -467,6 +469,45 @@ export default async function RoomPage({
     pack: effective.compiled
   });
 
+  const ownGameCharacter =
+    activeGame === null
+      ? null
+      : activeGame.characters.find((item) => item.userId === session.user.id) ?? null;
+  const dashboardData: DashboardData | null =
+    ownGameCharacter === null
+      ? null
+      : {
+          characterId: ownGameCharacter.characterId,
+          name: ownGameCharacter.character.name,
+          occupation: ownGameCharacter.character.occupation,
+          hp: ownGameCharacter.currentHp,
+          maxHp: ownGameCharacter.character.maxHp,
+          mp: ownGameCharacter.currentMp,
+          maxMp: ownGameCharacter.character.maxMp,
+          san: ownGameCharacter.currentSan,
+          maxSan: ownGameCharacter.character.maxSan,
+          dp: ownGameCharacter.currentDp,
+          maxDp: ownGameCharacter.character.maxDp,
+          attributes: {
+            str: ownGameCharacter.character.str,
+            con: ownGameCharacter.character.con,
+            siz: ownGameCharacter.character.siz,
+            dex: ownGameCharacter.character.dex,
+            app: ownGameCharacter.character.app,
+            int: ownGameCharacter.character.int,
+            pow: ownGameCharacter.character.pow,
+            edu: ownGameCharacter.character.edu,
+            luck: ownGameCharacter.character.luck
+          },
+          conditions: parseConditions(ownGameCharacter.conditions).map((condition) => ({
+            id: condition.id,
+            type: condition.type,
+            unit: condition.duration.unit,
+            remaining: condition.duration.remaining,
+            note: condition.duration.note ?? null
+          }))
+        };
+
   const playerContent = (
     <div className="flex min-w-0 flex-col gap-6">
       <RoomBgmPlayer roomId={room.id} initialBgm={roomBgm} />
@@ -485,9 +526,7 @@ export default async function RoomPage({
 
       <RoomMagicPanel
         roomId={room.id}
-        casters={magicOptions.casters}
-        targets={magicOptions.targets}
-        spells={magicOptions.spells}
+        view={magicOptions}
         message={searchParams.magicCast ?? null}
         error={searchParams.magicError ?? null}
       />
@@ -525,7 +564,21 @@ export default async function RoomPage({
         />
       )}
 
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)] lg:items-stretch">
+      <section
+        className={
+          "grid grid-cols-1 gap-4 lg:items-stretch " +
+          (dashboardData === null
+            ? "lg:grid-cols-[minmax(0,3fr)_minmax(0,1fr)]"
+            : "lg:grid-cols-[minmax(0,1fr)_minmax(0,3fr)_minmax(0,1fr)]")
+        }
+      >
+      {dashboardData === null ? null : (
+        <PlayerDashboard
+          roomId={room.id}
+          data={dashboardData}
+          activeCombatIds={activeCombats.map((combat) => combat.id)}
+        />
+      )}
       {activeScene === null ? null : (
         <SceneBoard
           roomId={room.id}

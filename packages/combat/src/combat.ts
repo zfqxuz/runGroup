@@ -143,6 +143,11 @@ export function addParticipant(
 
   const loadedConditions = loadParticipantConditions(init.conditions);
   const initPossess = possessInitFromConditions(loadedConditions);
+  const armorCondition = loadedConditions.find((condition) => condition.type === "ARMOR");
+  const conditionArmor =
+    armorCondition !== undefined && typeof armorCondition.data.armor === "number"
+      ? Math.max(0, Math.floor(armorCondition.data.armor))
+      : 0;
   const participant: CombatParticipantState = {
     id: init.id,
     name: init.name,
@@ -169,11 +174,15 @@ export function addParticipant(
     maxSan: init.derived.maxSan,
     dp: init.derived.maxDp,
     maxDp: init.derived.maxDp,
-    armor: Math.max(0, Math.floor(init.armor ?? 0)),
-    maxArmor: Math.max(0, Math.floor(init.armor ?? 0)),
+    armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
+    maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     summonedBy: init.summonedBy ?? null,
     summonedName: init.summonedName ?? null,
-    armorExpiresAtRound: init.armorExpiresAtRound ?? null,
+    armorExpiresAtRound:
+      init.armorExpiresAtRound ??
+      (armorCondition !== undefined && armorCondition.duration.unit === "ROUND" && armorCondition.duration.remaining > 0
+        ? state.round + armorCondition.duration.remaining
+        : null),
     summonExpiresAtRound: init.summonExpiresAtRound ?? null,
     possessedBy: init.possessedBy ?? initPossess.possessedBy,
     possessCharges: Math.max(0, Math.floor(init.possessCharges ?? initPossess.possessCharges)),

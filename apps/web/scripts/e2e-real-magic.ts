@@ -19,7 +19,7 @@ import {
   loadCardConditions,
   possessChargeForToken
 } from "../src/server/magic/conditions";
-import { castOutsideCombat } from "../src/server/magic/out-of-combat";
+import { castOutsideCombat, listOutOfCombatMagic } from "../src/server/magic/out-of-combat";
 import { removeSummonCards } from "../src/server/magic/summons";
 import { sceneHasActiveCombat } from "../src/server/scene/lock";
 import { cleanupDefeatedSummons } from "../src/server/socket/combat";
@@ -44,6 +44,7 @@ function check(condition: boolean, label: string, detail?: unknown): void {
 
 const MAGIC_SPELLS = [
   { id: "e2e-heal", name: "E2E治疗术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ALLY", effects: [{ type: "HEAL", amount: "1d6" }] },
+  { id: "e2e-heal-2", name: "E2E他人治疗术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ALLY", effects: [{ type: "HEAL", amount: "1d6" }] },
   { id: "e2e-possess", name: "E2E夺舍术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "ONE", targeting: "ENEMY", effects: [{ type: "POSSESS", durationTurns: "3" }] },
   { id: "e2e-summon", name: "E2E召唤术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "SELF", targeting: "SELF", effects: [{ type: "SUMMON", name: "异次元蹒跚者", count: "1", durationTicks: "0" }] },
   { id: "e2e-summon-duration", name: "E2E限时召唤术", skill: "OCCULT", mpCost: "0", sanCost: "0", target: "SELF", targeting: "SELF", effects: [{ type: "SUMMON", name: "异次元蹒跚者", count: "1", durationTicks: "2" }] },
@@ -93,6 +94,7 @@ async function main(): Promise<void> {
       skills: sourceCharacter.skills as never,
       raceMods: sourceCharacter.raceMods as never,
       skillAllocation: sourceCharacter.skillAllocation as never,
+      sourceData: { spells: ["e2e-heal", "e2e-possess", "e2e-summon", "e2e-summon-duration"] } as never,
       era: sourceCharacter.era
     }
   });
@@ -158,7 +160,7 @@ async function main(): Promise<void> {
   const npcOtherScene = await cloneNpc("E2E·食尸鬼B");
   const npcNoToken = await cloneNpc("E2E·食尸鬼C");
   const npcSecondFight = await cloneNpc("E2E·食尸鬼D");
-  const npcThirdFight = await cloneNpc("E2E·食尸鬼E");
+  const npcThirdFight = await cloneNpc("E2E·食尸鬼E", { spells: ["e2e-heal-2"] });
   const summonSource = await cloneNpc("异次元蹒跚者");
 
   // 真实场景 / 地图 / Token
@@ -181,6 +183,52 @@ async function main(): Promise<void> {
 
   let combatId: string | null = null;
   try {
+    // ---------- 0.5 战斗外施法：持有者可见性 + 场景 / 合法目标门槛 ----------
+    const ownView = await listOutOfCombatMagic({ roomId: room.id, userId: user.id, isKP: false, pack: effective.compiled });
+    const ownCaster = ownView.casters[0];
+    const ownSpellIds = ownCaster?.spells.map((spell) => spell.id) ?? [];
+    check(
+      ownView.casters.length === 1 && ownCaster?.ref === characterRef(player.id),
+      "普通玩家只看到自己的施法者（看不到 NPC）",
+      ownView.casters.map((caster) => caster.ref)
+    );
+    check(
+      ownSpellIds.includes("e2e-heal") && ownSpellIds.includes("e2e-possess") &&
+        ownSpellIds.includes("e2e-summon") && ownSpellIds.includes("e2e-summon-duration") &&
+        ownSpellIds.includes("e2e-heal-2") === false,
+      "普通玩家只看到自己持有的法术（看不到别人的）",
+      ownSpellIds
+    );
+    const kpMagicView = await listOutOfCombatMagic({ roomId: room.id, userId: user.id, isKP: true, pack: effective.compiled });
+    const npcCaster = kpMagicView.casters.find((caster) => caster.ref === "card:" + npcThirdFight.id);
+    check(
+      npcCaster !== undefined && npcCaster.spells.some((spell) => spell.id === "e2e-heal-2"),
+      "KP 能看到 NPC 自己持有的法术",
+      kpMagicView.casters.map((caster) => ({ ref: caster.ref, spells: caster.spells.map((spell) => spell.id) }))
+    );
+
+    // 场景内没有合法目标时，敌方指向法术被过滤。
+    const sceneC = await prisma.scene.create({ data: { roomId: room.id, name: "E2E场景C" } });
+    const mapC = await prisma.map.create({ data: { sceneId: sceneC.id, name: "地图C", width: 800, height: 600, gridSize: 70 } });
+    const playerTokenRow = await prisma.token.findFirstOrThrow({ where: { roomId: room.id, characterId: player.id } });
+    await prisma.$transaction([
+      prisma.scene.updateMany({ where: { roomId: room.id }, data: { isActive: false } }),
+      prisma.scene.update({ where: { id: sceneC.id }, data: { isActive: true } }),
+      prisma.token.update({ where: { id: playerTokenRow.id }, data: { mapId: mapC.id } })
+    ]);
+    const lonelyView = await listOutOfCombatMagic({ roomId: room.id, userId: user.id, isKP: false, pack: effective.compiled });
+    const lonelySpellIds = lonelyView.casters[0]?.spells.map((spell) => spell.id) ?? [];
+    check(
+      lonelySpellIds.includes("e2e-heal") && lonelySpellIds.includes("e2e-possess") === false,
+      "场景内没有合法敌方目标时，敌方指向法术被过滤",
+      lonelySpellIds
+    );
+    await prisma.$transaction([
+      prisma.scene.updateMany({ where: { roomId: room.id }, data: { isActive: false } }),
+      prisma.scene.update({ where: { id: sceneA.id }, data: { isActive: true } }),
+      prisma.token.update({ where: { id: playerTokenRow.id }, data: { mapId: mapA.id } })
+    ]);
+
     // ---------- 1. 场景隔离 ----------
     const crossScene = await createCombatRecord(room.id, effective, [characterRef(player.id)], [npcRef(npcOtherScene.id)]);
     check(crossScene.ok === false && String(crossScene.error ?? "").includes("同一场景"), "不同场景不能开战", crossScene.error);
