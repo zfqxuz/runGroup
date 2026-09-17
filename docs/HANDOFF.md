@@ -2380,6 +2380,7 @@ sourceData:
 4. 建真实房间 + 局 + 场景 / 地图 / Token，把角色带入游戏并真实开战；
 5. 在真实战斗 runtime 里使用该道具：加载到 2d6 效果、真实回血、使用次数扣减、冷却写入。
 - 结果：`E2E REAL LIFECYCLE RESULT: passed=25 failed=0`。
+- 部署产物 `57ca35a` 在 ECS 生产容器里，用**自带源码 + 生产库 + 用户真实 COC7zfq.xlsx** 再跑同一套生命周期：同样 **25/25**；随后生产回归 `e2e-real-magic` **54/54**，测试数据全部清理（E2E/真实道具 残留 0），app health 200。
 - 回归：`e2e-real-magic` 54/54、`verify-character-import`、`verify-chargen-rules`、`verify-occupation-slots` 全过。
 - 新增 `scripts/verify-character-draft.ts`：KP 不能改技能熟练度 / 可改属性 / 换职业重置 / 超池拦截。
 
