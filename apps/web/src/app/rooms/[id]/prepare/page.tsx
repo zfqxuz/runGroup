@@ -678,21 +678,20 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
       <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-white/10 bg-ink-800/50 px-5 py-4">
         <div>
-          <p className="text-sm text-white/80">角色卡</p>
-          <p className="mt-0.5 text-xs text-white/40">按本房规则创建你的调查员</p>
+          <p className="text-sm text-white/80">角色与物品</p>
         </div>
         <div className="flex gap-2">
           <Link
             href={"/rooms/" + room.id + "/cards/new"}
             className="rounded-lg border border-sakura-500/40 px-4 py-2 text-sm text-sakura-400 transition hover:bg-sakura-500/10"
           >
-            新建卡牌
+            新建物品
           </Link>
           <Link
             href={"/rooms/" + room.id + "/characters/new"}
             className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
           >
-            车一张新卡
+            新建角色
           </Link>
         </div>
       </div>
@@ -717,7 +716,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         />
         {myApprovedCharacters.length === 0 ? (
           <p className="mt-3 text-[11px] text-white/35">
-            还没有通过审核的角色卡。先车卡并等待 KP 审核。
+            还没有通过审核的角色。先新建角色并等待 KP 审核。
           </p>
         ) : null}
         {activeAdvancements.length === 0 ? null : (

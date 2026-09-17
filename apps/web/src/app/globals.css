@@ -59,3 +59,23 @@ b {
   background-color: #ff7fb0;
   color: #0b0a14;
 }
+
+/* 白天模式：低透明度文字在浅色底上不可读，统一提高不透明度 */
+[data-theme="day"] .text-white\/15 { color: rgb(var(--white) / 0.6); }
+[data-theme="day"] .text-white\/25 { color: rgb(var(--white) / 0.6); }
+[data-theme="day"] .text-white\/30 { color: rgb(var(--white) / 0.6); }
+[data-theme="day"] .text-white\/35 { color: rgb(var(--white) / 0.6); }
+[data-theme="day"] .text-white\/40 { color: rgb(var(--white) / 0.6); }
+[data-theme="day"] .text-white\/45 { color: rgb(var(--white) / 0.6); }
+[data-theme="day"] .text-white\/50 { color: rgb(var(--white) / 0.74); }
+[data-theme="day"] .text-white\/55 { color: rgb(var(--white) / 0.74); }
+[data-theme="day"] .text-white\/60 { color: rgb(var(--white) / 0.74); }
+[data-theme="day"] .text-white\/65 { color: rgb(var(--white) / 0.74); }
+/* 白天模式：描边/分割线太淡，适当加深 */
+[data-theme="day"] .border-white\/5 { border-color: rgb(var(--white) / 0.18); }
+[data-theme="day"] .border-white\/10 { border-color: rgb(var(--white) / 0.18); }
+[data-theme="day"] .border-white\/15 { border-color: rgb(var(--white) / 0.18); }
+[data-theme="day"] .divide-white\/5 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--white) / 0.18); }
+[data-theme="day"] .divide-white\/10 > :not([hidden]) ~ :not([hidden]) { border-color: rgb(var(--white) / 0.18); }
+/* 白天模式：占位符与输入框文字加深 */
+[data-theme="day"] ::placeholder { color: rgb(var(--white) / 0.45); opacity: 1; }
