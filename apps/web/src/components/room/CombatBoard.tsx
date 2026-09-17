@@ -182,7 +182,7 @@ export default function CombatBoard(props: Props) {
       : chase.participants.find((item) => item.id === chase.activeActorId) ?? null;
 
   function isControlled(item: ParticipantView): boolean {
-    return item.isSelf || (props.isKP && item.kind === "NPC");
+    return item.isSelf || item.controlledByViewer || (props.isKP && item.kind === "NPC");
   }
 
   function isChaseControlled(participantId: string): boolean {

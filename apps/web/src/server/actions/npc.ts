@@ -42,7 +42,8 @@ function materializePreset(preset: PresetCharacter, effective: EffectivePack): N
     maxDp: preset.maxDp ?? fallback.derived.maxDp,
     tags: [...preset.tags],
     spells: [],
-    rarity: preset.rarity
+    rarity: preset.rarity,
+    conditions: []
   };
 }
 

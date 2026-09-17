@@ -10,6 +10,7 @@ export function magicEffectLabel(effect: MagicEffect): string {
   if (effect.type === "STATUS") return "状态 " + effect.key;
   if (effect.type === "ARMOR") return "护甲 " + effect.amount;
   if (effect.type === "SUMMON") return "召唤 " + effect.name + " ×" + effect.count;
+  if (effect.type === "POSSESS") return "夺舍 " + effect.durationTurns + " 轮";
   if (effect.type === "DOT") return "持续伤害 " + effect.amount + "×" + effect.durationTicks;
   if (effect.type === "STUN") return "眩晕 " + effect.durationActions + " 次行动";
   if (effect.type === "CONTROL") return "控制 " + effect.durationActions + " 次行动";

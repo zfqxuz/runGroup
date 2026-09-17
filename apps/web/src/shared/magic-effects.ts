@@ -79,6 +79,12 @@ export const MAGIC_EFFECT_DEFINITIONS: readonly MagicEffectDefinition[] = [
     ]
   },
   {
+    type: "POSSESS",
+    label: "夺舍",
+    summary: "操纵目标；充能池按战斗轮次 + 被夺舍 Token 移动消耗，耗尽归还控制权",
+    fields: [{ key: "durationTurns", label: "操纵轮次", kind: "number", placeholder: "例如 1", defaultValue: "1", required: true }]
+  },
+  {
     type: "DOT",
     label: "持续伤害",
     summary: "目标每次行动开始时结算持续伤害",

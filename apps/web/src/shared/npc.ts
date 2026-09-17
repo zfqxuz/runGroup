@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PRESET_TIERS, RARITIES } from "@touhou/rules";
+import { GameConditionSchema, PRESET_TIERS, RARITIES } from "@touhou/rules";
 
 export const NPC_ATTRIBUTE_KEYS = [
   "str",
@@ -49,7 +49,16 @@ export const NpcStatsSchema = z.object({
   maxSan: z.number().int().min(0).max(999),
   maxDp: z.number().int().min(0).max(99999),
   tags: z.array(z.string().max(30)).max(20).default([]),
-  rarity: z.enum(RARITIES).default("COMMON")
+  rarity: z.enum(RARITIES).default("COMMON"),
+  /** 局内持久状态：召唤物、夺舍、中毒等。战斗结束后回写到这里。 */
+  conditions: z.array(GameConditionSchema).max(50).default([]),
+  /** 召唤来源标记；非召唤物为空。 */
+  summoned: z.boolean().optional(),
+  summonOrigin: z.record(z.string(), z.unknown()).optional(),
+  /** 稳定召唤 key，用于跨译名匹配。 */
+  summonKey: z.string().max(120).optional(),
+  /** 别名列表：召唤 / 查找时可参与匹配。 */
+  aliases: z.array(z.string().max(120)).max(20).optional()
 });
 
 export type NpcStats = z.output<typeof NpcStatsSchema>;

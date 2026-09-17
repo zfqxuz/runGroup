@@ -6,6 +6,7 @@ import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomInfoPanel from "@/components/room/RoomInfoPanel";
+import RoomMagicPanel from "@/components/room/RoomMagicPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import SceneBoard from "@/components/room/SceneBoard";
 import { pauseGameAction } from "@/server/actions/room";
@@ -17,6 +18,7 @@ import { advancementView, gameStateView, growthCheckView } from "@/server/game/v
 import { loadGameModuleView } from "@/server/modules/revision";
 import { loadRoomMemberViews } from "@/server/room/member-view";
 import { loadEffectivePack } from "@/server/rules/loader";
+import { listOutOfCombatMagic } from "@/server/magic/out-of-combat";
 import { loadSceneView } from "@/server/scene/load";
 import type { RoomBgmView } from "@/shared/bgm";
 import { readRoomBgm } from "@/shared/bgm";
@@ -35,7 +37,7 @@ export default async function RoomPage({
   searchParams
 }: {
   params: { id: string };
-  searchParams: { state?: string; advancement?: string; growth?: string; error?: string; clue?: string; note?: string; bgm?: string };
+  searchParams: { state?: string; advancement?: string; growth?: string; error?: string; clue?: string; note?: string; bgm?: string; magicCast?: string; magicError?: string };
 }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -457,6 +459,13 @@ export default async function RoomPage({
   }));
 
 
+  const magicOptions = await listOutOfCombatMagic({
+    roomId: room.id,
+    userId: session.user.id,
+    isKP,
+    pack: effective.compiled
+  });
+
   const playerContent = (
     <div className="flex min-w-0 flex-col gap-6">
       <RoomBgmPlayer roomId={room.id} initialBgm={roomBgm} />
@@ -474,6 +483,15 @@ export default async function RoomPage({
           </div>
         </section>
       )}
+
+      <RoomMagicPanel
+        roomId={room.id}
+        casters={magicOptions.casters}
+        targets={magicOptions.targets}
+        spells={magicOptions.spells}
+        message={searchParams.magicCast ?? null}
+        error={searchParams.magicError ?? null}
+      />
 
       {gameState === null || activeGame === null ? null : (
         <RoomGameStatePanel

@@ -2,6 +2,7 @@ import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
   applyForcedSkips,
+  findParticipant,
   chaseAttackIssue,
   chaseCurrentActorId,
   chaseEndTurn,
@@ -10,7 +11,6 @@ import {
   currentActorId,
   endCombat,
   endTurn,
-  findParticipant,
   pushLog,
   reactionTargetIdsForAction,
   readyParticipants,
@@ -34,6 +34,7 @@ import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptions
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
 import { saveCombatState } from "@/server/combat/setup";
 import { findSummonCard, summonTemplateFromCard } from "@/server/combat/summon";
+import { createPersistentSummonCard, removeSummonCardById, type SummonOrigin } from "@/server/magic/summons";
 import { prisma } from "@/server/db/prisma";
 import type {
   Ack,
@@ -88,6 +89,8 @@ export async function broadcastCombat(io: SocketServer, runtime: CombatRuntime):
 }
 
 async function persistAndBroadcast(io: SocketServer, runtime: CombatRuntime): Promise<void> {
+  // 召唤物被击杀后先清持久卡与地图 Token，再把剩余状态写回。
+  await cleanupDefeatedSummons(runtime);
   await saveCombatState(runtime.combatId, runtime.state);
   await broadcastCombat(io, runtime);
 }
@@ -125,11 +128,12 @@ function kpUserIds(runtime: CombatRuntime): string[] {
   return ids;
 }
 
-/** 召唤入场的新单位由 KP 接管；若服务端解析出了独立卡片，同时生成攻击选项。 */
-function syncSummonedParticipants(
+/** 召唤入场的新单位由 KP 接管；同时落成一张持久房间 NPC 卡，可被放入地图。 */
+async function syncSummonedParticipants(
   runtime: CombatRuntime,
-  summonTemplate: ActionSubmission["summonTemplate"]
-): string[] {
+  summonTemplate: ActionSubmission["summonTemplate"],
+  origin: SummonOrigin
+): Promise<string[]> {
   const kpIds = kpUserIds(runtime);
   const created: string[] = [];
   for (const participant of runtime.state.participants) {
@@ -137,18 +141,56 @@ function syncSummonedParticipants(
     if (runtime.controllers.has(participant.id)) continue;
     runtime.controllers.set(participant.id, kpIds);
     created.push(participant.id);
-    if (summonTemplate !== undefined) {
-      const weapons = (summonTemplate.weapons ?? []) as readonly WeaponLike[];
-      const options = attackOptionsForParticipant(
-        runtime.pack,
-        { id: participant.id, kind: "NPC", characterId: null, skills: participant.skills },
-        weapons
-      );
-      runtime.attackOptions.set(participant.id, options);
-      runtime.attackSkills.set(participant.id, options.map((option) => option.skillId));
-    }
+    const weapons = (summonTemplate?.weapons ?? []) as readonly WeaponLike[];
+    const options = attackOptionsForParticipant(
+      runtime.pack,
+      { id: participant.id, kind: "NPC", characterId: null, skills: participant.skills },
+      weapons
+    );
+    runtime.attackOptions.set(participant.id, options);
+    runtime.attackSkills.set(participant.id, options.map((option) => option.skillId));
+
+    const template = {
+      name: participant.name,
+      attributes: participant.attributes,
+      derived: {
+        hp: participant.maxHp,
+        maxHp: participant.maxHp,
+        mp: participant.maxMp,
+        maxMp: participant.maxMp,
+        san: participant.maxSan,
+        maxSan: participant.maxSan,
+        dp: participant.maxDp,
+        maxDp: participant.maxDp
+      },
+      skills: participant.skills,
+      spells: participant.spells,
+      damageBonus: participant.damageBonus,
+      weapons: summonTemplate?.weapons,
+      armorExpression: summonTemplate?.armorExpression ?? String(participant.armor)
+    };
+    await createPersistentSummonCard({
+      id: participant.id,
+      roomId: runtime.roomId,
+      ownerId: null,
+      pack: runtime.pack,
+      template,
+      origin
+    }).catch(() => undefined);
+    runtime.summonCardIds.add(participant.id);
   }
   return created;
+}
+
+/** 召唤物在战斗中被击杀后，把持久 NPC 卡和地图 Token 一起清掉。 */
+async function cleanupDefeatedSummons(runtime: CombatRuntime): Promise<void> {
+  for (const id of [...runtime.summonCardIds]) {
+    const participant = findParticipant(runtime.state, id);
+    if (participant === undefined || participant.defeated === true) {
+      await removeSummonCardById(id).catch(() => undefined);
+      runtime.summonCardIds.delete(id);
+    }
+  }
 }
 
 export async function tryResolveCombat(
@@ -297,6 +339,7 @@ async function handleAction(
     return;
   }
   const requestedSkill = asString(raw.skill);
+  let summonOrigin: SummonOrigin | undefined;
   const actualAttack =
     kind === "DANMAKU"
       ? runtime.attackOptions.get(requestedActor)?.find((option) => option.skillId === requestedSkill)
@@ -342,6 +385,13 @@ async function handleAction(
       const card = explicitCard ?? findSummonCard(cards, summonEffect.name, summonEffect.key);
       const template = card === null ? null : summonTemplateFromCard(card, runtime.pack);
       if (template !== null) action = { ...action, summonTemplate: template };
+      const caster = findParticipant(runtime.state, requestedActor);
+      summonOrigin = {
+        spellId: spell.id,
+        spellName: spell.name,
+        casterId: requestedActor,
+        casterName: caster?.name ?? null
+      };
     }
   }
 
@@ -440,7 +490,7 @@ async function handleAction(
   if (resolved === false) {
     await broadcastCombat(io, runtime);
   } else {
-    syncSummonedParticipants(runtime, action.summonTemplate);
+    await syncSummonedParticipants(runtime, action.summonTemplate, summonOrigin ?? {});
     await maybeStartPendingFlee(io, runtime);
   }
   ack({ ok: true });

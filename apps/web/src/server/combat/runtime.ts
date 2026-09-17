@@ -1,5 +1,6 @@
 import {
   filterCombatForViewer,
+  findParticipant,
   type ActionSubmission,
   type ChaseAttackInput,
   type CombatState,
@@ -35,6 +36,8 @@ export interface CombatRuntime {
   chaseAttack: ChaseAttackInput | null;
   /** ATB 模式下，被攻击时选择逃跑的待处理对象；普通攻击结算后进入追逐。 */
   pendingFlee: { readonly targetId: string; readonly actorId: string } | null;
+  /** 本次战斗中由 SUMMON 生成、已同步为持久 NPC 卡的 participant id。 */
+  readonly summonCardIds: Set<string>;
 }
 
 const cache = new Map<string, CombatRuntime>();
@@ -158,13 +161,22 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     pendingReactions: new Map(),
     reactions: {},
     chaseAttack: null,
-    pendingFlee: null
+    pendingFlee: null,
+    summonCardIds: new Set(state.participants.filter((participant) => participant.summonedBy !== null && participant.summonedBy !== undefined).map((participant) => participant.id))
   };
   cache.set(combatId, runtime);
   return runtime;
 }
 
 export function canControl(runtime: CombatRuntime, userId: string, participantId: string): boolean {
+  const participant = findParticipant(runtime.state, participantId);
+  if (participant !== undefined && participant.possessedBy !== null && participant.possessedBy !== undefined) {
+    const possessor = findParticipant(runtime.state, participant.possessedBy);
+    if (possessor !== undefined) {
+      const possessorControllers = runtime.controllers.get(possessor.id);
+      return possessorControllers !== undefined && possessorControllers.includes(userId);
+    }
+  }
   const controllers = runtime.controllers.get(participantId);
   if (controllers === undefined) return false;
   return controllers.includes(userId);
@@ -203,6 +215,10 @@ export function viewForUser(runtime: CombatRuntime, userId: string): CombatView 
   });
   return {
     ...view,
+    participants: view.participants.map((participant) => ({
+      ...participant,
+      controlledByViewer: canControl(runtime, userId, participant.id)
+    })),
     pendingReactions: [...runtime.pendingReactions.entries()].map(([targetId, actorId]) => ({ actorId, targetId }))
   };
 }

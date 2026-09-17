@@ -3,6 +3,7 @@ import { prisma } from "@/server/db/prisma";
 import { emitSceneFogUpdate, emitSceneMapUpdate } from "@/server/realtime";
 import { loadSceneMapView, loadSceneTokenView, loadSceneView } from "@/server/scene/load";
 import { findFreeTokenPosition } from "@/server/scene/placement";
+import { consumePossessCharge, possessChargeForToken } from "@/server/magic/conditions";
 import type { Ack } from "@/shared/socket";
 
 const roomChannel = (roomId: string): string => "room:" + roomId;
@@ -159,6 +160,17 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
       return;
     }
 
+    // 被夺舍的 Token：夺舍充能按「移动操作次数」消耗；充能为 0 时不能再移动。
+    const charge = await possessChargeForToken({
+      roomId: input.roomId,
+      characterId: token.characterId,
+      cardId: token.cardId
+    });
+    if (charge !== null && charge <= 0) {
+      ack({ ok: false, error: "夺舍充能已耗尽，控制权已归还，不能再移动这个 Token" });
+      return;
+    }
+
     const freePoint = await findFreeTokenPosition(
       { id: token.map.id, width: token.map.width, height: token.map.height, gridSize: token.map.gridSize, gridType: token.map.gridType },
       { x: Math.max(0, Math.min(token.map.width, x)), y: Math.max(0, Math.min(token.map.height, y)) },
@@ -177,6 +189,20 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
       io.to(roomChannel(input.roomId)).emit("scene:token:updated", { roomId: input.roomId, token: updated.token });
     }
     await broadcastSceneVisibility(io, input.roomId, token.map.scene.id);
+    // 移动成功后消耗 1 格夺舍充能；耗尽则立即释放控制权。
+    if (charge !== null) {
+      const consumed = await consumePossessCharge({
+        roomId: input.roomId,
+        characterId: token.characterId,
+        cardId: token.cardId
+      });
+      if (consumed.expired) {
+        io.to(roomChannel(input.roomId)).emit("scene:possession:expired", {
+          roomId: input.roomId,
+          tokenId: token.id
+        });
+      }
+    }
     ack({ ok: true });
   });
 

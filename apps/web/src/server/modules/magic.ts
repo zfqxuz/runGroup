@@ -2,6 +2,7 @@ import { deepMerge, MagicEffectSchema, type MagicEffect, type MagicSpell } from 
 import { normalizeEntityKey } from "@/server/modules/keys";
 import { compile, parseDice } from "@touhou/formula";
 import { prisma } from "@/server/db/prisma";
+import { removeSummonCards } from "@/server/magic/summons";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { structuredOfContent, type StructuredModuleEntry } from "@/server/modules/structure";
 
@@ -160,6 +161,8 @@ export async function disableMagicRulesInRoom(roomId: string): Promise<void> {
     where: { id: roomId },
     select: { id: true, ruleOverride: true }
   });
+  // 关闭魔法时清理该房间由召唤产生的持久卡和地图 Token。
+  await removeSummonCards(roomId).catch(() => 0);
   if (room === null || isPlainObject(room.ruleOverride) === false) return;
   const magic = asRecord((room.ruleOverride as Record<string, unknown>).magic);
   const merged = { ...(room.ruleOverride as Record<string, unknown>), magic: { ...magic, enabled: false } };
