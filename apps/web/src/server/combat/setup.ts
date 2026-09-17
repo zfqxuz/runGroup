@@ -341,29 +341,36 @@ async function refLabels(refs: readonly UnitSelection[]): Promise<Map<string, st
   return labels;
 }
 
+interface CombatPlacementResult {
+  readonly error: string | null;
+  /** 校验通过后战斗应绑定的场景；双方都未入场时为 null。 */
+  readonly sceneId: string | null;
+}
+
 /** 场景隔离 + 进行中战斗席位互斥。 */
 async function validateCombatPlacement(
   roomId: string,
   refs: readonly UnitSelection[],
   options: CreateCombatOptions
-): Promise<string | null> {
+): Promise<CombatPlacementResult> {
   const scenes = await resolveParticipantScenes(roomId, refs);
   const labels = await refLabels(refs);
   const missing = refs.filter((selection) => (scenes.get(selection.ref) ?? null) === null);
   const present = refs.filter((selection) => (scenes.get(selection.ref) ?? null) !== null);
+  let resolvedSceneId: string | null = null;
   // 只有「至少一方已入场」时才强制全体入场，兼容尚未使用地图的旧房间。
   if (present.length > 0) {
     if (missing.length > 0) {
       const names = missing.map((selection) => labels.get(selection.ref) ?? selection.ref).join("、");
-      return "以下单位尚未放入地图，不能参战：" + names;
+      return { error: "以下单位尚未放入地图，不能参战：" + names, sceneId: null };
     }
     const sceneIds = new Set(present.map((selection) => scenes.get(selection.ref)!.sceneId));
     if (sceneIds.size > 1) {
-      return "参战单位不在同一场景，战斗已取消。请先把所有人移动到同一场景。";
+      return { error: "参战单位不在同一场景，战斗已取消。请先把所有人移动到同一场景。", sceneId: null };
     }
-    const sceneId = [...sceneIds][0]!;
-    if (options.sceneId !== null && options.sceneId !== undefined && options.sceneId !== sceneId) {
-      return "参战单位当前不在指定战斗场景。";
+    resolvedSceneId = [...sceneIds][0]!;
+    if (options.sceneId !== null && options.sceneId !== undefined && options.sceneId !== resolvedSceneId) {
+      return { error: "参战单位当前不在指定战斗场景。", sceneId: null };
     }
   }
   const occupied = await activeCombatEntityIds(roomId);
@@ -374,9 +381,9 @@ async function validateCombatPlacement(
     if (occupied.has(ref.id)) conflicts.push(labels.get(selection.ref) ?? selection.ref);
   }
   if (conflicts.length > 0) {
-    return "以下单位已经在另一场进行中的战斗里，不能重复参战：" + conflicts.join("、");
+    return { error: "以下单位已经在另一场进行中的战斗里，不能重复参战：" + conflicts.join("、"), sceneId: null };
   }
-  return null;
+  return { error: null, sceneId: resolvedSceneId };
 }
 
 export async function createCombatRecord(
@@ -436,8 +443,8 @@ export async function createCombatRecord(
     }
     if (card.system !== effective.compiled.system) return { ok: false, error: "NPC 卡模组与房间不一致" };
   }
-  const placementError = await validateCombatPlacement(roomId, refs, options);
-  if (placementError !== null) return { ok: false, error: placementError };
+  const placement = await validateCombatPlacement(roomId, refs, options);
+  if (placement.error !== null) return { ok: false, error: placement.error };
   const pack = effective.compiled;
   const activeGame = await prisma.game.findFirst({
     where: {
@@ -500,6 +507,7 @@ export async function createCombatRecord(
     const combat = await tx.combat.create({
       data: {
         roomId,
+        sceneId: placement.sceneId,
         round: state.round,
         phase: dbPhase(state) as never,
         tick: state.tick,
@@ -627,7 +635,14 @@ export async function saveCombatState(combatId: string, state: CombatState): Pro
     }
 
     if (state.phase === "ENDED") {
-      await tx.room.update({ where: { id: combat.roomId }, data: { status: "PLAYING" } });
+      // 同房间可能还有其它进行中的战斗：只有全部结束才回到 PLAYING。
+      const remaining = await tx.combat.count({
+        where: { roomId: combat.roomId, endedAt: null }
+      });
+      await tx.room.update({
+        where: { id: combat.roomId },
+        data: { status: remaining > 0 ? "COMBAT" : "PLAYING" }
+      });
     }
   });
 

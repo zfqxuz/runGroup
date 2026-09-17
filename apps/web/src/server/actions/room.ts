@@ -219,11 +219,11 @@ export async function setStatsPublicAction(formData: FormData): Promise<void> {
     data: { statsPublic: enabled }
   });
   // 正在进行的战斗 view 有运行时缓存，必须清掉才能立即反映公开状态。
-  const activeCombat = await prisma.combat.findFirst({
+  const activeCombats = await prisma.combat.findMany({
     where: { roomId, endedAt: null },
     select: { id: true }
   });
-  if (activeCombat !== null) clearCombatRuntime(activeCombat.id);
+  for (const combat of activeCombats) clearCombatRuntime(combat.id);
   revalidatePath("/rooms/" + roomId);
   emitRoomRefresh(roomId, "stats-public");
   redirect("/rooms/" + roomId);
@@ -481,14 +481,16 @@ export async function pauseGameAction(formData: FormData): Promise<void> {
   });
   if (activeGame === null) redirect("/rooms/" + roomId + "/prepare?error=game");
 
-  const activeCombat = await prisma.combat.findFirst({
+  // 暂停前保存所有进行中的战斗（同房间可能有多场）。
+  const activeCombats = await prisma.combat.findMany({
     where: { roomId, endedAt: null },
-    orderBy: { startedAt: "desc" },
+    orderBy: { startedAt: "asc" },
     select: { id: true }
   });
-  if (activeCombat !== null && hasCombatRuntime(activeCombat.id)) {
-    const runtime = await loadCombatRuntime(activeCombat.id);
-    if (runtime !== null) await saveCombatState(activeCombat.id, runtime.state);
+  for (const combat of activeCombats) {
+    if (hasCombatRuntime(combat.id) === false) continue;
+    const runtime = await loadCombatRuntime(combat.id);
+    if (runtime !== null) await saveCombatState(combat.id, runtime.state);
   }
 
   await prisma.game.update({ where: { id: activeGame.id }, data: { status: "PAUSED" } });

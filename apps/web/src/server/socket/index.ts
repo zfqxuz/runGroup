@@ -683,37 +683,37 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
           return;
         }
 
-        const activeCombat = await prisma.combat.findFirst({
+        // 单位可能参加房间内任意一场进行中的战斗，逐场查找。
+        const activeCombats = await prisma.combat.findMany({
           where: { roomId, endedAt: null },
+          orderBy: { startedAt: "asc" },
           select: { id: true }
         });
-        if (activeCombat !== null) {
+        for (const activeCombat of activeCombats) {
           const runtime = await loadCombatRuntime(activeCombat.id);
-          if (runtime !== null) {
-            const participant =
-              unit.kind === "CHARACTER"
-                ? runtime.state.participants.find((item) => item.characterId === unit.id)
-                : runtime.state.participants.find((item) => item.id === unit.id);
-            if (participant !== undefined) {
-              ack({
-                ok: true,
-                source: "COMBAT",
-                values: {
-                  hp: participant.hp,
-                  maxHp: participant.maxHp,
-                  mp: participant.mp,
-                  maxMp: participant.maxMp,
-                  san: participant.san,
-                  maxSan: participant.maxSan,
-                  dp: participant.dp,
-                  maxDp: participant.maxDp,
-                  attributes: { ...participant.attributes },
-                  skills: { ...participant.skills }
-                }
-              });
-              return;
+          if (runtime === null) continue;
+          const participant =
+            unit.kind === "CHARACTER"
+              ? runtime.state.participants.find((item) => item.characterId === unit.id)
+              : runtime.state.participants.find((item) => item.id === unit.id);
+          if (participant === undefined) continue;
+          ack({
+            ok: true,
+            source: "COMBAT",
+            values: {
+              hp: participant.hp,
+              maxHp: participant.maxHp,
+              mp: participant.mp,
+              maxMp: participant.maxMp,
+              san: participant.san,
+              maxSan: participant.maxSan,
+              dp: participant.dp,
+              maxDp: participant.maxDp,
+              attributes: { ...participant.attributes },
+              skills: { ...participant.skills }
             }
-          }
+          });
+          return;
         }
 
         if (unit.kind === "CHARACTER") {
@@ -835,11 +835,13 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         }
 
         let combatAdjusted = false;
-        const activeCombat = await prisma.combat.findFirst({
+        // 单位可能参加房间内任意一场进行中的战斗；席位互斥保证最多命中一场。
+        const activeCombats = await prisma.combat.findMany({
           where: { roomId, endedAt: null },
+          orderBy: { startedAt: "asc" },
           select: { id: true }
         });
-        if (activeCombat !== null) {
+        for (const activeCombat of activeCombats) {
           const runtime = await loadCombatRuntime(activeCombat.id);
           if (runtime !== null) {
             const participant =
@@ -873,6 +875,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
               await saveCombatState(activeCombat.id, runtime.state);
               await broadcastCombat(io, runtime);
               combatAdjusted = true;
+              break;
             }
           }
         }

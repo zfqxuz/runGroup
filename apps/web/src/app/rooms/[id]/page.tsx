@@ -6,6 +6,7 @@ import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
 import RoomInfoPanel from "@/components/room/RoomInfoPanel";
+import RoomCombatTabs from "@/components/room/RoomCombatTabs";
 import RoomMagicPanel from "@/components/room/RoomMagicPanel";
 import RoomPlay from "@/components/room/RoomPlay";
 import SceneBoard from "@/components/room/SceneBoard";
@@ -19,6 +20,7 @@ import { loadGameModuleView } from "@/server/modules/revision";
 import { loadRoomMemberViews } from "@/server/room/member-view";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { listOutOfCombatMagic } from "@/server/magic/out-of-combat";
+import { loadActiveCombatSummaries } from "@/server/combat/room-view";
 import { loadSceneView } from "@/server/scene/load";
 import type { RoomBgmView } from "@/shared/bgm";
 import { readRoomBgm } from "@/shared/bgm";
@@ -112,10 +114,9 @@ export default async function RoomPage({
   });
   const skillOptions = effective.compiled.skills.map((skill) => ({ id: skill.id, name: skill.name }));
 
-  const activeCombat = await prisma.combat.findFirst({
-    where: { roomId: room.id, endedAt: null },
-    select: { id: true }
-  });
+  // 同一房间允许多场战斗同时进行：这里取全部进行中的战斗用于 tab，第一场作为默认入口。
+  const activeCombats = await loadActiveCombatSummaries(room.id);
+  const activeCombatId = activeCombats[0]?.id ?? null;
   const activeGame = await prisma.game.findFirst({
     where: { roomId: room.id, status: { in: ["PLAYING", "COMBAT"] } },
     orderBy: { createdAt: "desc" },
@@ -470,19 +471,17 @@ export default async function RoomPage({
     <div className="flex min-w-0 flex-col gap-6">
       <RoomBgmPlayer roomId={room.id} initialBgm={roomBgm} />
 
-      {activeCombat === null ? null : (
-        <section className="mx-auto w-full max-w-4xl rounded-xl border border-amber-400/30 bg-amber-400/5 px-4 py-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-sm font-medium text-amber-200">战斗进行中</h2>
-            <Link
-              href={"/rooms/" + room.id + "/combat/" + activeCombat.id}
-              className="rounded-lg bg-amber-400 px-4 py-2 text-xs font-medium text-ink-900 transition hover:bg-amber-300"
-            >
-              进入战斗页面
-            </Link>
-          </div>
-        </section>
-      )}
+      <RoomCombatTabs
+        roomId={room.id}
+        isKP={isKP}
+        canCreate={room.status !== "ENDED" && (isKP || room.allowPlayerCombatRequest)}
+        combats={activeCombats.map((combat) => ({
+          id: combat.id,
+          sceneName: combat.sceneName,
+          round: combat.round,
+          participantCount: combat.participantCount
+        }))}
+      />
 
       <RoomMagicPanel
         roomId={room.id}
@@ -538,7 +537,7 @@ export default async function RoomPage({
           units={isKP ? [] : placeableSceneUnits}
           canControlAll={isKP}
           allowPlayerCombatRequest={room.allowPlayerCombatRequest}
-          activeCombatId={activeCombat?.id ?? null}
+          activeCombatId={activeCombatId}
           members={playerInitialMembers}
           sharedUserIds={sharedUserIds}
           backgroundAssets={backgroundAssets}
@@ -557,7 +556,7 @@ export default async function RoomPage({
         initialMembers={playerInitialMembers}
         initialMessages={initialMessages}
         initialGameStateVersion={gameState?.version ?? 0}
-        initialCombatId={activeCombat?.id ?? null}
+        initialCombatId={activeCombatId}
         roomStatus={room.status}
         characterVisibility={room.characterVisibility}
         allowPlayerCombatRequest={room.allowPlayerCombatRequest}

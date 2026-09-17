@@ -932,6 +932,8 @@ model Light {
 model Combat {
   id               String      @id @default(cuid())
   roomId           String
+  /// 战斗绑定的场景；用于同房间多场战斗的隔离与展示。旧数据为空。
+  sceneId          String?
   round            Int         @default(1)
   phase            CombatPhase @default(ATB_CHARGING)
   tick             Int         @default(0)
@@ -947,6 +949,7 @@ model Combat {
   snapshots    CombatSnapshot[]
 
   @@index([roomId, endedAt])
+  @@index([roomId, sceneId])
 }
 
 model CombatParticipant {

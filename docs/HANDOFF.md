@@ -2032,3 +2032,30 @@ MagicEffect =
 - 复现：把 `apps/web/scripts/e2e-real-magic.ts` 放进 app 容器后运行
   `docker exec -w /repo/apps/web touhou-trpg-app /repo/node_modules/.bin/tsx scripts/e2e-real-magic.ts`。
 - 真实验证中发现并修复：战斗外 SUMMON 原本只走通用兜底，没有匹配房间内的真实召唤物卡；现在与战斗内一致，按 `cardId → key → 名称 / 别名 → 相似度 → 通用兜底` 匹配。
+
+## 49. 同房间多场战斗（本轮）
+
+### 数据与状态
+- `Combat` 新增 `sceneId`（迁移 `20260917120000_combat_scene`），记录该场战斗绑定的场景；`createCombatRecord` 在校验通过后写入。
+- `saveCombatState` 结束时不再无条件把 `Room.status` 置回 `PLAYING`：改为统计房间内剩余进行中的战斗，全部结束才回 `PLAYING`，否则保持 `COMBAT`。
+- 席位互斥沿用上一轮的 `activeCombatEntityIds`：读取所有进行中战斗的最新快照，同一实体（玩家角色 / NPC 卡 / 召唤物）不能同时参加多场。
+
+### 房间页
+- 新增 `apps/web/src/server/combat/room-view.ts`：`loadActiveCombatSummaries` / `loadActiveCombatIds`。
+- 新增 `apps/web/src/components/room/RoomCombatTabs.tsx`：每场战斗一个独立 tab（场景名 / 第几轮 / 参战人数），高亮当前打开的一场，并提供「发起 / 申请新战斗」入口。
+- 房间页改为加载全部进行中的战斗；第一场作为 SceneBoard / 成员名单的默认入口，不再内联单场横幅。
+- `combat/new` 不再因为已有战斗而跳走；改为提示「本房已有 N 场进行中的战斗」，允许继续发起（冲突会由席位互斥 / 场景隔离拦截）。
+- `RoomPlay` 收到 `combat:started` 只 `router.refresh()` 刷新 tab，不再把所有人强制拉到同一场战斗。
+
+### 其它批量处理
+- KP 单位实时数值查看 / 修改（`room:unit-values` / `room:unit-adjust`）改为遍历所有进行中的战斗查找参战单位。
+- `setStatsPublicAction` 清理所有进行中战斗的 runtime 缓存。
+- `pauseGameAction` 保存所有进行中战斗的状态。
+
+### 真实 E2E（扩展）
+- `scripts/e2e-real-magic.ts` 增加「同房间开第二场战斗」「战斗记录绑定场景」「只结束一场房间仍为 COMBAT」「全部结束回到 PLAYING」断言。
+- 运行结果：真实角色 / NPC 卡 / 地图 Token 下 `passed=24 failed=0`。
+
+### 仍未完成
+- `CombatUnitPicker` 尚未把「未入场 / 已在其它战斗」的单位置灰；冲突仍由服务端返回明确错误。
+- 战斗进行中对参战 Token 的跨场景移动目前没有独立入口，未额外加锁定。

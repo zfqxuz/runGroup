@@ -32,12 +32,8 @@ export default async function NewCombatPage({
     ruleOverride: room.ruleOverride
   });
   const selectable = await listSelectableUnits(room.id, session.user.id, membership.role);
-  const active = await prisma.combat.findFirst({
-    where: { roomId: room.id, endedAt: null },
-    select: { id: true }
-  });
-  // 战斗开始后统一进入独立战斗页面，不再停留在申请页。
-  if (active !== null) redirect("/rooms/" + room.id + "/combat/" + active.id);
+  // 同房间允许多场战斗：这里不再因为有进行中的战斗就跳走，改为提示 + 继续发起新战斗。
+  const activeCount = await prisma.combat.count({ where: { roomId: room.id, endedAt: null } });
   const isKP = membership.role === "KP";
   const canRequest = isKP || room.allowPlayerCombatRequest;
   const error = searchParams?.error;
@@ -86,6 +82,12 @@ export default async function NewCombatPage({
         </p>
       )}
 
+      {activeCount === 0 ? null : (
+        <p className="rounded-lg border border-amber-400/30 bg-amber-400/5 px-4 py-3 text-sm text-amber-200">
+          本房当前已有 {activeCount} 场进行中的战斗。同一单位不能同时参加两场；不同单位可以各自开战。
+        </p>
+      )}
+
       {opponent === null && opponentToken === null ? null : (
         <p className="rounded-lg border border-red-400/30 bg-red-400/5 px-4 py-3 text-sm text-red-200">
           发起战斗的 Token：
@@ -120,7 +122,6 @@ export default async function NewCombatPage({
             )}
             <button
               type="submit"
-              disabled={active !== null}
               className="self-start rounded-lg bg-sakura-500 px-6 py-3 text-sm font-medium text-ink-900 transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isKP ? "直接开战" : "提交战斗申请"}

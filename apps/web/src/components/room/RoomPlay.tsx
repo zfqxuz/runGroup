@@ -148,8 +148,8 @@ export default function RoomPlay(props: Props) {
     socket.on("combat:started", (payload: CombatLifecycle) => {
       if (cancelled) return;
       if (payload.roomId !== props.roomId) return;
-      // 开战统一进入独立战斗页面，不再在原房间页内嵌战斗板。
-      router.push("/rooms/" + payload.roomId + "/combat/" + payload.combatId);
+      // 同房间可同时存在多场战斗：只刷新出新的战斗 tab，不强制把所有人拉进同一场。
+      router.refresh();
     });
     socket.on("combat:ended", (payload: CombatLifecycle) => {
       if (cancelled) return;

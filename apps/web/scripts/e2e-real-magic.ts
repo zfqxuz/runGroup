@@ -22,7 +22,7 @@ import {
 import { castOutsideCombat } from "../src/server/magic/out-of-combat";
 import { removeSummonCards } from "../src/server/magic/summons";
 import { findCondition, parseConditions } from "@touhou/rules";
-import { resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
+import { endCombat, resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
 
 const MARK = "E2E-" + Date.now().toString(36);
 const SOURCE_NPC_ID = "cmu409s9n005hcq5g9z9vbthp"; // 真实房间里的「食尸鬼（秘境使者）」
@@ -113,6 +113,30 @@ async function main(): Promise<void> {
     }
   });
 
+  // 第二场战斗用的真实角色（多场战斗互斥测试）
+  const playerSecond = await prisma.character.create({
+    data: {
+      userId: user.id, roomId: room.id, system: sourceCharacter.system, name: MARK + "·玩家二",
+      occupation: sourceCharacter.occupation, age: sourceCharacter.age,
+      str: sourceCharacter.str, con: sourceCharacter.con, siz: sourceCharacter.siz, dex: sourceCharacter.dex,
+      app: sourceCharacter.app, int: sourceCharacter.int, pow: sourceCharacter.pow, edu: sourceCharacter.edu, luck: sourceCharacter.luck,
+      hp: sourceCharacter.hp, maxHp: sourceCharacter.maxHp,
+      mp: sourceCharacter.mp, maxMp: sourceCharacter.maxMp,
+      san: sourceCharacter.san, maxSan: sourceCharacter.maxSan,
+      dp: sourceCharacter.dp, maxDp: sourceCharacter.maxDp,
+      skills: sourceCharacter.skills as never, raceMods: sourceCharacter.raceMods as never,
+      skillAllocation: sourceCharacter.skillAllocation as never, era: sourceCharacter.era
+    }
+  });
+  await prisma.roomCharacterEntry.create({ data: { roomId: room.id, characterId: playerSecond.id, status: "APPROVED" } });
+  await prisma.gameCharacter.create({
+    data: {
+      gameId: game.id, characterId: playerSecond.id, userId: user.id, status: "ALIVE",
+      currentHp: playerSecond.maxHp, currentMp: playerSecond.maxMp,
+      currentSan: playerSecond.maxSan, currentDp: playerSecond.maxDp, conditions: [] as never
+    }
+  });
+
   // 真实 NPC 卡（同场景 / 异场景 / 召唤目标 / 未入场）
   async function cloneNpc(name: string, overrides?: Record<string, unknown>) {
     const stats = { ...(sourceNpc.stats as Record<string, unknown>), ...(overrides ?? {}) };
@@ -130,6 +154,7 @@ async function main(): Promise<void> {
   const npcSameScene = await cloneNpc("E2E·食尸鬼A");
   const npcOtherScene = await cloneNpc("E2E·食尸鬼B");
   const npcNoToken = await cloneNpc("E2E·食尸鬼C");
+  const npcSecondFight = await cloneNpc("E2E·食尸鬼D");
   const summonSource = await cloneNpc("异次元蹒跚者");
 
   // 真实场景 / 地图 / Token
@@ -140,6 +165,8 @@ async function main(): Promise<void> {
   await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, characterId: player.id, name: player.name, x: 100, y: 100 } });
   await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, cardId: npcSameScene.id, name: npcSameScene.name, x: 300, y: 100 } });
   await prisma.token.create({ data: { roomId: room.id, mapId: mapB.id, cardId: npcOtherScene.id, name: npcOtherScene.name, x: 100, y: 100 } });
+  await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, characterId: playerSecond.id, name: playerSecond.name, x: 200, y: 200 } });
+  await prisma.token.create({ data: { roomId: room.id, mapId: mapA.id, cardId: npcSecondFight.id, name: npcSecondFight.name, x: 400, y: 200 } });
 
   const effective = await loadEffectivePack({
     id: room.id, system: room.system, rulePackVersionId: room.rulePackVersionId, ruleOverride: room.ruleOverride
@@ -268,7 +295,32 @@ async function main(): Promise<void> {
     const summonCardAfter = summonCard === undefined ? null : await prisma.card.findUnique({ where: { id: summonCard.id } });
     check(removed >= 1 && summonCardAfter === null && summonTokenAfter === null, "关闭魔法清理召唤卡与地图 Token", { removed });
 
-    // ---------- 8. 战斗外禁止伤害法术 ----------
+    // ---------- 8. 同房间多场战斗 + 状态重算 ----------
+    const second = await createCombatRecord(room.id, effective, [characterRef(playerSecond.id)], [npcRef(npcSecondFight.id)]);
+    check(second.ok === true && second.combatId !== undefined, "同一房间可以同时开第二场战斗（不同单位）", second.error);
+
+    const combatOne = await prisma.combat.findUniqueOrThrow({ where: { id: combatId } });
+    check(combatOne.sceneId === sceneA.id, "战斗记录了绑定场景", { sceneId: combatOne.sceneId, expected: sceneA.id });
+
+    if (second.combatId !== undefined) {
+      const runtimeOne = await loadCombatRuntime(combatId);
+      if (runtimeOne !== null) {
+        endCombat(runtimeOne.state, "E2E 结束第一场");
+        await saveCombatState(combatId, runtimeOne.state);
+      }
+      const roomAfterFirstEnd = await prisma.room.findUniqueOrThrow({ where: { id: room.id } });
+      check(roomAfterFirstEnd.status === "COMBAT", "只结束一场时房间仍保持 COMBAT", { status: roomAfterFirstEnd.status });
+
+      const runtimeTwo = await loadCombatRuntime(second.combatId);
+      if (runtimeTwo !== null) {
+        endCombat(runtimeTwo.state, "E2E 结束第二场");
+        await saveCombatState(second.combatId, runtimeTwo.state);
+      }
+      const roomAfterAllEnd = await prisma.room.findUniqueOrThrow({ where: { id: room.id } });
+      check(roomAfterAllEnd.status === "PLAYING", "全部战斗结束后房间回到 PLAYING", { status: roomAfterAllEnd.status });
+    }
+
+    // ---------- 9. 战斗外禁止伤害法术 ----------
     const damageSpell = spellById.get("e2e-damage");
     if (damageSpell === undefined) { check(false, "找到伤害法术"); return; }
     const damageResult = await castOutsideCombat({
