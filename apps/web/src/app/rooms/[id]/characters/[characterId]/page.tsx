@@ -220,6 +220,17 @@ export default async function CharacterPage({
 
       <BackstoryPanel value={character.backstory} />
 
+      {canManage ? (
+        <div className="flex justify-end">
+          <Link
+            href={"/characters/" + character.id + "/manage?roomId=" + room.id}
+            className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400"
+          >
+            角色管理（属性 / 技能 / 装备）
+          </Link>
+        </div>
+      ) : null}
+
       {canManage === false ? null : (
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">持有卡牌（{character.cards.length}）</h2>

@@ -14,26 +14,49 @@ import {
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { parseCharacterWorkbook } from "@/server/character/import-xlsx";
+import { occupationSlotCandidates, toOccupationView } from "@/shared/occupation";
 
 const SKILL_ALIASES: Record<string, string> = {
   "斗殴": "FIGHTING_BRAWL",
   "斧": "FIGHTING_AXE",
+  "剑": "格斗（剑）",
   "手枪": "FIREARMS_HANDGUN",
   "步枪/霰弹枪": "FIREARMS_RIFLE",
   "弓": "FIREARMS_BOW",
   "闪避": "DODGE",
-  "投掷": "THROW"
+  "投掷": "THROW",
+  "取悦": "CHARM",
+  "魅力": "CHARM",
+  "魅惑": "CHARM",
+  "汽车驾驶": "DRIVE_AUTO",
+  "驾驶": "DRIVE_AUTO",
+  "母语": "LANGUAGE_OWN",
+  "外语": "LANGUAGE_OTHER",
+  "技艺": "ART_CRAFT",
+  "科学": "SCIENCE",
+  "学问": "学问"
 };
 
 function packSkillId(packSkills: readonly { readonly id: string; readonly name: string }[], label: string): string {
   const trimmed = label.trim();
-  const exact = packSkills.find((skill) => skill.name === trimmed);
+  const exact = packSkills.find((skill) => skill.name === trimmed || skill.id === trimmed);
   if (exact !== undefined) return exact.id;
+  const base = trimmed.replace(/[（(].*?[)）]/g, "").trim();
+  const inner = /[（(](.*?)[)）]/.exec(trimmed)?.[1]?.trim() ?? "";
+  for (const key of [trimmed, base, inner]) {
+    const alias = SKILL_ALIASES[key];
+    if (alias !== undefined) {
+      const aliased = packSkills.find((skill) => skill.id === alias || skill.name === alias);
+      if (aliased !== undefined) return aliased.id;
+    }
+  }
+  const baseExact = packSkills.find((skill) => skill.name === base || skill.id === base);
+  if (baseExact !== undefined) return baseExact.id;
   const contained = packSkills.find(
     (skill) => skill.name.includes(trimmed) || trimmed.includes(skill.name.replace(/[（(].*?[)）]/g, ""))
   );
   if (contained !== undefined) return contained.id;
-  return SKILL_ALIASES[trimmed] ?? trimmed;
+  return trimmed;
 }
 
 function inferRange(skillLabel: string | null, type: string | null): "MELEE" | "NEAR" | "FAR" {
@@ -82,12 +105,14 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
 
   const skills: Record<string, number> = {};
   const labels: Record<string, string> = {};
+  let sourceDataSlots: Record<string, string[]> = {};
   const allocation: {
     source: "XLSX";
     occupation: Record<string, number>;
     interest: Record<string, number>;
     growth: Record<string, number>;
     labels: Record<string, string>;
+    slots?: Record<string, string[]>;
   } = { source: "XLSX", occupation: {}, interest: {}, growth: {}, labels };
   for (const skill of parsed.skills) {
     const skillId = packSkillId(pack.skills, skill.label);
@@ -96,6 +121,37 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
     if (skill.occupation > 0) allocation.occupation[skillId] = (allocation.occupation[skillId] ?? 0) + skill.occupation;
     if (skill.interest > 0) allocation.interest[skillId] = (allocation.interest[skillId] ?? 0) + skill.interest;
     if (skill.growth > 0) allocation.growth[skillId] = (allocation.growth[skillId] ?? 0) + skill.growth;
+  }
+
+  // 按职业的「本职空位」把导入的加点反推成 slots，保证编辑时同一套空位校验能通过。
+  const occupationProfile = occupation === null ? null : toOccupationView(occupation).skillProfile;
+  if (occupationProfile !== null) {
+    const fixed = new Set<string>([...occupationProfile.fixed.map((item) => item.skillId), "CREDIT_RATING"]);
+    const pool = Object.keys(allocation.occupation).filter((id) => fixed.has(id) === false);
+    const used = new Set<string>();
+    const slotAssignments: Record<string, string[]> = {};
+    for (const slot of occupationProfile.slots) {
+      const candidateList = occupationSlotCandidates(slot, compiled.skills.map((skill) => skill.id)).map((item) => item.skillId);
+      const candidates = new Set(candidateList);
+      const picks: string[] = [];
+      // 先放有职业点的技能。
+      for (const id of pool) {
+        if (picks.length >= slot.pick) break;
+        if (used.has(id) || candidates.has(id) === false) continue;
+        picks.push(id);
+        used.add(id);
+      }
+      // 空位没填满时，用「没有兴趣点、也不是固定本职」的技能补位，满足 pick 数量要求。
+      for (const id of candidateList) {
+        if (picks.length >= slot.pick) break;
+        if (used.has(id) || fixed.has(id) || (allocation.interest[id] ?? 0) > 0) continue;
+        picks.push(id);
+        used.add(id);
+      }
+      if (picks.length === slot.pick) slotAssignments[slot.id] = picks;
+    }
+    allocation.slots = slotAssignments;
+    sourceDataSlots = slotAssignments;
   }
 
   const finalOutcome = computeDerived(compiled, { attributes, race: null, skills });
@@ -127,7 +183,12 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
       pow: attributes.pow,
       edu: attributes.edu,
       luck: attributes.luck,
-      raceMods: { source: "XLSX", filename: upload.name },
+      raceMods: {
+        source: "XLSX",
+        filename: upload.name,
+        baseAttributes: attributes,
+        ageAdjusted: false
+      },
       skills,
       skillAllocation: allocation as never,
       sourceData: {
@@ -144,7 +205,8 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
         mythosExperiences: parsed.mythosExperiences,
         spells: spellNames,
         spellDetails: parsed.spells,
-        companions: parsed.companions
+        companions: parsed.companions,
+        slotAssignments: sourceDataSlots
       } as never,
       backstory: {
         ...parsed.backstory,
@@ -152,7 +214,8 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
         mythosExperiences: parsed.mythosExperiences,
         spells: spellNames,
         spellDetails: parsed.spells,
-        companions: parsed.companions
+        companions: parsed.companions,
+        slotAssignments: sourceDataSlots
       } as never,
       hp: finalOutcome.derived.maxHp,
       maxHp: finalOutcome.derived.maxHp,

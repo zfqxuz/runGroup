@@ -211,6 +211,12 @@ export default async function CharacterDetailPage({
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-2">
           <Link
+            href={"/characters/" + character.id + "/manage"}
+            className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400"
+          >
+            角色管理
+          </Link>
+          <Link
             href={"/characters/" + character.id + "/edit"}
             className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
           >
