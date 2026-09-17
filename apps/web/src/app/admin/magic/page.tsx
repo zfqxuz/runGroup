@@ -68,6 +68,14 @@ export default async function AdminMagicPage({
         <p className="mt-1 text-sm text-white/50">
           查看每个房间的魔法配置链路：房间开关 → 团本 structured.magic → Room.ruleOverride → 最终生效规则包。
         </p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Link
+            href="/admin/magic/effects"
+            className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-300 transition hover:bg-spirit-400/10"
+          >
+            查看支持的基础魔法效果 →
+          </Link>
+        </div>
       </header>
 
       {searchParams.saved === undefined ? null : (

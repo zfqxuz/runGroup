@@ -5,13 +5,14 @@
  *
  * 运行：npm run verify:entity-normalization --workspace @touhou/web
  */
-import { builtinRegistry, compileRulePack, resolveRulePack } from "@touhou/rules";
+import { builtinRegistry, compileRulePack, MagicEffectSchema, MAGIC_EFFECT_TYPES, resolveRulePack } from "@touhou/rules";
 import { normalizeEntityKey } from "@/server/modules/keys";
 import { mergeDraft } from "@/server/ai/chunking";
 import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
 import { enrichNpcStatsFromSources, parseNpcStatsText } from "@/server/ai/npc-stats";
 import { dedupeNpcRecords, mergeNpcAliasNames, npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
 import { armorExpressionFromText, armorExpressionFromValue } from "@/server/combat/armor";
+import { MAGIC_EFFECT_DEFINITIONS, defaultMagicEffectValues, serializeMagicEffect } from "@/shared/magic-effects";
 import { findSummonCard } from "@/server/combat/summon";
 import { buildNpcDamageOverrides, normalizedSkills, normalizedWeapons } from "@/server/modules/templates";
 
@@ -214,6 +215,20 @@ const summonCards = [
 ];
 check(findSummonCard(summonCards, "完全不匹配的名字", "test-summon-key")?.name === "测试生物乙", "召唤应优先按稳定 key 匹配独立卡");
 check(findSummonCard(summonCards, "测试生物甲")?.name === "测试生物甲", "召唤应按名称匹配独立卡");
+
+// ---------- 11. 魔法效果目录与 schema 必须一致 ----------
+const effectTypes = new Set(MAGIC_EFFECT_DEFINITIONS.map((definition) => definition.type));
+check(
+  MAGIC_EFFECT_TYPES.every((type) => effectTypes.has(type)) && MAGIC_EFFECT_TYPES.length === effectTypes.size,
+  "魔法效果目录必须与 MAGIC_EFFECT_TYPES 一一对应"
+);
+for (const definition of MAGIC_EFFECT_DEFINITIONS) {
+  const draft = serializeMagicEffect(definition.type, defaultMagicEffectValues(definition.type));
+  check(
+    MagicEffectSchema.safeParse(draft).success,
+    "效果目录默认值应能通过 schema 校验：" + definition.type
+  );
+}
 
 if (failed > 0) {
   console.error("verify-entity-normalization: " + String(failed) + " failure(s)");

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { MagicEffectSchema } from "@touhou/rules";
 import {
   STRUCTURED_ENTITY_KINDS,
   removeStructuredEntity,
@@ -236,6 +237,14 @@ export async function saveModuleEntityAction(formData: FormData): Promise<void> 
   if (moduleRecord === null) redirect(returnTo);
 
   const data = entityDataOf(kind, formData);
+  if (kind === "magic") {
+    const effects = Array.isArray(data.effects) ? data.effects : [];
+    for (const effect of effects) {
+      if (MagicEffectSchema.safeParse(effect).success === false) {
+        redirect(returnTo + (returnTo.includes("?") ? "&" : "?") + "error=magic-effect-invalid");
+      }
+    }
+  }
   const label = String(data.name ?? data.title ?? entityIdRaw ?? "").trim();
   if (label.length === 0 && kind !== "magic") {
     redirect(returnTo + (returnTo.includes("?") ? "&" : "?") + "error=entity-name");

@@ -1,5 +1,6 @@
 import { PRESET_TIERS, RARITIES } from "@touhou/rules";
 import ModuleAssetUpload from "@/components/module/ModuleAssetUpload";
+import MagicEffectComposer from "@/components/module/MagicEffectComposer";
 import { deleteModuleEntityAction, saveModuleEntityAction } from "@/server/actions/module-entity";
 import { structuredOfContent, type StructuredModuleEntry } from "@/server/modules/structure";
 
@@ -206,11 +207,6 @@ function DeleteForm(props: { moduleId: string; kind: string; entityId: string; l
   );
 }
 
-function jsonArrayText(value: unknown): string {
-  if (Array.isArray(value) === false) return "[]";
-  return JSON.stringify(value, null, 2);
-}
-
 function MagicForm(props: {
   readonly moduleId: string;
   readonly entry: StructuredModuleEntry | null;
@@ -260,16 +256,11 @@ function MagicForm(props: {
           <span className={captionClass}>描述</span>
           <textarea name="description" rows={3} defaultValue={textOf(data, "description", "")} className={inputClass} />
         </label>
-        <label className={labelClass + " sm:col-span-2"}>
-          <span className={captionClass}>效果 effects（JSON 数组）</span>
-          <textarea name="effects" rows={7} defaultValue={jsonArrayText(data.effects)} className={inputClass + " font-mono text-[11px]"} />
-        </label>
       </div>
-      <p className={captionClass}>
-        示例：[&#123;&quot;type&quot;:&quot;DAMAGE&quot;,&quot;amount&quot;:&quot;1d6&quot;&#125;,
-        &#123;&quot;type&quot;:&quot;STUN&quot;,&quot;durationActions&quot;:1&#125;]。
-        可用类型：DAMAGE / HEAL / MP_RESTORE / MP_DRAIN / SAN_LOSS / SAN_RESTORE / STATUS / DOT / STUN / CONTROL / CLEANSE。
-      </p>
+      <MagicEffectComposer
+        name="effects"
+        initialEffects={Array.isArray(data.effects) ? data.effects : []}
+      />
     </FormShell>
   );
 }
