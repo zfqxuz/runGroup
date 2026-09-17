@@ -1231,6 +1231,14 @@ function applyMagicEffect(
       state.summonSeq = ordinal;
       const id = "summon-" + actor.id + "-" + String(ordinal);
       const vars = { ...template.attributes, ...template.derived };
+      let summonArmor = 0;
+      if (template.armorExpression !== undefined && template.armorExpression.length > 0) {
+        try {
+          summonArmor = Math.max(0, rollDice(parseDice(template.armorExpression), nextRollRng(state, "summon-armor:" + id)).total);
+        } catch {
+          summonArmor = 0;
+        }
+      }
       const summoned = addParticipant(state, {
         id,
         name: count > 1 ? template.name + " " + String(index + 1) : template.name,
@@ -1246,6 +1254,7 @@ function applyMagicEffect(
         speed: computeBaseSpeed(ctx.pack, vars),
         isIdentified: true,
         isPublic: false,
+        armor: summonArmor,
         summonedBy: actor.id,
         summonedName: template.name
       });

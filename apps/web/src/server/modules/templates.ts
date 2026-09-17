@@ -580,6 +580,7 @@ export async function syncModuleTemplates(
         attributes,
         skills,
         weapons: weapons as never,
+        armor: textOf(entry.data, ["armor", "armorExpression"], textOf(statsValue, ["armor", "armorExpression"], "0")),
         maxHp: numberWithFallback(entry.data.maxHp ?? statsValue.maxHp, derived?.maxHp ?? 10, 1, 9999),
         maxMp: numberWithFallback(entry.data.maxMp ?? statsValue.maxMp, derived?.maxMp ?? 0, 0, 99999),
         maxSan: numberWithFallback(entry.data.maxSan ?? statsValue.maxSan, derived?.maxSan ?? 0, 0, 999),

@@ -36,6 +36,8 @@ export interface N8nNpcStat {
   readonly maxMp: number | null;
   readonly maxSan: number | null;
   readonly maxDp: number | null;
+  /** 原文解析出的护甲表达式，例如 "2d6"；没有则为 null。 */
+  readonly armor?: string | null;
 }
 
 export interface N8nModuleParseInput {

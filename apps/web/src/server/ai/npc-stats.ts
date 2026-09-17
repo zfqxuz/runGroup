@@ -7,6 +7,7 @@
  * - 支持同一行、逗号分隔、表格、以及“标签行 + 数值行”的排版
  * - 关联 NPC 名附近窗口，避免把别的 NPC 的数值抄过来
  */
+import { armorExpressionFromText } from "@/shared/armor";
 
 export const NPC_STAT_ATTRIBUTE_KEYS = ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"] as const;
 export type NpcStatAttributeKey = (typeof NPC_STAT_ATTRIBUTE_KEYS)[number];
@@ -23,6 +24,8 @@ export interface ParsedNpcStats {
   readonly maxSan: number | null;
   readonly maxDp: number | null;
   readonly skills: readonly ParsedNpcSkill[];
+  /** 原文解析出的护甲表达式，例如 "2d6"；没有则为 null。 */
+  readonly armor: string | null;
   readonly matchedAttributes: number;
   readonly matchedVitals: number;
 }
@@ -238,6 +241,7 @@ export function parseNpcStatsText(raw: string): ParsedNpcStats {
     maxSan: vitalValues.san ?? null,
     maxDp: vitalValues.dp ?? null,
     skills: parseSkillValues(text),
+    armor: armorExpressionFromText(text),
     matchedAttributes,
     matchedVitals
   };
@@ -360,6 +364,9 @@ function mergeStats(entry: Record<string, unknown>, parsed: ParsedNpcStats): voi
   if (parsed.maxDp !== null) entry.maxDp = parsed.maxDp;
   if (parsed.skills.length > 0) {
     entry.skillsFromText = parsed.skills.map((skill) => ({ skill: skill.name, value: skill.value }));
+  }
+  if (parsed.armor !== null && parsed.armor.length > 0) {
+    entry.armor = parsed.armor;
   }
 }
 

@@ -56,6 +56,21 @@ function normalizeNameKey(value) {
     .slice(0, 120);
 }
 
+function parseArmorExpression(value) {
+  const text = normalizeText(value);
+  if (text.length === 0) return null;
+  const patterns = [
+    /(?:护甲|护甲值|armor)\s*[:：=]\s*(\d+[dD]\d+(?:\s*[+-]\s*\d+)?|\d+)/i,
+    /(?:获得|拥有|有|提供|给予|增加|提升)\s*(\d+[dD]\d+(?:\s*[+-]\s*\d+)?|\d+)\s*(?:点)?\s*(?:的)?\s*(?:防非魔法伤害的)?护甲/i,
+    /(\d+[dD]\d+(?:\s*[+-]\s*\d+)?|\d+)\s*点?\s*(?:防非魔法伤害的)?护甲/i
+  ];
+  for (const pattern of patterns) {
+    const match = pattern.exec(text);
+    if (match && match[1] !== undefined) return String(match[1]).replace(/\s+/g, "").toUpperCase();
+  }
+  return null;
+}
+
 function groupValue(groups, alias) {
   const key = String(alias || "").trim().toLowerCase();
   for (const group of groups) {
@@ -181,6 +196,7 @@ function parseNpcStatsText(raw) {
     maxMp: vitalValues.mp ?? null,
     maxSan: vitalValues.san ?? null,
     maxDp: vitalValues.dp ?? null,
+    armor: parseArmorExpression(text),
     matchedAttributes: Object.keys(attributes).length,
     matchedVitals: Object.keys(vitalValues).length
   };
@@ -298,6 +314,7 @@ function mergeStats(entry, parsed) {
   if (parsed.maxMp !== null) entry.maxMp = parsed.maxMp;
   if (parsed.maxSan !== null) entry.maxSan = parsed.maxSan;
   if (parsed.maxDp !== null) entry.maxDp = parsed.maxDp;
+  if (parsed.armor !== null && parsed.armor !== undefined) entry.armor = parsed.armor;
 }
 
 function enrichNpcStatsFromSources(entries, sources) {
@@ -354,6 +371,9 @@ function parsedFromEntry(entry) {
     maxMp: vital("maxMp"),
     maxSan: vital("maxSan"),
     maxDp: vital("maxDp"),
+    armor: typeof entry.armor === "string" && entry.armor.trim().length > 0
+      ? entry.armor.trim()
+      : parseArmorExpression(entry.statText || entry.attributesText || entry.statsText || entry.attributeText || entry.statLine || ""),
     matchedAttributes: Object.keys(attributes).length,
     matchedVitals: 0
   };
@@ -421,6 +441,7 @@ function harvestStatBlocks(sources) {
         maxMp: parsed.maxMp,
         maxSan: parsed.maxSan,
         maxDp: parsed.maxDp,
+        armor: parsed.armor,
         matchedAttributes: parsed.matchedAttributes,
         matchedVitals: parsed.matchedVitals
       });
@@ -447,7 +468,8 @@ function buildNpcStats(input) {
         maxHp: null,
         maxMp: null,
         maxSan: null,
-        maxDp: null
+        maxDp: null,
+        armor: null
       };
       byKey.set(key, target);
     }
@@ -460,6 +482,7 @@ function buildNpcStats(input) {
     if (parsed.maxMp !== null && parsed.maxMp !== undefined) target.maxMp = parsed.maxMp;
     if (parsed.maxSan !== null && parsed.maxSan !== undefined) target.maxSan = parsed.maxSan;
     if (parsed.maxDp !== null && parsed.maxDp !== undefined) target.maxDp = parsed.maxDp;
+    if (parsed.armor !== null && parsed.armor !== undefined) target.armor = parsed.armor;
   }
 
   const aiEntries = entries.map((entry) => ({ ...recordOf(entry), attributes: { ...recordOf(entry.attributes) } }));
@@ -492,7 +515,8 @@ function buildNpcStats(input) {
     maxHp: item.maxHp,
     maxMp: item.maxMp,
     maxSan: item.maxSan,
-    maxDp: item.maxDp
+    maxDp: item.maxDp,
+    armor: item.armor ?? null
   }));
 }
 
@@ -503,6 +527,7 @@ if (typeof module !== "undefined" && module.exports) {
     VITAL_GROUPS,
     normalizeText,
     normalizeNameKey,
+    parseArmorExpression,
     parseNpcStatsText,
     scoreOf,
     isUsable,

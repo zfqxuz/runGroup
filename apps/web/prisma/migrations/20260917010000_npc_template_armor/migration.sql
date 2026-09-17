@@ -1,0 +1,1 @@
+ALTER TABLE "NpcTemplate" ADD COLUMN "armor" TEXT NOT NULL DEFAULT '0';

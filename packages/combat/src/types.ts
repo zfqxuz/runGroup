@@ -110,6 +110,8 @@ export interface SummonTemplate {
   readonly spells?: readonly string[];
   readonly damageBonus?: string;
   readonly weapons?: readonly unknown[];
+  /** 召唤物自带护甲表达式，如 "2d6"；入场时由引擎掷出。 */
+  readonly armorExpression?: string;
 }
 
 export interface ActionSubmission {

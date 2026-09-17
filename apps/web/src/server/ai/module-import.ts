@@ -1180,6 +1180,7 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
         id,
         name: stat.name,
         aliases: [],
+        armor: typeof stat.armor === "string" && stat.armor.length > 0 ? stat.armor : undefined,
         description: "（n8n 数值解析补充，正文请结合原文或 AI 提取结果使用。）",
         attributes: Object.fromEntries(
           Object.entries(stat.attributes).filter(([key]) => key.toLowerCase() !== "luck")
@@ -1208,6 +1209,7 @@ function applyN8nNpcStats(entries: Record<string, unknown>[], stats: readonly N8
     if (stat.maxMp !== null) target.maxMp = stat.maxMp;
     if (stat.maxSan !== null) target.maxSan = stat.maxSan;
     if (stat.maxDp !== null) target.maxDp = stat.maxDp;
+    if (typeof stat.armor === "string" && stat.armor.length > 0) target.armor = stat.armor;
     // n8n 的名称/别名是本地原文回填的关键线索：AI 可能只给了英文名，
     // 先合并进来，后面的 enrichNpcStatsFromSources 才能按中文名找到原文窗口。
     mergeNpcAliasNames(target, [stat.name, ...(stat.aliases ?? [])]);

@@ -274,7 +274,14 @@ function normalizeMagicTargeting(value, entry) {
 }
 function summonNameFromDescription(text) {
   const match = /(?:召唤|唤出|呼唤|召来|召出|召唤出)[「“"]?([^，。；;\n」”"]{1,20})/.exec(text);
-  const raw = match && typeof match[1] === "string" ? match[1].trim() : "";
+  let raw = match && typeof match[1] === "string" ? match[1].trim() : "";
+  const trimLead = (value) => value.replace(/^[\s/／、,，;；:：\-—–]+/, "");
+  raw = trimLead(raw);
+  raw = raw.replace(/^(?:驱逐|束缚|控制|并|出|来)/u, "");
+  raw = trimLead(raw);
+  raw = raw.replace(/^\d+\s*(?:只|个|位|群|名)?/u, "");
+  raw = raw.replace(/^(?:一只|一个|一位|一群|数个|若干)/u, "");
+  raw = trimLead(raw);
   return raw.length > 0 ? raw : "召唤物";
 }
 function armorEffectFromDescription(text) {
@@ -286,7 +293,10 @@ function effectFromDescription(value) {
   const text = asString(value);
   if (text.length === 0) return null;
   const dice = diceExpressionOf(text);
-  if (/(召唤|唤出|呼唤|召来|召出)/.test(text)) return { type: "SUMMON", name: summonNameFromDescription(text), count: "1", durationTicks: "0" };
+  if (/(召唤|唤出|呼唤|召来|召出)/.test(text)) {
+    const countMatch = /(\d+)\s*(?:只|个|位|群|名)/.exec(text);
+    return { type: "SUMMON", name: summonNameFromDescription(text), count: countMatch ? countMatch[1] : "1", durationTicks: "0" };
+  }
   if (/(晕眩|眩晕|昏迷|麻痹|无法行动|跳过行动)/.test(text)) return { type: "STUN", durationActions: "1" };
   if (/(控制|支配|服从|心智|操纵)/.test(text)) return { type: "CONTROL", durationActions: "1" };
   const armor = armorEffectFromDescription(text);
@@ -354,10 +364,13 @@ function normalizeMagicForRules(entry, system) {
   entry.damage = normalizeMagicDice(entry.damage, "");
   entry.target = normalizeMagicTarget(entry.target);
   entry.effects = normalizeMagicEffects(entry.effects ?? entry.effect, entry);
-  // 模型常把「2D6 护甲 / 1D6 防护」误写成 DAMAGE；描述是护甲语义时以规则引擎可执行的 ARMOR 为准。
+  // 通用归一化：描述里明确了护甲表达式时，以描述为准；避免模型把「2D6 初始护甲 + 1D6/MP」拆成两条 ARMOR 重复叠加。
   const armorFromText = armorEffectFromDescription(asString(entry.name) + "\n" + asString(entry.description));
-  if (armorFromText !== null && entry.effects.length > 0 && entry.effects.every((effect) => effect && effect.type === "DAMAGE")) {
-    entry.effects = [armorFromText];
+  if (armorFromText !== null) {
+    const others = entry.effects.filter((effect) => effect && effect.type !== "ARMOR");
+    entry.effects = [armorFromText, ...others];
+  } else if (entry.effects.length > 1 && entry.effects.every((effect) => effect && effect.type === "ARMOR")) {
+    entry.effects = [entry.effects[0]];
   }
   entry.targeting = normalizeMagicTargeting(entry.targeting, entry);
 }

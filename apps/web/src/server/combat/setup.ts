@@ -1,9 +1,11 @@
 import { randomUUID } from "node:crypto";
+import { parseDice, rollDice } from "@touhou/formula";
 import {
   addParticipant,
   advanceToNextEvent,
   beginInitiativeRound,
   createCombat,
+  nextRollRng,
   type CombatState,
   type ParticipantInit
 } from "@touhou/combat";
@@ -22,6 +24,7 @@ import type { EffectivePack } from "@/server/rules/loader";
 import { NpcStatsSchema } from "@/shared/npc";
 import { buildEffectiveSkills } from "@/server/character/skills";
 import { emitCombatEnded } from "@/server/realtime";
+import { armorExpressionFromValue } from "@/server/combat/armor";
 
 export type UnitKind = "CHARACTER" | "NPC";
 export type MemberRole = "KP" | "PLAYER" | "SPECTATOR";
@@ -285,7 +288,17 @@ export async function createCombatRecord(
       const init = buildNpcInit(pack, card, selection.faction, defaultNpcSpells);
       if (typeof init === "string") return { ok: false, error: init };
       npcDataById.set(card.id, card.stats);
-      addParticipant(state, init);
+      const participant = addParticipant(state, init);
+      const armorExpression = armorExpressionFromValue(card.stats);
+      if (armorExpression !== null) {
+        try {
+          const rolled = rollDice(parseDice(armorExpression), nextRollRng(state, "npc-armor:" + card.id)).total;
+          participant.armor = Math.max(0, Math.floor(rolled));
+          participant.maxArmor = participant.armor;
+        } catch {
+          // 卡面护甲表达式不合法时按 0 处理，不影响战斗创建。
+        }
+      }
     }
   }
   if (pack.combat.mode === "INITIATIVE") beginInitiativeRound(pack, state);

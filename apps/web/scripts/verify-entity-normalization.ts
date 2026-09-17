@@ -11,6 +11,7 @@ import { mergeDraft } from "@/server/ai/chunking";
 import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
 import { enrichNpcStatsFromSources, parseNpcStatsText } from "@/server/ai/npc-stats";
 import { dedupeNpcRecords, mergeNpcAliasNames, npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
+import { armorExpressionFromText, armorExpressionFromValue } from "@/server/combat/armor";
 import { buildNpcDamageOverrides, normalizedSkills, normalizedWeapons } from "@/server/modules/templates";
 
 let failed = 0;
@@ -25,13 +26,13 @@ function check(condition: boolean, label: string): void {
 
 // ---------- 1. Unicode sourceKey ----------
 const keys = {
-  corbitt: normalizeEntityKey("npc-沃尔特-科比特", "fallback"),
-  stephen: normalizeEntityKey("npc-史蒂芬-诺特", "fallback"),
-  dagger: normalizeEntityKey("item-浮空匕首", "fallback"),
+  npc: normalizeEntityKey("npc-测试角色", "fallback"),
+  otherNpc: normalizeEntityKey("npc-另一个角色", "fallback"),
+  item: normalizeEntityKey("item-测试道具", "fallback"),
   ascii: normalizeEntityKey("item-liber-ivonis", "fallback")
 };
-check(keys.corbitt !== keys.stephen, "不同中文实体的 sourceKey 必须不同");
-check(keys.dagger !== "item" && keys.dagger.includes("浮空匕首"), "中文 item sourceKey 必须保留中文");
+check(keys.npc !== keys.otherNpc, "不同中文实体的 sourceKey 必须不同");
+check(keys.item !== "item" && keys.item.includes("测试道具"), "中文 item sourceKey 必须保留中文");
 check(keys.ascii === "item-liber-ivonis", "ASCII sourceKey 保持不变");
 
 // ---------- 2. 通用别名合并 ----------
@@ -92,24 +93,24 @@ check(polluted === false, "共享姓氏 + 被污染的短别名不能误合并 N
 const sameNpc = npcRecordsLikelySame({ name: "测试者" }, { name: "测试者（首领）" });
 check(sameNpc === true, "同一 NPC 的括号别名应合并");
 const nicknameMerged = npcRecordsLikelySame(
-  { name: "W·科比特" },
-  { name: "沃尔特·科比特，不死的恶魔", aliases: ["科比特"] }
+  { name: "W·测试者" },
+  { name: "沃尔特·测试者，不死的测试者", aliases: ["测试者"] }
 );
-check(nicknameMerged === true, "W·科比特应通过显式别名精确合并到主 NPC");
+check(nicknameMerged === true, "带首字母缩写的昵称应通过显式别名精确合并到主 NPC");
 const honorificMerged = npcRecordsLikelySame(
-  { name: "老科比特" },
-  { name: "沃尔特·科比特，不死的恶魔", aliases: ["科比特"] }
+  { name: "老测试者" },
+  { name: "沃尔特·测试者，不死的测试者", aliases: ["测试者"] }
 );
-check(honorificMerged === true, "老科比特应通过显式别名精确合并到主 NPC");
-const ghostSeparate = npcRecordsLikelySame({ name: "W·科比特" }, { name: "科比特的鬼魂" });
-check(ghostSeparate === false, "W·科比特不能与科比特的鬼魂误合并");
+check(honorificMerged === true, "带年龄前缀的昵称应通过显式别名精确合并到主 NPC");
+const ghostSeparate = npcRecordsLikelySame({ name: "W·测试者" }, { name: "测试者的鬼魂" });
+check(ghostSeparate === false, "描述性称呼不能与昵称误合并");
 const clustered = dedupeNpcRecords([
-  { name: "W·科比特", aliases: ["科比特的鬼魂"] },
-  { name: "老科比特" },
-  { name: "沃尔特·科比特，不死的恶魔", aliases: ["科比特"] },
-  { name: "科比特的鬼魂" }
+  { name: "W·测试者", aliases: ["测试者的鬼魂"] },
+  { name: "老测试者" },
+  { name: "沃尔特·测试者，不死的测试者", aliases: ["测试者"] },
+  { name: "测试者的鬼魂" }
 ]);
-check(clustered.length === 2, "W/老科比特应合并进主 NPC，鬼魂保持独立");
+check(clustered.length === 2, "昵称变体应合并进主 NPC，描述性实体保持独立");
 const preservedArrays = dedupeNpcRecords([
   { name: "测试者", skillsFromText: [], weapons: [] },
   {
@@ -180,10 +181,10 @@ enrichNpcStatsFromSources([luckEntry], [{ text: "测试 NPC\n\nSTR 50 CON 50 SIZ
 check((luckEntry.attributes as Record<string, unknown>).luck === 0, "原文没有幸运时应按 0 而不是模型值");
 
 // ---------- 9. n8n 别名先合并，再按原文回填技能 ----------
-const englishNamedNpc: Record<string, unknown> = { name: "Walter Corbitt", aliases: [] };
-mergeNpcAliasNames(englishNamedNpc, ["沃尔特·科比特，不死的恶魔", "科比特"]);
+const englishNamedNpc: Record<string, unknown> = { name: "Walter Tester", aliases: [] };
+mergeNpcAliasNames(englishNamedNpc, ["沃尔特·测试者，不死的测试者", "测试者"]);
 const aliasEnriched = enrichNpcStatsFromSources([englishNamedNpc], [{
-  text: "沃尔特·科比特，不死的恶魔\n\nSTR 90 CON 115 SIZ 55 DEX 35 APP 05 INT 80 POW 90 EDU 80\nHP: 16\nMP: 18\nSAN: 0\n战斗 50%\n闪避 17%"
+  text: "沃尔特·测试者，不死的测试者\n\nSTR 90 CON 115 SIZ 55 DEX 35 APP 05 INT 80 POW 90 EDU 80\nHP: 16\nMP: 18\nSAN: 0\n战斗 50%\n闪避 17%"
 }]);
 check(aliasEnriched === 1, "n8n 别名合并后，英文名 NPC 应能命中原文窗口");
 const textSkillMap = new Map(
@@ -194,6 +195,18 @@ const textSkillMap = new Map(
     .map((item) => [item.skill, item.value])
 );
 check(textSkillMap.get("闪避") === 17, "原文技能应在合并别名后写入 skillsFromText");
+
+// ---------- 10. 通用护甲表达式解析 ----------
+check(armorExpressionFromText("护甲: 2D6") === "2D6", "应解析「护甲: 2D6」");
+check(armorExpressionFromText("获得 1D6 点防非魔法伤害的护甲") === "1D6", "应解析「1D6 点护甲」");
+check(armorExpressionFromText("他将获得 2D6 的护甲") === "2D6", "应解析「获得 2D6 的护甲」");
+check(
+  armorExpressionFromValue({ weapons: [{ notes: "测试法术提供 2D6 护甲" }] }) === "2D6",
+  "应从 NPC 卡任意嵌套字段解析护甲表达式"
+);
+check(armorExpressionFromValue({ armor: 3 }) === "3", "数字护甲字段应保留");
+check(armorExpressionFromValue({ armor: "2D6" }) === "2D6", "裸护甲字段应保留骰式");
+check(armorExpressionFromValue({ notes: "没有护甲信息" }) === null, "无护甲信息时返回 null");
 
 if (failed > 0) {
   console.error("verify-entity-normalization: " + String(failed) + " failure(s)");

@@ -35,6 +35,7 @@ function materializePreset(preset: PresetCharacter, effective: EffectivePack): N
     attributes: { ...preset.attributes },
     skills: { ...preset.skills },
     weapons: [],
+    armor: "0",
     maxHp: preset.maxHp ?? fallback.derived.maxHp,
     maxMp: preset.maxMp ?? fallback.derived.maxMp,
     maxSan: preset.maxSan ?? fallback.derived.maxSan,
@@ -206,6 +207,7 @@ export async function createCustomNpcAction(formData: FormData): Promise<void> {
     maxMp,
     maxSan,
     maxDp,
+    armor: String(formData.get("armor") ?? "0"),
     tags: parseTags(formData)
   });
   if (parsed.success === false) {
@@ -314,6 +316,7 @@ export async function updateNpcAction(formData: FormData): Promise<void> {
     maxMp,
     maxSan,
     maxDp,
+    armor: String(formData.get("armor") ?? existing?.armor ?? "0"),
     tags: parseTags(formData)
   });
   if (parsed.success === false) {

@@ -40,6 +40,8 @@ export const NpcStatsSchema = z.object({
   skills: z.record(z.string(), z.number().int().min(0).max(999)).default({}),
   /** 原文中的武器 / 攻击方式；战斗攻击选项会直接读取这里。 */
   weapons: z.array(NpcWeaponSchema).max(30).default([]),
+  /** 战前护甲表达式，如 "2d6" / "12"；0 表示无护甲。 */
+  armor: z.string().max(40).default("0"),
   /** 该 NPC 可以施放的法术 id；团本物化时自动写入该团本的法术。 */
   spells: z.array(z.string().max(120)).max(200).default([]),
   maxHp: z.number().int().min(1).max(9999),

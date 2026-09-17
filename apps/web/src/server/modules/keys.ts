@@ -2,7 +2,7 @@
  * 模块实体 sourceKey / id 的通用归一化。
  *
  * 这里必须保留 Unicode 字母和数字（包括中文），否则：
- * - npc-沃尔特-科比特 / item-浮空匕首 / clue-湿漉漉的脚印 等中文 id
+ * - npc-测试角色 / item-测试道具 / clue-测试线索 等中文 id
  *   会被抹成 npc- / item- / clue-，在同一个 module 内互相覆盖；
  * - 法术、物品、线索的 sourceKey 冲突会让模板/房间规则丢实体。
  */

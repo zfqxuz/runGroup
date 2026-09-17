@@ -114,11 +114,11 @@ function nameVariants(name: string): string[] {
 
 /**
  * 只用于精确身份匹配的昵称变体：
- * - "W·科比特" -> "科比特"
- * - "老科比特" / "小科比特" -> "科比特"
+ * - "W·测试者" -> "测试者"
+ * - "老测试者" / "小测试者" -> "测试者"
  *
- * 这些变体不进入 npcPrimaryKeys，避免 "科比特" 这种短名通过模糊包含
- * 把 "科比特的鬼魂" 这种独立实体也吸进同一个身份簇。
+ * 这些变体不进入 npcPrimaryKeys，避免短名通过模糊包含把「某人的鬼魂」
+ * 这类描述性实体也吸进同一个身份簇。
  */
 function identityAliasesOfName(name: string): string[] {
   const output = new Set<string>();
