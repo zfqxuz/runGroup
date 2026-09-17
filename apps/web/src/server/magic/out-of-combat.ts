@@ -1,3 +1,4 @@
+import type { SummonTemplate } from "@touhou/combat";
 import { compile as compileExpr, createSeededRng, evaluate, parseDice, randomSeed, rollDice } from "@touhou/formula";
 import {
   canCastOutsideCombat,
@@ -10,6 +11,7 @@ import {
 } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 import { createPersistentSummonCard } from "@/server/magic/summons";
+import { findSummonCard, summonTemplateFromCard, type SummonCardLike } from "@/server/combat/summon";
 
 export interface MagicActorRef {
   readonly kind: "CHARACTER" | "CARD";
@@ -153,6 +155,46 @@ function rollAmount(source: string): number {
   }
 }
 
+/** 通用兜底召唤物：找不到房间独立卡时使用。 */
+function genericSummonTemplate(name: string): SummonTemplate {
+  return {
+    name,
+    attributes: { str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, luck: 50 },
+    derived: { hp: 10, maxHp: 10, mp: 0, maxMp: 0, san: 0, maxSan: 0, dp: 0, maxDp: 0 },
+    skills: {},
+    spells: [],
+    damageBonus: "0",
+    weapons: [],
+    armorExpression: "0"
+  };
+}
+
+/** 按 cardId / key / 名称 / 别名匹配房间内独立 NPC 卡；匹配不到走通用兜底。 */
+async function resolveSummonTemplate(
+  roomId: string,
+  pack: CompiledRulePack,
+  effect: { readonly name: string; readonly key?: string; readonly cardId?: string }
+): Promise<SummonTemplate> {
+  const cards = await prisma.card.findMany({
+    where: { roomId, scope: "ROOM", type: "NPC", system: pack.system },
+    select: { id: true, name: true, stats: true }
+  });
+  const explicit = effect.cardId === undefined ? null : cards.find((card) => card.id === effect.cardId) ?? null;
+  const card: SummonCardLike | null = explicit ?? findSummonCard(cards, effect.name, effect.key);
+  const template = card === null ? null : summonTemplateFromCard(card, pack);
+  if (template === null) return genericSummonTemplate(effect.name.length > 0 ? effect.name : "召唤物");
+  return {
+    name: template.name,
+    attributes: { ...template.attributes },
+    derived: { ...template.derived },
+    skills: { ...(template.skills ?? {}) },
+    spells: [...(template.spells ?? [])],
+    damageBonus: template.damageBonus ?? "0",
+    weapons: [...(template.weapons ?? [])],
+    armorExpression: template.armorExpression ?? "0"
+  };
+}
+
 /** 战斗外施法的通用入口：先付代价，再按 effects 顺序结算。 */
 export async function castOutsideCombat(input: OutOfCombatCastInput): Promise<OutOfCombatCastResult> {
   const log: string[] = [];
@@ -264,6 +306,7 @@ export async function castOutsideCombat(input: OutOfCombatCastInput): Promise<Ou
     } else if (effect.type === "SUMMON") {
       const count = Math.max(1, Math.min(8, Math.floor(evalNumber(input.pack, effect.count, vars))));
       const rounds = Math.max(0, Math.floor(evalNumber(input.pack, effect.durationTicks, vars)));
+      const template = await resolveSummonTemplate(input.roomId, input.pack, effect);
       for (let index = 0; index < count; index += 1) {
         const cardId = "summon-" + input.caster.id + "-" + Date.now().toString(36) + "-" + index;
         await createPersistentSummonCard({
@@ -271,19 +314,10 @@ export async function castOutsideCombat(input: OutOfCombatCastInput): Promise<Ou
           roomId: input.roomId,
           ownerId: null,
           pack: input.pack,
-          template: {
-            name: effect.name.length > 0 ? effect.name : "召唤物",
-            attributes: { str: 50, con: 50, siz: 50, dex: 50, app: 50, int: 50, pow: 50, edu: 50, luck: 50 },
-            derived: { hp: 10, maxHp: 10, mp: 0, maxMp: 0, san: 0, maxSan: 0, dp: 0, maxDp: 0 },
-            skills: {},
-            spells: [],
-            damageBonus: "0",
-            weapons: [],
-            armorExpression: "0"
-          },
+          template,
           origin: { spellId: input.spell.id, spellName: input.spell.name, casterId: input.caster.id, casterName: caster.name }
         });
-        log.push("召唤了「" + (effect.name.length > 0 ? effect.name : "召唤物") + "」" + (rounds > 0 ? "（" + rounds + " 轮）" : ""));
+        log.push("召唤了「" + template.name + "」" + (rounds > 0 ? "（" + rounds + " 轮）" : ""));
       }
     }
   }

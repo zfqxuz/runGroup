@@ -2019,3 +2019,16 @@ MagicEffect =
 - **同一房间多场战斗 UI 未落地**：DB 与 combatId 寻址本身支持多场，但房间页 / `RoomCombatPanel` / `apps/web/src/server/socket/index.ts` 仍用 `combat.findFirst({ roomId, endedAt: null })` 取第一场；要做多 tab 需要把这些展示入口改成列表，并在战斗结束 / 开始时重算 `Room.status`。
 - 场景隔离目前只校验「已有 Token 的单位必须同场景」；`listSelectableUnits` / `CombatUnitPicker` 还没有把「未入场」直接置灰，KP 选中未入场的单位会在提交时报错。
 - `apps/web/scripts/verify-n8n-workflow.ts` 仍是为旧的单节点工作流写的，现工作流已升级成多 Agent 路由，脚本识别的节点名不存在。这是历史遗留，与本轮改动无关。
+
+### 48.1 真实环境 E2E 结果（本轮）
+- 在 ECS 生产库建了独立测试房间，使用真实角色「起」（克隆）、真实 NPC 卡「食尸鬼（秘境使者）」、真实场景 / 地图 / Token，直接调用真实服务器函数跑完整链路：
+  - 场景隔离：不同场景不能开战、未入场单位不能参战；
+  - 席位互斥：同一单位不能同时参加两场进行中的战斗；
+  - 战斗内夺舍：真实 runtime 提交 MAGIC → `resolveInitiativeTurn` → 充能 3 格 → 走完 1 个行动轮次后扣到 2 格；`saveCombatState` 把 POSSESS 写回 `GameCharacter.conditions`；
+  - 战斗外施法：HEAL 真实加血；POSSESS 写入真实 NPC 卡 `stats.conditions`；`consumePossessCharge` 按 Token 移动次数扣充能，耗尽后清除状态；
+  - 持久召唤：匹配到房间内真实卡（属性取自真实卡而非通用兜底），落成持久卡并自动放在施法者场景的 Token 上；`removeSummonCards` 删卡删 Token；
+  - 战斗外禁止 DAMAGE。
+- 结果：`passed=20 failed=0`；测试数据全部清理，无残留。
+- 复现：把 `apps/web/scripts/e2e-real-magic.ts` 放进 app 容器后运行
+  `docker exec -w /repo/apps/web touhou-trpg-app /repo/node_modules/.bin/tsx scripts/e2e-real-magic.ts`。
+- 真实验证中发现并修复：战斗外 SUMMON 原本只走通用兜底，没有匹配房间内的真实召唤物卡；现在与战斗内一致，按 `cardId → key → 名称 / 别名 → 相似度 → 通用兜底` 匹配。
