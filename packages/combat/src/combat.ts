@@ -33,6 +33,7 @@ import {
   type MagicSpell
 } from "@touhou/rules";
 import { rngFor } from "./rng";
+import { loadParticipantConditions, possessInitFromConditions } from "./conditions";
 import type {
   ActionSubmission,
   CombatMode,
@@ -124,6 +125,11 @@ export interface ParticipantInit {
   readonly summonedName?: string | null;
   readonly armorExpiresAtRound?: number | null;
   readonly summonExpiresAtRound?: number | null;
+  readonly possessedBy?: string | null;
+  /** 夺舍充能池剩余量。 */
+  readonly possessCharges?: number;
+  /** 局内持久状态（从 GameCharacter / Card 读入）。 */
+  readonly conditions?: unknown;
 }
 
 export function addParticipant(
@@ -135,6 +141,8 @@ export function addParticipant(
   for (const [key, value] of Object.entries(init.derived)) vars[key] = value;
   vars.atbMax = fromMicro(init.atbMax);
 
+  const loadedConditions = loadParticipantConditions(init.conditions);
+  const initPossess = possessInitFromConditions(loadedConditions);
   const participant: CombatParticipantState = {
     id: init.id,
     name: init.name,
@@ -167,6 +175,9 @@ export function addParticipant(
     summonedName: init.summonedName ?? null,
     armorExpiresAtRound: init.armorExpiresAtRound ?? null,
     summonExpiresAtRound: init.summonExpiresAtRound ?? null,
+    possessedBy: init.possessedBy ?? initPossess.possessedBy,
+    possessCharges: Math.max(0, Math.floor(init.possessCharges ?? initPossess.possessCharges)),
+    conditions: loadedConditions,
     attributes: init.attributes,
     derived: init.derived,
     skills: init.skills ?? {},
@@ -479,6 +490,24 @@ function expireRoundTimers(state: CombatState): void {
           targetId: participant.id,
           text: participant.name + " 的护甲持续时间结束，剩余 " + hadArmor + " 点护甲消散",
           data: { armorExpired: true, armorRemaining: hadArmor }
+        });
+      }
+    }
+
+    if (participant.possessedBy !== null && participant.possessedBy !== undefined) {
+      // 夺舍按充能池计时：每经过 1 个行动轮次消耗 1 格，耗尽后归还控制权。
+      const remaining = Math.max(0, Math.floor(participant.possessCharges ?? 0)) - 1;
+      participant.possessCharges = Math.max(0, remaining);
+      if (remaining <= 0) {
+        const possessedBy = participant.possessedBy;
+        participant.possessedBy = null;
+        participant.possessCharges = 0;
+        pushLog(state, {
+          kind: "STATUS",
+          actorId: possessedBy,
+          targetId: participant.id,
+          text: participant.name + " 的夺舍充能耗尽，控制权归还",
+          data: { possessionEnded: true, possessCharges: 0 }
         });
       }
     }
@@ -1379,6 +1408,18 @@ function applyMagicEffect(
     const actions = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationActions, actor.vars));
     target.controlActions = Math.max(target.controlActions ?? 0, actions);
     log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 被控制，跳过 " + actions + " 次行动", { controlActions: actions });
+    return;
+  }
+
+  if (effect.type === "POSSESS") {
+    const charges = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationTurns, actor.vars));
+    target.possessedBy = actor.id;
+    target.possessCharges = charges;
+    log(actor.name + " 施放「" + spell.name + "」 → 夺舍 " + target.name + "，充能 " + charges + " 格（战斗轮次 + 被夺舍 Token 移动共用）", {
+      possession: true,
+      possessedBy: actor.id,
+      possessCharges: charges
+    });
     return;
   }
 

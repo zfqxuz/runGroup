@@ -1,3 +1,4 @@
+import { participantConditions } from "./conditions";
 import type { ChaseState, CombatState, LogEntry } from "./types";
 
 export type ViewerRole = "KP" | "PLAYER" | "SPECTATOR";
@@ -13,12 +14,26 @@ export interface Viewer {
   readonly canSeePartyStats?: boolean;
 }
 
+/** 战斗视图里的局内状态（核心状态由战斗标记派生，自定义状态来自持久层）。 */
+export interface ConditionView {
+  readonly id: string;
+  readonly type: string;
+  readonly unit: string;
+  readonly remaining: number;
+  readonly visibility: string;
+  readonly sourceActorId: string | null;
+  readonly controllerId: string | null;
+  readonly note: string | null;
+}
+
 export interface ParticipantView {
   readonly id: string;
   readonly name: string;
   readonly kind: "PLAYER" | "NPC";
   readonly faction: string | null;
   readonly isSelf: boolean;
+  /** 当前视角用户是否实际能操控这个单位（含夺舍产生的控制权转移）。 */
+  readonly controlledByViewer: boolean;
   readonly isReady: boolean;
   readonly defeated: boolean;
   /** COC7 重伤 / 倒地 / 昏迷 / 濒死 / 死亡状态。 */
@@ -36,6 +51,10 @@ export interface ParticipantView {
   readonly armor: number | null;
   readonly maxArmor: number | null;
   readonly isSummon: boolean;
+  /** 夺舍充能池剩余量；null 表示未被夺舍。 */
+  readonly possessCharges: number | null;
+  /** 局内状态（核心状态 + 自定义状态）的可见部分。 */
+  readonly conditions: readonly ConditionView[];
   readonly statusEffects: readonly string[];
   readonly stunActions: number;
   readonly controlActions: number;
@@ -135,6 +154,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       kind: participant.kind,
       faction: isKP ? participant.faction : null,
       isSelf,
+      controlledByViewer: false,
       isReady: participant.isReady,
       defeated: participant.defeated,
       majorWound: participant.majorWound === true,
@@ -151,6 +171,26 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       armor: showNumbers ? participant.armor : null,
       maxArmor: showNumbers ? participant.maxArmor : null,
       isSummon: participant.summonedBy !== null && participant.summonedBy !== undefined,
+      possessCharges: participant.possessedBy === null || participant.possessedBy === undefined
+        ? null
+        : Math.max(0, Math.floor(participant.possessCharges ?? 0)),
+      conditions: participantConditions(participant, state.round)
+        .filter((condition) => {
+          if (isKP || isSelf) return true;
+          if (condition.visibility === "PUBLIC") return true;
+          if (condition.visibility === "PARTY" && (participant.kind === "PLAYER" || canSeePartyStats)) return true;
+          return false;
+        })
+        .map((condition) => ({
+          id: condition.id,
+          type: condition.type,
+          unit: condition.duration.unit,
+          remaining: condition.duration.remaining,
+          visibility: condition.visibility,
+          sourceActorId: condition.sourceActorId ?? null,
+          controllerId: condition.controllerId ?? null,
+          note: condition.duration.note ?? null
+        })),
       statusEffects: showNumbers
         ? participant.statusEffects.map((effect) =>
             effect.stacks > 1 ? `${effect.key} x${effect.stacks}` : effect.key

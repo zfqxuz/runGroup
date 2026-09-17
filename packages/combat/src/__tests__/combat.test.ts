@@ -731,7 +731,7 @@ describe("魔法效果接口矩阵", () => {
     return { pack, state, caster, target };
   }
 
-  it("13 种可枚举效果都能在战斗中执行并改变状态", () => {
+  it("14 种可枚举效果都能在战斗中执行并改变状态", () => {
     {
       const { target } = runEffect({ type: "DAMAGE", amount: "3" }, {
         setup: (_state, _caster, victim) => { victim.hp = 20; }
@@ -785,6 +785,13 @@ describe("魔法效果接口矩阵", () => {
       expect(state.participants.some((participant) => participant.summonedBy === caster.id)).toBe(true);
     }
     {
+      const { target, state } = runEffect({ type: "POSSESS", durationTurns: "2" });
+      expect(target.possessedBy).toBe("caster");
+      // resolvePending 已推进到第 2 轮：消耗 1 格后仍剩 1 格
+      expect(state.round).toBe(2);
+      expect(target.possessCharges).toBe(1);
+    }
+    {
       const { target } = runEffect({ type: "DOT", amount: "2", durationTicks: "2" });
       expect(target.statusEffects.some((effect) => effect.key.startsWith("DOT:"))).toBe(true);
     }
@@ -816,7 +823,7 @@ describe("持续型效果按行动轮次到期", () => {
   function castTimedEffect(
     effect: Record<string, unknown>,
     self: boolean
-  ): { pack: ReturnType<typeof compileParsedRulePack>; state: CombatState; caster: CombatParticipantState } {
+  ): { pack: ReturnType<typeof compileParsedRulePack>; state: CombatState; caster: CombatParticipantState; target: CombatParticipantState } {
     const base = resolveRulePack("touhou-ext", builtinRegistry());
     const pack = compileParsedRulePack({
       ...base,
@@ -842,15 +849,20 @@ describe("持续型效果按行动轮次到期", () => {
       attributes: attrs, derived, skills: { MAGIC: 80 },
       atbMax: computeAtbMax(pack, { dex: 55 }), speed: computeBaseSpeed(pack, { dex: 55 })
     });
-    addParticipant(state, {
+    const target = addParticipant(state, {
       id: "target", name: "敌人", kind: "NPC", characterId: null, faction: "ENEMY",
       attributes: attrs, derived, skills: {},
       atbMax: computeAtbMax(pack, { dex: 50 }), speed: computeBaseSpeed(pack, { dex: 50 })
     });
     caster.isReady = true;
-    expect(submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "timed" })).toBe(true);
+    expect(submitAction(state, {
+      actorId: "caster",
+      kind: "MAGIC",
+      spellId: "timed",
+      targetId: self ? undefined : "target"
+    })).toBe(true);
     resolvePending(pack, state, { target: { type: "PASS" } });
-    return { pack, state, caster };
+    return { pack, state, caster, target };
   }
 
   it("护甲 duration=1 在下一轮开始时失效，duration=2 多保留一轮", () => {
@@ -865,6 +877,21 @@ describe("持续型效果按行动轮次到期", () => {
     resolvePending(two.pack, two.state, {});
     expect(two.state.round).toBe(3);
     expect(two.caster.armor).toBe(0);
+  });
+
+  it("夺舍充能池按行动轮次消耗，耗尽后归还控制权", () => {
+    const one = castTimedEffect({ type: "POSSESS", durationTurns: "1" }, false);
+    expect(one.state.round).toBe(2);
+    expect(one.target.possessedBy ?? null).toBeNull();
+
+    const two = castTimedEffect({ type: "POSSESS", durationTurns: "2" }, false);
+    expect(two.state.round).toBe(2);
+    expect(two.target.possessedBy).toBe("caster");
+    expect(two.target.possessCharges).toBe(1);
+    two.caster.isReady = true;
+    resolvePending(two.pack, two.state, {});
+    expect(two.state.round).toBe(3);
+    expect(two.target.possessedBy ?? null).toBeNull();
   });
 
   it("召唤物 duration=1 在下一轮开始时移除，duration=2 多保留一轮", () => {

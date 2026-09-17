@@ -56,6 +56,16 @@ export type {
   ResolveResult
 } from "./combat";
 export type { SummonTemplate } from "./types";
+export {
+  armorConditionOf,
+  conditionByType,
+  coreConditionsFromParticipant,
+  loadParticipantConditions,
+  participantConditions,
+  persistableConditions,
+  possessConditionOf,
+  possessInitFromConditions
+} from "./conditions";
 export { rngFor } from "./rng";
 export { describeHp, filterCombatForViewer } from "./filter";
 export type { CombatView, ParticipantView, Viewer, ViewerRole } from "./filter";

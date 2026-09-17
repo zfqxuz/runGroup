@@ -2,7 +2,8 @@ import type {
   ActiveStatusEffect,
   AttributeSet,
   CheckResult,
-  DerivedStats
+  DerivedStats,
+  GameCondition
 } from "@touhou/rules";
 
 export type CombatMode = 'INITIATIVE' | 'ATB';
@@ -81,6 +82,15 @@ export interface CombatParticipantState {
   armorExpiresAtRound?: number | null;
   /** 召唤物到期轮次；null / undefined 表示直到战斗结束。 */
   summonExpiresAtRound?: number | null;
+  /** 夺舍者 id；null / undefined 表示未被夺舍。 */
+  possessedBy?: string | null;
+  /** 夺舍充能池剩余量：每经过 1 个战斗轮次或 1 次被夺舍 Token 移动消耗 1 格。 */
+  possessCharges?: number;
+  /**
+   * 局内持久状态快照（从 GameCharacter.conditions / Card.stats.conditions 读入）。
+   * 战斗结束时会连同核心状态与夺舍充能一起写回。
+   */
+  conditions?: GameCondition[];
 
   attributes: AttributeSet;
   derived: DerivedStats;
