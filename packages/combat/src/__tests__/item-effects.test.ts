@@ -73,7 +73,7 @@ describe("战斗内使用道具", () => {
   });
 
   it("敌方单体伤害道具会进入应对窗口，命中后按伤害管线扣血", () => {
-    const { state, caster, enemy } = bench("item-damage");
+    const { state, enemy } = bench("item-damage");
     advanceToNextEvent(pack, state);
     const action = {
       actorId: "caster",
@@ -93,7 +93,7 @@ describe("战斗内使用道具", () => {
   });
 
   it("群体道具对范围内所有敌方结算", () => {
-    const { state, caster, enemy } = bench("item-aoe");
+    const { state, enemy } = bench("item-aoe");
     const second = addParticipant(state, {
       id: "enemy2", name: "妖精乙", kind: "NPC", characterId: null, faction: "ENEMY",
       attributes: attrs, derived: computeDerived(pack, { attributes: attrs }).derived, skills: {},
