@@ -2286,6 +2286,13 @@ MagicEffect =
   - 治疗道具真实回血、次数扣减、耗尽拒绝；
   - 伤害道具真实扣血、冷却写入、冷却中拒绝。
 - 结果：`E2E REAL RESULT: passed=54 failed=0`（脚本支持 `E2E_SOURCE_CHARACTER_ID / E2E_SOURCE_NPC_ID` 覆盖来源角色与 NPC，便于本地真实库复跑）。
+- 部署产物 `11fb3bfe` 在 ECS 生产容器里用**自带源码 + 生产库**复跑同样 54/54 通过；测试数据全部清理（`E2E-*` Room/User/Card 残留 0）。
+- 新增 `scripts/ui-smoke-item.ts`：真实注册账号 + NextAuth 登录，实际 HTTP 打开页面：
+  - 战斗页 200，且服务端 props 下发了真实已装备道具（含 cardId / 效果数值）；
+  - 生产构建 bundle 内含「使用道具」组件（CombatBoard 行动面板为客户端渲染，SSR HTML 不含按钮）；
+  - 角色页 200，渲染「装备时选择生效效果」勾选与库中可选效果道具；
+  - 卡牌库 200，渲染「转为武器」按钮。
+  - 结果：`E2E UI ITEM RESULT: passed=9 failed=0`，跑完自动清理。
 
 ### 仍未完成
 - 角色卡背景故事 / 调查员经历 / 法术一览 / 调查员伙伴的解析：完整解析结果已整理，等确认字段映射后再改解析器。
