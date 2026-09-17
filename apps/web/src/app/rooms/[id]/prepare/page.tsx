@@ -471,9 +471,6 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium text-white/80">剧本 / 模组</h2>
-            <p className="mt-1 text-[11px] text-white/35">
-              公开字段全员可见；完整正文仅 KP 在团本管理中查看。开始新局前请先选择本局团本。
-            </p>
           </div>
           <div className="flex items-center gap-2">
             <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/45">
@@ -704,9 +701,6 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium text-white/80">当前角色</h2>
-            <p className="mt-1 text-[11px] text-white/35">
-              选择本局使用的角色。只能选择你已经通过审核的角色卡。
-            </p>
           </div>
           {activeCharacter === undefined ? (
             <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">未选择</span>
@@ -937,7 +931,6 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             <p className="mt-3 text-xs text-white/35">还没有人带卡牌进来</p>
           ) : (
             <div className="mt-4">
-              <p className="text-[11px] text-white/35">KP 可勾选多张待审卡牌后一次性处理</p>
               <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
                 {cardEntries.map((entry) => (
                   <div key={entry.id} className={"rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(entry.card.rarity)}>
@@ -1019,9 +1012,6 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium text-white/80">开始跑团</h2>
-            <p className="mt-1 text-[11px] text-white/35">
-              需要所有 KP/PL 已准备，且每名 PL 至少有一张审核通过的角色卡，KP 才能{resuming ? "继续" : "开始"}。
-            </p>
           </div>
           {isKP ? (
             <form action={startRoomAction} className="flex flex-wrap items-end gap-3">

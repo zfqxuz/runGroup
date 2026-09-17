@@ -29,9 +29,9 @@ export default function RoomCombatTabs(props: Props) {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <h2 className="text-sm font-medium text-white/80">战斗</h2>
-          <span className="text-[11px] text-white/35">
-            {props.combats.length === 0 ? "当前没有进行中的战斗" : "本房有 " + props.combats.length + " 场进行中的战斗"}
-          </span>
+          {props.combats.length === 0 ? null : (
+            <span className="text-[11px] text-white/35">{props.combats.length} 场进行中</span>
+          )}
         </div>
         {props.canCreate ? (
           <Link

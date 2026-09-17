@@ -431,7 +431,7 @@ export default function RoomPlay(props: Props) {
         ) : null}
       </section>
 
-      <div className="rounded-xl border border-white/10 bg-ink-800/50 p-3 lg:col-span-2">
+      <div className="rounded-xl border border-white/10 bg-ink-800/50 p-3 lg:col-span-3">
         {error === null ? null : <p className="mb-2 text-xs text-red-300">{error}</p>}
         <div className="flex flex-wrap gap-2">
           <select

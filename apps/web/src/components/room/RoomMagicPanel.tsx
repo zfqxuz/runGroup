@@ -47,9 +47,7 @@ export default function RoomMagicPanel(props: Props) {
       <header className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-sm font-semibold text-white/80">战斗外施法</h2>
-          <p className="mt-0.5 text-[11px] text-white/35">
-            仅显示当前视角自己持有的法术；施法者需在「{props.view.sceneName ?? "当前场景"}」，且存在合法目标。
-          </p>
+          <p className="mt-0.5 text-[11px] text-white/35">当前场景：{props.view.sceneName ?? "—"}</p>
         </div>
       </header>
       {props.error === null ? null : (
