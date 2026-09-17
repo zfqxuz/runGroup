@@ -668,3 +668,145 @@ describe("AOE 应对窗口", () => {
   });
 });
 
+
+describe("魔法效果接口矩阵", () => {
+  interface EffectRunResult {
+    readonly state: CombatState;
+    readonly caster: CombatParticipantState;
+    readonly target: CombatParticipantState;
+  }
+
+  function makeEffectPack(effect: Record<string, unknown>, self: boolean): ReturnType<typeof compileParsedRulePack> {
+    const base = resolveRulePack("touhou-ext", builtinRegistry());
+    return compileParsedRulePack({
+      ...base,
+      magic: {
+        enabled: true,
+        system: "TOUHOU",
+        spells: [{
+          id: "test",
+          name: "测试法术",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: self ? "SELF" : "ONE",
+          targeting: self ? "SELF" : "ENEMY",
+          effects: [effect]
+        }]
+      }
+    } as never);
+  }
+
+  function runEffect(
+    effect: Record<string, unknown>,
+    options: {
+      readonly self?: boolean;
+      readonly setup?: (state: CombatState, caster: CombatParticipantState, target: CombatParticipantState) => void;
+    } = {}
+  ): EffectRunResult {
+    const pack = makeEffectPack(effect, options.self === true);
+    const state = createCombat({ id: "effect-matrix", seed: "effect-matrix-" + String(effect.type), tickMs: 250 });
+    const derived = computeDerived(pack, { attributes: attrs, skills: {} }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "施法者", kind: "PLAYER", characterId: "char-c", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(pack, { dex: 55 }), speed: computeBaseSpeed(pack, { dex: 55 })
+    });
+    const target = addParticipant(state, {
+      id: "target", name: "目标", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(pack, { dex: 50 }), speed: computeBaseSpeed(pack, { dex: 50 })
+    });
+    options.setup?.(state, caster, target);
+    caster.isReady = true;
+    const submitted = submitAction(state, {
+      actorId: caster.id,
+      kind: "MAGIC",
+      spellId: "test",
+      targetId: options.self === true ? undefined : target.id
+    });
+    expect(submitted).toBe(true);
+    resolvePending(pack, state, { target: { type: "PASS" } });
+    return { state, caster, target };
+  }
+
+  it("13 种可枚举效果都能在战斗中执行并改变状态", () => {
+    {
+      const { target } = runEffect({ type: "DAMAGE", amount: "3" }, {
+        setup: (_state, _caster, victim) => { victim.hp = 20; }
+      });
+      expect(target.hp).toBe(17);
+    }
+    {
+      const { caster } = runEffect({ type: "HEAL", amount: "4" }, {
+        self: true,
+        setup: (_state, actor) => { actor.hp = 5; }
+      });
+      expect(caster.hp).toBe(9);
+    }
+    {
+      const { caster } = runEffect({ type: "MP_RESTORE", amount: "3" }, {
+        self: true,
+        setup: (_state, actor) => { actor.mp = 1; }
+      });
+      expect(caster.mp).toBe(4);
+    }
+    {
+      const { caster, target } = runEffect({ type: "MP_DRAIN", amount: "3" }, {
+        setup: (_state, actor, victim) => { actor.mp = 0; victim.mp = 10; }
+      });
+      expect(target.mp).toBe(7);
+      expect(caster.mp).toBe(3);
+    }
+    {
+      const { target } = runEffect({ type: "SAN_LOSS", amount: "2" }, {
+        setup: (_state, _caster, victim) => { victim.san = 30; }
+      });
+      expect(target.san).toBe(28);
+    }
+    {
+      const { caster } = runEffect({ type: "SAN_RESTORE", amount: "3" }, {
+        self: true,
+        setup: (_state, actor) => { actor.san = 20; }
+      });
+      expect(caster.san).toBe(23);
+    }
+    {
+      const { caster } = runEffect({ type: "STATUS", key: "HASTE", stacks: "1" }, { self: true });
+      expect(caster.statusEffects.some((effect) => effect.key === "HASTE")).toBe(true);
+    }
+    {
+      const { caster } = runEffect({ type: "ARMOR", amount: "5", durationTicks: "0" }, { self: true });
+      expect(caster.armor).toBe(5);
+    }
+    {
+      const { state, caster } = runEffect({ type: "SUMMON", name: "测试召唤物", count: "1", durationTicks: "0" }, { self: true });
+      expect(state.participants.some((participant) => participant.summonedBy === caster.id)).toBe(true);
+    }
+    {
+      const { target } = runEffect({ type: "DOT", amount: "2", durationTicks: "2" });
+      expect(target.statusEffects.some((effect) => effect.key.startsWith("DOT:"))).toBe(true);
+    }
+    {
+      const { target } = runEffect({ type: "STUN", durationActions: "1" });
+      expect(target.stunActions).toBe(1);
+    }
+    {
+      const { target } = runEffect({ type: "CONTROL", durationActions: "1" });
+      expect(target.controlActions).toBe(1);
+    }
+    {
+      const { caster } = runEffect({ type: "CLEANSE", keys: ["STUN", "CONTROL"] }, {
+        self: true,
+        setup: (_state, actor) => {
+          actor.stunActions = 1;
+          actor.controlActions = 1;
+          actor.statusEffects = [{ key: "DOT:test", stacks: 1, remainingTicks: 10, dotDamage: 1, dotTurns: 1 }];
+        }
+      });
+      expect(caster.stunActions).toBe(0);
+      expect(caster.controlActions).toBe(0);
+      expect(caster.statusEffects.length).toBe(0);
+    }
+  });
+});
