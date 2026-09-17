@@ -251,7 +251,7 @@ export default function RoomGameStatePanel(props: Props) {
           <div className="mt-3">
             <button
               type="submit"
-              className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+              className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400"
             >
               保存局内状态
             </button>

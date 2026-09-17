@@ -4,11 +4,17 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { saveCard, type SaveCardResult } from "@/server/actions/card";
 import DanmakuPatternEditor from "@/components/danmaku/DanmakuPatternEditor";
+import MagicEffectComposer from "@/components/module/MagicEffectComposer";
 import {
   CARD_KIND_LABELS,
+  CARD_TARGETINGS,
+  CARD_TARGETING_LABELS,
+  CARD_USABLE_IN,
   ENHANCE_LABELS,
   ENHANCE_TYPES,
   RANGE_LABELS,
+  WEAPON_TYPES,
+  weaponTypeDefinition,
   type CardKind,
   type EnhanceType
 } from "@/shared/card";
@@ -28,6 +34,29 @@ interface Props {
   system: string;
   isTouhou: boolean;
   spellDefaults: SpellDefaults | null;
+  /** 传入表示编辑已有卡。 */
+  initial?: {
+    readonly cardId: string;
+    readonly kind: CardKind;
+    readonly name: string;
+    readonly subtitle: string;
+    readonly description: string;
+    readonly stats: Record<string, unknown>;
+  } | null;
+}
+
+function recordOf(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && Array.isArray(value) === false
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function numberOr(value: unknown, fallback: number): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+
+function stringOr(value: unknown, fallback: string): string {
+  return typeof value === "string" ? value : fallback;
 }
 
 const inputClass =
@@ -35,44 +64,102 @@ const inputClass =
 
 export default function CardBuilder(props: Props) {
   const router = useRouter();
-  const [kind, setKind] = useState<CardKind>(props.isTouhou ? "SPELLCARD" : "WEAPON");
-  const [name, setName] = useState("");
-  const [subtitle, setSubtitle] = useState("");
-  const [description, setDescription] = useState("");
+  const defaults = props.spellDefaults;
+  const initial = props.initial ?? null;
+  const stats0 = recordOf(initial?.stats);
+  const cost0 = recordOf(stats0.cost);
+
+  const [kind, setKind] = useState<CardKind>(initial?.kind ?? (props.isTouhou ? "SPELLCARD" : "WEAPON"));
+  const [name, setName] = useState(initial?.name ?? "");
+  const [subtitle, setSubtitle] = useState(initial?.subtitle ?? "");
+  const [description, setDescription] = useState(initial?.description ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
 
-  const defaults = props.spellDefaults;
-  const [mode, setMode] = useState<"DECLARATION" | "CONSUMPTION">("DECLARATION");
-  const [danmaku, setDanmaku] = useState("");
-  const [mpCost, setMpCost] = useState(defaults?.declarationMpCost ?? 10);
-  const [hpRatio, setHpRatio] = useState(defaults?.hpRatio ?? 2);
-  const [clearTargets, setClearTargets] = useState<"ALL" | "OTHERS_ONLY">(
-    defaults?.clearTargets ?? "ALL"
+  const [mode, setMode] = useState<"DECLARATION" | "CONSUMPTION">(
+    stringOr(stats0.mode, "DECLARATION") === "CONSUMPTION" ? "CONSUMPTION" : "DECLARATION"
   );
-  const [enhanceType, setEnhanceType] = useState<EnhanceType>("DANMAKU");
-  const [enhanceValue, setEnhanceValue] = useState(1.5);
-  const [pattern, setPattern] = useState<DanmakuPattern>(() => createDefaultDanmakuPattern());
+  const [danmaku, setDanmaku] = useState(stringOr(stats0.danmaku, ""));
+  const [mpCost, setMpCost] = useState(numberOr(stats0.mpCost, defaults?.declarationMpCost ?? 10));
+  const [hpRatio, setHpRatio] = useState(numberOr(stats0.hpRatio, defaults?.hpRatio ?? 2));
+  const [clearTargets, setClearTargets] = useState<"ALL" | "OTHERS_ONLY">(
+    stringOr(stats0.clearTargets, defaults?.clearTargets ?? "ALL") === "OTHERS_ONLY" ? "OTHERS_ONLY" : "ALL"
+  );
+  const [enhanceType, setEnhanceType] = useState<EnhanceType>(
+    (["DANMAKU", "MELEE", "SPELL", "AREA"] as const).includes(stringOr(stats0.enhanceType, "DANMAKU") as EnhanceType)
+      ? (stringOr(stats0.enhanceType, "DANMAKU") as EnhanceType)
+      : "DANMAKU"
+  );
+  const [enhanceValue, setEnhanceValue] = useState(numberOr(stats0.enhanceValue, 1.5));
+  const [pattern, setPattern] = useState<DanmakuPattern>(() => {
+    const raw = stats0.pattern;
+    if (raw !== null && typeof raw === "object" && Array.isArray(raw) === false) return raw as DanmakuPattern;
+    return createDefaultDanmakuPattern();
+  });
 
-  const [damage, setDamage] = useState("2d6");
-  const [range, setRange] = useState<"MELEE" | "NEAR" | "FAR">("NEAR");
-  const [accuracyMod, setAccuracyMod] = useState(0);
+  const [weaponType, setWeaponType] = useState(stringOr(stats0.weaponType, "BRAWL"));
+  const [accuracyMod, setAccuracyMod] = useState(numberOr(stats0.accuracyMod, 0));
 
-  const [effect, setEffect] = useState("");
-  const [uses, setUses] = useState("1");
-  const [sanCost, setSanCost] = useState("");
+  const [effect, setEffect] = useState(stringOr(stats0.effect, ""));
+  const [uses, setUses] = useState(stats0.uses === null || stats0.uses === undefined ? "" : String(stats0.uses));
+  const [sanCost, setSanCost] = useState(stringOr(stats0.sanCost, ""));
+
+  // 通用效果 / 目标 / 消耗（魔法、道具、符卡、武器共用）
+  const [effectsJson, setEffectsJson] = useState(() =>
+    JSON.stringify(Array.isArray(stats0.effects) ? stats0.effects : [])
+  );
+  const [targeting, setTargeting] = useState<string>(
+    (CARD_TARGETINGS as readonly string[]).includes(stringOr(stats0.targeting, "ENEMY"))
+      ? stringOr(stats0.targeting, "ENEMY")
+      : "ENEMY"
+  );
+  const [costMp, setCostMp] = useState(numberOr(cost0.mp, numberOr(stats0.mpCost, 0)));
+  const [costSan, setCostSan] = useState(stringOr(cost0.san, ""));
+  const [costUses, setCostUses] = useState(cost0.uses === null || cost0.uses === undefined ? "" : String(cost0.uses));
+  const [cooldownRounds, setCooldownRounds] = useState(numberOr(cost0.cooldownRounds, 0));
+  const [usableIn, setUsableIn] = useState<readonly ("FIELD" | "COMBAT")[]>(() => {
+    const raw = stats0.usableIn;
+    if (Array.isArray(raw)) {
+      const filtered = raw.filter((item): item is "FIELD" | "COMBAT" => item === "FIELD" || item === "COMBAT");
+      if (filtered.length > 0) return filtered;
+    }
+    return ["COMBAT"];
+  });
 
   const kinds: CardKind[] = props.isTouhou ? ["SPELLCARD", "WEAPON", "ITEM"] : ["WEAPON", "ITEM"];
 
+  function parseEffects(): unknown[] {
+    try {
+      const parsed: unknown = JSON.parse(effectsJson);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function genericStats(): Record<string, unknown> {
+    return {
+      effects: parseEffects(),
+      targeting,
+      cost: {
+        mp: costMp,
+        san: costSan.trim().length === 0 ? null : costSan.trim(),
+        uses: costUses.trim().length === 0 ? null : Number(costUses),
+        cooldownRounds
+      },
+      usableIn
+    };
+  }
+
   function buildStats(): unknown {
+    const generic = genericStats();
     if (kind === "SPELLCARD") {
       return {
+        ...generic,
         mode,
         danmaku,
-        mpCost,
+        mpCost: costMp,
         hpRatio: mode === "DECLARATION" ? hpRatio : null,
-        // 展开型不设定时器：服务端收到 null 后按“持续到被击破”处理；
-        // 消费型本身只结算一次，不需要持续时长。
         durationTicks: null,
         clearTargets: mode === "DECLARATION" ? clearTargets : null,
         enhanceType,
@@ -81,12 +168,23 @@ export default function CardBuilder(props: Props) {
       };
     }
     if (kind === "WEAPON") {
-      return { damage, range, accuracyMod, mpCost };
+      // 伤害 / 射程 / 技能由武器类型自动带出。
+      const definition = weaponTypeDefinition(weaponType);
+      return {
+        ...generic,
+        weaponType,
+        damage: definition.damage,
+        range: definition.range,
+        skillId: definition.skillId,
+        accuracyMod,
+        mpCost: costMp
+      };
     }
     return {
+      ...generic,
       effect,
-      uses: uses.trim().length === 0 ? null : Number(uses),
-      sanCost: sanCost.trim().length === 0 ? null : sanCost
+      uses: costUses.trim().length === 0 ? null : Number(costUses),
+      sanCost: costSan.trim().length === 0 ? null : costSan
     };
   }
 
@@ -94,6 +192,7 @@ export default function CardBuilder(props: Props) {
     setBusy(true);
     setMessage(null);
     const result: SaveCardResult = await saveCard({
+      cardId: initial?.cardId,
       roomId: props.roomId,
       system: props.system,
       kind,
@@ -113,7 +212,7 @@ export default function CardBuilder(props: Props) {
 
   const tabClass = (active: boolean): string =>
     active
-      ? "rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm text-sakura-400"
+      ? "rounded-lg bg-sakura-500 px-4 py-2 text-sm text-sakura-400"
       : "rounded-lg border border-white/15 px-4 py-2 text-sm text-white/50 transition hover:border-white/30 hover:text-white/80";
 
   return (
@@ -166,10 +265,6 @@ export default function CardBuilder(props: Props) {
                 <option value="CONSUMPTION">消费型 · 瞬间发动，每场一次</option>
               </select>
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">灵力消耗</span>
-              <input type="number" value={mpCost} onChange={(event) => setMpCost(Number(event.target.value) || 0)} className={inputClass} />
-            </label>
             <label className="flex flex-col gap-1.5 sm:col-span-2">
               <span className="text-xs text-white/50">符卡说明（战斗日志展示用）</span>
               <input value={danmaku} onChange={(event) => setDanmaku(event.target.value)} placeholder="例：被诅咒的符札如暴雨般倾泻" className={inputClass} />
@@ -217,15 +312,13 @@ export default function CardBuilder(props: Props) {
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">武器</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">伤害骰（如 2d6+3；近战可用 1d4+db，自动加伤害加值）</span>
-              <input value={damage} onChange={(event) => setDamage(event.target.value)} className={inputClass + " font-mono"} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">射程</span>
-              <select value={range} onChange={(event) => setRange(event.target.value === "MELEE" ? "MELEE" : event.target.value === "FAR" ? "FAR" : "NEAR")} className={inputClass}>
-                {(["MELEE", "NEAR", "FAR"] as const).map((item) => (
-                  <option key={item} value={item}>{RANGE_LABELS[item]}</option>
+            <label className="flex flex-col gap-1.5 sm:col-span-2">
+              <span className="text-xs text-white/50">武器类型（伤害 / 射程 / 使用技能由系统自动带出）</span>
+              <select value={weaponType} onChange={(event) => setWeaponType(event.target.value)} className={inputClass}>
+                {WEAPON_TYPES.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.label} · {item.skillId} · {item.damage} · {RANGE_LABELS[item.range]}
+                  </option>
                 ))}
               </select>
             </label>
@@ -233,10 +326,12 @@ export default function CardBuilder(props: Props) {
               <span className="text-xs text-white/50">命中修正</span>
               <input type="number" value={accuracyMod} onChange={(event) => setAccuracyMod(Number(event.target.value) || 0)} className={inputClass} />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">灵力消耗</span>
-              <input type="number" value={mpCost} onChange={(event) => setMpCost(Number(event.target.value) || 0)} className={inputClass} />
-            </label>
+            <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+              <p className="text-[11px] text-white/45">自动结果</p>
+              <p className="mt-1 font-mono text-sm text-white/80">
+                {weaponTypeDefinition(weaponType).damage} · {RANGE_LABELS[weaponTypeDefinition(weaponType).range]} · {weaponTypeDefinition(weaponType).skillId}
+              </p>
+            </div>
           </div>
         </section>
       ) : null}
@@ -249,17 +344,66 @@ export default function CardBuilder(props: Props) {
               <span className="text-xs text-white/50">效果</span>
               <input value={effect} onChange={(event) => setEffect(event.target.value)} placeholder="例：回复 1d4 点生命" className={inputClass} />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">可用次数（留空 = 无限）</span>
-              <input value={uses} onChange={(event) => setUses(event.target.value)} className={inputClass} />
-            </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">理智消耗（如 1d3，留空 = 无）</span>
-              <input value={sanCost} onChange={(event) => setSanCost(event.target.value)} className={inputClass + " font-mono"} />
-            </label>
           </div>
         </section>
       ) : null}
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">通用效果 / 消耗</h2>
+        <p className="mt-1 text-[11px] text-white/45">魔法、道具、符卡、武器共用同一套效果；数值各自填写。</p>
+        <div className="mt-4">
+          <MagicEffectComposer
+            name="card-effects"
+            initialEffects={Array.isArray(stats0.effects) ? stats0.effects : []}
+            onChange={setEffectsJson}
+          />
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">目标</span>
+            <select value={targeting} onChange={(event) => setTargeting(event.target.value)} className={inputClass}>
+              {CARD_TARGETINGS.map((item) => (
+                <option key={item} value={item}>{CARD_TARGETING_LABELS[item]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">灵力 / MP 消耗</span>
+            <input type="number" value={costMp} onChange={(event) => setCostMp(Number(event.target.value) || 0)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">SAN 消耗（如 1d3）</span>
+            <input value={costSan} onChange={(event) => setCostSan(event.target.value)} className={inputClass + " font-mono"} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">使用次数（留空 = 无限）</span>
+            <input value={costUses} onChange={(event) => setCostUses(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">冷却轮次</span>
+            <input type="number" value={cooldownRounds} onChange={(event) => setCooldownRounds(Number(event.target.value) || 0)} className={inputClass} />
+          </label>
+          <div className="flex flex-col gap-1.5 sm:col-span-2">
+            <span className="text-xs text-white/50">可用场景</span>
+            <div className="flex items-center gap-3 text-xs text-white/60">
+              {CARD_USABLE_IN.map((item) => (
+                <label key={item} className="flex items-center gap-1.5">
+                  <input
+                    type="checkbox"
+                    checked={usableIn.includes(item)}
+                    onChange={(event) =>
+                      setUsableIn((current) =>
+                        event.target.checked ? [...new Set([...current, item])] : current.filter((value) => value !== item)
+                      )
+                    }
+                  />
+                  {item === "COMBAT" ? "战斗内" : "战斗外"}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div>
@@ -270,7 +414,7 @@ export default function CardBuilder(props: Props) {
           type="button"
           disabled={[busy, name.trim().length === 0].includes(true)}
           onClick={submit}
-          className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-6 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
+          className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
         >
           {busy ? "保存中…" : "保存卡牌"}
         </button>

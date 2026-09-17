@@ -2214,3 +2214,31 @@ MagicEffect =
   - `::placeholder` 加深。
   夜间模式不变。
 - 准备页文案：`车一张新卡` → `新建角色`，`新建卡牌` → `新建物品`，`角色卡` 区标题改为 `角色与物品`，并移除冗余说明。
+
+## 58. 统一物品卡模型（本轮）
+
+### 1. 通用效果 / 目标 / 消耗
+- `shared/card.ts`：新增 `CardBaseStatsSchema`，三种卡（武器 / 道具 / 符卡）统一 merge 这套字段：
+  - `effects: MagicEffect[]`（复用魔法 14 种枚举效果，数值各自填写）
+  - `targeting: SELF|ALLY|ENEMY|ANY`
+  - `cost: { mp, san, uses, cooldownRounds }`
+  - `usableIn: ("FIELD"|"COMBAT")[]`
+- 三种 stats 都带默认值，旧数据（只有测试数据）也能解析，不会因缺字段报错。
+- `parseCardStats(kind, stats)` 统一解析入口。
+
+### 2. 武器类型 → 自动伤害
+- `WEAPON_TYPES`：斗殴 / 斧 / 剑 / 矛 / 鞭 / 手枪 / 步枪 / 弓 / 投掷，各自带 `skillId / range / damage`。
+- `CardBuilder` 选武器类型后自动带出伤害、射程、使用技能，不再手填伤害（`weaponTypeDefinition`）。
+
+### 3. 卡牌编辑
+- `saveCard` 支持 `cardId`：本人可覆盖更新，不再只能新建 / 删除。
+- 新增 `/cards/[id]/edit` 编辑页（复用 CardBuilder，带 `initial`）；卡库列表加「编辑」入口。
+- `CardBuilder` 新增「通用效果 / 消耗」区块（MagicEffectComposer + 目标 + MP/SAN/次数/冷却 + 可用场景），编辑模式回填已有值。
+
+### 4. 装备唯一性
+- `equipCardAction`：已装备给某角色的卡禁止直接改绑到另一个角色，必须先卸下。
+
+### 仍未完成
+- 战斗内「使用道具」的真实结算（目前只有 `ITEM` 行动类型占位）。
+- 修改装备时「选择效果」的实例化（同一张效果卡装备到角色时选生效项）。
+- 道具 ↔ 武器的类型互转 UI（现在编辑页可改 kind，但会按新 kind 重新校验 stats）。

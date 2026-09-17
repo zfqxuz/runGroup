@@ -345,9 +345,9 @@ export default async function CharacterDetailPage({
               return (
                 <div key={row.id} className="flex items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                   <span className="min-w-0">
-                    <span className="block truncate text-xs text-white/60">{row.name}</span>
-                    <span className="block font-mono text-[10px] text-white/30">
-                      困难 {Math.floor(row.value / 2)} · 极限 {Math.floor(row.value / 5)}
+                    <span className="block truncate text-sm text-white/75">{row.name}</span>
+                    <span className="mt-0.5 block font-mono text-sm text-white/55">
+                      普通 {row.value} · 困难 {Math.floor(row.value / 2)} · 极限 {Math.floor(row.value / 5)}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">
@@ -356,7 +356,6 @@ export default async function CharacterDetailPage({
                         成长 {bonus > 0 ? "+" + bonus : bonus}
                       </span>
                     )}
-                    <span className="font-mono text-sm text-white/80">{row.value}</span>
                   </span>
                 </div>
               );
@@ -426,7 +425,7 @@ export default async function CharacterDetailPage({
           </label>
           <button
             type="submit"
-            className="rounded-lg bg-spirit-400 px-3 py-1.5 text-xs font-medium text-ink-onAccent transition hover:bg-spirit-300"
+            className="rounded-lg bg-spirit-400 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-spirit-300"
           >
             筛选
           </button>

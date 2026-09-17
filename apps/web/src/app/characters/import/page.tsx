@@ -34,12 +34,12 @@ export default async function ImportCharacterPage(props: { searchParams: { error
             name="file"
             accept=".xlsx"
             required
-            className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2.5 text-sm text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-onAccent"
+            className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2.5 text-sm text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
           />
         </label>
         <button
           type="submit"
-          className="mt-5 rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+          className="mt-5 rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400"
         >
           解析并导入
         </button>

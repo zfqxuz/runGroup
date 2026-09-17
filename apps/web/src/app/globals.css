@@ -46,8 +46,12 @@ body {
 body {
   background-color: rgb(var(--bg));
   color: rgb(var(--fg));
+  /* 更耐看的无衬线字体栈（中文优先 PingFang / HarmonyOS / 微软雅黑） */
+  font-family: "PingFang SC", "HarmonyOS Sans SC", "MiSans", "Microsoft YaHei UI", "Microsoft YaHei",
+    "Noto Sans SC", "Inter", system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   /* 基础字重加粗到中黑，避免细体发虚 */
   font-weight: 500;
+  letter-spacing: 0.01em;
 }
 
 strong,

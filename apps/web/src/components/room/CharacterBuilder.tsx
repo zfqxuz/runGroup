@@ -808,7 +808,7 @@ export default function CharacterBuilder(props: Props) {
                 type="button"
                 disabled={rolled}
                 onClick={rollDestiny}
-                className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
               >
                 {rolled ? "已掷完（只能掷一次）" : "掷 5 组"}
               </button>
@@ -1024,7 +1024,7 @@ export default function CharacterBuilder(props: Props) {
                 type="button"
                 disabled={ageCheck.ok === false}
                 onClick={() => setAgeConfirmed(true)}
-                className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
+                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
               >
                 {ageAdjustment.deductionTotal > 0 ? "确认年龄扣减分配" : "确认年龄补正（无属性扣减）"}
               </button>
@@ -1239,9 +1239,9 @@ export default function CharacterBuilder(props: Props) {
                               </span>
                             )}
                           </div>
-                          <p className="mt-0.5 text-[11px] text-white/40">
-                            基础 <span className="font-mono text-white/70">{base}</span>
-                            <span className="ml-2 text-white/30">
+                          <p className="mt-0.5 text-xs text-white/55">
+                            基础 <span className="font-mono text-white/75">{base}</span>
+                            <span className="ml-2">
                               困难 {Math.floor(total / 2)} · 极限 {Math.floor(total / 5)}
                             </span>
                           </p>
@@ -1321,7 +1321,7 @@ export default function CharacterBuilder(props: Props) {
           type="button"
           disabled={[busy, name.trim().length === 0, attributesValid === false, creditIssue !== null].includes(true)}
           onClick={submit}
-          className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-6 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
+          className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
         >
           {busy ? "保存中…" : "保存角色卡"}
         </button>

@@ -31,7 +31,7 @@ function SubmitButton({ children }: { readonly children: React.ReactNode }) {
     <button
       type="submit"
       disabled={pending}
-      className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-50"
+      className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400 disabled:opacity-50"
     >
       {pending ? "保存中…" : children}
     </button>

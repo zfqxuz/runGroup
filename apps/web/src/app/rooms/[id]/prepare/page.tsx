@@ -400,7 +400,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               className={
                 membership.ready
                   ? "rounded-lg border border-white/15 px-4 py-2 text-sm text-white/60 transition hover:border-white/35"
-                  : "rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+                  : "rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400"
               }
             >
               {membership.ready ? "取消准备" : "我准备好了"}
@@ -603,7 +603,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <button
                 type="submit"
                 disabled={activeGame !== null}
-                className="shrink-0 rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                className="shrink-0 rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {activePreset !== null && activePreset.moduleId === selectedModule.id ? "重新应用预设" : "应用团本预设"}
               </button>
@@ -689,7 +689,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           </Link>
           <Link
             href={"/rooms/" + room.id + "/characters/new"}
-            className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+            className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400"
           >
             新建角色
           </Link>
@@ -1023,7 +1023,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <button
                 type="submit"
                 disabled={canStart === false}
-                className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {(resuming ? "继续跑团" : "开始跑团")}（{readyCount}/{requiredMembers.length}）
               </button>

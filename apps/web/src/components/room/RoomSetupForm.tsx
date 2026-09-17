@@ -97,7 +97,7 @@ export default function RoomSetupForm(props: Props) {
               onClick={() => switchSystem(key)}
               className={
                 key === system
-                  ? "rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm text-sakura-400"
+                  ? "rounded-lg bg-sakura-500 px-4 py-2 text-sm text-sakura-400"
                   : "rounded-lg border border-white/15 px-4 py-2 text-sm text-white/50 transition hover:border-white/30"
               }
             >
@@ -261,7 +261,7 @@ export default function RoomSetupForm(props: Props) {
 
       <button
         type="submit"
-        className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-6 py-3 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+        className="rounded-lg bg-sakura-500 px-6 py-3 text-sm font-medium text-white transition hover:bg-sakura-400"
       >
         创建房间
       </button>

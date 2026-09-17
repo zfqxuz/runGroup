@@ -141,7 +141,7 @@ export default async function SceneManagementPage({
           </p>
           <form action={importModuleScenesAction} className="mt-3">
             <input type="hidden" name="roomId" value={room.id} />
-            <button type="submit" className="rounded-lg bg-spirit-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-spirit-400">
+            <button type="submit" className="rounded-lg bg-spirit-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-spirit-400">
               同步团本场景与遭遇
             </button>
           </form>
@@ -161,7 +161,7 @@ export default async function SceneManagementPage({
               <span className="text-xs text-white/50">描述</span>
               <input name="description" placeholder="给玩家看的简短描述" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500" />
             </label>
-            <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20">创建场景</button>
+            <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400">创建场景</button>
           </form>
         </section>
       ) : null}
@@ -277,7 +277,7 @@ export default async function SceneManagementPage({
                 启用战争迷雾
               </label>
               <div className="flex items-end">
-                <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20">保存场景 / 地图</button>
+                <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400">保存场景 / 地图</button>
               </div>
             </form>
           ) : null}
@@ -351,7 +351,7 @@ export default async function SceneManagementPage({
                             <input type="checkbox" name="locked" value="1" defaultChecked={layer.locked} className="accent-sakura-500" /> 锁定
                           </label>
                           <div className="flex items-center gap-2 sm:col-span-3">
-                            <button type="submit" className="rounded border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-xs font-medium text-sakura-300">保存图层</button>
+                            <button type="submit" className="rounded bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white">保存图层</button>
                           </div>
                         </form>
                         <form action={deleteMapLayerAction}>
@@ -497,7 +497,7 @@ export default async function SceneManagementPage({
                               </>
                             ) : null}
                             <div className="sm:col-span-2">
-                              <button type="submit" className="rounded border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">保存 Token</button>
+                              <button type="submit" className="rounded bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400">保存 Token</button>
                             </div>
                           </form>
                         ) : null}

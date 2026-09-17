@@ -36,7 +36,7 @@ export default function RoomCombatTabs(props: Props) {
         {props.canCreate ? (
           <Link
             href={createHref}
-            className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-xs text-sakura-200 transition hover:bg-sakura-500/20"
+            className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs text-sakura-200 transition hover:bg-sakura-400"
           >
             {props.isKP ? "＋ 发起新战斗" : "＋ 申请新战斗"}
           </Link>

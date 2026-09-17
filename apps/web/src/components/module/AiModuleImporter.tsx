@@ -119,7 +119,7 @@ export default function AiModuleImporter(props: Props) {
             name="files"
             multiple
             required
-            className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-ink-onAccent"
+            className="block w-full cursor-pointer rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs text-white/60 file:mr-3 file:rounded-md file:border-0 file:bg-sakura-500 file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-white"
           />
           <span className="text-[10px] leading-4 text-white/30">
             支持 md / txt / json / yaml / csv / docx / pptx / xlsx / pdf（自动抽取正文、内嵌图片与矢量页面渲染）/ png / jpg / webp / gif / avif / bmp / tiff / heic；
@@ -165,7 +165,7 @@ export default function AiModuleImporter(props: Props) {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
+          className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
         >
           {busy ? "n8n 工作流解析中…" : "n8n 工作流解析团本"}
         </button>

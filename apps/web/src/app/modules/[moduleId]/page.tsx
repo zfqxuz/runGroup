@@ -86,7 +86,7 @@ export default async function ModuleDetailPage({
                 className={
                   moduleRecord.isPublished
                     ? "rounded-lg border border-amber-400/40 px-4 py-2 text-sm text-amber-300 transition hover:bg-amber-400/10"
-                    : "rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
+                    : "rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400"
                 }
               >
                 {moduleRecord.isPublished ? "取消发布" : "发布到广场"}
@@ -169,7 +169,7 @@ export default async function ModuleDetailPage({
             <textarea name="content" rows={22} defaultValue={text} className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-xs leading-relaxed outline-none focus:border-sakura-500" />
           </label>
           <div>
-            <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20">保存正文与元信息</button>
+            <button type="submit" className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400">保存正文与元信息</button>
           </div>
         </form>
       ) : canViewFull ? (

@@ -71,7 +71,7 @@ export default function LoginPage() {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-50"
+          className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-50"
         >
           {busy ? "登录中…" : "登录"}
         </button>

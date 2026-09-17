@@ -10,6 +10,8 @@ import { emitRoomRefresh } from "@/server/realtime";
 import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema } from "@/shared/card";
 
 export interface SaveCardInput {
+  /** 传入表示编辑已有卡；不传表示新建。 */
+  cardId?: string;
   roomId: string | null;
   system: string;
   kind: "SPELLCARD" | "WEAPON" | "ITEM";
@@ -26,6 +28,7 @@ export interface SaveCardResult {
 }
 
 const inputSchema = z.object({
+  cardId: z.string().min(1).optional(),
   roomId: z.string().min(1).nullable(),
   system: z.enum(["COC7", "TOUHOU"]),
   kind: z.enum(["SPELLCARD", "WEAPON", "ITEM"]),
@@ -72,6 +75,28 @@ export async function saveCard(input: SaveCardInput): Promise<SaveCardResult> {
 
   if (statsResult.success === false) {
     return { ok: false, error: statsResult.error.issues[0]?.message ?? "卡牌数据不合法" };
+  }
+
+  // 编辑已有卡：仅限本人，直接覆盖内容，不重复建卡。
+  if (data.cardId !== undefined) {
+    const existing = await prisma.card.findUnique({ where: { id: data.cardId }, select: { ownerId: true } });
+    if (existing === null || existing.ownerId !== session.user.id) {
+      return { ok: false, error: "只能编辑自己的卡" };
+    }
+    await prisma.card.update({
+      where: { id: data.cardId },
+      data: {
+        type: data.kind,
+        name,
+        subtitle: data.subtitle,
+        description: data.description,
+        system,
+        stats: statsResult.data as unknown as Prisma.InputJsonValue
+      }
+    });
+    revalidatePath("/cards");
+    revalidatePath("/cards/" + data.cardId);
+    return { ok: true, cardId: data.cardId };
   }
 
   const card = await prisma.card.create({
@@ -123,6 +148,8 @@ export async function equipCardAction(formData: FormData): Promise<void> {
   const character = await prisma.character.findUnique({ where: { id: characterId } });
   if (card === null || character === null) return;
   if (card.ownerId !== session.user.id || character.userId !== session.user.id) return;
+  // 物品卡是唯一的：已经装备给某个角色的卡不能直接改绑到另一个角色，必须先卸下。
+  if (card.characterId !== null && card.characterId !== characterId) return;
 
   await prisma.card.update({
     where: { id: card.id },

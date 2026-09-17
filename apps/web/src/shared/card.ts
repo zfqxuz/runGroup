@@ -1,5 +1,60 @@
 import { z } from "zod";
+import { MagicEffectSchema } from "@touhou/rules";
 import { DanmakuPatternSchema } from "./danmaku/schema";
+
+/** 通用卡牌效果 / 目标 / 消耗：魔法、道具、符卡、武器共用同一套结构。 */
+export const CARD_TARGETINGS = ["SELF", "ALLY", "ENEMY", "ANY"] as const;
+export const CARD_TARGETING_LABELS: Record<(typeof CARD_TARGETINGS)[number], string> = {
+  SELF: "自身",
+  ALLY: "友方",
+  ENEMY: "敌方",
+  ANY: "任意"
+};
+export const CARD_USABLE_IN = ["FIELD", "COMBAT"] as const;
+
+export const CardCostSchema = z.object({
+  /** 灵力 / MP 消耗。 */
+  mp: z.number().int().min(0).max(999).default(0),
+  /** SAN 消耗表达式，例如 "1d4"；空表示无。 */
+  san: z.string().max(20).nullable().default(null),
+  /** 使用次数；null 表示不限次。 */
+  uses: z.number().int().min(1).max(99).nullable().default(null),
+  /** 冷却行动轮次。 */
+  cooldownRounds: z.number().int().min(0).max(99).default(0)
+});
+
+export const CardBaseStatsSchema = z.object({
+  effects: z.array(MagicEffectSchema).default([]),
+  targeting: z.enum(CARD_TARGETINGS).default("ENEMY"),
+  cost: CardCostSchema.default({}),
+  /** 可在哪些场景使用：战斗内 / 战斗外。 */
+  usableIn: z.array(z.enum(CARD_USABLE_IN)).default(["COMBAT"])
+});
+
+/** 武器类型 → 使用技能 / 射程 / 基础伤害。伤害由系统自动带出。 */
+export interface WeaponTypeDefinition {
+  readonly id: string;
+  readonly label: string;
+  readonly skillId: string;
+  readonly range: "MELEE" | "NEAR" | "FAR";
+  readonly damage: string;
+}
+
+export const WEAPON_TYPES: readonly WeaponTypeDefinition[] = [
+  { id: "BRAWL", label: "斗殴 / 徒手", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d3+db" },
+  { id: "AXE", label: "斧 / 钝器", skillId: "FIGHTING_AXE", range: "MELEE", damage: "1d8+2+db" },
+  { id: "BLADE", label: "剑 / 刀", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d6+db" },
+  { id: "SPEAR", label: "矛 / 长柄", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d8+db" },
+  { id: "WHIP", label: "鞭 / 链", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d3+db" },
+  { id: "HANDGUN", label: "手枪", skillId: "FIREARMS_HANDGUN", range: "NEAR", damage: "1d10" },
+  { id: "RIFLE", label: "步枪 / 霰弹枪", skillId: "FIREARMS_RIFLE", range: "FAR", damage: "2d6" },
+  { id: "BOW", label: "弓 / 弩", skillId: "FIREARMS_BOW", range: "FAR", damage: "1d8+db" },
+  { id: "THROW", label: "投掷", skillId: "THROW", range: "NEAR", damage: "1d4+db" }
+];
+
+export function weaponTypeDefinition(id: string): WeaponTypeDefinition {
+  return WEAPON_TYPES.find((item) => item.id === id) ?? WEAPON_TYPES[0]!;
+}
 
 export const CARD_KINDS = ["SPELLCARD", "WEAPON", "ITEM"] as const;
 export type CardKind = (typeof CARD_KINDS)[number];
@@ -21,7 +76,7 @@ export const ENHANCE_LABELS: Record<EnhanceType, string> = {
   AREA: "范围 · 可攻击多个目标"
 };
 
-export const SpellCardStatsSchema = z.object({
+const SpellCardStatsCoreSchema = z.object({
   mode: z.enum(["DECLARATION", "CONSUMPTION"]),
   /** 一句话描述这张符卡长什么样。 */
   danmaku: z.string().min(1, "请填写弹幕描述").max(60),
@@ -36,8 +91,9 @@ export const SpellCardStatsSchema = z.object({
   /** 结构化弹幕演出；纯视觉，不参与战斗判定。旧卡可以没有。 */
   pattern: DanmakuPatternSchema.nullable().optional()
 });
+export const SpellCardStatsSchema = SpellCardStatsCoreSchema.merge(CardBaseStatsSchema);
 
-export const WeaponStatsSchema = z.object({
+const WeaponStatsCoreSchema = z.object({
   damage: z
     .string()
     .min(1)
@@ -46,18 +102,34 @@ export const WeaponStatsSchema = z.object({
   range: z.enum(["MELEE", "NEAR", "FAR"]),
   skillId: z.string().max(60).nullable().default(null),
   accuracyMod: z.number().int().min(-50).max(50),
-  mpCost: z.number().int().min(0).max(999)
+  mpCost: z.number().int().min(0).max(999),
+  /** 武器类型；damage / range / skillId 由它自动带出。 */
+  weaponType: z.string().max(40).default("BRAWL")
 });
+export const WeaponStatsSchema = WeaponStatsCoreSchema.merge(CardBaseStatsSchema);
 
-export const ItemStatsSchema = z.object({
-  effect: z.string().max(200),
-  uses: z.number().int().min(1).max(99).nullable(),
-  sanCost: z.string().max(20).nullable()
+const ItemStatsCoreSchema = z.object({
+  /** 自由文本效果说明；真正的结算走通用 effects。 */
+  effect: z.string().max(200).default(""),
+  uses: z.number().int().min(1).max(99).nullable().default(null),
+  sanCost: z.string().max(20).nullable().default(null)
 });
+export const ItemStatsSchema = ItemStatsCoreSchema.merge(CardBaseStatsSchema);
 
 export type SpellCardStats = z.output<typeof SpellCardStatsSchema>;
 export type WeaponStats = z.output<typeof WeaponStatsSchema>;
 export type ItemStats = z.output<typeof ItemStatsSchema>;
+export type CardStats = SpellCardStats | WeaponStats | ItemStats;
+
+export function parseCardStats(kind: CardKind, stats: unknown): CardStats | null {
+  const result =
+    kind === "SPELLCARD"
+      ? SpellCardStatsSchema.safeParse(stats)
+      : kind === "WEAPON"
+        ? WeaponStatsSchema.safeParse(stats)
+        : ItemStatsSchema.safeParse(stats);
+  return result.success ? result.data : null;
+}
 
 export const RANGE_LABELS: Record<WeaponStats["range"], string> = {
   MELEE: "近身",

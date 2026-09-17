@@ -32,6 +32,22 @@ const config: Config = {
         }
       },
       fontFamily: {
+        sans: [
+          "PingFang SC",
+          "HarmonyOS Sans SC",
+          "MiSans",
+          "Microsoft YaHei UI",
+          "Microsoft YaHei",
+          "Noto Sans SC",
+          "Inter",
+          "system-ui",
+          "-apple-system",
+          "Segoe UI",
+          "Roboto",
+          "Helvetica Neue",
+          "Arial",
+          "sans-serif"
+        ],
         mono: ["ui-monospace", "SFMono-Regular", "Menlo", "monospace"]
       }
     }

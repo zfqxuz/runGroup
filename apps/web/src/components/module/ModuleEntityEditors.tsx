@@ -75,7 +75,7 @@ function FormShell(props: {
       <input type="hidden" name="entityId" value={props.entityId} />
       <input type="hidden" name="returnTo" value={props.returnTo} />
       {props.children}
-      <button type="submit" className="self-start rounded border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-[11px] font-medium text-sakura-300">
+      <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-white">
         {props.entityId.length === 0 ? "新增" : "保存"}
       </button>
     </form>

@@ -90,7 +90,7 @@ export default async function EditCharacterPage({
           >
             取消
           </Link>
-          <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">
+          <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400">
             保存
           </button>
         </div>

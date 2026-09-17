@@ -46,7 +46,7 @@ export default async function CardsLibraryPage() {
           <Link href="/cards/new?system=COC7" className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
             新建 COC7 卡
           </Link>
-          <Link href="/cards/new?system=TOUHOU" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">
+          <Link href="/cards/new?system=TOUHOU" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400">
             新建东方卡
           </Link>
         </div>
@@ -96,6 +96,12 @@ export default async function CardsLibraryPage() {
                       {card.isTemplate ? "取消共享" : "共享为模板"}
                     </button>
                   </form>
+                  <Link
+                    href={"/cards/" + card.id + "/edit"}
+                    className="flex-1 rounded-md border border-white/15 px-2 py-1 text-center text-[11px] text-white/60 transition hover:border-sakura-500/50 hover:text-sakura-300"
+                  >
+                    编辑
+                  </Link>
                   <form action={deleteCardAction} className="flex-1">
                     <input type="hidden" name="cardId" value={card.id} />
                     <button type="submit" className="w-full rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/40 transition hover:border-red-400/40 hover:text-red-300">

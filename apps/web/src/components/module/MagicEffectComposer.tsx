@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MAGIC_EFFECT_DEFINITIONS, defaultMagicEffectValues, magicEffectDefinition, serializeMagicEffect } from "@/shared/magic-effects";
 
 interface Draft {
@@ -36,6 +36,8 @@ function draftFromType(type: string): Draft {
 export default function MagicEffectComposer(props: {
   readonly name: string;
   readonly initialEffects: readonly unknown[];
+  /** 受控回调：每次效果变化都会回传序列化 JSON（非表单场景使用）。 */
+  readonly onChange?: (serialized: string) => void;
 }) {
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     props.initialEffects
@@ -51,6 +53,12 @@ export default function MagicEffectComposer(props: {
     () => JSON.stringify(drafts.map((draft) => serializeMagicEffect(draft.type, draft.values))),
     [drafts]
   );
+
+  useEffect(() => {
+    props.onChange?.(serialized);
+    // onChange 只用于向上同步，不参与依赖，避免父组件重渲染导致循环。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serialized]);
 
   function updateValue(id: string, key: string, value: string): void {
     setDrafts((current) =>
