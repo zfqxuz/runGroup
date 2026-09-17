@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
+import { lockedSceneMessage, sceneHasActiveCombat } from "@/server/scene/lock";
 import { emitSceneTokenUpdate, emitSceneUpdate } from "@/server/realtime";
 import { loadGameModuleView } from "@/server/modules/revision";
 import { loadSceneTokenView } from "@/server/scene/load";
@@ -112,6 +113,15 @@ export async function activateSceneAction(formData: FormData): Promise<void> {
   const scene = await prisma.scene.findUnique({ where: { id: sceneId }, select: { roomId: true } });
   if (scene === null || scene.roomId !== roomId) redirect(scenesPath(roomId, "?error=scene"));
 
+  // 场景锁定：正在被进行中的战斗使用的激活场景不能切换走。
+  const currentActive = await prisma.scene.findFirst({
+    where: { roomId, isActive: true },
+    select: { id: true }
+  });
+  if (currentActive !== null && currentActive.id !== sceneId && (await sceneHasActiveCombat(currentActive.id))) {
+    redirect(scenesPath(roomId, "?error=" + encodeURIComponent(lockedSceneMessage("switch"))));
+  }
+
   await prisma.$transaction([
     prisma.scene.updateMany({ where: { roomId }, data: { isActive: false } }),
     prisma.scene.update({ where: { id: sceneId }, data: { isActive: true } })
@@ -193,6 +203,10 @@ export async function deleteSceneAction(formData: FormData): Promise<void> {
 
   const scene = await prisma.scene.findUnique({ where: { id: sceneId }, select: { roomId: true, isActive: true } });
   if (scene === null || scene.roomId !== roomId) redirect(scenesPath(roomId, "?error=scene"));
+  // 场景锁定：正在被进行中的战斗使用时不允许删除。
+  if (await sceneHasActiveCombat(sceneId)) {
+    redirect(scenesPath(roomId, "?error=" + encodeURIComponent(lockedSceneMessage("delete"))));
+  }
   await prisma.scene.delete({ where: { id: sceneId } });
 
   if (scene.isActive) {

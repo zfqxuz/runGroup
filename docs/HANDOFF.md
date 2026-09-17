@@ -2100,3 +2100,12 @@ MagicEffect =
   - 战斗外限时召唤 → 作为真实 NPC 卡参战 → 第 1 轮后剩余 1 → 第 2 轮后从战斗移除 → 卡与 Token 清理；
   - 三场战斗同时进行时的 `Room.status` 重算。
 - 结果：`passed=34 failed=0`；测试数据全部清理。
+
+## 51. 场景锁定（本轮）
+
+- 新增 `apps/web/src/server/scene/lock.ts`：`sceneHasActiveCombat(sceneId)` / `lockedSceneMessage(action)`。
+- `activateSceneAction`：当前激活场景若绑定着未结束的战斗，切换到其它场景会被拒绝（提示先结束战斗）。
+- `deleteSceneAction`：绑定未结束战斗的场景不允许删除。
+- 战斗全部结束后自动解锁（`sceneHasActiveCombat` 变 false）。
+- 注意：用户明确说过「战斗状态的对象本来就不能跨场景移动 Token」，因此没有额外做 Token 跨场景拖动拦截。
+- 真实 E2E 扩展到 36 项：战斗绑定场景时锁定、空闲场景不受影响、全部战斗结束后解锁。

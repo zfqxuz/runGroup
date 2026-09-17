@@ -21,6 +21,7 @@ import {
 } from "../src/server/magic/conditions";
 import { castOutsideCombat } from "../src/server/magic/out-of-combat";
 import { removeSummonCards } from "../src/server/magic/summons";
+import { sceneHasActiveCombat } from "../src/server/scene/lock";
 import { cleanupDefeatedSummons } from "../src/server/socket/combat";
 import { findCondition, parseConditions } from "@touhou/rules";
 import { endCombat, resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
@@ -192,6 +193,11 @@ async function main(): Promise<void> {
     check(created.ok === true && created.combatId !== undefined, "同场景可正常开战", created.error);
     if (created.ok === false || created.combatId === undefined) return;
     combatId = created.combatId;
+
+    check(
+      (await sceneHasActiveCombat(sceneA.id)) === true && (await sceneHasActiveCombat(sceneB.id)) === false,
+      "场景锁定：进行中的战斗绑定场景，空闲场景不受影响"
+    );
 
     // ---------- 3. 席位互斥 ----------
     const duplicate = await createCombatRecord(room.id, effective, [characterRef(player.id)], [npcRef(npcSameScene.id)]);
@@ -409,6 +415,10 @@ async function main(): Promise<void> {
       await saveCombatState(third.combatId, rt3.state);
       const roomAfterAllEnd = await prisma.room.findUniqueOrThrow({ where: { id: room.id } });
       check(roomAfterAllEnd.status === "PLAYING", "全部战斗结束后房间回到 PLAYING", { status: roomAfterAllEnd.status });
+      check(
+        (await sceneHasActiveCombat(sceneA.id)) === false,
+        "全部战斗结束后场景解锁（可以删除 / 切换）"
+      );
     }
 
     // ---------- 9. 战斗外禁止伤害法术 ----------
