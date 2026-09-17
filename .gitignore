@@ -17,3 +17,8 @@ apps/web/public/uploads/
 uploads/
 
 n8n/certs/
+
+# Playwright
+test-results/
+playwright-report/
+blob-report/

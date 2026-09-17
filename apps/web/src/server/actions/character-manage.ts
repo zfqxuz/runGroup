@@ -3,7 +3,15 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { ATTRIBUTE_KEYS, MagicEffectSchema, type AttributeKey, type Coc7AgeAllocation } from "@touhou/rules";
+import {
+  ATTRIBUTE_KEYS,
+  MagicEffectSchema,
+  builtinRegistry,
+  compileParsedRulePack,
+  resolveRulePack,
+  type AttributeKey,
+  type Coc7AgeAllocation
+} from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { updateCharacterAction, type SaveCharacterResult } from "@/server/actions/character";
@@ -70,21 +78,29 @@ export async function updateCharacterFormAction(formData: FormData): Promise<voi
     if (value > 0) ageAllocationRaw[key] = value;
   }
 
+  // 技能字段用「下标」而不是技能 id：Next.js server action 的 multipart
+  // 字段名不能安全携带中文（如「格斗（剑）」），浏览器提交会变成乱码。
+  const systemForSkills = str(formData, "system") === "TOUHOU" ? "TOUHOU" : "COC7";
+  const compiledForSkills = compileParsedRulePack(
+    resolveRulePack(systemForSkills === "TOUHOU" ? "touhou-ext" : "coc7-baseline", builtinRegistry())
+  );
+  const skillIdAt = (index: number): string | null => compiledForSkills.skills[index]?.id ?? null;
+
   const occupation: Record<string, number> = {};
   const interest: Record<string, number> = {};
   const slotAssignments: Record<string, string[]> = {};
   for (const [key, raw] of formData.entries()) {
     if (typeof raw !== "string") continue;
     if (key.startsWith("occ_")) {
-      const skillId = key.slice(4);
+      const skillId = skillIdAt(Math.floor(Number(key.slice(4))));
       const value = Math.floor(Number(raw));
-      if (Number.isFinite(value) && value > 0) occupation[skillId] = value;
+      if (skillId !== null && Number.isFinite(value) && value > 0) occupation[skillId] = value;
       continue;
     }
     if (key.startsWith("int_")) {
-      const skillId = key.slice(4);
+      const skillId = skillIdAt(Math.floor(Number(key.slice(4))));
       const value = Math.floor(Number(raw));
-      if (Number.isFinite(value) && value > 0) interest[skillId] = value;
+      if (skillId !== null && Number.isFinite(value) && value > 0) interest[skillId] = value;
       continue;
     }
     if (key.startsWith("slot_")) {

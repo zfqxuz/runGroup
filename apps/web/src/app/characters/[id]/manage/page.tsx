@@ -278,7 +278,7 @@ export default async function ManageCharacterPage({
                 </tr>
               </thead>
               <tbody className="divide-y divide-white/5">
-                {compiled.skills.map((skill) => {
+                {compiled.skills.map((skill, skillIndex) => {
                   const occ = occupationAdded[skill.id] ?? 0;
                   const interest = interestAdded[skill.id] ?? 0;
                   const base = skillBases[skill.id] ?? 0;
@@ -289,10 +289,10 @@ export default async function ManageCharacterPage({
                       <td className="py-1.5 text-white/70">{skill.name}</td>
                       <td className="py-1.5 font-mono text-white/45">{base}</td>
                       <td className="py-1.5">
-                        <input name={"occ_" + skill.id} type="number" min={0} defaultValue={occ} disabled={isKP} className="w-20 rounded border border-white/15 bg-ink-900 px-2 py-1 font-mono text-xs text-white disabled:opacity-40" />
+                        <input name={"occ_" + String(skillIndex)} type="number" min={0} defaultValue={occ} disabled={isKP} className="w-20 rounded border border-white/15 bg-ink-900 px-2 py-1 font-mono text-xs text-white disabled:opacity-40" />
                       </td>
                       <td className="py-1.5">
-                        <input name={"int_" + skill.id} type="number" min={0} defaultValue={interest} disabled={isKP} className="w-20 rounded border border-white/15 bg-ink-900 px-2 py-1 font-mono text-xs text-white disabled:opacity-40" />
+                        <input name={"int_" + String(skillIndex)} type="number" min={0} defaultValue={interest} disabled={isKP} className="w-20 rounded border border-white/15 bg-ink-900 px-2 py-1 font-mono text-xs text-white disabled:opacity-40" />
                       </td>
                       <td className="py-1.5 font-mono text-white/45">{growth}</td>
                       <td className="py-1.5 font-mono text-white/80">{total}</td>

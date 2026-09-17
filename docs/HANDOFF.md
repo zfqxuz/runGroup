@@ -2387,3 +2387,31 @@ sourceData:
 ### 仍未完成
 - 装备槽位（按用户要求明确不做，保持列表）。
 - 背景故事的结构化「加一条经历 / 伙伴」按钮（当前用 JSON 文本域编辑数组）。
+
+## 62. Playwright 真实浏览器 E2E（本轮）
+
+### 1. 安装
+- 依赖：`@playwright/test@1.63.0`（devDependency，跳过自动下载浏览器）。
+- 浏览器：`PLAYWRIGHT_DOWNLOAD_HOST=https://cdn.npmmirror.com/binaries/playwright npx playwright install chromium`，装到 `PLAYWRIGHT_BROWSERS_PATH=/home/zfq/runGroup/.pw-browsers`（默认 `~/.cache` 在本机不可写，且 sudo 被 no-new-privileges 禁用）。
+- 缺的 4 个系统库（`libnspr4 / libnss3 / libnssutil3 / libasound2`）：因为不能 `sudo apt install`，用 `apt-get download` + `dpkg -x` 解到 `/home/zfq/runGroup/.pw-deps/rootfs`，运行时 `LD_LIBRARY_PATH` 指过去；`ldd` 已 0 缺失。
+- 运行脚本 `scripts/run-e2e-web.sh` 负责加载 `.env`、设置浏览器与库路径；命令：`npm run test:e2e`。
+
+### 2. 用例 `e2e/character-lifecycle.spec.ts`
+真实 Chromium 点击，不是 HTTP 抓页面：
+1. 浏览器登录页输入账号密码点登录；
+2. `/characters/import` 真实 `setInputFiles` 上传用户真实 `COC7zfq.xlsx`，点「解析并导入」；
+3. `/characters/[id]/manage` 真实填性别、EDU、INT、技能兴趣点，点「保存角色」，断言跳转 `saved=manage` 且 DB 落库、技能总值按规则重算；
+4. 在角色管理页点「装备」，再进装备属性编辑表单改卡名 / 次数 / 冷却 / 效果 JSON（2d6），点保存并断言 DB；
+5. 准备真实房间 / 局 / 场景 / 地图 / Token / 战斗，把角色设为当前行动单位并压低 HP；
+6. 打开真实战斗页，等 socket 连上后点「使用道具」，断言页面出现「恢复 N HP」、DB 快照里 HP 上升、使用次数扣减。
+- 结果：`1 passed (22.4s)`。
+
+### 3. 真实浏览器抓到的 bug（已修）
+- Next.js server action 的 multipart 表单**字段名不能携带中文**：技能 id 是「格斗（剑）」这类中文时，浏览器提交后字段名会变成乱码，服务端报「存在不属于当前规则包的技能：格斗（剑）」。
+- 修复：技能加点字段从 `occ_<skillId>` / `int_<skillId>` 改为 `occ_<index>` / `int_<index>`，服务端用同一份 `compiled.skills` 下标还原 skillId；`e2e-real-lifecycle.ts` 同步改为下标。
+- 说明：Node 的 `fetch` + `FormData` 不会触发这个问题，所以只有真实浏览器才能暴露——这正是加 Playwright 的价值。
+
+### 4. 验证
+- `npm run test:e2e` 真实 Chromium：1 passed。
+- `npm test` 218 通过、`typecheck`、`next build` 通过。
+- 本地 `e2e-real-lifecycle.ts` 25/25、`e2e-real-magic.ts` 54/54（服务器层）。

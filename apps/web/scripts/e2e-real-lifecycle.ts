@@ -18,6 +18,7 @@ import { characterRef, createCombatRecord, npcRef, saveCombatState } from "../sr
 import { clearCombatRuntime, loadCombatRuntime } from "../src/server/combat/runtime";
 import { consumeItemUse, prepareItemAction } from "../src/server/combat/items";
 import { resolveImmediateAction } from "@touhou/combat";
+import { builtinRegistry, compileParsedRulePack, resolveRulePack } from "@touhou/rules";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
 const FILE = process.env.E2E_XLSX ?? "/home/zfq/.dsh/attachments/v1/files/3f/3f8103ac30864351e38c7cfc3a7d14da65348993c0e3b0445772ca72dd2848fe/COC7zfq.xlsx";
@@ -162,8 +163,18 @@ async function main(): Promise<void> {
     };
     for (const key of ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"]) editForm.set("attr_" + key, String(editedAttributes[key]));
     for (const key of ["str", "con", "siz", "dex"]) editForm.set("age_" + key, String(ageAllocation[key] ?? 0));
-    for (const [id, value] of Object.entries(occ)) editForm.set("occ_" + id, String(value));
-    for (const [id, value] of Object.entries(interest)) editForm.set("int_" + id, String(value));
+    const compiledForSkills = compileParsedRulePack(
+      resolveRulePack(character.system === "TOUHOU" ? "touhou-ext" : "coc7-baseline", builtinRegistry())
+    );
+    const skillIndex = new Map(compiledForSkills.skills.map((skill, index) => [skill.id, index]));
+    for (const [id, value] of Object.entries(occ)) {
+      const index = skillIndex.get(id);
+      if (index !== undefined) editForm.set("occ_" + String(index), String(value));
+    }
+    for (const [id, value] of Object.entries(interest)) {
+      const index = skillIndex.get(id);
+      if (index !== undefined) editForm.set("int_" + String(index), String(value));
+    }
     for (const [slotId, picks] of Object.entries(slots)) picks.forEach((skillId, index) => editForm.set("slot_" + slotId + "_" + index, skillId));
     editForm.set("hp", String(character.hp));
     editForm.set("mp", String(character.mp));
