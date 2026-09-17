@@ -248,6 +248,10 @@ async function resolveParticipantScenes(
     if (ref.kind === "CHARACTER") characterIds.push(ref.id);
     else cardIds.push(ref.id);
   }
+  if (characterIds.length === 0 && cardIds.length === 0) {
+    for (const selection of refs) result.set(selection.ref, null);
+    return result;
+  }
   const tokens = await prisma.token.findMany({
     where: {
       roomId,

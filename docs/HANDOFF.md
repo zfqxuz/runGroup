@@ -1975,3 +1975,47 @@ MagicEffect =
 - `npm test` PASS（198 tests：formula 50 / rules 75 / combat 73）。
 - `npm run build --workspace @touhou/web` PASS。
 - `verify:combat-options`、`verify:combat`、`verify:combat-rounds`、`verify:scene-ops`、`verify:realtime-sync` PASS。
+
+## 48. 局内状态 / 夺舍充能池 / 持久召唤 / 战斗外施法（本轮）
+
+### 背景
+上一轮把魔法底层统一成 `MagicEffect[]` 枚举效果，并补了 ARMOR / SUMMON / POSSESS。用户随后明确要求：
+- 非伤害类法术可在战斗外使用；
+- 召唤物要持久存在、可放入地图，只有被击杀或魔法结束才移除；
+- 夺舍是局内状态，按「战斗轮次 + 战斗外被夺舍 Token 移动次数」的充能池计时；
+- 要有统一的局内状态（重伤 / 倒地 / 昏迷 / 濒死 / 死亡 + 自定义法术状态）；
+- 同一房间支持多场战斗、参与角色互斥、必须同场景（本轮的场景校验已落地，多战斗 UI 仍是待办）。
+
+### 1. 规则层：GameCondition
+- 新增 `packages/rules/src/conditions.ts`：
+  - `GameCondition { id, type, sourceActorId, controllerId, sceneId, duration, visibility, data }`；
+  - 持续单位 `ROUND / CHARGE / MINUTE / HOUR / DAY / NARRATIVE`；
+  - 核心状态 `MAJOR_WOUND / PRONE / UNCONSCIOUS / DYING / DEAD / INSANITY`，由 HP / CON / SAN 规则驱动；
+  - 自定义状态（POSSESS / STUN / CONTROL / ARMOR / DOT / POISON / DISEASE / CURSE…）允许任意 key；
+  - 纯函数：`parseConditions / makeCondition / tickConditions / upsert / remove / possessChargeRemaining`。
+- `packages/rules/src/magic.ts`：`canCastOutsideCombat` / `outOfCombatBlockReason`，战斗外只放行治疗 / 回复 / 护甲 / 状态 / 净化 / 召唤 / 夺舍，拒绝 DAMAGE / DOT / MP_DRAIN / SAN_LOSS。
+
+### 2. 战斗层
+- `packages/combat/src/conditions.ts`：核心状态派生、夺舍初值还原、护甲 / 夺舍状态视图、`persistableConditions`（只把核心状态、POSSESS、部分自定义状态写回局内）。
+- `CombatParticipantState` 新增 `possessCharges`、`conditions`；移除 `possessUntilRound`。
+- POSSESS 改为充能池：`possessCharges = durationTurns`，每经过 1 个行动轮次消耗 1 格，耗尽立即归还控制权。
+- `filterCombatForViewer` 下发 `possessCharges` 与可见的 `conditions`；`canControl` 只在夺舍者与目标同场战斗时把控制权交给夺舍者。
+
+### 3. 房间层
+- `GameCharacter.conditions` / `Card.stats.conditions` 与战斗双向同步：开局读入 `ParticipantInit.conditions`，战斗结束把 `persistableConditions` 写回（玩家 → GameCharacter，NPC / 召唤物 → Card.stats）。
+- `NpcStatsSchema` 增加 `conditions / summoned / summonOrigin / summonKey / aliases`，避免 JSON 往返被 zod 剥掉。
+- 被夺舍 Token 每完成一次 `scene:token:move` 消耗 1 格充能（`apps/web/src/server/magic/conditions.ts`），为 0 时拒绝继续移动并广播 `scene:possession:expired`。
+- 持久召唤：`apps/web/src/server/magic/summons.ts` 把召唤单位落成持久 NPC 卡，并在施法者当前场景自动放 Token；被击杀 / 召唤到期时删卡删 Token；关闭房间魔法时 `removeSummonCards` 清理全部召唤物。
+- 战斗外施法：新增 `apps/web/src/server/actions/magic.ts` + `apps/web/src/server/magic/out-of-combat.ts`，房间页新增 `RoomMagicPanel`（施法者 / 目标 / 法术三个下拉）。支持 HEAL / MP_RESTORE / SAN_RESTORE / ARMOR / STATUS / CLEANSE / SUMMON / POSSESS；状态 key 未定义时明确报错。
+- 场景隔离：`createCombatRecord` 增加 `validateCombatPlacement`：参战单位只要有一方已有 Token，就要求全体同场景；并校验进行中战斗席位互斥。迁移策略是「都没入地图时保留旧行为」，避免尚未使用地图的房间开不了战。
+
+### 验证
+- `npm run typecheck` PASS；`npm test` 214 tests（formula 50 / rules 82 / combat 79）。
+- `verify:entity-normalization`、`verify:npc-weapons` PASS。
+- `npm run build --workspace @touhou/web` PASS。
+- GitHub Actions App 部署成功（verify → build-and-push → deploy）。
+
+### 仍未完成 / 注意
+- **同一房间多场战斗 UI 未落地**：DB 与 combatId 寻址本身支持多场，但房间页 / `RoomCombatPanel` / `apps/web/src/server/socket/index.ts` 仍用 `combat.findFirst({ roomId, endedAt: null })` 取第一场；要做多 tab 需要把这些展示入口改成列表，并在战斗结束 / 开始时重算 `Room.status`。
+- 场景隔离目前只校验「已有 Token 的单位必须同场景」；`listSelectableUnits` / `CombatUnitPicker` 还没有把「未入场」直接置灰，KP 选中未入场的单位会在提交时报错。
+- `apps/web/scripts/verify-n8n-workflow.ts` 仍是为旧的单节点工作流写的，现工作流已升级成多 Agent 路由，脚本识别的节点名不存在。这是历史遗留，与本轮改动无关。
