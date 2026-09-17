@@ -122,6 +122,7 @@ export const MAGIC_EFFECT_TYPES = [
   "STATUS",
   "ARMOR",
   "SUMMON",
+  "POSSESS",
   "DOT",
   "STUN",
   "CONTROL",
@@ -177,6 +178,11 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     count: ExprSchema.default("1"),
     /** 持续行动轮次；0 表示直到战斗结束。 */
     durationTicks: ExprSchema.default("0")
+  }),
+  z.object({
+    type: z.literal("POSSESS"),
+    /** 夺舍充能池格数：每经过 1 个战斗轮次或 1 次被夺舍 Token 移动消耗 1 格。 */
+    durationTurns: ExprSchema.default("1")
   }),
   z.object({
     type: z.literal("DOT"),

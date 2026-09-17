@@ -1,6 +1,8 @@
 import type { MagicEffect, MagicSpell, MagicTargeting } from "./schema";
 
-const OFFENSIVE_EFFECTS = new Set(["DAMAGE", "MP_DRAIN", "SAN_LOSS", "DOT", "STUN", "CONTROL"]);
+const OFFENSIVE_EFFECTS = new Set(["DAMAGE", "MP_DRAIN", "SAN_LOSS", "DOT", "STUN", "CONTROL", "POSSESS"]);
+/** 战斗外不能直接结算的效果：依赖战斗轮次、对抗或目标对抗。 */
+const OUT_OF_COMBAT_BLOCKED_EFFECTS = new Set(["DAMAGE", "DOT", "MP_DRAIN", "SAN_LOSS"]);
 const SUPPORTIVE_EFFECTS = new Set(["HEAL", "MP_RESTORE", "SAN_RESTORE", "STATUS", "ARMOR", "SUMMON", "CLEANSE"]);
 
 /** 兼容旧字段：damage 等价于一个 DAMAGE 指令。 */
@@ -30,4 +32,22 @@ export function isHostileSpell(spell: MagicSpell): boolean {
   const targeting = spellTargeting(spell);
   if (targeting === "SELF" || targeting === "ALLY") return false;
   return spellEffectsOf(spell).some((effect) => OFFENSIVE_EFFECTS.has(effect.type));
+}
+
+/**
+ * 是否允许在战斗外施放。
+ * 只排除依赖战斗结算的攻击性效果（伤害 / 持续伤害 / 吸 MP / 扣 SAN）；
+ * 治疗、回 MP / SAN、护甲、状态、净化、召唤、夺舍都允许战斗外使用。
+ */
+export function canCastOutsideCombat(spell: MagicSpell): boolean {
+  const effects = spellEffectsOf(spell);
+  if (effects.length === 0) return false;
+  return effects.every((effect) => OUT_OF_COMBAT_BLOCKED_EFFECTS.has(effect.type) === false);
+}
+
+/** 战斗外施法被阻止的原因；null 表示可以施放。 */
+export function outOfCombatBlockReason(spell: MagicSpell): string | null {
+  const blocked = spellEffectsOf(spell).filter((effect) => OUT_OF_COMBAT_BLOCKED_EFFECTS.has(effect.type));
+  if (blocked.length === 0) return null;
+  return "战斗外不能直接施放：「" + blocked.map((effect) => effect.type).join("、") + "」需要在战斗中结算";
 }

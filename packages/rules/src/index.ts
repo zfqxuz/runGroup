@@ -44,6 +44,39 @@ export type {
   MagicSpell
 } from "./schema";
 
+export {
+  GAME_CONDITION_UNITS,
+  CORE_CONDITION_TYPES,
+  KNOWN_CUSTOM_CONDITION_TYPES,
+  GAME_CONDITION_VISIBILITIES,
+  GameConditionSchema,
+  GameConditionDurationSchema,
+  parseConditions,
+  makeCondition,
+  newConditionId,
+  emptyDuration,
+  isCoreCondition,
+  findCondition,
+  findConditions,
+  hasCondition,
+  upsertCondition,
+  removeConditionById,
+  removeConditions,
+  tickConditions,
+  possessChargeRemaining
+} from "./conditions";
+
+export type {
+  GameCondition,
+  GameConditionInput,
+  GameConditionUnit,
+  GameConditionVisibility,
+  GameConditionDuration,
+  CoreConditionType,
+  MakeConditionInput,
+  TickConditionsResult
+} from "./conditions";
+
 export { RulePackError } from "./errors";
 export type { RulePackErrorCode } from "./errors";
 
@@ -110,7 +143,7 @@ export type { AttributeSetOption, PointBuyCheck } from "./attributes";
 export { isGrowthCheckPassed, resolveGrowthChecks } from "./growth";
 export type { GrowthCheckInput, GrowthCheckResult } from "./growth";
 
-export { spellEffectsOf, spellTargeting, isHostileSpell } from "./magic";
+export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";
 export { MAGIC_TARGETINGS, MAGIC_EFFECT_TYPES } from "./schema";
 export type { MagicEffect, MagicTargeting } from "./schema";
 export {
