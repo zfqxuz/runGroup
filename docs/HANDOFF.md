@@ -2064,6 +2064,13 @@ MagicEffect =
   同房间多场战斗改由应用层 `activeCombatEntityIds` 席位互斥保证单位不重复参战。
 - 排查方式：`select indexname, indexdef from pg_indexes where tablename='Combat';`
 
+### UI 冒烟（真实会话）
+- `scripts/ui-smoke-multi-combat.ts setup` 建真实房间 + 两场进行中战斗，`cleanup <roomId> <userId>` 清理。
+- 用真实账号（register + NextAuth credentials 登录）实际 GET：
+  - 房间页 HTTP 200，包含「本房有 2 场进行中的战斗」、两个 `/combat/<id>` 链接、「＋ 发起新战斗」；
+  - 战斗详情页 HTTP 200，正确显示该场参战单位；
+  - `combat/new` HTTP 200，提示已有 N 场并可继续发起。
+
 ### 仍未完成
 - `CombatUnitPicker` 尚未把「未入场 / 已在其它战斗」的单位置灰；冲突仍由服务端返回明确错误。
 - 战斗进行中对参战 Token 的跨场景移动目前没有独立入口，未额外加锁定。
