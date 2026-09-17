@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { io, type Socket } from "socket.io-client";
 import type { CombatView, ParticipantView } from "@touhou/combat";
 import DanmakuStage from "@/components/danmaku/DanmakuStage";
+import type { CombatItemOption } from "@/shared/combat-items";
+import { magicEffectLabel } from "@/shared/magic";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 import type {
   Ack,
@@ -54,6 +56,8 @@ interface Props {
   readonly spellIdsByParticipant: Readonly<Record<string, readonly string[]>>;
   /** combatParticipant.id -> 已装备的符卡（仅 TOUHOU）。 */
   readonly spellCardsByParticipant: Readonly<Record<string, readonly CombatSpellCardOption[]>>;
+  /** combatParticipant.id -> 已装备、可在战斗中使用的道具卡。 */
+  readonly itemOptionsByParticipant: Readonly<Record<string, readonly CombatItemOption[]>>;
   /** combatParticipant.id -> 立绘 / 头像 URL。 */
   readonly portraits: Readonly<Record<string, string>>;
 }
@@ -89,6 +93,8 @@ export default function CombatBoard(props: Props) {
   const [spellId, setSpellId] = useState("");
   const [spellTargetId, setSpellTargetId] = useState("");
   const [spellCardId, setSpellCardId] = useState("");
+  const [itemCardId, setItemCardId] = useState("");
+  const [itemTargetId, setItemTargetId] = useState("");
   const [actorId, setActorId] = useState("");
   const [chaseTargetId, setChaseTargetId] = useState("");
   const [chaseSkill, setChaseSkill] = useState("");
@@ -259,6 +265,31 @@ export default function CombatBoard(props: Props) {
   const activeSpellTargetId = spellTargetOptions.some((participant) => participant.id === spellTargetId)
     ? spellTargetId
     : (spellTargetOptions[0]?.id ?? "");
+
+  const actorItems = selectedActor === null ? [] : (props.itemOptionsByParticipant[selectedActor.id] ?? []);
+  const activeItemCardId = actorItems.some((item) => item.cardId === itemCardId)
+    ? itemCardId
+    : (actorItems[0]?.cardId ?? "");
+  const selectedItem = actorItems.find((item) => item.cardId === activeItemCardId) ?? null;
+  const itemTargetOptions =
+    selectedItem === null || selectedActor === null
+      ? []
+      : selectedItem.targetScope === "SELF" || selectedItem.targeting === "SELF"
+        ? [selectedActor]
+        : selectedItem.targetScope === "ALL"
+          ? []
+          : alive.filter((participant) => {
+              if (selectedItem.targeting === "ENEMY") {
+                return participant.id !== selectedActor.id && participant.kind !== selectedActor.kind;
+              }
+              if (selectedItem.targeting === "ALLY") {
+                return participant.id === selectedActor.id || participant.kind === selectedActor.kind;
+              }
+              return true;
+            });
+  const activeItemTargetId = itemTargetOptions.some((participant) => participant.id === itemTargetId)
+    ? itemTargetId
+    : (itemTargetOptions[0]?.id ?? "");
 
   const chaseCanControl =
     chaseActiveParticipant !== null && isChaseControlled(chaseActiveParticipant.id);
@@ -1142,6 +1173,57 @@ export default function CombatBoard(props: Props) {
                           ? selectedSpell.targeting === "ENEMY" ? "全体敌方（AOE，所有目标都要应对）" : selectedSpell.targeting === "ALLY" ? "全体友方" : "场上全体"
                           : selectedSpell.targeting === "ENEMY" ? "单体敌方" : selectedSpell.targeting === "ALLY" ? "单体友方" : "任意单体"}
                       {selectedSpell.effects.length === 0 ? "" : " · 效果：" + selectedSpell.effects.join(" + ")}
+                    </p>
+                  )}
+                </div>
+              ) : null}
+              {actorItems.length > 0 ? (
+                <div className="flex flex-col gap-2 rounded-lg border border-emerald-400/30 bg-emerald-400/5 p-2">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={activeItemCardId} onChange={(event) => setItemCardId(event.target.value)} className={inputClass + " flex-1"}>
+                      {actorItems.map((item) => (
+                        <option key={item.cardId} value={item.cardId}>
+                          {item.name}（{item.effects.map((effect) => magicEffectLabel(effect)).join(" + ")}
+                          {item.cost.mp > 0 ? " · MP " + item.cost.mp : ""}
+                          {item.cost.san === null ? "" : " · SAN " + item.cost.san}
+                          {item.cost.uses === null ? "" : " · 剩 " + item.cost.uses + " 次"}
+                          {item.cost.cooldownRounds > 0 ? " · CD " + item.cost.cooldownRounds + " 轮" : ""}）
+                        </option>
+                      ))}
+                    </select>
+                    {selectedItem !== null && selectedItem.targetScope !== "ALL" && selectedItem.targetScope !== "SELF" && selectedItem.targeting !== "SELF" ? (
+                      <select value={activeItemTargetId} onChange={(event) => setItemTargetId(event.target.value)} className={inputClass}>
+                        {itemTargetOptions.map((participant) => (
+                          <option key={participant.id} value={participant.id}>{participant.name}{participant.isSelf ? "（自己）" : ""}</option>
+                        ))}
+                      </select>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={selectedItem === null || (selectedItem.targetScope === "ONE" && selectedItem.targeting !== "SELF" && activeItemTargetId.length === 0)}
+                      onClick={() => {
+                        if (selectedItem === null) return;
+                        const target =
+                          selectedItem.targetScope === "SELF" || selectedItem.targeting === "SELF"
+                            ? selectedActor.id
+                            : selectedItem.targetScope === "ALL"
+                              ? null
+                              : activeItemTargetId;
+                        emitAction({ kind: "ITEM", itemCardId: selectedItem.cardId, targetId: target });
+                      }}
+                      className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-400 disabled:opacity-40"
+                    >
+                      使用道具
+                    </button>
+                  </div>
+                  {selectedItem === null ? null : (
+                    <p className="text-[10px] text-emerald-200/70">
+                      目标：{selectedItem.targetScope === "SELF" || selectedItem.targeting === "SELF"
+                        ? "自己"
+                        : selectedItem.targetScope === "ALL"
+                          ? selectedItem.targeting === "ENEMY" ? "全体敌方" : selectedItem.targeting === "ALLY" ? "全体友方" : "场上全体"
+                          : selectedItem.targeting === "ENEMY" ? "单体敌方" : selectedItem.targeting === "ALLY" ? "单体友方" : "任意单体"}
+                      {" · 效果：" + selectedItem.effects.map((effect) => magicEffectLabel(effect)).join(" + ")}
                     </p>
                   )}
                 </div>

@@ -3,7 +3,9 @@ import type {
   AttributeSet,
   CheckResult,
   DerivedStats,
-  GameCondition
+  GameCondition,
+  MagicEffect,
+  MagicTargeting
 } from "@touhou/rules";
 
 export type CombatMode = 'INITIATIVE' | 'ATB';
@@ -111,6 +113,10 @@ export interface CombatParticipantState {
   /** 需要强制跳过行动的剩余次数（眩晕 / 控制）。 */
   stunActions?: number;
   controlActions?: number;
+  /** 道具剩余使用次数：cardId -> 剩余次数。仅记录有限次道具。 */
+  itemUsesLeft?: Record<string, number>;
+  /** 道具冷却到期轮次：cardId -> 可再次使用的轮次。 */
+  itemCooldownUntil?: Record<string, number>;
 }
 /**
  * 召唤模板。服务端从房间内独立 NPC 卡解析后塞进 ActionSubmission，
@@ -155,6 +161,11 @@ export interface ActionSubmission {
   readonly status?: { readonly key: string; readonly stacks: number };
   /** SUMMON 法术的服务端解析结果；没有时由引擎使用通用兜底召唤物。 */
   readonly summonTemplate?: SummonTemplate;
+  /** 道具卡：服务端按卡牌数据解析出的通用效果。 */
+  readonly itemCardId?: string;
+  readonly effects?: readonly MagicEffect[];
+  readonly targeting?: MagicTargeting;
+  readonly targetScope?: "SELF" | "ONE" | "ALL";
 }
 
 export type LogField = number | string | boolean | null;

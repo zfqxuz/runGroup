@@ -9,6 +9,7 @@ import {
 } from "@touhou/combat";
 import { compileRulePack, type CompiledRulePack } from "@touhou/rules";
 import { loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "./options";
+import { loadItemsByParticipant, type CombatItemOption } from "./items";
 import { loadSpellcardsByParticipant } from "./spellcards";
 import { prisma } from "@/server/db/prisma";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
@@ -30,6 +31,8 @@ export interface CombatRuntime {
   attackOptions: Map<string, readonly CombatAttackOption[]>;
   /** participant.id -> 已装备的符卡。只在 TOUHOU 房间填充。 */
   readonly spellcardsByParticipant: ReadonlyMap<string, readonly CombatSpellCardOption[]>;
+  /** participant.id -> 已装备、可用于战斗的道具卡。 */
+  readonly itemsByParticipant: ReadonlyMap<string, readonly CombatItemOption[]>;
   pendingReactions: Map<string, string>;
   reactions: Record<string, DefenseReaction>;
   /** 追逐中等待目标应对的一次攻击；null 表示没有待结算攻击。 */
@@ -140,6 +143,12 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       characterId: participant.characterId
     }))
   );
+  const itemsByParticipant = await loadItemsByParticipant(
+    state.participants.map((participant) => ({
+      id: participant.id,
+      characterId: participant.characterId
+    }))
+  );
   const publicCharacterIds = new Set<string>();
   for (const member of members) {
     if (member.statsPublic && member.activeCharacterId !== null) {
@@ -158,6 +167,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     attackSkills,
     attackOptions,
     spellcardsByParticipant,
+    itemsByParticipant,
     pendingReactions: new Map(),
     reactions: {},
     chaseAttack: null,

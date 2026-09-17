@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import ImageUpload from "@/components/upload/ImageUpload";
-import { copyCardTemplateAction, deleteCardAction, setCardTemplateAction } from "@/server/actions/card";
+import { convertCardKindAction, copyCardTemplateAction, deleteCardAction, setCardTemplateAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
@@ -102,6 +102,15 @@ export default async function CardsLibraryPage() {
                   >
                     编辑
                   </Link>
+                  {card.type !== "WEAPON" && card.type !== "ITEM" ? null : (
+                    <form action={convertCardKindAction} className="flex-1">
+                      <input type="hidden" name="cardId" value={card.id} />
+                      <input type="hidden" name="targetKind" value={card.type === "WEAPON" ? "ITEM" : "WEAPON"} />
+                      <button type="submit" className="w-full rounded-md border border-sky-400/40 px-2 py-1 text-[11px] text-sky-300 transition hover:bg-sky-400/10">
+                        {card.type === "WEAPON" ? "转为道具" : "转为武器"}
+                      </button>
+                    </form>
+                  )}
                   <form action={deleteCardAction} className="flex-1">
                     <input type="hidden" name="cardId" value={card.id} />
                     <button type="submit" className="w-full rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/40 transition hover:border-red-400/40 hover:text-red-300">

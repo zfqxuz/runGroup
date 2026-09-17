@@ -31,6 +31,7 @@ import {
   type CombatRuntime
 } from "@/server/combat/runtime";
 import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, reactionTypesForAttack, validateCombatAction, type WeaponLike } from "@/server/combat/options";
+import { consumeItemUse, prepareItemAction, type CombatItemOption } from "@/server/combat/items";
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
 import { saveCombatState } from "@/server/combat/setup";
 import { findSummonCard, summonTemplateFromCard } from "@/server/combat/summon";
@@ -363,7 +364,8 @@ async function handleAction(
     sanCost: asString(raw.sanCost),
     spellcardMode: raw.spellcardMode === "DECLARATION" || raw.spellcardMode === "CONSUMPTION" ? raw.spellcardMode : undefined,
     declarationHp: asNumber(raw.declarationHp),
-    declarationDurationTicks: asNumber(raw.declarationDurationTicks)
+    declarationDurationTicks: asNumber(raw.declarationDurationTicks),
+    itemCardId: asString(raw.itemCardId)
   };
   if (action.kind === "MAGIC") {
     const spell = runtime.pack.pack.magic?.spells.find(
@@ -398,6 +400,7 @@ async function handleAction(
     }
   }
 
+  let preparedItem: CombatItemOption | null = null;
   if (action.kind === "SPELLCARD") {
     const actor = findParticipant(runtime.state, requestedActor);
     if (actor === undefined) {
@@ -411,6 +414,21 @@ async function handleAction(
       return;
     }
     action = prepared.action;
+  }
+  if (action.kind === "ITEM") {
+    const actor = findParticipant(runtime.state, requestedActor);
+    if (actor === undefined) {
+      ack({ ok: false, error: "行动单位不存在" });
+      return;
+    }
+    const cards = runtime.itemsByParticipant.get(actor.id) ?? [];
+    const prepared = prepareItemAction(runtime.pack, actor, cards, action, runtime.state.round);
+    if (prepared.ok === false) {
+      ack({ ok: false, error: prepared.error });
+      return;
+    }
+    action = prepared.action;
+    preparedItem = prepared.item;
   }
   if (action.kind === "FLEE") {
     if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") {
@@ -470,13 +488,17 @@ async function handleAction(
     ack({ ok: false, error: "现在不能行动，或该单位未就绪" });
     return;
   }
+  if (preparedItem !== null) {
+    const itemActor = findParticipant(runtime.state, requestedActor);
+    if (itemActor !== undefined) consumeItemUse(itemActor, preparedItem, runtime.state.round);
+  }
   const reactionTargetIds = reactionTargetIdsForAction(runtime.pack, runtime.state, action);
   if (reactionTargetIds.length > 0) {
     const canFlee =
-      (action.kind === "DANMAKU" || action.kind === "MAGIC") &&
+      (action.kind === "DANMAKU" || action.kind === "MAGIC" || action.kind === "ITEM") &&
       reactionTargetIds.length === 1;
     const magicOptions: CombatReactionRequest["options"] | undefined =
-      action.kind === "MAGIC"
+      action.kind === "MAGIC" || action.kind === "ITEM"
         ? canFlee
           ? ["PASS", "DODGE", "FLEE"]
           : ["PASS", "DODGE"]
@@ -533,7 +555,7 @@ async function handleReaction(
     raw.type === "FLEE" &&
     runtime.chaseAttack === null &&
     pendingActorId !== undefined &&
-    (pendingAction?.kind === "DANMAKU" || pendingAction?.kind === "MAGIC") &&
+    (pendingAction?.kind === "DANMAKU" || pendingAction?.kind === "MAGIC" || pendingAction?.kind === "ITEM") &&
     runtime.pendingReactions.size === 1;
   const allowedTypes = allowedReactionTypes(runtime.pack);
   if (canFleeReaction === false && allowedTypes.includes(raw.type) === false) {

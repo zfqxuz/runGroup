@@ -8,6 +8,8 @@ import KpValueEditor from "@/components/room/KpValueEditor";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import { auth } from "@/server/auth";
 import { combatFeatureFlags, loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "@/server/combat/options";
+import { loadItemsByParticipant } from "@/server/combat/items";
+import type { CombatItemOption } from "@/shared/combat-items";
 import { loadSpellcardsByParticipant } from "@/server/combat/spellcards";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 import { prisma } from "@/server/db/prisma";
@@ -114,6 +116,7 @@ export default async function CombatDetailPage({
           where: { id: { in: characterIds } },
           select: {
             id: true,
+            userId: true,
             portrait: { select: { url: true, thumbnailUrl: true } },
             avatar: { select: { url: true, thumbnailUrl: true } }
           }
@@ -125,6 +128,27 @@ export default async function CombatDetailPage({
           select: { id: true, imageUrl: true, thumbnailUrl: true }
         })
   ]);
+  const itemOptionsByParticipant: Record<string, readonly CombatItemOption[]> = {};
+  if (snapshot !== null) {
+    const state = snapshot.state as unknown as CombatState;
+    const ownedCharacterIds = new Set(
+      characters.filter((character) => character.userId === session.user.id).map((character) => character.id)
+    );
+    const items = await loadItemsByParticipant(
+      state.participants.map((participant) => ({
+        id: participant.id,
+        characterId: participant.characterId
+      }))
+    );
+    for (const [participantId, options] of items) {
+      const participant = state.participants.find((item) => item.id === participantId);
+      const isMine = participant?.characterId !== null && participant?.characterId !== undefined
+        ? ownedCharacterIds.has(participant.characterId)
+        : false;
+      if (membership.role === "KP" || isMine) itemOptionsByParticipant[participantId] = options;
+    }
+  }
+
   const characterImage = new Map(
     characters.map((character) => [
       character.id,
@@ -211,6 +235,7 @@ export default async function CombatDetailPage({
           effects: magicSpellEffectLabels(spell)
         }))}
         attackOptionsByParticipant={attackOptionsByParticipant}
+        itemOptionsByParticipant={itemOptionsByParticipant}
         spellIdsByParticipant={spellIdsByParticipant}
         spellCardsByParticipant={spellCardsByParticipant}
         portraits={portraits}

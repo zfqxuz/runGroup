@@ -1224,6 +1224,27 @@ export function reactionTargetIdsForAction(
       .map((target) => target.id);
   }
 
+  if (action.kind === "ITEM") {
+    const effects = action.effects ?? [];
+    if (effects.length === 0) return [];
+    const targeting = action.targeting ?? "ENEMY";
+    if (targeting === "ALLY" || targeting === "SELF") return [];
+    const spell: MagicSpell = {
+      id: action.itemCardId ?? "item",
+      name: action.name ?? "道具",
+      skill: "ITEM",
+      mpCost: "0",
+      sanCost: "0",
+      target: action.targetScope ?? "ONE",
+      targeting,
+      effects: [...effects]
+    };
+    if (isHostileSpell(spell) === false) return [];
+    return resolveMagicTargets(state, actor, spell, requestedTargetId)
+      .filter((target) => target.id !== actor.id)
+      .map((target) => target.id);
+  }
+
   return [];
 }
 
@@ -1231,16 +1252,18 @@ function applyMagicEffect(
   ctx: ResolveContext,
   actor: CombatParticipantState,
   target: CombatParticipantState,
-  spell: MagicSpell,
+  spell: { readonly id: string; readonly name: string },
   effect: MagicEffect,
   defense: { readonly type: DefenseType; readonly success: boolean },
-  submission: ActionSubmission
+  submission: ActionSubmission,
+  logKind: LogEntry["kind"] = "SPELLCARD",
+  verb = "施放"
 ): void {
   const state = ctx.state;
   const meta = { spellId: spell.id, spell: spell.name };
   const log = (text: string, data: Record<string, unknown> = {}): void => {
     pushLog(state, {
-      kind: "SPELLCARD",
+      kind: logKind,
       actorId: actor.id,
       targetId: target.id,
       text,
@@ -1283,7 +1306,7 @@ function applyMagicEffect(
     const amount = rollEffectDice(effect.amount, state, "magic-heal:" + actor.id + ":" + spell.id + ":" + target.id);
     const before = target.hp;
     target.hp = Math.min(target.maxHp, target.hp + amount);
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP", { heal: target.hp - before });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP", { heal: target.hp - before });
     return;
   }
 
@@ -1291,7 +1314,7 @@ function applyMagicEffect(
     const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
     const before = target.mp;
     target.mp = Math.min(target.maxMp, target.mp + amount);
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 恢复 " + (target.mp - before) + " MP", { mp: target.mp - before });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.mp - before) + " MP", { mp: target.mp - before });
     return;
   }
 
@@ -1300,7 +1323,7 @@ function applyMagicEffect(
     const drained = Math.min(target.mp, amount);
     target.mp -= drained;
     actor.mp = Math.min(actor.maxMp, actor.mp + drained);
-    log(actor.name + " 施放「" + spell.name + "」 → 抽取 " + target.name + " " + drained + " MP", { drained });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → 抽取 " + target.name + " " + drained + " MP", { drained });
     return;
   }
 
@@ -1308,7 +1331,7 @@ function applyMagicEffect(
     const amount = rollEffectDice(effect.amount, state, "magic-san-loss:" + actor.id + ":" + spell.id + ":" + target.id);
     const before = target.san;
     target.san = Math.max(0, target.san - amount);
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 失去 " + (before - target.san) + " SAN", { sanLoss: before - target.san });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 失去 " + (before - target.san) + " SAN", { sanLoss: before - target.san });
     return;
   }
 
@@ -1316,7 +1339,7 @@ function applyMagicEffect(
     const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
     const before = target.san;
     target.san = Math.min(target.maxSan, target.san + amount);
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 恢复 " + (target.san - before) + " SAN", { sanGain: target.san - before });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.san - before) + " SAN", { sanGain: target.san - before });
     return;
   }
 
@@ -1332,7 +1355,7 @@ function applyMagicEffect(
     target.armor = Math.max(0, Math.floor(target.armor ?? 0) + amount);
     target.maxArmor = Math.max(target.maxArmor ?? 0, target.armor);
     target.armorExpiresAtRound = duration > 0 ? state.round + duration : null;
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 获得护甲 " + amount + "（当前 " + target.armor + "）", { armor: amount, armorRemaining: target.armor, armorExpiresAtRound: target.armorExpiresAtRound ?? 0 });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 获得护甲 " + amount + "（当前 " + target.armor + "）", { armor: amount, armorRemaining: target.armor, armorExpiresAtRound: target.armorExpiresAtRound ?? 0 });
     return;
   }
 
@@ -1380,7 +1403,7 @@ function applyMagicEffect(
         kind: "SPELLCARD",
         actorId: actor.id,
         targetId: summoned.id,
-        text: actor.name + " 施放「" + spell.name + "」 → 召唤了「" + summoned.name + "」",
+        text: actor.name + " " + verb + "「" + spell.name + "」 → 召唤了「" + summoned.name + "」",
         data: { spellId: spell.id, spell: spell.name, summonId: summoned.id, summonName: summoned.name }
       });
     }
@@ -1400,7 +1423,7 @@ function applyMagicEffect(
       dotSource: spell.name,
       dotLastTick: -1
     });
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 获得持续伤害 " + amount + "（" + duration + " tick）", { dot: amount, duration });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 获得持续伤害 " + amount + "（" + duration + " tick）", { dot: amount, duration });
     return;
   }
 
@@ -1409,14 +1432,14 @@ function applyMagicEffect(
     target.stunActions = Math.max(target.stunActions ?? 0, actions);
     target.atbValue = 0;
     target.isReady = false;
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 眩晕，跳过 " + actions + " 次行动", { stunActions: actions });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 眩晕，跳过 " + actions + " 次行动", { stunActions: actions });
     return;
   }
 
   if (effect.type === "CONTROL") {
     const actions = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationActions, actor.vars));
     target.controlActions = Math.max(target.controlActions ?? 0, actions);
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 被控制，跳过 " + actions + " 次行动", { controlActions: actions });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 被控制，跳过 " + actions + " 次行动", { controlActions: actions });
     return;
   }
 
@@ -1424,7 +1447,7 @@ function applyMagicEffect(
     const charges = Math.max(1, evaluateEffectNumber(ctx.pack, effect.durationTurns, actor.vars));
     target.possessedBy = actor.id;
     target.possessCharges = charges;
-    log(actor.name + " 施放「" + spell.name + "」 → 夺舍 " + target.name + "，充能 " + charges + " 格（战斗轮次 + 被夺舍 Token 移动共用）", {
+    log(actor.name + " " + verb + "「" + spell.name + "」 → 夺舍 " + target.name + "，充能 " + charges + " 格（战斗轮次 + 被夺舍 Token 移动共用）", {
       possession: true,
       possessedBy: actor.id,
       possessCharges: charges
@@ -1434,7 +1457,7 @@ function applyMagicEffect(
 
   if (effect.type === "CLEANSE") {
     clearStatuses(target, effect.keys);
-    log(actor.name + " 施放「" + spell.name + "」 → 净化 " + target.name + " 的 " + (effect.keys.length === 0 ? "持续伤害 / 控制" : effect.keys.join("、")), { cleanse: true });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → 净化 " + target.name + " 的 " + (effect.keys.length === 0 ? "持续伤害 / 控制" : effect.keys.join("、")), { cleanse: true });
   }
 }
 
@@ -1488,15 +1511,92 @@ function resolveMagic(
   actor.mp = Math.max(0, actor.mp - mpCost);
   actor.san = Math.max(0, actor.san - sanCost);
 
+  resolveTargetedEffects(ctx, actor, submission, spell, { mpCost, sanCost }, { logKind: "SPELLCARD", verb: "施放" });
+}
+
+/**
+ * 道具行动：把道具卡上的通用效果当作一次「法术」结算。
+ *
+ * 道具的 MP / SAN 消耗由服务端按卡牌数据写入 submission；
+ * 使用次数与冷却在 socket 层校验并扣减，这里只负责效果。
+ */
+function resolveItem(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
+  const state = ctx.state;
+  const effects = submission.effects ?? [];
+  const itemName = submission.name ?? "道具";
+  if (effects.length === 0) {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: actor.id,
+      targetId: submission.targetId ?? null,
+      text: actor.name + " 使用了「" + itemName + "」，但没有可结算效果"
+    });
+    return;
+  }
+
+  const mpCost = Math.max(0, Math.floor(submission.mpCost ?? 0));
+  let sanCost = 0;
+  if (typeof submission.sanCost === "string" && submission.sanCost.trim().length > 0) {
+    try {
+      sanCost = Math.max(
+        0,
+        rollDice(parseDice(submission.sanCost), nextRollRng(state, "item-san:" + actor.id + ":" + (submission.itemCardId ?? itemName))).total
+      );
+    } catch {
+      sanCost = 0;
+    }
+  }
+  actor.mp = Math.max(0, actor.mp - mpCost);
+  actor.san = Math.max(0, actor.san - sanCost);
+
+  const targetScope = submission.targetScope ?? (submission.targeting === "SELF" ? "SELF" : "ONE");
+  const spell: MagicSpell = {
+    id: submission.itemCardId ?? ("item:" + itemName),
+    name: itemName,
+    skill: "ITEM",
+    mpCost: "0",
+    sanCost: "0",
+    target: targetScope,
+    targeting: submission.targeting ?? (targetScope === "SELF" ? "SELF" : "ENEMY"),
+    effects: [...effects]
+  };
+  resolveTargetedEffects(ctx, actor, submission, spell, { mpCost, sanCost }, { logKind: "ACTION", verb: "使用" });
+}
+
+/**
+ * 对一组目标结算一个「效果集合」。
+ *
+ * 魔法与道具共用：调用方负责把卡牌 / 法术解析成同一套 MagicSpell 描述与消耗，
+ * 这里只处理目标选择、应对窗口（闪避 / 防御）、逐条效果结算。
+ */
+function resolveTargetedEffects(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  spell: MagicSpell,
+  costs: { readonly mpCost: number; readonly sanCost: number },
+  options: { readonly logKind: LogEntry["kind"]; readonly verb: string }
+): void {
+  const state = ctx.state;
+  const mpCost = costs.mpCost;
+  const sanCost = costs.sanCost;
+  const verb = options.verb;
+  const logKind = options.logKind;
+  const meta = { spellId: spell.id, spell: spell.name };
+
   const requestedTargetId = submission.targetId ?? null;
   const targets = resolveMagicTargets(state, actor, spell, requestedTargetId);
   if (targets.length === 0) {
     pushLog(state, {
-      kind: "SPELLCARD",
+      kind: logKind,
       actorId: actor.id,
       targetId: requestedTargetId,
-      text: actor.name + " 施放「" + spell.name + "」，但目标已不在场，消耗 MP " + mpCost + " / SAN " + sanCost,
-      data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
+      text: actor.name + " " + verb + "「" + spell.name + "」，但目标已不在场，消耗 MP " + mpCost + " / SAN " + sanCost,
+      data: { ...meta, mpCost, sanCost }
     });
     return;
   }
@@ -1522,11 +1622,11 @@ function resolveMagic(
       });
       if (isSuccess(dodgeCheck.result)) {
         pushLog(state, {
-          kind: "SPELLCARD",
+          kind: logKind,
           actorId: actor.id,
           targetId: target.id,
           text: target.name + " 成功避开了「" + spell.name + "」",
-          data: { spellId: spell.id, spell: spell.name, evaded: true, mpCost, sanCost }
+          data: { ...meta, evaded: true, mpCost, sanCost }
         });
         continue;
       }
@@ -1537,18 +1637,18 @@ function resolveMagic(
 
     if (effects.length === 0) {
       pushLog(state, {
-        kind: "SPELLCARD",
+        kind: logKind,
         actorId: actor.id,
         targetId: target.id,
-        text: actor.name + " 施放「" + spell.name + "」 → " + target.name + "（无直接效果）",
-        data: { spellId: spell.id, spell: spell.name, mpCost, sanCost }
+        text: actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + "（无直接效果）",
+        data: { ...meta, mpCost, sanCost }
       });
       continue;
     }
 
     for (const effect of effects) {
       if (target.defeated) break;
-      applyMagicEffect(ctx, actor, target, spell, effect, defense, submission);
+      applyMagicEffect(ctx, actor, target, spell, effect, defense, submission, logKind, verb);
     }
   }
 }
@@ -1577,6 +1677,10 @@ function resolveOne(
       pushLog(state, { kind: "DEFEAT", actorId: actor.id, targetId: null, text: `${actor.name} 脱离了战斗` });
       return;
     case "ITEM": {
+      if (submission.effects !== undefined && submission.effects.length > 0) {
+        resolveItem(ctx, actor, submission);
+        return;
+      }
       const status = submission.status;
       if (status === undefined) {
         pushLog(state, { kind: "ACTION", actorId: actor.id, targetId, text: `${actor.name} 使用了道具` });

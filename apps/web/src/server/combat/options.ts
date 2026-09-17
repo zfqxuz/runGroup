@@ -359,6 +359,7 @@ export interface CombatActionContext {
       readonly defeated: boolean;
       readonly faction?: string;
       readonly spells?: readonly string[];
+      readonly mp?: number;
     }[];
   };
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
@@ -416,6 +417,33 @@ export function validateCombatAction(
       target.id !== actor.id
     ) {
       return "这个法术只能对友方使用";
+    }
+  }
+  if (action.kind === "ITEM") {
+    const effects = action.effects ?? [];
+    if (effects.length === 0) return "这个道具没有可结算效果";
+    const actor = context.state.participants.find((item) => item.id === action.actorId);
+    if (actor === undefined) return "使用者不在场";
+    if ((action.mpCost ?? 0) > (actor.mp ?? 0)) return "灵力不足";
+    for (const effect of effects) {
+      if (effect.type === "STATUS" && context.pack.statusEffects[effect.key] === undefined) {
+        return "道具使用了规则包未定义的状态 key：「" + effect.key + "」";
+      }
+    }
+    const targeting = action.targeting ?? "ENEMY";
+    const scope = action.targetScope ?? "ONE";
+    if (scope === "SELF" || targeting === "SELF") return null;
+    if (scope === "ALL") return null;
+    const targetId = action.targetId ?? null;
+    if (targetId === null) return "使用道具需要目标";
+    const target = context.state.participants.find((item) => item.id === targetId);
+    if (target === undefined || target.defeated) return "目标已不在场";
+    if (targeting === "ENEMY" && target.id === actor.id) return "这个道具不能对自己使用";
+    if (targeting === "ENEMY" && target.faction !== undefined && actor.faction !== undefined && target.faction === actor.faction) {
+      return "这个道具只能对敌方使用";
+    }
+    if (targeting === "ALLY" && target.faction !== undefined && actor.faction !== undefined && target.faction !== actor.faction && target.id !== actor.id) {
+      return "这个道具只能对友方使用";
     }
   }
   if (action.kind === "OUT_OF_RULE") {

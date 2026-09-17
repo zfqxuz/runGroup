@@ -2238,7 +2238,55 @@ MagicEffect =
 ### 4. 装备唯一性
 - `equipCardAction`：已装备给某角色的卡禁止直接改绑到另一个角色，必须先卸下。
 
+### 仍未完成（已在第 59 节补齐）
+- 战斗内「使用道具」的真实结算 → 见第 59.1 节。
+- 装备时「选择效果」的实例化 → 见第 59.2 节。
+- 道具 ↔ 武器的类型互转 UI → 见第 59.3 节。
+
+## 59. 道具卡落地：战斗内使用 / 装备选效果 / 道具↔武器互转（本轮）
+
+补齐第 58 节列出的三项缺口，并修掉一个由此暴露的真实 bug。
+
+### 1. 战斗内「使用道具」真实结算
+- 引擎（`packages/combat`）：
+  - `ActionSubmission` 新增 `itemCardId / effects / targeting / targetScope`；
+  - `resolveItem` 把道具效果当作一次「法术」走同一套 `resolveTargetedEffects`（目标选择 / 闪避 / 防御 / 逐条效果结算），日志用「使用」而非「施放」；
+  - `reactionTargetIdsForAction` 支持 ITEM：带攻击性效果的道具会进入应对窗口；
+  - `CombatParticipantState` 新增 `itemUsesLeft / itemCooldownUntil`，随战斗快照持久化。
+- 服务端：
+  - 新增 `server/combat/items.ts`：`loadItemsByParticipant`（只读已装备、`usableIn` 含 COMBAT 的 ITEM 卡，按 `equippedEffects` 只输出生效效果）、`prepareItemAction`（客户端只能传 cardId，效果 / 目标 / 消耗以卡牌数据为准，校验次数 / 冷却 / MP / 状态 key）、`consumeItemUse`（扣次数 + 写冷却）。
+  - `socket/combat.ts`：ITEM 行动走服务端解析；提交成功后扣次数 / 冷却；道具攻击接入应对窗口。
+  - `validateCombatAction` 增加 ITEM 的目标阵营 / 范围 / 状态 key / MP 校验。
+- UI：`CombatBoard` 新增「使用道具」区块（下拉 + 目标选择 + 效果说明）；战斗页按「本人角色 / KP」过滤后下发 `itemOptionsByParticipant`，不泄露他人道具。
+
+### 2. 装备时选择生效效果
+- `CardBaseStatsSchema` 新增：
+  - `targetScope: SELF|ONE|ALL`（目标阵营之外的作用范围）；
+  - `selectableEffects: number[]`（可由玩家在装备时勾选的效果下标，未列出的固定生效）；
+  - `equippedEffects: number[] | null`（实际生效下标；null = 全部）。
+- `activeCardEffects(stats)`：按 `equippedEffects` 过滤实际生效效果。
+- `CardBuilder` 新增「作用范围」与「装备时可选效果」勾选，保存进卡牌 stats。
+- 角色页「从我的卡库装备」：有可选效果的卡会列出每个效果，可选项可勾选、固定项显示「固定生效」；`equipCardAction` 通过 `computeEquippedEffects` 写入 `equippedEffects`。已装备列表显示实际生效效果。
+
+### 3. 道具 ↔ 武器互转
+- 新增纯函数 `server/card/equipment.ts`：`computeEquippedEffects` 与 `convertCardStats`（通用字段原样保留、专属字段按目标类型重建）。
+- 新增 `convertCardKindAction`（FormData）：本人卡可在道具 / 武器间一键互转，转换后自动卸下；卡库列表出现「转为武器 / 转为道具」按钮。
+
+### 4. 修复：武器伤害正则拒绝 `+db`
+- `WeaponStatsSchema.damage` 原正则不允许 `1d3+db`、`1d8+2+db` 这类带伤害加值的表达式，而 `WEAPON_TYPES` 自动生成的就是这些值，导致用卡牌编辑器建武器 / 道具转武器会校验失败。
+- 已放宽为允许多个修正项与 `db`：`1d3+db` / `1d8+2+db` / `2d6` 均合法。
+
+### 5. 真实环境验证
+- `packages/combat/src/__tests__/item-effects.test.ts`：4 条单测（SELF 治疗 + MP、单体伤害进入应对、群体伤害、旧 status 兼容）。
+- 扩展 `apps/web/scripts/e2e-real-magic.ts`（真实角色 / 真实 NPC 卡 / 真实场景地图 Token / 直连真实库）：
+  - 装备时勾选效果只让选中项生效；
+  - 装备效果选择算法（固定生效 + 勾选）；
+  - 道具 → 武器保留通用效果、非法转换被拒绝；
+  - 战斗内只加载已装备且可战斗使用的道具，且只带生效效果；
+  - 治疗道具真实回血、次数扣减、耗尽拒绝；
+  - 伤害道具真实扣血、冷却写入、冷却中拒绝。
+- 结果：`E2E REAL RESULT: passed=54 failed=0`（脚本支持 `E2E_SOURCE_CHARACTER_ID / E2E_SOURCE_NPC_ID` 覆盖来源角色与 NPC，便于本地真实库复跑）。
+
 ### 仍未完成
-- 战斗内「使用道具」的真实结算（目前只有 `ITEM` 行动类型占位）。
-- 修改装备时「选择效果」的实例化（同一张效果卡装备到角色时选生效项）。
-- 道具 ↔ 武器的类型互转 UI（现在编辑页可改 kind，但会按新 kind 重新校验 stats）。
+- 角色卡背景故事 / 调查员经历 / 法术一览 / 调查员伙伴的解析：完整解析结果已整理，等确认字段映射后再改解析器。
+- 装备时可选的 UI 目前是「装备表单内勾选」，已装备卡暂不能在原地改选（需卸下再装）。

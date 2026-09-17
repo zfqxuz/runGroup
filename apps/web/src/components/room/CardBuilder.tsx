@@ -5,10 +5,13 @@ import { useState } from "react";
 import { saveCard, type SaveCardResult } from "@/server/actions/card";
 import DanmakuPatternEditor from "@/components/danmaku/DanmakuPatternEditor";
 import MagicEffectComposer from "@/components/module/MagicEffectComposer";
+import { MAGIC_EFFECT_DEFINITIONS } from "@/shared/magic-effects";
 import {
   CARD_KIND_LABELS,
   CARD_TARGETINGS,
   CARD_TARGETING_LABELS,
+  CARD_TARGET_SCOPES,
+  CARD_TARGET_SCOPE_LABELS,
   CARD_USABLE_IN,
   ENHANCE_LABELS,
   ENHANCE_TYPES,
@@ -113,6 +116,18 @@ export default function CardBuilder(props: Props) {
       ? stringOr(stats0.targeting, "ENEMY")
       : "ENEMY"
   );
+  const [targetScope, setTargetScope] = useState<string>(
+    (CARD_TARGET_SCOPES as readonly string[]).includes(stringOr(stats0.targetScope, "ONE"))
+      ? stringOr(stats0.targetScope, "ONE")
+      : "ONE"
+  );
+  const [selectableEffects, setSelectableEffects] = useState<number[]>(() => {
+    const raw = stats0.selectableEffects;
+    if (Array.isArray(raw)) {
+      return raw.filter((item): item is number => typeof item === "number" && Number.isInteger(item) && item >= 0);
+    }
+    return [];
+  });
   const [costMp, setCostMp] = useState(numberOr(cost0.mp, numberOr(stats0.mpCost, 0)));
   const [costSan, setCostSan] = useState(stringOr(cost0.san, ""));
   const [costUses, setCostUses] = useState(cost0.uses === null || cost0.uses === undefined ? "" : String(cost0.uses));
@@ -137,10 +152,18 @@ export default function CardBuilder(props: Props) {
     }
   }
 
+  function toggleSelectable(index: number): void {
+    setSelectableEffects((current) =>
+      current.includes(index) ? current.filter((item) => item !== index) : [...current, index].sort((a, b) => a - b)
+    );
+  }
+
   function genericStats(): Record<string, unknown> {
     return {
       effects: parseEffects(),
       targeting,
+      targetScope,
+      selectableEffects,
       cost: {
         mp: costMp,
         san: costSan.trim().length === 0 ? null : costSan.trim(),
@@ -358,12 +381,44 @@ export default function CardBuilder(props: Props) {
             onChange={setEffectsJson}
           />
         </div>
+        {parseEffects().length === 0 ? null : (
+          <div className="mt-3 rounded-lg border border-white/10 bg-ink-900/50 p-3">
+            <p className="text-[11px] text-white/45">装备时可选效果：勾选后玩家可在装备时决定是否生效；不勾选表示固定生效</p>
+            <div className="mt-2 flex flex-col gap-1.5">
+              {parseEffects().map((effect, index) => {
+                const type = recordOf(effect).type;
+                const label =
+                  typeof type === "string"
+                    ? MAGIC_EFFECT_DEFINITIONS.find((definition) => definition.type === type)?.label ?? type
+                    : "效果 " + String(index + 1);
+                return (
+                  <label key={index} className="flex items-center gap-2 text-xs text-white/60">
+                    <input
+                      type="checkbox"
+                      checked={selectableEffects.includes(index)}
+                      onChange={() => toggleSelectable(index)}
+                    />
+                    {String(index + 1)}. {label}
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+        )}
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">目标</span>
+            <span className="text-xs text-white/50">目标阵营</span>
             <select value={targeting} onChange={(event) => setTargeting(event.target.value)} className={inputClass}>
               {CARD_TARGETINGS.map((item) => (
                 <option key={item} value={item}>{CARD_TARGETING_LABELS[item]}</option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">作用范围</span>
+            <select value={targetScope} onChange={(event) => setTargetScope(event.target.value)} className={inputClass}>
+              {CARD_TARGET_SCOPES.map((item) => (
+                <option key={item} value={item}>{CARD_TARGET_SCOPE_LABELS[item]}</option>
               ))}
             </select>
           </label>

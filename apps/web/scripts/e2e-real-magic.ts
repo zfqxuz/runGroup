@@ -24,11 +24,14 @@ import { removeSummonCards } from "../src/server/magic/summons";
 import { sceneHasActiveCombat } from "../src/server/scene/lock";
 import { cleanupDefeatedSummons } from "../src/server/socket/combat";
 import { findCondition, parseConditions } from "@touhou/rules";
-import { endCombat, resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
+import { endCombat, resolveImmediateAction, resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
+import { consumeItemUse, loadItemsByParticipant, prepareItemAction } from "../src/server/combat/items";
+import { computeEquippedEffects, convertCardStats } from "../src/server/card/equipment";
+import { activeCardEffects, ItemStatsSchema } from "../src/shared/card";
 
 const MARK = "E2E-" + Date.now().toString(36);
-const SOURCE_NPC_ID = "cmu409s9n005hcq5g9z9vbthp"; // 真实房间里的「食尸鬼（秘境使者）」
-const SOURCE_CHARACTER_ID = "cmtxofchd0001mx564v5ztjog"; // 真实角色「起」
+const SOURCE_NPC_ID = process.env.E2E_SOURCE_NPC_ID ?? "cmu409s9n005hcq5g9z9vbthp"; // 真实房间里的「食尸鬼（秘境使者）」
+const SOURCE_CHARACTER_ID = process.env.E2E_SOURCE_CHARACTER_ID ?? "cmtxofchd0001mx564v5ztjog"; // 真实角色「起」
 
 let pass = 0;
 let fail = 0;
@@ -182,6 +185,8 @@ async function main(): Promise<void> {
   check(spellById.size >= MAGIC_SPELLS.length, "真实规则包已加载测试法术", [...spellById.keys()]);
 
   let combatId: string | null = null;
+  // COMPENDIUM 道具卡不会随 Room / User 级联删除，需在 finally 里显式清理。
+  const createdItemCardIds: string[] = [];
   try {
     // ---------- 0.5 战斗外施法：持有者可见性 + 场景 / 合法目标门槛 ----------
     const ownView = await listOutOfCombatMagic({ roomId: room.id, userId: user.id, isKP: false, pack: effective.compiled });
@@ -477,10 +482,136 @@ async function main(): Promise<void> {
       caster: { kind: "CHARACTER", id: player.id }, target: { kind: "CARD", id: npcSameScene.id }
     });
     check(damageResult.ok === false, "战斗外禁止伤害类法术", damageResult.error);
+
+    // ---------- 10. 道具卡：装备效果选择 + 战斗内真实使用 ----------
+    const itemStats = (effects: unknown[], overrides: Record<string, unknown>) => ({
+      effects,
+      targeting: "SELF",
+      targetScope: "SELF",
+      cost: { mp: 0, san: null, uses: null, cooldownRounds: 0 },
+      usableIn: ["COMBAT"],
+      selectableEffects: [],
+      equippedEffects: null,
+      effect: "",
+      uses: null,
+      sanCost: null,
+      ...overrides
+    });
+    const healCard = await prisma.card.create({
+      data: {
+        scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
+        name: MARK + "·治疗药水", characterId: player.id, isEquipped: true,
+        stats: itemStats([{ type: "HEAL", amount: "1d6" }], {
+          cost: { mp: 2, san: null, uses: 2, cooldownRounds: 0 }
+        }) as never
+      }
+    });
+    const damageCard = await prisma.card.create({
+      data: {
+        scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
+        name: MARK + "·燃烧瓶", characterId: player.id, isEquipped: true,
+        stats: itemStats([{ type: "DAMAGE", amount: "1d4" }], {
+          targeting: "ENEMY",
+          targetScope: "ONE",
+          cost: { mp: 0, san: null, uses: null, cooldownRounds: 1 }
+        }) as never
+      }
+    });
+    // 两条效果、只勾选第 2 条：验证「装备时选效果」真的只让选中项生效。
+    const mixedCard = await prisma.card.create({
+      data: {
+        scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
+        name: MARK + "·圣水", characterId: player.id, isEquipped: true,
+        stats: itemStats(
+          [{ type: "HEAL", amount: "1d6" }, { type: "ARMOR", amount: "3", durationTicks: "0" }],
+          { selectableEffects: [0, 1], equippedEffects: [1] }
+        ) as never
+      }
+    });
+    createdItemCardIds.push(healCard.id, damageCard.id, mixedCard.id);
+
+    const mixedParsed = ItemStatsSchema.parse(mixedCard.stats);
+    const mixedActive = activeCardEffects(mixedParsed);
+    check(
+      mixedActive.length === 1 && mixedActive[0]?.type === "ARMOR",
+      "装备时勾选效果：只让选中的第 2 条效果生效",
+      mixedActive
+    );
+
+    check(
+      JSON.stringify(computeEquippedEffects(2, [0, 1], [1])) === JSON.stringify([1]) &&
+        computeEquippedEffects(2, [], []) === null,
+      "装备效果选择算法：固定生效 + 玩家勾选"
+    );
+
+    const convertedWeapon = convertCardStats("ITEM", "WEAPON", mixedCard.stats);
+    const convertedBack = convertCardStats("WEAPON", "ITEM", convertedWeapon);
+    check(
+      convertedWeapon !== null &&
+        (convertedWeapon as Record<string, unknown>).weaponType === "BRAWL" &&
+        Array.isArray((convertedWeapon as Record<string, unknown>).effects) &&
+        ((convertedWeapon as Record<string, unknown>).effects as unknown[]).length === 2,
+      "道具卡可转换为武器卡并保留通用效果",
+      convertedWeapon
+    );
+    check(convertedBack !== null && convertCardStats("WEAPON", "SPELLCARD", convertedWeapon) === null, "武器卡可转回道具卡，非法转换被拒绝");
+
+    const itemCombat = await createCombatRecord(room.id, effective, [characterRef(player.id)], [npcRef(npcSameScene.id)]);
+    check(itemCombat.ok === true && itemCombat.combatId !== undefined, "道具验证战斗可创建", itemCombat.error);
+    if (itemCombat.combatId === undefined) return;
+    const itemRuntime = await loadCombatRuntime(itemCombat.combatId);
+    if (itemRuntime === null) { check(false, "道具验证 runtime 可加载"); return; }
+    const itemPc = itemRuntime.state.participants.find((participant) => participant.id === player.id);
+    const itemNpc = itemRuntime.state.participants.find((participant) => participant.id === npcSameScene.id);
+    if (itemPc === undefined || itemNpc === undefined) { check(false, "找到道具验证参战单位"); return; }
+
+    const combatItems = itemRuntime.itemsByParticipant.get(itemPc.id) ?? [];
+    check(
+      combatItems.length === 3 &&
+        combatItems.find((item) => item.cardId === mixedCard.id)?.effects.length === 1,
+      "战斗内只加载已装备、可战斗使用的道具，且只带生效效果",
+      combatItems.map((item) => ({ name: item.name, effects: item.effects.map((effect) => effect.type) }))
+    );
+
+    const healOption = combatItems.find((item) => item.cardId === healCard.id);
+    if (healOption === undefined) { check(false, "找到治疗道具选项"); return; }
+    itemPc.hp = 4;
+    const preparedHeal = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: healCard.id }, itemRuntime.state.round);
+    check(preparedHeal.ok === true, "服务端解析治疗道具行动", preparedHeal.ok ? undefined : preparedHeal.error);
+    if (preparedHeal.ok === true) {
+      consumeItemUse(itemPc, preparedHeal.item, itemRuntime.state.round);
+      resolveImmediateAction(itemRuntime.pack, itemRuntime.state, preparedHeal.action, {});
+      check(itemPc.hp > 4, "战斗内使用治疗道具真实回复 HP", { hp: itemPc.hp });
+      check(itemPc.itemUsesLeft?.[healCard.id] === 1, "使用次数扣减 1", itemPc.itemUsesLeft);
+      const second = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: healCard.id }, itemRuntime.state.round);
+      if (second.ok === true) consumeItemUse(itemPc, second.item, itemRuntime.state.round);
+      const third = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: healCard.id }, itemRuntime.state.round);
+      check(third.ok === false && third.error.includes("次数"), "使用次数耗尽后拒绝再次使用", third.ok ? undefined : third.error);
+    }
+
+    const damageOption = combatItems.find((item) => item.cardId === damageCard.id);
+    if (damageOption === undefined) { check(false, "找到伤害道具选项"); return; }
+    const hpBeforeItemDamage = itemNpc.hp;
+    const preparedDamage = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: damageCard.id, targetId: itemNpc.id }, itemRuntime.state.round);
+    check(preparedDamage.ok === true, "服务端解析伤害道具行动", preparedDamage.ok ? undefined : preparedDamage.error);
+    if (preparedDamage.ok === true) {
+      consumeItemUse(itemPc, preparedDamage.item, itemRuntime.state.round);
+      resolveImmediateAction(itemRuntime.pack, itemRuntime.state, preparedDamage.action, { [itemNpc.id]: { type: "PASS" } });
+      check(itemNpc.hp < hpBeforeItemDamage, "战斗内使用伤害道具真实扣血", { hp: itemNpc.hp, before: hpBeforeItemDamage });
+      const cooldown = itemPc.itemCooldownUntil?.[damageCard.id] ?? 0;
+      check(cooldown === itemRuntime.state.round + 1, "道具冷却写入到期轮次", { cooldown, round: itemRuntime.state.round });
+      const blocked = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: damageCard.id, targetId: itemNpc.id }, itemRuntime.state.round);
+      check(blocked.ok === false && blocked.error.includes("冷却"), "冷却中拒绝再次使用", blocked.ok ? undefined : blocked.error);
+    }
+
+    endCombat(itemRuntime.state, "E2E 结束道具验证战斗");
+    await saveCombatState(itemCombat.combatId, itemRuntime.state);
+    await prisma.card.updateMany({ where: { id: { in: [healCard.id, damageCard.id, mixedCard.id] } }, data: { characterId: null, isEquipped: false } });
   } finally {
     clearCombatRuntime(combatId ?? "");
     // 清理测试数据（Room 级联删除场景 / 地图 / Token / 卡 / 战斗 / 局）
     await prisma.combatRequest.deleteMany({ where: { roomId: room.id } }).catch(() => undefined);
+    await prisma.card.deleteMany({ where: { id: { in: createdItemCardIds } } }).catch(() => undefined);
     await prisma.room.delete({ where: { id: room.id } }).catch((error) => console.log("cleanup room failed", error));
     await prisma.character.delete({ where: { id: player.id } }).catch(() => undefined);
     await prisma.user.delete({ where: { id: user.id } }).catch(() => undefined);

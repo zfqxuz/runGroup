@@ -7,7 +7,8 @@ import { z } from "zod";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { emitRoomRefresh } from "@/server/realtime";
-import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema } from "@/shared/card";
+import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema, type CardKind } from "@/shared/card";
+import { computeEquippedEffects, convertCardStats } from "@/server/card/equipment";
 
 export interface SaveCardInput {
   /** 传入表示编辑已有卡；不传表示新建。 */
@@ -151,13 +152,36 @@ export async function equipCardAction(formData: FormData): Promise<void> {
   // 物品卡是唯一的：已经装备给某个角色的卡不能直接改绑到另一个角色，必须先卸下。
   if (card.characterId !== null && card.characterId !== characterId) return;
 
+  const stats = cardStatsRecord(card.stats);
+  const effects = Array.isArray(stats.effects) ? stats.effects : [];
+  const selectable = Array.isArray(stats.selectableEffects)
+    ? stats.selectableEffects.filter((item): item is number => typeof item === "number" && Number.isInteger(item))
+    : [];
+  const requested = formData
+    .getAll("selectedEffects")
+    .map((value) => Number(String(value)))
+    .filter((value) => Number.isInteger(value) && value >= 0);
+  // 固定生效 = 未标记可选的；可选中只保留玩家勾选的部分。
+  const equippedEffects = computeEquippedEffects(effects.length, selectable, requested);
+
   await prisma.card.update({
     where: { id: card.id },
-    data: { characterId, isEquipped: true, equipSlot: "MAIN" }
+    data: {
+      characterId,
+      isEquipped: true,
+      equipSlot: "MAIN",
+      stats: { ...stats, equippedEffects } as Prisma.InputJsonValue
+    }
   });
 
   revalidatePath("/cards");
   revalidatePath("/characters/" + characterId);
+}
+
+function cardStatsRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && Array.isArray(value) === false
+    ? { ...(value as Record<string, unknown>) }
+    : {};
 }
 
 /** 卸下，卡回到用户库里。 */
@@ -327,4 +351,35 @@ export async function updateRoomCardAction(formData: FormData): Promise<void> {
   revalidatePath("/rooms/" + roomId + "/prepare");
   emitRoomRefresh(roomId, "room-card-updated");
   redirect(returnTo);
+}
+
+/* ---------------- 道具 / 武器互转 ---------------- */
+
+
+/**
+ * 把一张卡在「道具卡 ↔ 武器卡」之间互转。
+ *
+ * 通用字段（效果 / 目标 / 消耗 / 可用场景 / 可选效果）原样保留；
+ * 武器专属字段由武器类型自动生成，道具专属字段取默认值。
+ * 转换后卡片会被卸下，需重新装备。
+ */
+export async function convertCardKindAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) return;
+  const cardId = String(formData.get("cardId") ?? "");
+  const targetKind = String(formData.get("targetKind") ?? "");
+  if (cardId.length === 0) return;
+  const card = await prisma.card.findUnique({ where: { id: cardId } });
+  if (card === null || card.ownerId !== session.user.id) return;
+
+  const from = card.type;
+  const parsed = convertCardStats(from as CardKind, targetKind as CardKind, card.stats);
+  if (parsed === null) return;
+
+  await prisma.card.update({
+    where: { id: card.id },
+    data: { type: targetKind as never, stats: parsed as unknown as Prisma.InputJsonValue, isEquipped: false, equipSlot: null, characterId: null }
+  });
+  revalidatePath("/cards");
+  revalidatePath("/cards/" + card.id);
 }

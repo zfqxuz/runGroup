@@ -23,9 +23,31 @@ import { prisma } from "@/server/db/prisma";
 import { ADVANCEMENT_SOURCE_LABELS, summarizeAdvancements } from "@/server/game/advancement";
 import { advancementView } from "@/server/game/view";
 import type { AdvancementSource } from "@/shared/game";
-import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
+import { CARD_KINDS, RARITY_LABELS, cardRarityBorderClass, parseCardStats, type CardKind, type CardStats } from "@/shared/card";
+import { magicEffectLabel } from "@/shared/magic";
 
 export const dynamic = "force-dynamic";
+
+function cardStatsOf(type: string, stats: unknown): CardStats | null {
+  if ((CARD_KINDS as readonly string[]).includes(type) === false) return null;
+  return parseCardStats(type as CardKind, stats);
+}
+
+function activeEffectIndexes(stats: CardStats): number[] {
+  const selected = stats.equippedEffects;
+  if (selected === null || selected === undefined || selected.length === 0) {
+    return stats.effects.map((_effect, index) => index);
+  }
+  return selected.filter((index) => index < stats.effects.length);
+}
+
+function activeEffectLabels(stats: CardStats): string[] {
+  const indexes = activeEffectIndexes(stats);
+  return indexes.map((index) => {
+    const effect = stats.effects[index];
+    return effect === undefined ? "" : magicEffectLabel(effect);
+  }).filter((label) => label.length > 0);
+}
 
 const LABELS: Record<string, string> = {
   str: "力量", con: "体质", siz: "体型", dex: "敏捷",
@@ -602,18 +624,26 @@ export default async function CharacterDetailPage({
           <p className="mt-3 text-xs text-white/35">还没有装备</p>
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {equipped.map((card) => (
-              <div key={card.id} className={"flex items-center justify-between gap-2 rounded-lg border-2 bg-emerald-400/5 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-white/80">{card.name}</p>
-                  <p className="text-[11px] text-white/35">{card.type} · {RARITY_LABELS[card.rarity]}</p>
+            {equipped.map((card) => {
+              const stats = cardStatsOf(card.type, card.stats);
+              return (
+                <div key={card.id} className={"flex items-start justify-between gap-2 rounded-lg border-2 bg-emerald-400/5 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-white/80">{card.name}</p>
+                    <p className="text-[11px] text-white/35">{card.type} · {RARITY_LABELS[card.rarity]}</p>
+                    {stats === null || stats.effects.length === 0 ? null : (
+                      <p className="mt-1 text-[11px] text-emerald-200/80">
+                        生效：{activeEffectLabels(stats).join(" + ")}
+                      </p>
+                    )}
+                  </div>
+                  <form action={unequipCardAction}>
+                    <input type="hidden" name="cardId" value={card.id} />
+                    <button type="submit" className="shrink-0 rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/50 transition hover:border-white/35 hover:text-white">卸下</button>
+                  </form>
                 </div>
-                <form action={unequipCardAction}>
-                  <input type="hidden" name="cardId" value={card.id} />
-                  <button type="submit" className="shrink-0 rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/50 transition hover:border-white/35 hover:text-white">卸下</button>
-                </form>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>
@@ -626,17 +656,49 @@ export default async function CharacterDetailPage({
           </p>
         ) : (
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {library.map((card) => (
-              <form key={card.id} action={equipCardAction} className={"flex items-center justify-between gap-2 rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
-                <input type="hidden" name="cardId" value={card.id} />
-                <input type="hidden" name="characterId" value={character.id} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm text-white/70">{card.name}</p>
-                  <p className="text-[11px] text-white/30">{card.type} · {RARITY_LABELS[card.rarity]}</p>
-                </div>
-                <button type="submit" className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10">装备</button>
-              </form>
-            ))}
+            {library.map((card) => {
+              const stats = cardStatsOf(card.type, card.stats);
+              const selectable = stats?.selectableEffects ?? [];
+              const effects = stats?.effects ?? [];
+              const active = stats === null ? [] : activeEffectIndexes(stats);
+              return (
+                <form key={card.id} action={equipCardAction} className={"flex flex-col gap-2 rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
+                  <input type="hidden" name="cardId" value={card.id} />
+                  <input type="hidden" name="characterId" value={character.id} />
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="truncate text-sm text-white/70">{card.name}</p>
+                      <p className="text-[11px] text-white/30">{card.type} · {RARITY_LABELS[card.rarity]}</p>
+                    </div>
+                    <button type="submit" className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10">装备</button>
+                  </div>
+                  {effects.length === 0 ? null : selectable.length === 0 ? (
+                    <p className="text-[11px] text-white/35">生效：{effects.map((effect) => magicEffectLabel(effect)).join(" + ")}</p>
+                  ) : (
+                    <div className="rounded-md border border-white/10 bg-ink-950/40 p-2">
+                      <p className="text-[11px] text-white/40">装备时选择生效效果</p>
+                      <div className="mt-1 flex flex-col gap-1">
+                        {effects.map((effect, index) => {
+                          const isSelectable = selectable.includes(index);
+                          const checked = isSelectable ? active.includes(index) : true;
+                          return (
+                            <label key={index} className="flex items-center gap-2 text-[11px] text-white/60">
+                              {isSelectable ? (
+                                <input type="checkbox" name="selectedEffects" value={index} defaultChecked={checked} />
+                              ) : (
+                                <span className="inline-block h-3 w-3 rounded-sm border border-emerald-400/50 bg-emerald-400/20" title="固定生效" />
+                              )}
+                              {magicEffectLabel(effect)}
+                              {isSelectable ? null : <span className="text-white/30">（固定生效）</span>}
+                            </label>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </form>
+              );
+            })}
           </div>
         )}
       </section>
