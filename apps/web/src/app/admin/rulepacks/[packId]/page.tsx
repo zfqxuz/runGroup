@@ -8,6 +8,7 @@ import {
   importRulePackVersionAction
 } from "@/server/actions/admin";
 import { prisma } from "@/server/db/prisma";
+import RulePackConfigEditor from "@/components/admin/RulePackConfigEditor";
 import { magicSpellEffectLabels } from "@/shared/magic";
 
 export const dynamic = "force-dynamic";
@@ -188,15 +189,10 @@ export default async function AdminRulePackDetailPage({
               <span className="text-[11px] text-white/45">备注</span>
               <input name="notes" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500" />
             </label>
-            <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">完整 RulePack JSON</span>
-              <textarea
-                name="config"
-                rows={14}
-                defaultValue={latestConfigText}
-                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-[11px] leading-5 outline-none focus:border-sakura-500"
-              />
-            </label>
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[11px] text-white/45">规则集配置（表单 / JSON 双模式）</span>
+              <RulePackConfigEditor initialJson={latestConfigText} />
+            </div>
             <div>
               <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">保存草稿版本</button>
             </div>

@@ -43,6 +43,9 @@ export default function MagicEffectComposer(props: {
       .filter((draft): draft is Draft => draft !== null)
   );
   const [newType, setNewType] = useState<string>(MAGIC_EFFECT_DEFINITIONS[0]?.type ?? "DAMAGE");
+  const [mode, setMode] = useState<"form" | "json">("form");
+  const [jsonText, setJsonText] = useState("");
+  const [jsonError, setJsonError] = useState<string | null>(null);
 
   const serialized = useMemo(
     () => JSON.stringify(drafts.map((draft) => serializeMagicEffect(draft.type, draft.values))),
@@ -84,6 +87,36 @@ export default function MagicEffectComposer(props: {
     setDrafts((current) => [...current, draftFromType(newType)]);
   }
 
+  function switchMode(next: "form" | "json"): void {
+    if (next === "json") {
+      setJsonText(serialized);
+      setJsonError(null);
+    }
+    setMode(next);
+  }
+
+  function applyJson(text: string): void {
+    setJsonText(text);
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (Array.isArray(parsed) === false) {
+        setJsonError("JSON 必须是效果数组，例如 [{ \"type\": \"DAMAGE\", \"amount\": \"1d6\" }]");
+        return;
+      }
+      const next = parsed
+        .map((effect, index) => draftFromEffect(effect, index))
+        .filter((draft): draft is Draft => draft !== null);
+      if (next.length !== parsed.length) {
+        setJsonError("有无法识别的效果（type 不在 14 种基础效果里），已忽略这些项。");
+      } else {
+        setJsonError(null);
+      }
+      setDrafts(next);
+    } catch (error) {
+      setJsonError(error instanceof Error ? error.message : "JSON 解析失败");
+    }
+  }
+
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-white/10 bg-ink-950/40 p-3">
       <input type="hidden" name={props.name} value={serialized} />
@@ -93,6 +126,21 @@ export default function MagicEffectComposer(props: {
           <p className="text-[10px] text-white/35">选择任意基础效果，按顺序组合成一条法术。</p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="flex overflow-hidden rounded border border-white/15">
+            {(["form", "json"] as const).map((item) => (
+              <button
+                key={item}
+                type="button"
+                onClick={() => switchMode(item)}
+                className={
+                  "px-2 py-1 text-[10px] transition " +
+                  (mode === item ? "bg-sakura-500/15 text-sakura-300" : "text-white/45 hover:bg-white/5")
+                }
+              >
+                {item === "form" ? "表单" : "JSON"}
+              </button>
+            ))}
+          </div>
           <select value={newType} onChange={(event) => setNewType(event.target.value)} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75">
             {MAGIC_EFFECT_DEFINITIONS.map((definition) => (
               <option key={definition.type} value={definition.type}>
@@ -106,13 +154,31 @@ export default function MagicEffectComposer(props: {
         </div>
       </div>
 
-      {drafts.length === 0 ? (
+      {mode === "json" ? (
+        <div className="flex flex-col gap-1">
+          <textarea
+            value={jsonText}
+            onChange={(event) => applyJson(event.target.value)}
+            rows={10}
+            spellCheck={false}
+            className="w-full rounded border border-white/15 bg-ink-900 px-3 py-2 font-mono text-[11px] text-white/80 outline-none focus:border-sakura-500"
+            placeholder='[{"type":"DAMAGE","amount":"1d6"}]'
+          />
+          {jsonError === null ? (
+            <p className="text-[10px] text-emerald-300/70">JSON 合法，已同步到表单。</p>
+          ) : (
+            <p className="text-[10px] text-red-300">{jsonError}</p>
+          )}
+        </div>
+      ) : null}
+
+      {mode === "form" && drafts.length === 0 ? (
         <p className="rounded border border-dashed border-white/15 px-3 py-4 text-center text-xs text-white/35">
           当前没有效果，点击「+ 添加效果」开始组合。
         </p>
       ) : null}
 
-      {drafts.map((draft, index) => {
+      {mode === "form" ? drafts.map((draft, index) => {
         const definition = magicEffectDefinition(draft.type);
         if (definition === null) return null;
         return (
@@ -167,7 +233,7 @@ export default function MagicEffectComposer(props: {
             </div>
           </div>
         );
-      })}
+      }) : null}
 
       <details className="rounded border border-white/10 bg-ink-900/30 p-2">
         <summary className="cursor-pointer text-[10px] text-white/35">查看当前组合 JSON</summary>
