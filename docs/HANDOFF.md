@@ -2056,6 +2056,14 @@ MagicEffect =
 - `scripts/e2e-real-magic.ts` 增加「同房间开第二场战斗」「战斗记录绑定场景」「只结束一场房间仍为 COMBAT」「全部结束回到 PLAYING」断言。
 - 运行结果：真实角色 / NPC 卡 / 地图 Token 下 `passed=24 failed=0`。
 
+### 坑：生产库上的手建索引
+- 生产库存在一个不在 Prisma schema / migrations 里的 partial unique index：
+  `one_active_combat_per_room ON "Combat"("roomId") WHERE "endedAt" IS NULL`。
+  它会让第二场战斗插入时报 `Unique constraint failed on the fields: (roomId)`。
+- 已新增迁移 `20260917130000_multi_combat_index` 执行 `DROP INDEX IF EXISTS "one_active_combat_per_room"`；
+  同房间多场战斗改由应用层 `activeCombatEntityIds` 席位互斥保证单位不重复参战。
+- 排查方式：`select indexname, indexdef from pg_indexes where tablename='Combat';`
+
 ### 仍未完成
 - `CombatUnitPicker` 尚未把「未入场 / 已在其它战斗」的单位置灰；冲突仍由服务端返回明确错误。
 - 战斗进行中对参战 Token 的跨场景移动目前没有独立入口，未额外加锁定。
