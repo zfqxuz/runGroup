@@ -65,6 +65,21 @@ export default function MagicEffectComposer(props: {
     setDrafts((current) => current.filter((draft) => draft.id !== id));
   }
 
+  function moveDraft(id: string, direction: -1 | 1): void {
+    setDrafts((current) => {
+      const index = current.findIndex((draft) => draft.id === id);
+      const target = index + direction;
+      if (index < 0 || target < 0 || target >= current.length) return current;
+      const next = [...current];
+      const currentDraft = next[index];
+      const targetDraft = next[target];
+      if (currentDraft === undefined || targetDraft === undefined) return current;
+      next[index] = targetDraft;
+      next[target] = currentDraft;
+      return next;
+    });
+  }
+
   function addDraft(): void {
     setDrafts((current) => [...current, draftFromType(newType)]);
   }
@@ -112,9 +127,27 @@ export default function MagicEffectComposer(props: {
                 ))}
               </select>
               <span className="text-[10px] text-white/35">{definition.summary}</span>
-              <button type="button" onClick={() => removeDraft(draft.id)} className="ml-auto rounded border border-red-400/30 px-2 py-1 text-[10px] text-red-300 transition hover:bg-red-400/10">
-                删除
-              </button>
+              <div className="ml-auto flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => moveDraft(draft.id, -1)}
+                  disabled={index === 0}
+                  className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/55 transition hover:bg-white/5 disabled:opacity-30"
+                >
+                  上移
+                </button>
+                <button
+                  type="button"
+                  onClick={() => moveDraft(draft.id, 1)}
+                  disabled={index === drafts.length - 1}
+                  className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/55 transition hover:bg-white/5 disabled:opacity-30"
+                >
+                  下移
+                </button>
+                <button type="button" onClick={() => removeDraft(draft.id)} className="rounded border border-red-400/30 px-2 py-1 text-[10px] text-red-300 transition hover:bg-red-400/10">
+                  删除
+                </button>
+              </div>
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {definition.fields.map((field) => (
