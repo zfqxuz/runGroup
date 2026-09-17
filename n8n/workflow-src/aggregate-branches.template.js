@@ -284,10 +284,17 @@ function summonNameFromDescription(text) {
   raw = trimLead(raw);
   return raw.length > 0 ? raw : "召唤物";
 }
+function durationRoundsFromDescription(text) {
+  const match = /(\d+)\s*(?:个)?\s*(?:行动)?轮/.exec(text);
+  return match && match[1] !== undefined ? match[1] : "0";
+}
 function armorEffectFromDescription(text) {
-  if (/(护甲|防护|保护)/.test(text) === false || /(伤害|物理|非魔法)/.test(text) === false) return null;
-  const match = /(\d*d\d+)\s*点?\s*(?:防非魔法伤害的)?护甲/i.exec(text);
-  return { type: "ARMOR", amount: match ? normalizeMagicDice(match[1], "1d6") : "1d6", durationTicks: "0" };
+  if (/(护甲|防护|保护)/.test(text) === false) return null;
+  const direct = /(?:护甲|护甲值|armor)\s*[:：=]?\s*(\d*d\d+|\d+)/i.exec(text);
+  const granted = /(?:获得|拥有|有|提供|给予|增加|提升)\s*(\d*d\d+|\d+)\s*(?:点)?\s*(?:的)?\s*(?:防非魔法伤害的)?护甲/i.exec(text);
+  const match = direct ?? granted ?? /(\d*d\d+)\s*点?\s*(?:防非魔法伤害的)?护甲/i.exec(text);
+  if (match === null) return null;
+  return { type: "ARMOR", amount: normalizeMagicDice(match[1], "1d6"), durationTicks: durationRoundsFromDescription(text) };
 }
 function effectFromDescription(value) {
   const text = asString(value);
@@ -296,7 +303,7 @@ function effectFromDescription(value) {
   if (/(召唤|唤出|呼唤|召来|召出)/.test(text)) {
     const countMatch = /(\d+)\s*(?:只|个|位|群|名)/.exec(text);
     const summonName = summonNameFromDescription(text);
-    return { type: "SUMMON", name: summonName, key: normalizeKey(summonName), count: countMatch ? countMatch[1] : "1", durationTicks: "0" };
+    return { type: "SUMMON", name: summonName, key: normalizeKey(summonName), count: countMatch ? countMatch[1] : "1", durationTicks: durationRoundsFromDescription(text) };
   }
   if (/(净化|驱散|解除|移除|清除)/.test(text) && /(状态|异常|持续伤害|眩晕|控制|诅咒|中毒|灼烧|冰冻)/.test(text)) {
     return { type: "CLEANSE", keys: [] };
