@@ -14,6 +14,7 @@ import {
   allowedReactionTypesForParticipant,
   attackOptionsForParticipant,
   combatFeatureFlags,
+  reactionTypesForAttack,
   validateCombatAction
 } from "../src/server/combat/options";
 
@@ -124,6 +125,26 @@ function main(): void {
     [...allowedReactionTypesForParticipant(touhou, new Map([["touhou-no-skill", []]]), "touhou-no-skill")],
     ["PASS", "DEFEND", "DODGE"],
     "东方包没有对应攻击技能时才隐藏消弹对抗"
+  );
+  expectIds(
+    [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-civilian", false, "FIGHTING_BRAWL")],
+    ["PASS", "DODGE", "COUNTER"],
+    "COC7 近战攻击允许被反击"
+  );
+  expectIds(
+    [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-civilian", false, "FIREARMS_HANDGUN")],
+    ["PASS", "DODGE"],
+    "COC7 射击攻击不能被反击"
+  );
+  expectIds(
+    [...reactionTypesForAttack(allowedReactionTypes(coc), "THROW")],
+    ["PASS", "DODGE"],
+    "COC7 投掷类远程攻击不能被反击"
+  );
+  expectIds(
+    [...reactionTypesForAttack(allowedReactionTypes(coc), "FIGHTING_AXE")],
+    ["PASS", "DODGE", "COUNTER"],
+    "COC7 近战武器仍允许被反击"
   );
 
   const cocActionContext = {

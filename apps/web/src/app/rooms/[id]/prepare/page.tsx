@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { builtinRegistry, resolveRulePack } from "@touhou/rules";
 import RoomNpcPanel from "@/components/room/RoomNpcPanel";
+import AutoSubmitCharacterSelect from "@/components/room/AutoSubmitCharacterSelect";
 import SceneBoard from "@/components/room/SceneBoard";
 import KpValueEditor from "@/components/room/KpValueEditor";
 import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
@@ -399,7 +400,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               className={
                 membership.ready
                   ? "rounded-lg border border-white/15 px-4 py-2 text-sm text-white/60 transition hover:border-white/35"
-                  : "rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
+                  : "rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
               }
             >
               {membership.ready ? "取消准备" : "我准备好了"}
@@ -605,7 +606,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <button
                 type="submit"
                 disabled={activeGame !== null}
-                className="shrink-0 rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
+                className="shrink-0 rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {activePreset !== null && activePreset.moduleId === selectedModule.id ? "重新应用预设" : "应用团本预设"}
               </button>
@@ -692,7 +693,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           </Link>
           <Link
             href={"/rooms/" + room.id + "/characters/new"}
-            className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
+            className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
           >
             车一张新卡
           </Link>
@@ -715,30 +716,11 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             </span>
           )}
         </div>
-        <form action={setActiveCharacterAction} className="mt-4 flex flex-wrap items-end gap-3">
-          <input type="hidden" name="roomId" value={room.id} />
-          <label className="flex min-w-[240px] flex-1 flex-col gap-1.5">
-            <span className="text-xs text-white/50">选择角色</span>
-            <select
-              name="characterId"
-              defaultValue={membership.activeCharacterId ?? ""}
-              className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
-            >
-              <option value="">（不选择）</option>
-              {myApprovedCharacters.map((entry) => (
-                <option key={entry.id} value={entry.characterId}>
-                  {entry.character.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="submit"
-            className="rounded-lg border border-spirit-400/40 px-4 py-2 text-sm text-spirit-400 transition hover:bg-spirit-400/10"
-          >
-            保存当前角色
-          </button>
-        </form>
+        <AutoSubmitCharacterSelect
+          roomId={room.id}
+          defaultValue={membership.activeCharacterId ?? ""}
+          characters={myApprovedCharacters.map((entry) => ({ id: entry.characterId, name: entry.character.name }))}
+        />
         {myApprovedCharacters.length === 0 ? (
           <p className="mt-3 text-[11px] text-white/35">
             还没有通过审核的角色卡。先车卡并等待 KP 审核。
@@ -1052,7 +1034,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <button
                 type="submit"
                 disabled={canStart === false}
-                className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
+                className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {(resuming ? "继续跑团" : "开始跑团")}（{readyCount}/{requiredMembers.length}）
               </button>

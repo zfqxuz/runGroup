@@ -1,5 +1,6 @@
 "use server";
 
+import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { compile, evaluate } from "@touhou/formula";
 import {
@@ -412,4 +413,57 @@ export async function saveCharacter(
   }
   revalidatePath("/characters");
   return { ok: true, characterId: character.id };
+}
+
+/** 更新角色卡的基础档案（名称 / 玩家 / 职业文本 / 年龄 / 性别 / 住地 / 当前资源）。 */
+export async function updateCharacterProfileAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const characterId = String(formData.get("characterId") ?? "");
+  const character = await prisma.character.findUnique({ where: { id: characterId }, select: { userId: true } });
+  if (character === null || character.userId !== session.user.id) redirect("/characters");
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (name.length === 0) {
+    redirect("/characters/" + characterId + "/edit?error=" + encodeURIComponent("角色名不能为空"));
+  }
+  const ageRaw = String(formData.get("age") ?? "").trim();
+  const age = ageRaw.length === 0 ? null : Math.max(15, Math.min(90, Math.floor(Number(ageRaw)) || 0));
+  const intField = (key: string): number | undefined => {
+    const raw = String(formData.get(key) ?? "").trim();
+    if (raw.length === 0) return undefined;
+    const value = Math.floor(Number(raw));
+    return Number.isFinite(value) ? value : undefined;
+  };
+
+  await prisma.character.update({
+    where: { id: characterId },
+    data: {
+      name,
+      playerName: String(formData.get("playerName") ?? "").trim() || null,
+      occupation: String(formData.get("occupation") ?? "").trim() || null,
+      age,
+      gender: String(formData.get("gender") ?? "").trim() || null,
+      residence: String(formData.get("residence") ?? "").trim() || null,
+      ...(intField("hp") === undefined ? {} : { hp: intField("hp") }),
+      ...(intField("mp") === undefined ? {} : { mp: intField("mp") }),
+      ...(intField("san") === undefined ? {} : { san: intField("san") }),
+      ...(intField("dp") === undefined ? {} : { dp: intField("dp") })
+    }
+  });
+  revalidatePath("/characters");
+  revalidatePath("/characters/" + characterId);
+  redirect("/characters/" + characterId + "?saved=profile");
+}
+
+/** 删除自己的角色卡。 */
+export async function deleteCharacterAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const characterId = String(formData.get("characterId") ?? "");
+  const character = await prisma.character.findUnique({ where: { id: characterId }, select: { userId: true } });
+  if (character === null || character.userId !== session.user.id) redirect("/characters");
+  await prisma.character.delete({ where: { id: characterId } });
+  revalidatePath("/characters");
+  redirect("/characters?deleted=1");
 }

@@ -151,7 +151,7 @@ export default function KpPrepPanel(props: Props) {
               </select>
               <button
                 type="submit"
-                className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400"
+                className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20"
               >
                 切换场景
               </button>
@@ -305,50 +305,56 @@ export default function KpPrepPanel(props: Props) {
             <input type="checkbox" name="isPublic" value="1" />
             对所有成员公开（默认仅 KP 可见）
           </label>
-          <button type="submit" className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">
+          <button type="submit" className="self-start rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">
             发布线索
           </button>
         </form>
 
-        <div className="mt-4 flex flex-col gap-3">
+        <div className="mt-4 flex flex-col gap-2">
           <h3 className="text-xs font-medium text-white/70">全部线索（{props.clues.length}）</h3>
           {props.clues.length === 0 ? (
             <p className="text-xs text-white/35">还没有线索。</p>
           ) : (
-            props.clues.map((clue) => (
-              <div key={clue.id} className="rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2.5">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-sm text-white/80">{clue.title}</span>
-                  <span className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/40">
-                    {clue.isPublic ? "公开" : "KP 可见"}
-                  </span>
-                  <span className="rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-200">
-                    已发现 {clue.discoveredCount}
-                  </span>
-                </div>
-                {clue.content.length === 0 ? null : (
-                  <p className="mt-2 whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
-                )}
-                {clue.imageUrl === null ? null : (
-                  <a
-                    href={clue.imageUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-ink-900/60"
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={clue.imageUrl} alt={clue.title} className="max-h-80 w-full object-contain" />
-                  </a>
-                )}
-                <ClueAdminControls
-                  roomId={props.roomId}
-                  clue={{ id: clue.id, title: clue.title, content: clue.content, imageUrl: clue.imageUrl, isPublic: clue.isPublic }}
-                  members={props.members}
-                  sharedUserIds={clue.sharedWithIds}
-                  returnTo={"/rooms/" + props.roomId + "?clue=updated#room-info"}
-                />
-              </div>
-            ))
+            // 线索多时用可滚动 + 折叠行，避免整块面板被撑得很长。
+            <div className="flex max-h-80 flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
+              {props.clues.map((clue) => (
+                <details key={clue.id} className="group rounded-lg border border-white/10 bg-ink-900/50">
+                  <summary className="flex cursor-pointer list-none items-center gap-2 px-2.5 py-1.5">
+                    <span className="min-w-0 flex-1 truncate text-xs text-white/80">{clue.title}</span>
+                    <span className="shrink-0 rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/40">
+                      {clue.isPublic ? "公开" : "KP"}
+                    </span>
+                    <span className="shrink-0 rounded border border-spirit-400/30 px-1.5 py-0.5 text-[10px] text-spirit-200">
+                      {clue.discoveredCount}
+                    </span>
+                    <span className="shrink-0 text-[10px] text-white/30 transition group-open:rotate-90">▶</span>
+                  </summary>
+                  <div className="border-t border-white/5 px-2.5 py-2">
+                    {clue.content.length === 0 ? null : (
+                      <p className="whitespace-pre-wrap text-xs leading-relaxed text-white/55">{clue.content}</p>
+                    )}
+                    {clue.imageUrl === null ? null : (
+                      <a
+                        href={clue.imageUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="mt-2 block overflow-hidden rounded-lg border border-white/10 bg-ink-900/60"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={clue.imageUrl} alt={clue.title} className="max-h-72 w-full object-contain" />
+                      </a>
+                    )}
+                    <ClueAdminControls
+                      roomId={props.roomId}
+                      clue={{ id: clue.id, title: clue.title, content: clue.content, imageUrl: clue.imageUrl, isPublic: clue.isPublic }}
+                      members={props.members}
+                      sharedUserIds={clue.sharedWithIds}
+                      returnTo={"/rooms/" + props.roomId + "?clue=updated#room-info"}
+                    />
+                  </div>
+                </details>
+              ))}
+            </div>
           )}
         </div>
       </section>

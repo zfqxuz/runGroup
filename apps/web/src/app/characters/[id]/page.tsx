@@ -14,6 +14,8 @@ import {
   type AttributeSet
 } from "@touhou/rules";
 import ImageUpload from "@/components/upload/ImageUpload";
+import DeleteCharacterButton from "@/components/character/DeleteCharacterButton";
+import { characterEquipmentOf } from "@/shared/character-equipment";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { revertAdvancementAction, updateAdvancementAction } from "@/server/actions/advancement";
 import { auth } from "@/server/auth";
@@ -157,6 +159,8 @@ export default async function CharacterDetailPage({
   const advancementNotice = searchParams.advancement;
   const sourceOptions: readonly AdvancementSource[] = ["MANUAL", "END_REWARD", "GROWTH_CHECK", "MODULE", "IMPORT", "OTHER"];
 
+  const equipment = characterEquipmentOf(character.sourceData);
+
   return (
     <main className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 px-6 py-12">
       <header>
@@ -181,6 +185,15 @@ export default async function CharacterDetailPage({
               {character.occupation}
             </span>
           )}
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <Link
+            href={"/characters/" + character.id + "/edit"}
+            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
+          >
+            编辑角色
+          </Link>
+          <DeleteCharacterButton characterId={character.id} characterName={character.name} />
         </div>
         {character.roomEntries.length === 0 ? null : (
           <p className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/40">
@@ -211,6 +224,59 @@ export default async function CharacterDetailPage({
             shape="square"
           />
         </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">装备与物品</h2>
+        {equipment.weapons.length === 0 && equipment.items.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">这张卡没有武器或随身物品记录。</p>
+        ) : (
+          <div className="mt-4 flex flex-col gap-4">
+            {equipment.weapons.length === 0 ? null : (
+              <div>
+                <p className="text-[11px] text-white/40">武器</p>
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {equipment.weapons.map((weapon) => (
+                    <li key={weapon.name} className="rounded-lg border border-red-400/25 bg-red-400/5 px-3 py-2">
+                      <p className="text-sm text-white/80">{weapon.name}</p>
+                      <p className="mt-0.5 text-[11px] text-white/45">
+                        {weapon.skillLabel ?? "—"}
+                        {weapon.damage === null ? "" : " · 伤害 " + weapon.damage}
+                        {weapon.rangeText === null ? "" : " · " + weapon.rangeText}
+                        {weapon.attacks === null ? "" : " · " + weapon.attacks + " 次"}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {equipment.items.length === 0 ? null : (
+              <div>
+                <p className="text-[11px] text-white/40">随身物品</p>
+                <ul className="mt-2 grid gap-2 sm:grid-cols-2">
+                  {equipment.items.map((item) => (
+                    <li key={item.name} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
+                      <p className="text-sm text-white/80">{item.name}</p>
+                      <p className="mt-0.5 text-[11px] text-white/45">
+                        {[item.location, item.status, item.note].filter((value) => value !== null && value.length > 0).join(" · ")}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {equipment.assets === null ? null : (
+              <div>
+                <p className="text-[11px] text-white/40">资产</p>
+                <p className="mt-2 text-xs text-white/60">
+                  信用 {equipment.assets.creditRating ?? "—"}
+                  {equipment.assets.otherAssetsValue === null ? "" : " · 其他资产 " + equipment.assets.otherAssetsValue}
+                  {equipment.assets.cash === null ? "" : " · 现金 " + String(equipment.assets.cash) + (equipment.assets.cashUnit ?? "")}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

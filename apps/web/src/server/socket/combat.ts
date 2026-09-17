@@ -30,7 +30,7 @@ import {
   viewForUser,
   type CombatRuntime
 } from "@/server/combat/runtime";
-import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, validateCombatAction, type WeaponLike } from "@/server/combat/options";
+import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, reactionTypesForAttack, validateCombatAction, type WeaponLike } from "@/server/combat/options";
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
 import { saveCombatState } from "@/server/combat/setup";
 import { findSummonCard, summonTemplateFromCard } from "@/server/combat/summon";
@@ -485,7 +485,7 @@ async function handleAction(
       runtime.pendingReactions.set(targetId, action.actorId);
       const options =
         magicOptions ??
-        allowedReactionTypesForParticipant(runtime.pack, runtime.attackSkills, targetId, canFlee);
+        allowedReactionTypesForParticipant(runtime.pack, runtime.attackSkills, targetId, canFlee, action.skill);
       await emitReactionRequest(io, runtime, action.actorId, targetId, options);
     }
   }
@@ -804,7 +804,7 @@ async function handleChaseAttack(
     runtime,
     actorId,
     input.targetId,
-    allowedReactionTypes(runtime.pack)
+    reactionTypesForAttack(allowedReactionTypes(runtime.pack), skill)
   );
   await broadcastCombat(io, runtime);
   ack({ ok: true });

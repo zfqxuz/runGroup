@@ -165,7 +165,7 @@ export default function AiModuleImporter(props: Props) {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
+          className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
         >
           {busy ? "n8n 工作流解析中…" : "n8n 工作流解析团本"}
         </button>

@@ -468,13 +468,13 @@ export default function RoomPlay(props: Props) {
           <button
             type="button"
             onClick={send}
-            className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
+            className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
           >
             发送
           </button>
         </div>
 
-        <div className="mt-2 flex flex-wrap items-center gap-2">
+        <div className="mt-2 flex w-full flex-wrap items-center gap-2">
           <select
             value={diceMode}
             onChange={(event) => {
@@ -507,7 +507,7 @@ export default function RoomPlay(props: Props) {
                       ))}
                     </select>
                   ) : null}
-                  <div ref={skillComboRef} className="relative min-w-[260px] flex-1">
+                  <div ref={skillComboRef} className="relative min-w-0 flex-1">
                     <button
                       type="button"
                       onClick={() => {

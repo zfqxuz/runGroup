@@ -18,19 +18,24 @@
 /* 白天：浅色底 + 深色前景；white 变量翻转为深色，保证对比度 */
 [data-theme="day"] {
   --bg: 242 243 249;
-  --fg: 26 28 40;
+  --fg: 17 19 30;
   --ink-900: 255 255 255;
   --ink-800: 248 249 253;
   --ink-700: 238 240 248;
   --ink-600: 223 227 238;
   --ink-500: 205 210 226;
-  --white: 28 30 44;
+  --white: 17 19 30;
 }
 
 /* 白天模式下滚动条也跟随 */
 [data-theme="day"] ::selection {
   background-color: #ff7fb0;
   color: #14161f;
+}
+
+html {
+  /* 整体字号上调一档，提升可读性 */
+  font-size: 17px;
 }
 
 html,
@@ -41,6 +46,13 @@ body {
 body {
   background-color: rgb(var(--bg));
   color: rgb(var(--fg));
+  /* 基础字重加粗到中黑，避免细体发虚 */
+  font-weight: 500;
+}
+
+strong,
+b {
+  font-weight: 700;
 }
 
 ::selection {

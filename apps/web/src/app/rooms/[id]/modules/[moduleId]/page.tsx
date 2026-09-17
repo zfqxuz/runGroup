@@ -174,7 +174,7 @@ export default async function ModuleDetailPage({
           <div>
             <button
               type="submit"
-              className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
+              className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
             >
               保存
             </button>

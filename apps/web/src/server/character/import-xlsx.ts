@@ -13,6 +13,30 @@ export interface ImportedSkill {
   readonly modernOnly: boolean;
 }
 
+export interface ImportedItem {
+  /** 携带状态：显露 / 隐藏 / 背包 等。 */
+  readonly status: string | null;
+  /** 携带部位：颈部 / 背后 / 右手 / 背包格 等。 */
+  readonly location: string | null;
+  readonly name: string;
+  /** 背包内物品的备注 / 数量。 */
+  readonly note: string | null;
+}
+
+export interface ImportedAssets {
+  readonly creditRating: string | null;
+  readonly livingStandard: string | null;
+  readonly consumption: string | null;
+  readonly otherAssetsValue: string | null;
+  readonly cash: number | null;
+  readonly cashUnit: string | null;
+  readonly vehicle: string | null;
+  readonly residence: string | null;
+  readonly luxury: string | null;
+  readonly securities: string | null;
+  readonly other: string | null;
+}
+
 export interface ImportedWeapon {
   readonly name: string;
   readonly type: string | null;
@@ -49,6 +73,8 @@ export interface ImportedCharacter {
   };
   readonly skills: readonly ImportedSkill[];
   readonly weapons: readonly ImportedWeapon[];
+  readonly items: readonly ImportedItem[];
+  readonly assets: ImportedAssets | null;
 }
 
 interface CellLike {
@@ -177,9 +203,12 @@ function parseEra(value: string): "CLASSIC" | "MODERN" | null {
   return null;
 }
 
+const WEAPON_SECTION_STOP = ["资产", "随身物品", "背景故事", "其他资产", "武器表", "调查员经历"];
+
 function parseWeapons(sheet: XLSX.WorkSheet): ImportedWeapon[] {
   const weapons: ImportedWeapon[] = [];
-  for (let row = 53; row <= 80; row += 1) {
+  // 模板的武器表在 53~58 行；再往后是资产 / 随身物品等区块，不能继续当武器解析。
+  for (let row = 53; row <= 58; row += 1) {
     const address = (column: string): string => column + String(row);
     const name = text(sheet, address("B"));
     if (name.length === 0) {
@@ -187,9 +216,11 @@ function parseWeapons(sheet: XLSX.WorkSheet): ImportedWeapon[] {
       continue;
     }
     if (name === "无" || name === "武器名称") continue;
+    if (WEAPON_SECTION_STOP.some((stop) => name.startsWith(stop))) break;
     const type = nullableText(sheet, address("G"));
     const skillLabel = nullableText(sheet, address("M"));
     if (type === null && skillLabel === null) continue;
+    if (skillLabel !== null && skillLabel.startsWith("←")) continue;
     weapons.push({
       name,
       type,
@@ -204,6 +235,72 @@ function parseWeapons(sheet: XLSX.WorkSheet): ImportedWeapon[] {
     });
   }
   return weapons;
+}
+
+/** 解析「随身物品」区域：部位 / 物品名称为主，N 列是背包格内的物品。 */
+function parseItems(sheet: XLSX.WorkSheet): ImportedItem[] {
+  const items: ImportedItem[] = [];
+  for (let row = 79; row <= 94; row += 1) {
+    const address = (column: string): string => column + String(row);
+    const name = text(sheet, address("F"));
+    const status = nullableText(sheet, address("B"));
+    const location = nullableText(sheet, address("D"));
+    if (name.length > 0) {
+      items.push({ status, location, name, note: null });
+      continue;
+    }
+    // 该行没有物品名称时，可能是背包格内容；遇到明确的下一节标题就停止。
+    if (status !== null && (status.includes("调查员经历") || status.includes("资产") || status.includes("状态"))) break;
+  }
+  // 背包格（N 列）：与随身物品同一区域，按顺序追加。
+  for (let row = 78; row <= 94; row += 1) {
+    const value = nullableText(sheet, "N" + String(row));
+    if (value === null) continue;
+    if (value.includes("背包格") || value === "无") continue;
+    // 「圣水，有一定消炎杀菌作用」这类写法拆成名称 + 备注。
+    const parts = value.split(/[，,]/);
+    const itemName = parts[0]?.trim() ?? value;
+    const note = parts.length > 1 ? parts.slice(1).join("，").trim() : null;
+    items.push({ status: "背包", location: "背包格", name: itemName.length === 0 ? value : itemName, note });
+  }
+  return items;
+}
+
+/** 解析资产 / 其他资产区域。 */
+function parseAssets(sheet: XLSX.WorkSheet): ImportedAssets | null {
+  const creditRating = nullableText(sheet, "B62");
+  const livingStandard = nullableText(sheet, "F62");
+  const consumption = nullableText(sheet, "I62");
+  const otherAssetsValue = nullableText(sheet, "L62");
+  const cash = numberValue(sheet, "O62");
+  const cashUnit = nullableText(sheet, "S62");
+  const vehicle = nullableText(sheet, "B70");
+  const residence = nullableText(sheet, "F70");
+  const luxury = nullableText(sheet, "J70");
+  const securities = nullableText(sheet, "N70");
+  const other = nullableText(sheet, "R70");
+  const hasAny =
+    creditRating !== null ||
+    cash !== null ||
+    vehicle !== null ||
+    residence !== null ||
+    luxury !== null ||
+    securities !== null ||
+    other !== null;
+  if (hasAny === false) return null;
+  return {
+    creditRating,
+    livingStandard,
+    consumption,
+    otherAssetsValue,
+    cash,
+    cashUnit,
+    vehicle,
+    residence,
+    luxury,
+    securities,
+    other
+  };
 }
 
 export function parseCharacterWorkbook(buffer: Buffer): ImportedCharacter {
@@ -275,6 +372,8 @@ export function parseCharacterWorkbook(buffer: Buffer): ImportedCharacter {
     hometown: nullableText(sheet, "M7"),
     attributes,
     skills: [...left, ...right],
-    weapons: parseWeapons(sheet)
+    weapons: parseWeapons(sheet),
+    items: parseItems(sheet),
+    assets: parseAssets(sheet)
   };
 }

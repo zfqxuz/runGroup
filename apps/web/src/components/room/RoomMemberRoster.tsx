@@ -258,7 +258,7 @@ export default function RoomMemberRoster(props: Props) {
                               </option>
                             ))}
                           </select>
-                          <button type="submit" className="self-start rounded bg-sakura-500 px-2 py-1 text-[10px] font-medium text-ink-onAccent">
+                          <button type="submit" className="self-start rounded border border-sakura-500/50 bg-sakura-500/10 px-2 py-1 text-[10px] font-medium text-sakura-300">
                             发送情报
                           </button>
                         </form>

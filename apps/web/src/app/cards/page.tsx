@@ -46,7 +46,7 @@ export default async function CardsLibraryPage() {
           <Link href="/cards/new?system=COC7" className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
             新建 COC7 卡
           </Link>
-          <Link href="/cards/new?system=TOUHOU" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">
+          <Link href="/cards/new?system=TOUHOU" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">
             新建东方卡
           </Link>
         </div>

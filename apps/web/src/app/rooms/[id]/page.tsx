@@ -22,6 +22,7 @@ import { loadRoomMemberViews } from "@/server/room/member-view";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { listOutOfCombatMagic } from "@/server/magic/out-of-combat";
 import PlayerDashboard, { type DashboardData } from "@/components/room/PlayerDashboard";
+import { characterEquipmentOf } from "@/shared/character-equipment";
 import { loadActiveCombatSummaries } from "@/server/combat/room-view";
 import { loadSceneView } from "@/server/scene/load";
 import type { RoomBgmView } from "@/shared/bgm";
@@ -125,7 +126,7 @@ export default async function RoomPage({
     include: {
       state: true,
       characters: {
-        include: { character: { include: { occupationRef: true } } },
+        include: { character: { include: { occupationRef: true, portrait: true, avatar: true } } },
         orderBy: { id: "asc" }
       }
     }
@@ -505,7 +506,9 @@ export default async function RoomPage({
             unit: condition.duration.unit,
             remaining: condition.duration.remaining,
             note: condition.duration.note ?? null
-          }))
+          })),
+          portraitUrl: ownGameCharacter.character.portrait?.url ?? ownGameCharacter.character.avatar?.url ?? null,
+          equipment: characterEquipmentOf(ownGameCharacter.character.sourceData)
         };
 
   const playerContent = (

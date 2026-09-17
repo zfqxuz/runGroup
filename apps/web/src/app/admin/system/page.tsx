@@ -79,7 +79,7 @@ export default async function AdminSystemPage({
                 defaultValue={item.key === "ai.moduleImport.model" ? JSON.stringify(current?.value ?? "deepseek-flash") : JSON.stringify(current?.value ?? (item.key.endsWith("maxFiles") ? 30 : {}))}
                 className="min-w-[280px] flex-1 rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-[11px] outline-none focus:border-sakura-500"
               />
-              <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">保存</button>
+              <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">保存</button>
             </form>
           </section>
         );

@@ -95,7 +95,7 @@ export default async function AdminRulePacksPage({
               <textarea name="config" rows={4} placeholder='{"id":"my-pack","version":"1.0.0",...}' className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-[11px] outline-none focus:border-sakura-500" />
             </label>
             <div>
-              <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">
+              <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">
                 创建规则包
               </button>
             </div>

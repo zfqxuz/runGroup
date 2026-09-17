@@ -74,7 +74,7 @@ function StandardImporter(props: Props) {
         <button
           type="submit"
           disabled={busy}
-          className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
+          className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
         >
           {busy ? "导入中…" : "导入标准团本"}
         </button>

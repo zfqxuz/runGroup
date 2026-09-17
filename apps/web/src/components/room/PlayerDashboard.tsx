@@ -13,6 +13,20 @@ export interface DashboardCondition {
   readonly note: string | null;
 }
 
+export interface DashboardWeapon {
+  readonly name: string;
+  readonly damage: string | null;
+  readonly skillLabel: string | null;
+  readonly rangeText: string | null;
+}
+
+export interface DashboardItem {
+  readonly name: string;
+  readonly location: string | null;
+  readonly status: string | null;
+  readonly note: string | null;
+}
+
 export interface DashboardData {
   readonly characterId: string;
   readonly name: string;
@@ -27,6 +41,17 @@ export interface DashboardData {
   readonly maxDp: number;
   readonly attributes: Readonly<Record<string, number>>;
   readonly conditions: readonly DashboardCondition[];
+  readonly portraitUrl: string | null;
+  readonly equipment: {
+    readonly weapons: readonly DashboardWeapon[];
+    readonly items: readonly DashboardItem[];
+    readonly assets: {
+      readonly creditRating: string | null;
+      readonly cash: number | null;
+      readonly cashUnit: string | null;
+      readonly otherAssetsValue: string | null;
+    } | null;
+  };
 }
 
 interface Props {
@@ -214,10 +239,32 @@ export default function PlayerDashboard(props: Props) {
   ];
 
   return (
-    <aside className="flex min-w-0 flex-col gap-3 rounded-xl border border-white/10 bg-ink-800/50 p-4">
-      <header>
-        <h2 className="truncate text-sm font-medium text-white/85">{props.data.name}</h2>
-        <p className="mt-0.5 truncate text-[11px] text-white/35">{props.data.occupation ?? "我的角色"}</p>
+    <aside className="flex h-[420px] min-h-0 min-w-0 flex-col gap-3 overflow-y-auto rounded-xl border border-white/10 bg-ink-800/50 p-4 sm:h-[480px] lg:h-[560px] xl:h-[620px]">
+      <header className="flex items-start gap-3">
+        {props.data.portraitUrl === null ? (
+          <span className="flex h-20 w-16 shrink-0 items-center justify-center rounded-lg border border-white/15 bg-ink-900 text-lg text-white/40">
+            {props.data.name.slice(0, 1)}
+          </span>
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={props.data.portraitUrl}
+            alt={props.data.name}
+            className="h-20 w-16 shrink-0 rounded-lg border border-white/15 object-cover"
+          />
+        )}
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate text-sm font-medium text-white/85">{props.data.name}</h2>
+          <p className="mt-0.5 truncate text-[11px] text-white/35">{props.data.occupation ?? "我的角色"}</p>
+          {props.data.equipment.assets === null ? null : (
+            <p className="mt-1 truncate text-[10px] text-white/40">
+              信用 {props.data.equipment.assets.creditRating ?? "—"}
+              {props.data.equipment.assets.cash === null
+                ? ""
+                : " · 现金 " + String(props.data.equipment.assets.cash) + (props.data.equipment.assets.cashUnit ?? "")}
+            </p>
+          )}
+        </div>
       </header>
 
       <div className="grid grid-cols-2 gap-2">
@@ -250,6 +297,36 @@ export default function PlayerDashboard(props: Props) {
             </span>
           ))}
         </div>
+      </div>
+
+      <div>
+        <p className="text-[11px] text-white/40">装备与物品</p>
+        {props.data.equipment.weapons.length === 0 && props.data.equipment.items.length === 0 ? (
+          <p className="mt-1.5 text-[11px] text-white/30">暂无武器 / 随身物品</p>
+        ) : (
+          <ul className="mt-1.5 flex flex-col gap-1">
+            {props.data.equipment.weapons.map((weapon) => (
+              <li key={"weapon-" + weapon.name} className="rounded border border-red-400/25 bg-red-400/5 px-2 py-1">
+                <span className="text-[11px] text-white/75">🗡 {weapon.name}</span>
+                <span className="ml-1 text-[10px] text-white/40">
+                  {weapon.skillLabel ?? ""}
+                  {weapon.damage === null ? "" : " · " + weapon.damage}
+                  {weapon.rangeText === null ? "" : " · " + weapon.rangeText}
+                </span>
+              </li>
+            ))}
+            {props.data.equipment.items.map((item) => (
+              <li key={"item-" + item.name} className="rounded border border-white/10 bg-ink-900/50 px-2 py-1">
+                <span className="text-[11px] text-white/70">🎒 {item.name}</span>
+                <span className="ml-1 text-[10px] text-white/40">
+                  {item.location ?? ""}
+                  {item.status === null ? "" : " · " + item.status}
+                  {item.note === null ? "" : " · " + item.note}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
       </div>
 
       <div>

@@ -26,7 +26,7 @@ export default async function CharactersLibraryPage() {
         <div className="flex flex-wrap gap-2">
           <Link href="/characters/import" className="rounded-lg border border-spirit-400/40 px-3 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10">导入 xlsx</Link>
           <Link href="/characters/new?system=COC7" className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">新建 COC7 角色</Link>
-          <Link href="/characters/new?system=TOUHOU" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">新建东方角色</Link>
+          <Link href="/characters/new?system=TOUHOU" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">新建东方角色</Link>
         </div>
       </header>
 

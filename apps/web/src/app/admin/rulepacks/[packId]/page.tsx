@@ -198,7 +198,7 @@ export default async function AdminRulePackDetailPage({
               />
             </label>
             <div>
-              <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400">保存草稿版本</button>
+              <button type="submit" className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20">保存草稿版本</button>
             </div>
           </form>
         </div>

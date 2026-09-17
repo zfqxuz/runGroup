@@ -133,7 +133,9 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
         occupationCode: parsed.occupationCode,
         hometown: parsed.hometown,
         skills: parsed.skills,
-        weapons: parsed.weapons
+        weapons: parsed.weapons,
+        items: parsed.items,
+        assets: parsed.assets
       } as never,
       hp: finalOutcome.derived.maxHp,
       maxHp: finalOutcome.derived.maxHp,

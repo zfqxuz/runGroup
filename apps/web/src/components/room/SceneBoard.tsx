@@ -232,7 +232,7 @@ function TokenHoverCard(props: TokenHoverCardProps) {
                       <option key={clue.id} value={clue.id}>{clue.title}（{clue.isPublic ? "公开" : "仅我可见"}）</option>
                     ))}
                   </select>
-                  <button type="submit" className="rounded bg-sakura-500 px-2 py-1 text-[10px] font-medium text-ink-onAccent">发送情报</button>
+                  <button type="submit" className="rounded border border-sakura-500/50 bg-sakura-500/10 px-2 py-1 text-[10px] font-medium text-sakura-300">发送情报</button>
                 </form>
               )}
             </details>

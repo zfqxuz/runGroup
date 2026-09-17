@@ -49,7 +49,7 @@ export default async function ModuleSquarePage() {
                 <>
                   <Link
                     href={"/rooms/new?moduleId=" + module.id}
-                    className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-ink-onAccent transition hover:bg-sakura-400"
+                    className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-xs font-medium text-sakura-300 transition hover:bg-sakura-500/20"
                   >
                     用这个团本建房
                   </Link>

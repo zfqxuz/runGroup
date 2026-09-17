@@ -39,7 +39,7 @@ export default async function ImportCharacterPage(props: { searchParams: { error
         </label>
         <button
           type="submit"
-          className="mt-5 rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400"
+          className="mt-5 rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-5 py-2.5 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20"
         >
           解析并导入
         </button>

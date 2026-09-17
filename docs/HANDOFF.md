@@ -2163,3 +2163,35 @@ MagicEffect =
 - `npm run typecheck`、`npm test`（214）、`next build` PASS。
 - 编译产物 CSS 已确认包含 `[data-theme=day]` 变量块、`rgb(var(--white))` 与 `text-ink-onAccent`。
 - 真实会话 HTTP 验证（部署后执行）：房间页 200、看板大号数值卡片、右上角主题切换按钮存在。
+
+## 55. 角色道具解析 / 编辑删除 / 战斗互斥 / 界面批量调整（本轮）
+
+### 1. COC7 Excel 角色卡道具解析修复
+- `apps/web/src/server/character/import-xlsx.ts`：
+  - 武器表严格限制在 53~58 行并遇到「资产 / 随身物品 / 背景故事」等区块立即停止，修复把资产区块误当武器的问题；
+  - 新增 `ImportedItem`：解析 77~81 行随身物品（状态 / 部位 / 物品名称）与 N 列背包格内容；「圣水，有一定消炎杀菌作用」会拆成名称 + 备注；
+  - 新增 `ImportedAssets`：信用评级 / 生活水平 / 其他资产 / 现金 / 载具 / 住所等。
+- `import-character.ts` 把 `items / assets` 一起写进 `sourceData`。
+- 新增 `apps/web/src/shared/character-equipment.ts`，角色页与看板共用读取逻辑。
+- 用真实卡 `COC7zfq.xlsx` 验证：武器 []、随身物品 6 件（银十字架 / 背包 / 圣经 / 圣水 / 可折叠金属十字架 / 绷带）、资产正确。
+
+### 2. 角色编辑 / 删除
+- 新增 `updateCharacterProfileAction` / `deleteCharacterAction`（仅限本人）。
+- 新增 `/characters/[id]/edit` 编辑页（名称 / 玩家 / 职业 / 年龄 / 性别 / 住地 / HP/MP/SAN/DP）。
+- 角色详情页新增「编辑角色 / 删除角色（二次确认）」按钮与「装备与物品」区块。
+
+### 3. 战斗互斥（COC7）
+- `isMeleeAttackSkill` / `reactionTypesForAttack`：近战（FIGHTING_*）才能被反击，射击 / 投掷等远程攻击的应对选项里移除 COUNTER。
+- 普通攻击与追逐攻击都接入；`verify-combat-options` 增加断言并通过。
+
+### 4. 界面批量调整
+- 全局：`html { font-size: 17px }`、`body { font-weight: 500 }`；白天模式文字颜色加深（`--white: 17 19 30`）。
+- 粉底按钮统一改为描边风格：51 处 `bg-sakura-500 + text-ink-onAccent` 改为 `border-sakura-500/50 bg-sakura-500/10 text-sakura-300`。
+- KP 线索区：改为可滚动的折叠列表（`details`），大幅压缩占用高度。
+- 看板：新增立绘、装备与物品（武器 / 随身物品 / 资产）；身高与跑团日志一致（420/480/560/620）。
+- 准备页：选择角色改为 change 即自动保存，不再需要点「保存当前角色」。
+
+### 仍未完成（下一轮）
+- 规则集 / 魔法的「表单 + JSON 双模式编辑」。
+- 页面上描述性文字的进一步精简。
+- 掷骰区「与页面等长」的最终形态（当前只做了面板内拉伸，若指跨三栏整行需要调整 RoomPlay 布局）。

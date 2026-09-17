@@ -122,7 +122,7 @@ export default async function NewCombatPage({
             )}
             <button
               type="submit"
-              className="self-start rounded-lg bg-sakura-500 px-6 py-3 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:opacity-40"
+              className="self-start rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-6 py-3 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:cursor-not-allowed disabled:opacity-40"
             >
               {isKP ? "直接开战" : "提交战斗申请"}
             </button>

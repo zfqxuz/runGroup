@@ -1028,7 +1028,7 @@ export default function CombatBoard(props: Props) {
                   type="button"
                   disabled={attackSkills.length === 0}
                   onClick={() => emitAction({ kind: "DANMAKU", targetId: activeTargetId, skill: activeSkill, damage: activeAttackDamage })}
-                  className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
+                  className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
                 >
                   攻击
                 </button>
@@ -1074,7 +1074,7 @@ export default function CombatBoard(props: Props) {
                         (selectedSpellCard?.mode === "DECLARATION" && selectedActor?.hasDeclaration === true)
                       }
                       onClick={() => emitAction({ kind: "SPELLCARD", spellCardId: activeSpellCardId })}
-                      className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-ink-onAccent transition hover:bg-sakura-400 disabled:opacity-40"
+                      className="rounded-lg border border-sakura-500/50 bg-sakura-500/10 px-4 py-2 text-sm font-medium text-sakura-300 transition hover:bg-sakura-500/20 disabled:opacity-40"
                     >
                       释放符卡
                     </button>

@@ -284,13 +284,30 @@ export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatRea
  * 因此只要规则包定义了 FIGHTING_BRAWL，就始终下发 COUNTER。
  * 东方包仍按单位实际拥有的攻击技能过滤，避免出现无技能可选的反击。
  */
+/** COC7 里只有近战（FIGHTING_*）可以被反击；射击 / 投掷 / 远程只能闪避。 */
+export function isMeleeAttackSkill(skillId: string | null | undefined): boolean {
+  if (skillId === null || skillId === undefined) return false;
+  return skillId.startsWith("FIGHTING_");
+}
+
+/** 按本次攻击的类型过滤应对选项：远程攻击移除「反击」。 */
+export function reactionTypesForAttack(
+  types: readonly CombatReactionType[],
+  attackSkill: string | null | undefined
+): CombatReactionType[] {
+  if (attackSkill === null || attackSkill === undefined || attackSkill.length === 0) return [...types];
+  if (isMeleeAttackSkill(attackSkill)) return [...types];
+  return types.filter((type) => type !== "COUNTER");
+}
+
 export function allowedReactionTypesForParticipant(
   pack: CompiledRulePack,
   attackSkills: ReadonlyMap<string, readonly string[]>,
   participantId: string,
-  canFlee = false
+  canFlee = false,
+  attackSkill: string | null = null
 ): readonly CombatReactionType[] {
-  const types: CombatReactionType[] = [...allowedReactionTypes(pack)];
+  const types: CombatReactionType[] = reactionTypesForAttack(allowedReactionTypes(pack), attackSkill);
   if (types.includes("COUNTER")) {
     if (pack.system === "COC7") {
       const hasBrawlBase = pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
