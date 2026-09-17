@@ -14,6 +14,9 @@ import {
   resolveCheck,
   resolveOpposed,
   resolveActionCost,
+  computeAtbMax,
+  computeBaseSpeed,
+  computeDerived,
   damageMultiplierOf,
   fromMicro,
   isHostileSpell,
@@ -35,7 +38,8 @@ import type {
   CombatMode,
   CombatParticipantState,
   CombatState,
-  LogEntry
+  LogEntry,
+  SummonTemplate
 } from "./types";
 
 export const DEFAULT_ATB_SCALE = 1000;
@@ -87,6 +91,7 @@ export function createCombat(init: CombatInit): CombatState {
     phase: "ATB_CHARGING",
     seq: 0,
     rollSeq: 0,
+    summonSeq: 0,
     participants: [],
     pending: {},
     log: [],
@@ -112,6 +117,11 @@ export interface ParticipantInit {
   readonly speed: number;
   readonly isIdentified?: boolean;
   readonly isPublic?: boolean;
+  /** 初始护甲；由 NPC 卡 / 预施法护甲提供。 */
+  readonly armor?: number;
+  /** 召唤来源：由哪个参战单位召唤入场。 */
+  readonly summonedBy?: string | null;
+  readonly summonedName?: string | null;
 }
 
 export function addParticipant(
@@ -149,6 +159,10 @@ export function addParticipant(
     maxSan: init.derived.maxSan,
     dp: init.derived.maxDp,
     maxDp: init.derived.maxDp,
+    armor: Math.max(0, Math.floor(init.armor ?? 0)),
+    maxArmor: Math.max(0, Math.floor(init.armor ?? 0)),
+    summonedBy: init.summonedBy ?? null,
+    summonedName: init.summonedName ?? null,
     attributes: init.attributes,
     derived: init.derived,
     skills: init.skills ?? {},
@@ -407,6 +421,15 @@ function combatEventParam(
   } catch {
     return fallback;
   }
+}
+
+/** 消耗护甲吸收伤害：每 1 点护甲抵消 1 点伤害，护甲同时扣减。 */
+function absorbWithArmor(target: CombatParticipantState, amount: number): { absorbed: number; remaining: number } {
+  const damage = Math.max(0, Math.floor(amount));
+  const armor = Math.max(0, Math.floor(target.armor ?? 0));
+  const absorbed = Math.min(armor, damage);
+  if (absorbed > 0) target.armor = armor - absorbed;
+  return { absorbed, remaining: damage - absorbed };
 }
 
 function applyDamageToParticipant(
@@ -745,7 +768,8 @@ function resolveAttack(
     defender.mp = Math.min(defender.maxMp, defender.mp + outcome.mpGained);
   }
 
-  const applied = applyDamageToParticipant(ctx, defender, outcome.damage);
+  const armorResult = absorbWithArmor(defender, outcome.damage);
+  const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining);
   const defenseText =
     reaction.type === "PASS"
       ? "未应对"
@@ -756,11 +780,13 @@ function resolveAttack(
     kind: "DAMAGE",
     actorId: actor.id,
     targetId: defender.id,
-    text: `伤害结算：${actor.name} → ${defender.name}，应对=${defenseText}，原始 ${damageRoll.total} → 最终 ${outcome.damage}${outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"}`,
+    text: `伤害结算：${actor.name} → ${defender.name}，应对=${defenseText}，原始 ${damageRoll.total} → 最终 ${outcome.damage}${armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed + "（剩余 " + defender.armor + "）" : ""}${outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"}`,
     data: {
       rollType: "DAMAGE_SETTLE",
       rawDamage: damageRoll.total,
       damage: outcome.damage,
+      armorAbsorbed: armorResult.absorbed,
+      armorRemaining: defender.armor,
       defense: reaction.type,
       defenseSuccess,
       steps: outcome.steps.join("；"),
@@ -937,6 +963,30 @@ function rollEffectDice(source: string, state: CombatState, salt: string): numbe
   }
 }
 
+/** 没有独立召唤物卡片时使用的通用兜底模板。 */
+function genericSummonTemplate(pack: CompiledRulePack, name: string): SummonTemplate {
+  const attributes: AttributeSet = {
+    str: 50,
+    con: 50,
+    siz: 50,
+    dex: 50,
+    app: 50,
+    int: 50,
+    pow: 50,
+    edu: 50,
+    luck: 50
+  };
+  const outcome = computeDerived(pack, { attributes, skills: {} });
+  return {
+    name: name.trim().length > 0 ? name.trim() : "召唤物",
+    attributes: outcome.attributes,
+    derived: outcome.derived,
+    skills: {},
+    spells: [],
+    damageBonus: "0"
+  };
+}
+
 function addOrReplaceStatus(
   target: CombatParticipantState,
   status: ActiveStatusEffect
@@ -1017,6 +1067,7 @@ function resolveMagicTargets(
 ): CombatParticipantState[] {
   const targeting = spellTargeting(spell);
   const alive = state.participants.filter((participant) => participant.defeated === false);
+  if (spellEffectsOf(spell).some((effect) => effect.type === "SUMMON")) return [actor];
   if (targeting === "SELF" || spell.target === "SELF") return [actor];
   if (spell.target === "ALL") {
     if (targeting === "ENEMY") return alive.filter((participant) => participant.faction !== actor.faction);
@@ -1071,7 +1122,8 @@ function applyMagicEffect(
   target: CombatParticipantState,
   spell: MagicSpell,
   effect: MagicEffect,
-  defense: { readonly type: DefenseType; readonly success: boolean }
+  defense: { readonly type: DefenseType; readonly success: boolean },
+  submission: ActionSubmission
 ): void {
   const state = ctx.state;
   const meta = { spellId: spell.id, spell: spell.name };
@@ -1104,13 +1156,14 @@ function applyMagicEffect(
     });
     if (outcome.mpCost > 0) target.mp = Math.max(0, target.mp - outcome.mpCost);
     if (outcome.mpGained > 0) target.mp = Math.min(target.maxMp, target.mp + outcome.mpGained);
-    const applied = applyDamageToParticipant(ctx, target, outcome.damage);
+    const armorResult = absorbWithArmor(target, outcome.damage);
+    const applied = applyDamageToParticipant(ctx, target, armorResult.remaining);
     pushLog(state, {
       kind: "DAMAGE",
       actorId: actor.id,
       targetId: target.id,
-      text: "伤害结算：「" + spell.name + "」→ " + target.name + "，应对=" + defense.type + (defense.type === "PASS" ? "" : defense.success ? "成功" : "失败") + "，原始 " + base + " → 最终 " + outcome.damage + (outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"),
-      data: { ...meta, rollType: "DAMAGE_SETTLE", rawDamage: base, damage: outcome.damage, defense: defense.type, defenseSuccess: defense.success, steps: outcome.steps.join("；"), toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+      text: "伤害结算：「" + spell.name + "」→ " + target.name + "，应对=" + defense.type + (defense.type === "PASS" ? "" : defense.success ? "成功" : "失败") + "，原始 " + base + " → 最终 " + outcome.damage + (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed + "（剩余 " + target.armor + "）" : "") + (outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"),
+      data: { ...meta, rollType: "DAMAGE_SETTLE", rawDamage: base, damage: outcome.damage, armorAbsorbed: armorResult.absorbed, armorRemaining: target.armor, defense: defense.type, defenseSuccess: defense.success, steps: outcome.steps.join("；"), toDeclaration: applied.toDeclaration, toHp: applied.toHp }
     });
     return;
   }
@@ -1159,6 +1212,54 @@ function applyMagicEffect(
   if (effect.type === "STATUS") {
     const stacks = Math.max(1, evaluateEffectNumber(ctx.pack, effect.stacks, actor.vars));
     applyStatus(ctx.pack, state, target.id, effect.key, stacks);
+    return;
+  }
+
+  if (effect.type === "ARMOR") {
+    const amount = rollEffectDice(effect.amount, state, "magic-armor:" + actor.id + ":" + spell.id + ":" + target.id);
+    target.armor = Math.max(0, Math.floor(target.armor ?? 0) + amount);
+    target.maxArmor = Math.max(target.maxArmor ?? 0, target.armor);
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 获得护甲 " + amount + "（当前 " + target.armor + "）", { armor: amount, armorRemaining: target.armor });
+    return;
+  }
+
+  if (effect.type === "SUMMON") {
+    const count = Math.max(1, Math.min(8, Math.floor(evaluateEffectNumber(ctx.pack, effect.count, actor.vars))));
+    for (let index = 0; index < count; index += 1) {
+      const template = submission.summonTemplate ?? genericSummonTemplate(ctx.pack, effect.name ?? "召唤物");
+      const ordinal = (state.summonSeq ?? 0) + 1;
+      state.summonSeq = ordinal;
+      const id = "summon-" + actor.id + "-" + String(ordinal);
+      const vars = { ...template.attributes, ...template.derived };
+      const summoned = addParticipant(state, {
+        id,
+        name: count > 1 ? template.name + " " + String(index + 1) : template.name,
+        kind: "NPC",
+        characterId: null,
+        faction: actor.faction,
+        attributes: template.attributes,
+        derived: template.derived,
+        skills: { ...(template.skills ?? {}) },
+        spells: [...(template.spells ?? [])],
+        damageBonus: template.damageBonus ?? "0",
+        atbMax: computeAtbMax(ctx.pack, vars),
+        speed: computeBaseSpeed(ctx.pack, vars),
+        isIdentified: true,
+        isPublic: false,
+        summonedBy: actor.id,
+        summonedName: template.name
+      });
+      if (state.mode === "INITIATIVE" && state.initiativeOrder.includes(summoned.id) === false) {
+        state.initiativeOrder = [...state.initiativeOrder, summoned.id];
+      }
+      pushLog(state, {
+        kind: "SPELLCARD",
+        actorId: actor.id,
+        targetId: summoned.id,
+        text: actor.name + " 施放「" + spell.name + "」 → 召唤了「" + summoned.name + "」",
+        data: { spellId: spell.id, spell: spell.name, summonId: summoned.id, summonName: summoned.name }
+      });
+    }
     return;
   }
 
@@ -1311,7 +1412,7 @@ function resolveMagic(
 
     for (const effect of effects) {
       if (target.defeated) break;
-      applyMagicEffect(ctx, actor, target, spell, effect, defense);
+      applyMagicEffect(ctx, actor, target, spell, effect, defense, submission);
     }
   }
 }

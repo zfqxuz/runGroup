@@ -267,17 +267,30 @@ function normalizeMagicTargeting(value, entry) {
   if (text === "SELF" || text === "ALLY" || text === "ENEMY" || text === "ANY") return text;
   const effects = Array.isArray(entry.effects) ? entry.effects : [];
   const types = effects.map((effect) => effect && typeof effect === "object" ? asString(effect.type) : "");
-  if (types.includes("HEAL") || types.includes("MP_RESTORE") || types.includes("SAN_RESTORE") || types.includes("CLEANSE")) return "ALLY";
+  if (types.includes("HEAL") || types.includes("MP_RESTORE") || types.includes("SAN_RESTORE") || types.includes("CLEANSE") || types.includes("ARMOR") || types.includes("SUMMON")) return "ALLY";
   if (types.some((type) => ["DAMAGE", "DOT", "STUN", "CONTROL", "MP_DRAIN", "SAN_LOSS"].includes(type))) return "ENEMY";
   if (normalizeMagicTarget(entry.target) === "SELF") return "SELF";
   return "ENEMY";
+}
+function summonNameFromDescription(text) {
+  const match = /(?:召唤|唤出|呼唤|召来|召出|召唤出)[「“"]?([^，。；;\n」”"]{1,20})/.exec(text);
+  const raw = match && typeof match[1] === "string" ? match[1].trim() : "";
+  return raw.length > 0 ? raw : "召唤物";
+}
+function armorEffectFromDescription(text) {
+  if (/(护甲|防护|保护)/.test(text) === false || /(伤害|物理|非魔法)/.test(text) === false) return null;
+  const match = /(\d*d\d+)\s*点?\s*(?:防非魔法伤害的)?护甲/i.exec(text);
+  return { type: "ARMOR", amount: match ? normalizeMagicDice(match[1], "1d6") : "1d6", durationTicks: "0" };
 }
 function effectFromDescription(value) {
   const text = asString(value);
   if (text.length === 0) return null;
   const dice = diceExpressionOf(text);
+  if (/(召唤|唤出|呼唤|召来|召出)/.test(text)) return { type: "SUMMON", name: summonNameFromDescription(text), count: "1", durationTicks: "0" };
   if (/(晕眩|眩晕|昏迷|麻痹|无法行动|跳过行动)/.test(text)) return { type: "STUN", durationActions: "1" };
   if (/(控制|支配|服从|心智|操纵)/.test(text)) return { type: "CONTROL", durationActions: "1" };
+  const armor = armorEffectFromDescription(text);
+  if (armor !== null) return armor;
   if (/(持续伤害|每回合|每轮|DOT)/i.test(text)) return { type: "DOT", amount: dice ?? "1d3", durationTicks: "3" };
   if (/(理智|SAN)/i.test(text) && /(损失|失去|扣除|减少)/.test(text)) return { type: "SAN_LOSS", amount: dice ?? "1d4" };
   if (/(恢复|治疗|回复)/.test(text) && /(HP|生命|体力)/i.test(text)) return { type: "HEAL", amount: dice ?? "1d3" };
@@ -304,6 +317,10 @@ function normalizeMagicEffects(value, entry) {
           push({ type, amount: normalizeMagicExprNumber(raw.amount, "1") });
         } else if (type === "STATUS") {
           push({ type, key: asString(raw.key) || "STATUS", stacks: normalizeMagicExprNumber(raw.stacks, "1") });
+        } else if (type === "ARMOR") {
+          push({ type, amount: normalizeMagicDice(raw.amount, "1d6"), durationTicks: normalizeMagicExprNumber(raw.durationTicks, "0") });
+        } else if (type === "SUMMON") {
+          push({ type, name: asString(raw.name) || "召唤物", count: normalizeMagicExprNumber(raw.count, "1"), durationTicks: normalizeMagicExprNumber(raw.durationTicks, "0") });
         } else if (type === "STUN" || type === "CONTROL") {
           push({ type, durationActions: normalizeMagicExprNumber(raw.durationActions, "1") });
         } else if (type === "CLEANSE") {
@@ -337,6 +354,11 @@ function normalizeMagicForRules(entry, system) {
   entry.damage = normalizeMagicDice(entry.damage, "");
   entry.target = normalizeMagicTarget(entry.target);
   entry.effects = normalizeMagicEffects(entry.effects ?? entry.effect, entry);
+  // 模型常把「2D6 护甲 / 1D6 防护」误写成 DAMAGE；描述是护甲语义时以规则引擎可执行的 ARMOR 为准。
+  const armorFromText = armorEffectFromDescription(asString(entry.name) + "\n" + asString(entry.description));
+  if (armorFromText !== null && entry.effects.length > 0 && entry.effects.every((effect) => effect && effect.type === "DAMAGE")) {
+    entry.effects = [armorFromText];
+  }
   entry.targeting = normalizeMagicTargeting(entry.targeting, entry);
 }
 

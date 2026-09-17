@@ -22,6 +22,7 @@ import {
   type ActionSubmission,
   type DefenseReaction
 } from "@touhou/combat";
+import { spellEffectsOf } from "@touhou/rules";
 import {
   canControl,
   controlledReadyParticipantId,
@@ -29,9 +30,11 @@ import {
   viewForUser,
   type CombatRuntime
 } from "@/server/combat/runtime";
-import { allowedReactionTypes, allowedReactionTypesForParticipant, validateCombatAction } from "@/server/combat/options";
+import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, validateCombatAction, type WeaponLike } from "@/server/combat/options";
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
 import { saveCombatState } from "@/server/combat/setup";
+import { findSummonCard, summonTemplateFromCard } from "@/server/combat/summon";
+import { prisma } from "@/server/db/prisma";
 import type {
   Ack,
   CombatActionPayload,
@@ -112,6 +115,40 @@ async function emitReactionRequest(
 
 function isEnded(state: CombatRuntime["state"]): boolean {
   return state.phase === "ENDED";
+}
+
+function kpUserIds(runtime: CombatRuntime): string[] {
+  const ids: string[] = [];
+  for (const [userId, role] of runtime.roles.entries()) {
+    if (role === "KP") ids.push(userId);
+  }
+  return ids;
+}
+
+/** 召唤入场的新单位由 KP 接管；若服务端解析出了独立卡片，同时生成攻击选项。 */
+function syncSummonedParticipants(
+  runtime: CombatRuntime,
+  summonTemplate: ActionSubmission["summonTemplate"]
+): string[] {
+  const kpIds = kpUserIds(runtime);
+  const created: string[] = [];
+  for (const participant of runtime.state.participants) {
+    if (participant.summonedBy === null || participant.summonedBy === undefined) continue;
+    if (runtime.controllers.has(participant.id)) continue;
+    runtime.controllers.set(participant.id, kpIds);
+    created.push(participant.id);
+    if (summonTemplate !== undefined) {
+      const weapons = (summonTemplate.weapons ?? []) as readonly WeaponLike[];
+      const options = attackOptionsForParticipant(
+        runtime.pack,
+        { id: participant.id, kind: "NPC", characterId: null, skills: participant.skills },
+        weapons
+      );
+      runtime.attackOptions.set(participant.id, options);
+      runtime.attackSkills.set(participant.id, options.map((option) => option.skillId));
+    }
+  }
+  return created;
 }
 
 export async function tryResolveCombat(
@@ -282,6 +319,29 @@ async function handleAction(
     declarationHp: asNumber(raw.declarationHp),
     declarationDurationTicks: asNumber(raw.declarationDurationTicks)
   };
+  if (action.kind === "MAGIC") {
+    const spell = runtime.pack.pack.magic?.spells.find(
+      (item) => item.id === action.spellId || item.name === action.name
+    );
+    const summonEffect = spell === undefined
+      ? undefined
+      : spellEffectsOf(spell).find((effect) => effect.type === "SUMMON");
+    if (spell !== undefined && summonEffect !== undefined) {
+      const cards = await prisma.card.findMany({
+        where: {
+          roomId: runtime.roomId,
+          scope: "ROOM",
+          type: "NPC",
+          system: runtime.pack.system
+        },
+        select: { name: true, stats: true }
+      });
+      const card = findSummonCard(cards, summonEffect.name);
+      const template = card === null ? null : summonTemplateFromCard(card, runtime.pack);
+      if (template !== null) action = { ...action, summonTemplate: template };
+    }
+  }
+
   if (action.kind === "SPELLCARD") {
     const actor = findParticipant(runtime.state, requestedActor);
     if (actor === undefined) {
@@ -377,6 +437,7 @@ async function handleAction(
   if (resolved === false) {
     await broadcastCombat(io, runtime);
   } else {
+    syncSummonedParticipants(runtime, action.summonTemplate);
     await maybeStartPendingFlee(io, runtime);
   }
   ack({ ok: true });

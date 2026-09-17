@@ -55,6 +55,7 @@ export type {
   ParticipantInit,
   ResolveResult
 } from "./combat";
+export type { SummonTemplate } from "./types";
 export { rngFor } from "./rng";
 export { describeHp, filterCombatForViewer } from "./filter";
 export type { CombatView, ParticipantView, Viewer, ViewerRole } from "./filter";

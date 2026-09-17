@@ -24,9 +24,9 @@ export interface CombatRuntime {
   readonly partyStatsVisible: boolean;
   /** 房间 PRIVATE 时，主动公开角色数值的玩家角色 id。 */
   readonly publicCharacterIds: ReadonlySet<string>;
-  readonly attackSkills: ReadonlyMap<string, readonly string[]>;
+  attackSkills: Map<string, readonly string[]>;
   /** participant.id -> 攻击技能与实际伤害表达式（来自角色装备卡）。 */
-  readonly attackOptions: ReadonlyMap<string, readonly CombatAttackOption[]>;
+  attackOptions: Map<string, readonly CombatAttackOption[]>;
   /** participant.id -> 已装备的符卡。只在 TOUHOU 房间填充。 */
   readonly spellcardsByParticipant: ReadonlyMap<string, readonly CombatSpellCardOption[]>;
   pendingReactions: Map<string, string>;
@@ -76,6 +76,12 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
   }
   const state = snapshot.state as unknown as CombatState;
   if (state === null || typeof state !== "object") return null;
+  // 兼容旧快照：护甲和召唤序号是后加字段。
+  state.summonSeq = Number.isFinite(state.summonSeq) ? state.summonSeq : 0;
+  for (const participant of state.participants) {
+    participant.armor = Math.max(0, Math.floor(participant.armor ?? 0));
+    participant.maxArmor = Math.max(participant.armor, Math.floor(participant.maxArmor ?? participant.armor));
+  }
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();
   const kpIds: string[] = [];

@@ -71,6 +71,12 @@ export interface CombatParticipantState {
   maxSan: number;
   dp: number;
   maxDp: number;
+  /** 可消耗护甲：按 1:1 吸收伤害，吸收后扣减。 */
+  armor: number;
+  maxArmor: number;
+  /** 被哪个单位召唤入场；普通单位 / 玩家为 null。 */
+  summonedBy?: string | null;
+  summonedName?: string | null;
 
   attributes: AttributeSet;
   derived: DerivedStats;
@@ -92,6 +98,20 @@ export interface CombatParticipantState {
   stunActions?: number;
   controlActions?: number;
 }
+/**
+ * 召唤模板。服务端从房间内独立 NPC 卡解析后塞进 ActionSubmission，
+ * 纯战斗引擎只负责把模板变成参战单位。
+ */
+export interface SummonTemplate {
+  readonly name: string;
+  readonly attributes: AttributeSet;
+  readonly derived: DerivedStats;
+  readonly skills?: Readonly<Record<string, number>>;
+  readonly spells?: readonly string[];
+  readonly damageBonus?: string;
+  readonly weapons?: readonly unknown[];
+}
+
 export interface ActionSubmission {
   readonly actorId: string;
   readonly kind: ActionKind;
@@ -117,6 +137,8 @@ export interface ActionSubmission {
   /** 服务端从卡牌数据解析出的击破清弹范围。 */
   readonly declarationClearTargets?: "ALL" | "OTHERS_ONLY";
   readonly status?: { readonly key: string; readonly stacks: number };
+  /** SUMMON 法术的服务端解析结果；没有时由引擎使用通用兜底召唤物。 */
+  readonly summonTemplate?: SummonTemplate;
 }
 
 export type LogField = number | string | boolean | null;
@@ -188,6 +210,8 @@ export interface CombatState {
   seq: number;
   /** 独立掷骰序号：RNG 只由 seed + rollSeq 派生。 */
   rollSeq: number;
+  /** 召唤序号，用于生成可回放的召唤单位 id。 */
+  summonSeq: number;
   participants: CombatParticipantState[];
   pending: Record<string, ActionSubmission>;
   log: LogEntry[];

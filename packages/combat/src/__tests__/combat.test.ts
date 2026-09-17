@@ -369,6 +369,33 @@ describe("魔法施放", () => {
           sanCost: "0",
           target: "ONE",
           effects: [{ type: "STUN", durationActions: "1" }]
+        },
+        {
+          id: "selfarmor",
+          name: "护盾",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "SELF",
+          effects: [{ type: "ARMOR", amount: "5", durationTicks: "0" }]
+        },
+        {
+          id: "selfdamage",
+          name: "自伤测试",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "SELF",
+          effects: [{ type: "DAMAGE", amount: "1" }]
+        },
+        {
+          id: "summon",
+          name: "召唤测试",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: "SELF",
+          effects: [{ type: "SUMMON", name: "测试召唤物", count: "1", durationTicks: "0" }]
         }
       ]
     }
@@ -467,6 +494,82 @@ describe("魔法施放", () => {
     applyForcedSkips(state);
     expect(target.stunActions).toBe(0);
     expect(state.pending.target?.kind).toBe("PASS");
+  });
+
+  it("ARMOR 先吸收伤害并扣减护甲，护甲耗尽后才扣 HP", () => {
+    const state = createCombat({ id: "magic-armor", seed: "magic-armor", tickMs: 250 });
+    const derived = computeDerived(magicPack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(magicPack, { dex: 55 }), speed: computeBaseSpeed(magicPack, { dex: 55 })
+    });
+    addParticipant(state, {
+      id: "enemy", name: "妖精", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(magicPack, { dex: 50 }), speed: computeBaseSpeed(magicPack, { dex: 50 })
+    });
+    caster.isReady = true;
+    submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "selfarmor" });
+    resolvePending(magicPack, state, {});
+    expect(caster.armor).toBe(5);
+    expect(caster.maxArmor).toBe(5);
+
+    const hpBefore = caster.hp;
+    caster.isReady = true;
+    submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "selfdamage" });
+    resolvePending(magicPack, state, {});
+    expect(caster.hp).toBe(hpBefore);
+    expect(caster.armor).toBe(4);
+
+    caster.armor = 0;
+    caster.isReady = true;
+    submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "selfdamage" });
+    resolvePending(magicPack, state, {});
+    expect(caster.hp).toBe(hpBefore - 1);
+  });
+
+  it("SUMMON 可以把独立模板加入战斗，没有模板时使用通用兜底单位", () => {
+    const state = createCombat({ id: "magic-summon", seed: "magic-summon", tickMs: 250 });
+    const derived = computeDerived(magicPack, { attributes: attrs }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "帕秋莉", kind: "PLAYER", characterId: "char-p", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(magicPack, { dex: 55 }), speed: computeBaseSpeed(magicPack, { dex: 55 })
+    });
+    addParticipant(state, {
+      id: "enemy", name: "妖精", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(magicPack, { dex: 50 }), speed: computeBaseSpeed(magicPack, { dex: 50 })
+    });
+    caster.isReady = true;
+    const summonDerived = { ...derived, maxHp: 33, hp: 33 };
+    submitAction(state, {
+      actorId: "caster",
+      kind: "MAGIC",
+      spellId: "summon",
+      summonTemplate: {
+        name: "次元蹑蹒者",
+        attributes: attrs,
+        derived: summonDerived,
+        skills: { FIGHTING_BRAWL: 50 },
+        damageBonus: "0"
+      }
+    });
+    resolvePending(magicPack, state, {});
+    const summoned = state.participants.find((participant) => participant.summonedBy === "caster");
+    expect(summoned).toBeDefined();
+    expect(summoned?.name).toBe("次元蹑蹒者");
+    expect(summoned?.maxHp).toBe(33);
+    expect(summoned?.faction).toBe("PC");
+
+    caster.isReady = true;
+    submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "summon" });
+    resolvePending(magicPack, state, {});
+    const fallback = state.participants.filter((participant) => participant.summonedBy === "caster")[1];
+    expect(fallback).toBeDefined();
+    expect(fallback?.name).toBe("测试召唤物");
+    expect(fallback?.maxHp).toBeGreaterThan(0);
   });
 });
 

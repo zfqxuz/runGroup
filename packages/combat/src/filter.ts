@@ -33,6 +33,9 @@ export interface ParticipantView {
   readonly mp: number | null;
   readonly san: number | null;
   readonly dp: number | null;
+  readonly armor: number | null;
+  readonly maxArmor: number | null;
+  readonly isSummon: boolean;
   readonly statusEffects: readonly string[];
   readonly stunActions: number;
   readonly controlActions: number;
@@ -145,6 +148,9 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       mp: showNumbers ? participant.mp : null,
       san: showNumbers ? participant.san : null,
       dp: showNumbers ? participant.dp : null,
+      armor: showNumbers ? participant.armor : null,
+      maxArmor: showNumbers ? participant.maxArmor : null,
+      isSummon: participant.summonedBy !== null && participant.summonedBy !== undefined,
       statusEffects: showNumbers
         ? participant.statusEffects.map((effect) =>
             effect.stacks > 1 ? `${effect.key} x${effect.stacks}` : effect.key

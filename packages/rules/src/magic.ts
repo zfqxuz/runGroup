@@ -1,7 +1,7 @@
 import type { MagicEffect, MagicSpell, MagicTargeting } from "./schema";
 
 const OFFENSIVE_EFFECTS = new Set(["DAMAGE", "MP_DRAIN", "SAN_LOSS", "DOT", "STUN", "CONTROL"]);
-const SUPPORTIVE_EFFECTS = new Set(["HEAL", "MP_RESTORE", "SAN_RESTORE", "STATUS", "CLEANSE"]);
+const SUPPORTIVE_EFFECTS = new Set(["HEAL", "MP_RESTORE", "SAN_RESTORE", "STATUS", "ARMOR", "SUMMON", "CLEANSE"]);
 
 /** 兼容旧字段：damage 等价于一个 DAMAGE 指令。 */
 export function spellEffectsOf(spell: MagicSpell): readonly MagicEffect[] {
