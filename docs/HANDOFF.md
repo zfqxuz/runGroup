@@ -2135,3 +2135,9 @@ MagicEffect =
 ### 4. 真实 E2E
 - `scripts/e2e-real-magic.ts` 扩展到 40 项，新增：普通玩家只看自己施法者 / 只看自己持有法术、KP 能看到 NPC 持有法术、场景内无合法敌方目标时过滤敌方指向法术。
 - 结果：`passed=40 failed=0`，测试数据全部清理。
+
+## 53. 运维警告：不要在 ECS 生产容器里跑 `next dev`
+- 本轮为了不等 GHCR 镜像拉取，曾在 `touhou-trpg-app` 容器里直接 `docker exec -d npx next dev` 做 UI 验证。
+- ECS 实例只有约 1.6GB 内存，`next dev`（webpack 编译 + 常驻进程）直接把内存 / CPU 打满，导致 SSH banner 超时、实例重启。
+- 恢复方式：实例重启后容器自动拉起；事后清理了残留测试房间与用户。
+- 结论：UI 验证必须等正式镜像部署完成后，用真实会话（curl + NextAuth）访问 **已部署的 3000 端口**；不要在生产容器里跑 dev server。
