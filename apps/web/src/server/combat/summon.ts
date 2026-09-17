@@ -67,9 +67,19 @@ export function summonTemplateFromCard(
 /** 按召唤名匹配房间 NPC 卡：精确名优先，其次双向包含，最后别名包含。 */
 export function findSummonCard<T extends SummonCardLike>(
   cards: readonly T[],
-  summonName: string
+  summonName: string,
+  summonKey?: string
 ): T | null {
   const wanted = normalizeName(summonName);
+  const wantedKey = summonKey === undefined ? "" : normalizeName(summonKey);
+  if (wanted.length === 0 && wantedKey.length === 0) return null;
+  if (wantedKey.length > 0) {
+    for (const card of cards) {
+      const stats = card.stats as { summonKey?: unknown } | null;
+      const cardKey = stats !== null && typeof stats === "object" && typeof stats.summonKey === "string" ? normalizeName(stats.summonKey) : "";
+      if (normalizeName(card.name) === wantedKey || (cardKey.length > 0 && cardKey === wantedKey)) return card;
+    }
+  }
   if (wanted.length === 0) return null;
   for (const card of cards) {
     if (normalizeName(card.name) === wanted) return card;

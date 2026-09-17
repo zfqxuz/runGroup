@@ -295,7 +295,11 @@ function effectFromDescription(value) {
   const dice = diceExpressionOf(text);
   if (/(召唤|唤出|呼唤|召来|召出)/.test(text)) {
     const countMatch = /(\d+)\s*(?:只|个|位|群|名)/.exec(text);
-    return { type: "SUMMON", name: summonNameFromDescription(text), count: countMatch ? countMatch[1] : "1", durationTicks: "0" };
+    const summonName = summonNameFromDescription(text);
+    return { type: "SUMMON", name: summonName, key: normalizeKey(summonName), count: countMatch ? countMatch[1] : "1", durationTicks: "0" };
+  }
+  if (/(净化|驱散|解除|移除|清除)/.test(text) && /(状态|异常|持续伤害|眩晕|控制|诅咒|中毒|灼烧|冰冻)/.test(text)) {
+    return { type: "CLEANSE", keys: [] };
   }
   if (/(晕眩|眩晕|昏迷|麻痹|无法行动|跳过行动)/.test(text)) return { type: "STUN", durationActions: "1" };
   if (/(控制|支配|服从|心智|操纵)/.test(text)) return { type: "CONTROL", durationActions: "1" };
@@ -303,9 +307,12 @@ function effectFromDescription(value) {
   if (armor !== null) return armor;
   if (/(持续伤害|每回合|每轮|DOT)/i.test(text)) return { type: "DOT", amount: dice ?? "1d3", durationTicks: "3" };
   if (/(理智|SAN)/i.test(text) && /(损失|失去|扣除|减少)/.test(text)) return { type: "SAN_LOSS", amount: dice ?? "1d4" };
+  if (/(理智|SAN)/i.test(text) && /(恢复|回复|增加| regain )/i.test(text)) return { type: "SAN_RESTORE", amount: dice ?? "1" };
   if (/(恢复|治疗|回复)/.test(text) && /(HP|生命|体力)/i.test(text)) return { type: "HEAL", amount: dice ?? "1d3" };
   if (/(MP|魔力|魔法值)/i.test(text) && /(恢复|回复)/.test(text)) return { type: "MP_RESTORE", amount: "1" };
   if (/(MP|魔力|魔法值)/i.test(text) && /(吸取|抽取|吸收)/.test(text)) return { type: "MP_DRAIN", amount: "1" };
+  const statusMatch = /(?:获得|进入|施加|附加)\s*([A-Z][A-Z0-9_]{1,30})\s*(?:状态|效果)?/.exec(text);
+  if (statusMatch && statusMatch[1] !== undefined) return { type: "STATUS", key: statusMatch[1], stacks: "1" };
   if (/(伤害|造成|扣除|减少|HP|生命)/.test(text)) return { type: "DAMAGE", amount: dice ?? "1d6" };
   return null;
 }
@@ -330,7 +337,8 @@ function normalizeMagicEffects(value, entry) {
         } else if (type === "ARMOR") {
           push({ type, amount: normalizeMagicDice(raw.amount, "1d6"), durationTicks: normalizeMagicExprNumber(raw.durationTicks, "0") });
         } else if (type === "SUMMON") {
-          push({ type, name: asString(raw.name) || "召唤物", count: normalizeMagicExprNumber(raw.count, "1"), durationTicks: normalizeMagicExprNumber(raw.durationTicks, "0") });
+          const summonName = asString(raw.name) || "召唤物";
+          push({ type, name: summonName, key: normalizeKey(asString(raw.key) || summonName), cardId: asString(raw.cardId) || undefined, count: normalizeMagicExprNumber(raw.count, "1"), durationTicks: normalizeMagicExprNumber(raw.durationTicks, "0") });
         } else if (type === "STUN" || type === "CONTROL") {
           push({ type, durationActions: normalizeMagicExprNumber(raw.durationActions, "1") });
         } else if (type === "CLEANSE") {

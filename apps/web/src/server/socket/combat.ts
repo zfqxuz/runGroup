@@ -334,9 +334,12 @@ async function handleAction(
           type: "NPC",
           system: runtime.pack.system
         },
-        select: { name: true, stats: true }
+        select: { id: true, name: true, stats: true }
       });
-      const card = findSummonCard(cards, summonEffect.name);
+      const explicitCard = summonEffect.cardId === undefined
+        ? null
+        : cards.find((item) => item.id === summonEffect.cardId) ?? null;
+      const card = explicitCard ?? findSummonCard(cards, summonEffect.name, summonEffect.key);
       const template = card === null ? null : summonTemplateFromCard(card, runtime.pack);
       if (template !== null) action = { ...action, summonTemplate: template };
     }

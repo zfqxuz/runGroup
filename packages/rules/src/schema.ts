@@ -163,15 +163,19 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     type: z.literal("ARMOR"),
     /** 获得护甲点数；护甲按 1:1 吸收伤害后扣减。 */
     amount: DiceExprSchema,
-    /** 持续 tick；0 表示直到护甲耗尽或战斗结束。 */
+    /** 持续行动轮次；0 表示直到护甲耗尽或战斗结束。 */
     durationTicks: ExprSchema.default("0")
   }),
   z.object({
     type: z.literal("SUMMON"),
     /** 召唤物名字；服务端按这个名字查找房间内的独立 NPC 卡。 */
     name: z.string().default("召唤物"),
+    /** 稳定召唤 key；用于不同译名 / 显示名之间的匹配。 */
+    key: z.string().optional(),
+    /** 直接指定房间内 NPC 卡的 id；存在时优先使用。 */
+    cardId: z.string().optional(),
     count: ExprSchema.default("1"),
-    /** 持续 tick；0 表示直到战斗结束。 */
+    /** 持续行动轮次；0 表示直到战斗结束。 */
     durationTicks: ExprSchema.default("0")
   }),
   z.object({

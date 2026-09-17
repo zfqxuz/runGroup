@@ -122,6 +122,8 @@ export interface ParticipantInit {
   /** 召唤来源：由哪个参战单位召唤入场。 */
   readonly summonedBy?: string | null;
   readonly summonedName?: string | null;
+  readonly armorExpiresAtRound?: number | null;
+  readonly summonExpiresAtRound?: number | null;
 }
 
 export function addParticipant(
@@ -163,6 +165,8 @@ export function addParticipant(
     maxArmor: Math.max(0, Math.floor(init.armor ?? 0)),
     summonedBy: init.summonedBy ?? null,
     summonedName: init.summonedName ?? null,
+    armorExpiresAtRound: init.armorExpiresAtRound ?? null,
+    summonExpiresAtRound: init.summonExpiresAtRound ?? null,
     attributes: init.attributes,
     derived: init.derived,
     skills: init.skills ?? {},
@@ -199,8 +203,19 @@ export function applyStatus(
   stacks = 1
 ): void {
   const participant = findParticipant(state, participantId);
+  if (participant === undefined) return;
   const rule = pack.statusEffects[key];
-  if (participant === undefined || rule === undefined || participant.defeated) return;
+  if (rule === undefined) {
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: participant.name + " 尝试获得状态 " + key + "，但规则包未定义该状态",
+      data: { key, missingStatusRule: true }
+    });
+    return;
+  }
+  if (participant.defeated) return;
 
   // 配置里的时长单位就是计数 —— 整个系统只有一个时间单位。
   const durationTicks = Math.max(
@@ -420,6 +435,64 @@ function combatEventParam(
     return Number.isFinite(value) ? value : fallback;
   } catch {
     return fallback;
+  }
+}
+
+/** 从战斗里彻底移除一个参战单位（召唤物到期用）。 */
+function removeParticipant(state: CombatState, id: string): void {
+  const participantIndex = state.participants.findIndex((item) => item.id === id);
+  if (participantIndex < 0) return;
+  state.participants.splice(participantIndex, 1);
+  delete state.pending[id];
+
+  const orderIndex = state.initiativeOrder.indexOf(id);
+  if (orderIndex >= 0) {
+    state.initiativeOrder.splice(orderIndex, 1);
+    if (state.activeIndex > orderIndex) state.activeIndex -= 1;
+    if (state.initiativeOrder.length === 0) state.activeIndex = 0;
+    else if (state.activeIndex >= state.initiativeOrder.length) state.activeIndex = state.initiativeOrder.length - 1;
+  }
+
+  if (state.chase !== null) {
+    state.chase.participants = state.chase.participants.filter((item) => item.id !== id);
+    state.chase.order = state.chase.order.filter((itemId) => itemId !== id);
+  }
+}
+
+/**
+ * 统一按「行动轮次」检查持续型效果：
+ * - 护甲 duration 到期后清空剩余护甲；
+ * - 召唤物 duration 到期后从战斗里移除。
+ *
+ * duration = 0 表示持续到耗尽 / 战斗结束。
+ */
+function expireRoundTimers(state: CombatState): void {
+  for (const participant of [...state.participants]) {
+    if (participant.armorExpiresAtRound !== null && participant.armorExpiresAtRound !== undefined && state.round >= participant.armorExpiresAtRound) {
+      const hadArmor = participant.armor;
+      participant.armor = 0;
+      participant.armorExpiresAtRound = null;
+      if (hadArmor > 0) {
+        pushLog(state, {
+          kind: "STATUS",
+          actorId: participant.id,
+          targetId: participant.id,
+          text: participant.name + " 的护甲持续时间结束，剩余 " + hadArmor + " 点护甲消散",
+          data: { armorExpired: true, armorRemaining: hadArmor }
+        });
+      }
+    }
+
+    if (participant.summonExpiresAtRound !== null && participant.summonExpiresAtRound !== undefined && state.round >= participant.summonExpiresAtRound) {
+      pushLog(state, {
+        kind: "SPELLCARD",
+        actorId: participant.summonedBy ?? null,
+        targetId: participant.id,
+        text: "召唤物「" + participant.name + "」持续时间结束，退出战斗",
+        data: { summonExpired: true, summonId: participant.id }
+      });
+      removeParticipant(state, participant.id);
+    }
   }
 }
 
@@ -1217,14 +1290,17 @@ function applyMagicEffect(
 
   if (effect.type === "ARMOR") {
     const amount = rollEffectDice(effect.amount, state, "magic-armor:" + actor.id + ":" + spell.id + ":" + target.id);
+    const duration = evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars);
     target.armor = Math.max(0, Math.floor(target.armor ?? 0) + amount);
     target.maxArmor = Math.max(target.maxArmor ?? 0, target.armor);
-    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 获得护甲 " + amount + "（当前 " + target.armor + "）", { armor: amount, armorRemaining: target.armor });
+    target.armorExpiresAtRound = duration > 0 ? state.round + duration : null;
+    log(actor.name + " 施放「" + spell.name + "」 → " + target.name + " 获得护甲 " + amount + "（当前 " + target.armor + "）", { armor: amount, armorRemaining: target.armor, armorExpiresAtRound: target.armorExpiresAtRound ?? 0 });
     return;
   }
 
   if (effect.type === "SUMMON") {
     const count = Math.max(1, Math.min(8, Math.floor(evaluateEffectNumber(ctx.pack, effect.count, actor.vars))));
+    const duration = evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars);
     for (let index = 0; index < count; index += 1) {
       const template = submission.summonTemplate ?? genericSummonTemplate(ctx.pack, effect.name ?? "召唤物");
       const ordinal = (state.summonSeq ?? 0) + 1;
@@ -1256,7 +1332,8 @@ function applyMagicEffect(
         isPublic: false,
         armor: summonArmor,
         summonedBy: actor.id,
-        summonedName: template.name
+        summonedName: template.name,
+        summonExpiresAtRound: duration > 0 ? state.round + duration : null
       });
       if (state.mode === "INITIATIVE" && state.initiativeOrder.includes(summoned.id) === false) {
         state.initiativeOrder = [...state.initiativeOrder, summoned.id];
@@ -1608,6 +1685,7 @@ export function resolvePending(
   }
 
   state.round += 1;
+  expireRoundTimers(state);
   resolveDyingChecks(pack, state);
   state.phase = checkEnd(state) ? "ENDED" : "ATB_CHARGING";
 
@@ -1704,6 +1782,7 @@ export function endTurn(
     state.initiativeOrder = buildInitiativeOrder(pack, state);
     state.activeIndex = 0;
     state.round += 1;
+    expireRoundTimers(state);
     resolveDyingChecks(pack, state);
     state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
     syncInitiativeReady(state);

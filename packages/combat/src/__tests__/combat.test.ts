@@ -671,6 +671,7 @@ describe("AOE 应对窗口", () => {
 
 describe("魔法效果接口矩阵", () => {
   interface EffectRunResult {
+    readonly pack: ReturnType<typeof compileParsedRulePack>;
     readonly state: CombatState;
     readonly caster: CombatParticipantState;
     readonly target: CombatParticipantState;
@@ -727,7 +728,7 @@ describe("魔法效果接口矩阵", () => {
     });
     expect(submitted).toBe(true);
     resolvePending(pack, state, { target: { type: "PASS" } });
-    return { state, caster, target };
+    return { pack, state, caster, target };
   }
 
   it("13 种可枚举效果都能在战斗中执行并改变状态", () => {
@@ -810,3 +811,74 @@ describe("魔法效果接口矩阵", () => {
     }
   });
 });
+
+describe("持续型效果按行动轮次到期", () => {
+  function castTimedEffect(
+    effect: Record<string, unknown>,
+    self: boolean
+  ): { pack: ReturnType<typeof compileParsedRulePack>; state: CombatState; caster: CombatParticipantState } {
+    const base = resolveRulePack("touhou-ext", builtinRegistry());
+    const pack = compileParsedRulePack({
+      ...base,
+      magic: {
+        enabled: true,
+        system: "TOUHOU",
+        spells: [{
+          id: "timed",
+          name: "持续测试",
+          skill: "MAGIC",
+          mpCost: "0",
+          sanCost: "0",
+          target: self ? "SELF" : "ONE",
+          targeting: self ? "SELF" : "ENEMY",
+          effects: [effect]
+        }]
+      }
+    } as never);
+    const state = createCombat({ id: "timed", seed: "timed-" + JSON.stringify(effect), tickMs: 250 });
+    const derived = computeDerived(pack, { attributes: attrs, skills: {} }).derived;
+    const caster = addParticipant(state, {
+      id: "caster", name: "施法者", kind: "PLAYER", characterId: "char-c", faction: "PC",
+      attributes: attrs, derived, skills: { MAGIC: 80 },
+      atbMax: computeAtbMax(pack, { dex: 55 }), speed: computeBaseSpeed(pack, { dex: 55 })
+    });
+    addParticipant(state, {
+      id: "target", name: "敌人", kind: "NPC", characterId: null, faction: "ENEMY",
+      attributes: attrs, derived, skills: {},
+      atbMax: computeAtbMax(pack, { dex: 50 }), speed: computeBaseSpeed(pack, { dex: 50 })
+    });
+    caster.isReady = true;
+    expect(submitAction(state, { actorId: "caster", kind: "MAGIC", spellId: "timed" })).toBe(true);
+    resolvePending(pack, state, { target: { type: "PASS" } });
+    return { pack, state, caster };
+  }
+
+  it("护甲 duration=1 在下一轮开始时失效，duration=2 多保留一轮", () => {
+    const one = castTimedEffect({ type: "ARMOR", amount: "5", durationTicks: "1" }, true);
+    expect(one.state.round).toBe(2);
+    expect(one.caster.armor).toBe(0);
+
+    const two = castTimedEffect({ type: "ARMOR", amount: "5", durationTicks: "2" }, true);
+    expect(two.state.round).toBe(2);
+    expect(two.caster.armor).toBe(5);
+    two.caster.isReady = true;
+    resolvePending(two.pack, two.state, {});
+    expect(two.state.round).toBe(3);
+    expect(two.caster.armor).toBe(0);
+  });
+
+  it("召唤物 duration=1 在下一轮开始时移除，duration=2 多保留一轮", () => {
+    const one = castTimedEffect({ type: "SUMMON", name: "测试召唤物", count: "1", durationTicks: "1" }, true);
+    expect(one.state.round).toBe(2);
+    expect(one.state.participants.some((participant) => participant.summonedBy === "caster")).toBe(false);
+
+    const two = castTimedEffect({ type: "SUMMON", name: "测试召唤物", count: "1", durationTicks: "2" }, true);
+    expect(two.state.round).toBe(2);
+    expect(two.state.participants.some((participant) => participant.summonedBy === "caster")).toBe(true);
+    two.caster.isReady = true;
+    resolvePending(two.pack, two.state, {});
+    expect(two.state.round).toBe(3);
+    expect(two.state.participants.some((participant) => participant.summonedBy === "caster")).toBe(false);
+  });
+});
+

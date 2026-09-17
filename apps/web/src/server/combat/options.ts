@@ -1,6 +1,6 @@
 import type { ActionSubmission } from "@touhou/combat";
 import { parseDice } from "@touhou/formula";
-import { spellTargeting, type CompiledRulePack } from "@touhou/rules";
+import { spellEffectsOf, spellTargeting, type CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 
 export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "FLEE";
@@ -368,6 +368,11 @@ export function validateCombatAction(
     const actorSpells = actor.spells ?? [];
     if (actorSpells.includes(spell.id) === false) {
       return "该单位没有学会这个法术";
+    }
+    for (const effect of spellEffectsOf(spell)) {
+      if (effect.type === "STATUS" && context.pack.statusEffects[effect.key] === undefined) {
+        return "法术「" + spell.name + "」使用了规则包未定义的状态 key：「" + effect.key + "」";
+      }
     }
     const targeting = spellTargeting(spell);
     if (targeting === "SELF" || spell.target === "SELF") return null;

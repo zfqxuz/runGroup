@@ -12,6 +12,7 @@ import { enrichItemDamageFromSources } from "@/server/ai/item-damage";
 import { enrichNpcStatsFromSources, parseNpcStatsText } from "@/server/ai/npc-stats";
 import { dedupeNpcRecords, mergeNpcAliasNames, npcRecordsLikelySame } from "@/server/ai/npc-dedupe";
 import { armorExpressionFromText, armorExpressionFromValue } from "@/server/combat/armor";
+import { findSummonCard } from "@/server/combat/summon";
 import { buildNpcDamageOverrides, normalizedSkills, normalizedWeapons } from "@/server/modules/templates";
 
 let failed = 0;
@@ -207,6 +208,12 @@ check(
 check(armorExpressionFromValue({ armor: 3 }) === "3", "数字护甲字段应保留");
 check(armorExpressionFromValue({ armor: "2D6" }) === "2D6", "裸护甲字段应保留骰式");
 check(armorExpressionFromValue({ notes: "没有护甲信息" }) === null, "无护甲信息时返回 null");
+const summonCards = [
+  { name: "测试生物甲", stats: {} },
+  { name: "测试生物乙", stats: { summonKey: "test-summon-key" } }
+];
+check(findSummonCard(summonCards, "完全不匹配的名字", "test-summon-key")?.name === "测试生物乙", "召唤应优先按稳定 key 匹配独立卡");
+check(findSummonCard(summonCards, "测试生物甲")?.name === "测试生物甲", "召唤应按名称匹配独立卡");
 
 if (failed > 0) {
   console.error("verify-entity-normalization: " + String(failed) + " failure(s)");

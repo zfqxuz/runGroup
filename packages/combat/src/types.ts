@@ -77,6 +77,10 @@ export interface CombatParticipantState {
   /** 被哪个单位召唤入场；普通单位 / 玩家为 null。 */
   summonedBy?: string | null;
   summonedName?: string | null;
+  /** 护甲到期轮次；null / undefined 表示直到耗尽或战斗结束。 */
+  armorExpiresAtRound?: number | null;
+  /** 召唤物到期轮次；null / undefined 表示直到战斗结束。 */
+  summonExpiresAtRound?: number | null;
 
   attributes: AttributeSet;
   derived: DerivedStats;
