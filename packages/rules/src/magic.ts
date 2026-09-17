@@ -13,9 +13,11 @@ export function spellEffectsOf(spell: MagicSpell): readonly MagicEffect[] {
 }
 
 export function spellTargeting(spell: MagicSpell): MagicTargeting {
+  const types = spellEffectsOf(spell).map((effect) => effect.type);
+  // 召唤类法术的目标是施法者自己；即使模型误标了 ENEMY，也按 SELF 处理。
+  if (types.includes("SUMMON")) return "SELF";
   if (spell.target === "SELF") return "SELF";
   if (spell.targeting !== undefined) return spell.targeting;
-  const types = spellEffectsOf(spell).map((effect) => effect.type);
   const offensive = types.some((type) => OFFENSIVE_EFFECTS.has(type));
   const supportive = types.some((type) => SUPPORTIVE_EFFECTS.has(type));
   if (offensive && supportive) return "ANY";

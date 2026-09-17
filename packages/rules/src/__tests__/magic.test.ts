@@ -28,7 +28,7 @@ describe("法术通用指令", () => {
     expect(spellTargeting(spellOf({ effects: [{ type: "HEAL", amount: "1d6" }] }))).toBe("ALLY");
     expect(spellTargeting(spellOf({ target: "SELF", effects: [{ type: "HEAL", amount: "1d6" }] }))).toBe("SELF");
     expect(spellTargeting(spellOf({ effects: [{ type: "ARMOR", amount: "1d6", durationTicks: "0" }] }))).toBe("ALLY");
-    expect(spellTargeting(spellOf({ effects: [{ type: "SUMMON", name: "召唤物", count: "1", durationTicks: "0" }] }))).toBe("ALLY");
+    expect(spellTargeting(spellOf({ effects: [{ type: "SUMMON", name: "召唤物", count: "1", durationTicks: "0" }] }))).toBe("SELF");
     expect(spellTargeting(spellOf({
       effects: [
         { type: "DAMAGE", amount: "1d6" },
