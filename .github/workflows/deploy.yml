@@ -72,6 +72,10 @@ jobs:
           context: .
           file: apps/web/Dockerfile
           push: true
+          # ACR 个人版不支持 buildx 的 OCI 证明清单（application/vnd.oci.empty.v1+json），
+          # 必须关掉 provenance / SBOM。
+          provenance: false
+          sbom: false
           tags: |
             ${{ steps.meta.outputs.image }}
             ${{ steps.meta.outputs.latest }}
