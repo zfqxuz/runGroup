@@ -140,14 +140,13 @@ function safeRoomReturnTo(roomId: string, raw: FormDataEntryValue | null, fallba
   return fallback;
 }
 
-/** KP 准备区：只切换局内当前场景，并同步 Scene.isActive，不覆盖其他 GameState 字段。 */
-export async function setGameSceneAction(formData: FormData): Promise<void> {
+/** KP 准备区：保存团内时间 / 当前章节 / 场景 / 遭遇；只更新这几个字段，不覆盖旗标、计数器等状态。 */
+export async function setGameProgressAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");
 
   const roomId = clean(formData.get("roomId"), 64);
   const gameId = clean(formData.get("gameId"), 64);
-  const sceneId = optionalClean(formData.get("sceneId"), 200);
   const returnTo = safeRoomReturnTo(roomId, formData.get("returnTo"), "/rooms/" + roomId);
   if (roomId.length === 0 || gameId.length === 0) redirect("/rooms/" + roomId);
   if ((await requireKP(roomId, session.user.id)) === false) redirect("/rooms/" + roomId);
@@ -157,27 +156,27 @@ export async function setGameSceneAction(formData: FormData): Promise<void> {
     redirect("/rooms/" + roomId + "?error=game");
   }
 
-  // 结构化场景可能尚未物化成房间 Scene；此时仍允许写入 state.currentSceneId，
-  // 只有真实存在的房间 Scene 才会同步 Scene.isActive / 战术棋盘。
+  const gameTime = optionalClean(formData.get("gameTime"), 120);
+  const currentChapterId = optionalClean(formData.get("currentChapterId"), 200);
+  const currentSceneId = optionalClean(formData.get("currentSceneId"), 200);
+  const currentEncounterId = optionalClean(formData.get("currentEncounterId"), 200);
+
+  // 结构化场景可能尚未物化成房间 Scene；只有真实存在的房间 Scene 才同步 Scene.isActive / 战术棋盘。
   let sceneToActivate: { id: string } | null = null;
-  if (sceneId !== null) {
-    const scene = await prisma.scene.findUnique({ where: { id: sceneId }, select: { id: true, roomId: true } });
+  if (currentSceneId !== null) {
+    const scene = await prisma.scene.findUnique({ where: { id: currentSceneId }, select: { id: true, roomId: true } });
     if (scene !== null) {
       if (scene.roomId !== roomId) redirect("/rooms/" + roomId + "?error=scene");
       sceneToActivate = { id: scene.id };
     }
   }
 
+  const data = { gameTime, currentChapterId, currentSceneId, currentEncounterId };
   const existing = await prisma.gameState.findUnique({ where: { gameId } });
   if (existing === null) {
-    await prisma.gameState.create({
-      data: { gameId, currentSceneId: sceneId }
-    });
+    await prisma.gameState.create({ data: { gameId, ...data } });
   } else {
-    await prisma.gameState.update({
-      where: { gameId },
-      data: { currentSceneId: sceneId, version: { increment: 1 } }
-    });
+    await prisma.gameState.update({ where: { gameId }, data: { ...data, version: { increment: 1 } } });
   }
 
   if (sceneToActivate !== null) {
