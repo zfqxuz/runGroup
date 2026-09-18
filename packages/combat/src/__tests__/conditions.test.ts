@@ -68,6 +68,37 @@ describe("战斗 / 局内状态桥接", () => {
     expect(participant.possessCharges).toBe(3);
   });
 
+  it("带伤 / 消耗进入新战斗时保留局内当前数值并恢复核心状态", () => {
+    const { pack, state } = makeState();
+    const derived = computeDerived(pack, { attributes: attrs, skills: {} }).derived;
+    const conditions = [
+      makeCondition({ type: "MAJOR_WOUND", unit: "NARRATIVE" }),
+      makeCondition({ type: "UNCONSCIOUS", unit: "NARRATIVE" })
+    ];
+    const participant = addParticipant(state, {
+      id: "char-wounded",
+      name: "带伤角色",
+      kind: "PLAYER",
+      characterId: "char-wounded",
+      faction: "ALLY",
+      attributes: attrs,
+      derived,
+      atbMax: 1000,
+      speed: 10,
+      vitals: { hp: 2, mp: 3, san: 4, dp: 5 },
+      conditions
+    });
+    expect(participant.hp).toBe(2);
+    expect(participant.mp).toBe(3);
+    expect(participant.san).toBe(4);
+    expect(participant.dp).toBe(5);
+    expect(participant.maxHp).toBe(derived.maxHp);
+    expect(participant.vars.hp).toBe(2);
+    expect(participant.majorWound).toBe(true);
+    expect(participant.unconscious).toBe(true);
+    expect(participant.defeated).toBe(true);
+  });
+
   it("派生的护甲 / 夺舍状态进入战斗视图，战斗临时状态不写回局内", () => {
     const { state, participant } = makeState();
     participant.armor = 7;

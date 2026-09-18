@@ -135,6 +135,21 @@ export interface ParticipantInit {
   readonly possessCharges?: number;
   /** 局内持久状态（从 GameCharacter / Card 读入）。 */
   readonly conditions?: unknown;
+  /**
+   * 从 GameCharacter / Card 带入的当前数值；缺省时使用 derived 最大值。
+   * 用于「带伤 / 消耗进入新战斗」，不能再用满血初始化。
+   */
+  readonly vitals?: {
+    readonly hp?: number;
+    readonly mp?: number;
+    readonly san?: number;
+    readonly dp?: number;
+  };
+}
+
+function initVital(value: number | undefined, max: number): number {
+  if (value === undefined || Number.isFinite(value) === false) return max;
+  return Math.max(0, Math.min(max, Math.floor(value)));
 }
 
 export function addParticipant(
@@ -153,6 +168,30 @@ export function addParticipant(
     armorCondition !== undefined && typeof armorCondition.data.armor === "number"
       ? Math.max(0, Math.floor(armorCondition.data.armor))
       : 0;
+  const hasCondition = (type: string): boolean => loadedConditions.some((condition) => condition.type === type);
+  const maxHp = Math.max(0, Math.floor(init.derived.maxHp));
+  const maxMp = Math.max(0, Math.floor(init.derived.maxMp));
+  const maxSan = Math.max(0, Math.floor(init.derived.maxSan));
+  const maxDp = Math.max(0, Math.floor(init.derived.maxDp));
+  const dead = hasCondition("DEAD");
+  const hp = dead ? 0 : initVital(init.vitals?.hp, maxHp);
+  const mp = initVital(init.vitals?.mp, maxMp);
+  const san = initVital(init.vitals?.san, maxSan);
+  const dp = initVital(init.vitals?.dp, maxDp);
+  const hpZero = hp <= 0;
+  const majorWound = hasCondition("MAJOR_WOUND");
+  const prone = hasCondition("PRONE") || hpZero;
+  const unconscious = hasCondition("UNCONSCIOUS") || hpZero;
+  const dying = hasCondition("DYING");
+  const defeated = dead || dying || unconscious;
+  vars.hp = hp;
+  vars.maxHp = maxHp;
+  vars.mp = mp;
+  vars.maxMp = maxMp;
+  vars.san = san;
+  vars.maxSan = maxSan;
+  vars.dp = dp;
+  vars.maxDp = maxDp;
   const participant: CombatParticipantState = {
     id: init.id,
     name: init.name,
@@ -164,21 +203,21 @@ export function addParticipant(
     baseSpeed: init.speed,
     speed: init.speed,
     isReady: false,
-    defeated: false,
-    majorWound: false,
-    prone: false,
-    unconscious: false,
-    dying: false,
-    dead: false,
+    defeated,
+    majorWound,
+    prone,
+    unconscious,
+    dying,
+    dead,
     dyingSinceRound: 0,
-    hp: init.derived.maxHp,
-    maxHp: init.derived.maxHp,
-    mp: init.derived.maxMp,
-    maxMp: init.derived.maxMp,
-    san: init.derived.maxSan,
-    maxSan: init.derived.maxSan,
-    dp: init.derived.maxDp,
-    maxDp: init.derived.maxDp,
+    hp,
+    maxHp,
+    mp,
+    maxMp,
+    san,
+    maxSan,
+    dp,
+    maxDp,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     summonedBy: init.summonedBy ?? null,

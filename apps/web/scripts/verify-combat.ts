@@ -173,15 +173,19 @@ async function main(): Promise<void> {
       },
       select: { id: true }
     });
+    const startHp = Math.max(1, character.hp - 3);
+    const startMp = Math.max(0, character.mp - 5);
+    const startSan = Math.max(1, character.san - 4);
+    const startDp = Math.max(0, character.dp - 2);
     await prisma.gameCharacter.create({
       data: {
         gameId: e2eGame.id,
         characterId: character.id,
         userId,
-        currentHp: character.hp,
-        currentMp: character.mp,
-        currentSan: character.san,
-        currentDp: character.dp
+        currentHp: startHp,
+        currentMp: startMp,
+        currentSan: startSan,
+        currentDp: startDp
       }
     });
 
@@ -225,6 +229,14 @@ async function main(): Promise<void> {
     );
     assert(created.ok === true && created.combatId !== undefined, created.error ?? "创建战斗失败");
     const combatId = created.combatId as string;
+
+    const initialRuntime = await loadCombatRuntime(combatId);
+    const initialPc = initialRuntime?.state.participants.find((participant) => participant.characterId === character.id);
+    assert(initialPc !== undefined, "新战斗缺少 PC 单位");
+    assert(initialPc.hp === startHp, "新战斗没有继承局内 HP，期望 " + String(startHp) + "，实际 " + String(initialPc.hp));
+    assert(initialPc.mp === startMp, "新战斗没有继承局内 MP，期望 " + String(startMp) + "，实际 " + String(initialPc.mp));
+    assert(initialPc.san === startSan, "新战斗没有继承局内 SAN，期望 " + String(startSan) + "，实际 " + String(initialPc.san));
+    assert(initialPc.dp === startDp, "新战斗没有继承局内 DP，期望 " + String(startDp) + "，实际 " + String(initialPc.dp));
 
     const combatPage = await call("/rooms/" + room.id);
     assert(combatPage.status === 200, "战斗页状态 " + combatPage.status);
@@ -300,10 +312,13 @@ async function main(): Promise<void> {
     assert(recoveredPc !== undefined, "恢复后的 Runtime 缺少 PC 单位");
     const syncedGameCharacter = await prisma.gameCharacter.findUnique({
       where: { gameId_characterId: { gameId: e2eGame.id, characterId: character.id } },
-      select: { currentHp: true, currentSan: true }
+      select: { currentHp: true, currentMp: true, currentSan: true, currentDp: true }
     });
     assert(syncedGameCharacter !== null, "战斗状态没有同步到 GameCharacter");
     assert(syncedGameCharacter.currentHp === recoveredPc.hp, "GameCharacter HP 与最新快照不一致");
+    assert(syncedGameCharacter.currentMp === recoveredPc.mp, "GameCharacter MP 与最新快照不一致");
+    assert(syncedGameCharacter.currentSan === recoveredPc.san, "GameCharacter SAN 与最新快照不一致");
+    assert(syncedGameCharacter.currentDp === recoveredPc.dp, "GameCharacter DP 与最新快照不一致");
     const endedUpdate = waitForView(socket, combatId, (next) => next.view.phase === "ENDED");
     const abortAck = await emitAck<Ack>(socket, "combat:abort", { combatId });
     assert(abortAck.ok === true, abortAck.error ?? "中止战斗失败");
@@ -315,12 +330,34 @@ async function main(): Promise<void> {
     const roomAfterAbort = await prisma.room.findUnique({ where: { id: room.id }, select: { status: true } });
     assert(roomAfterAbort?.status === "PLAYING", "中止后房间状态应回到 PLAYING");
 
+    const gameCharacterAfterAbort = await prisma.gameCharacter.findUnique({
+      where: { gameId_characterId: { gameId: e2eGame.id, characterId: character.id } },
+      select: { currentHp: true, currentMp: true, currentSan: true, currentDp: true }
+    });
+    assert(gameCharacterAfterAbort !== null, "中止后 GameCharacter 应存在");
+    assert(
+      gameCharacterAfterAbort.currentHp === recoveredPc.hp,
+      "中止后 GameCharacter HP 没有保留战斗中的变化，期望 " + String(recoveredPc.hp) + "，实际 " + String(gameCharacterAfterAbort.currentHp)
+    );
+    assert(
+      gameCharacterAfterAbort.currentMp === recoveredPc.mp,
+      "中止后 GameCharacter MP 没有保留战斗中的变化，期望 " + String(recoveredPc.mp) + "，实际 " + String(gameCharacterAfterAbort.currentMp)
+    );
+    assert(
+      gameCharacterAfterAbort.currentSan === recoveredPc.san,
+      "中止后 GameCharacter SAN 没有保留战斗中的变化，期望 " + String(recoveredPc.san) + "，实际 " + String(gameCharacterAfterAbort.currentSan)
+    );
+    assert(
+      gameCharacterAfterAbort.currentDp === recoveredPc.dp,
+      "中止后 GameCharacter DP 没有保留战斗中的变化，期望 " + String(recoveredPc.dp) + "，实际 " + String(gameCharacterAfterAbort.currentDp)
+    );
+
     const combatRow = await prisma.combat.findUnique({ where: { id: combatId } });
     assert(combatRow !== null, "数据库中没有战斗记录");
     const snapshots = await prisma.combatSnapshot.count({ where: { combatId } });
     assert(snapshots >= 2, "战斗快照没有持久化");
 
-    console.log("PASS 战斗 E2E：建战斗 → Socket 加入 → 行动 → 反应 → 结算 → 广播 → 快照恢复");
+    console.log("PASS 战斗 E2E：带伤/消耗进战斗继承数值 → Socket 加入 → 行动 → 反应 → 结算 → 广播 → 快照恢复 → 中止后 HP/MP/SAN/DP 保持");
     console.log("  战斗 " + combatId + " 日志条数 " + update.view.log.length + " 快照数 " + snapshots);
   } finally {
     if (roomSocket !== null) roomSocket.close();

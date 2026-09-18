@@ -200,7 +200,8 @@ function buildCharacterInit(
   pack: CompiledRulePack,
   character: Character,
   faction: string,
-  conditions: readonly GameCondition[] = []
+  conditions: readonly GameCondition[] = [],
+  vitals?: ParticipantInit["vitals"]
 ): ParticipantInit {
   const attributes: AttributeSet = {
     str: character.str,
@@ -233,7 +234,8 @@ function buildCharacterInit(
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",
     atbMax: computeAtbMax(pack, vars),
     speed: computeBaseSpeed(pack, vars),
-    conditions
+    conditions,
+    vitals
   };
 }
 
@@ -521,13 +523,33 @@ export async function createCombatRecord(
     orderBy: { createdAt: "desc" },
     select: { id: true }
   });
-  const gameConditions = new Map<string, unknown>();
+  const gameCharacterState = new Map<
+    string,
+    { readonly conditions: unknown; readonly vitals: NonNullable<ParticipantInit["vitals"]> }
+  >();
   if (activeGame !== null && characterIds.length > 0) {
     const rows = await prisma.gameCharacter.findMany({
       where: { gameId: activeGame.id, characterId: { in: [...new Set(characterIds)] } },
-      select: { characterId: true, conditions: true }
+      select: {
+        characterId: true,
+        conditions: true,
+        currentHp: true,
+        currentMp: true,
+        currentSan: true,
+        currentDp: true
+      }
     });
-    for (const row of rows) gameConditions.set(row.characterId, row.conditions);
+    for (const row of rows) {
+      gameCharacterState.set(row.characterId, {
+        conditions: row.conditions,
+        vitals: {
+          hp: row.currentHp,
+          mp: row.currentMp,
+          san: row.currentSan,
+          dp: row.currentDp
+        }
+      });
+    }
   }
   const state = createCombat({
     id: randomUUID(),
@@ -544,9 +566,16 @@ export async function createCombatRecord(
     if (ref.kind === "CHARACTER") {
       const character = characterById.get(ref.id);
       if (character === undefined) return { ok: false, error: "角色不存在" };
+      const gameState = gameCharacterState.get(character.id);
       addParticipant(
         state,
-        buildCharacterInit(pack, character, selection.faction, parseConditions(gameConditions.get(character.id)))
+        buildCharacterInit(
+          pack,
+          character,
+          selection.faction,
+          parseConditions(gameState?.conditions),
+          gameState?.vitals
+        )
       );
     } else {
       const card = cardById.get(ref.id);
