@@ -22,7 +22,7 @@ export default async function CharactersLibraryPage() {
         <div>
           <Link href="/" className="text-xs text-white/40 transition hover:text-white/70">← 返回房间列表</Link>
           <h1 className="mt-2 text-2xl font-semibold">我的角色库</h1>
-          <p className="mt-1 text-sm text-white/50">角色属于你自己，可带进任意房间（需 KP 审核）</p>
+          <p className="mt-1 text-sm text-white/50">属于你自己的角色，可带进房间（需 KP 审核）。</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/characters/import" className="rounded-lg border border-spirit-400/40 px-3 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10">导入 xlsx</Link>

@@ -90,12 +90,12 @@ function parseNetease(url: URL): ParseBgmResult {
   const kind =
     kindFromText(url.pathname + " " + url.hash) ??
     (search.get("id") !== null || hash.get("id") !== null ? "SONG" : null);
-  if (kind === null) return { ok: false, error: "无法识别网易云音乐链接类型" };
+  if (kind === null) return { ok: false, error: "无法识别该音乐链接" };
 
   const pathMatch = /(?:song|album|playlist)\/(\d{1,20})/i.exec(url.pathname);
   const id = (search.get("id") ?? hash.get("id") ?? pathMatch?.[1] ?? "").trim();
   if (NETEASE_ID_PATTERN.test(id) === false) {
-    return { ok: false, error: "没有在链接里找到有效的网易云音乐 id" };
+    return { ok: false, error: "链接中没有找到歌曲信息" };
   }
   return { ok: true, value: { provider: "NETEASE", kind, id, shortTag: null } };
 }
@@ -129,11 +129,11 @@ function parseQq(url: URL): ParseBgmResult {
   const queryId = (search.get("songmid") ?? search.get("songid") ?? "").trim();
   if (queryId.length > 0) {
     const valid = search.get("songmid") !== null ? QQ_MID_PATTERN.test(queryId) : QQ_MID_PATTERN.test(queryId) || QQ_NUMERIC_PATTERN.test(queryId);
-    if (valid === false) return { ok: false, error: "QQ 音乐歌曲 id 格式不正确" };
+    if (valid === false) return { ok: false, error: "QQ 音乐歌曲链接不正确" };
     return { ok: true, value: { provider: "QQ", kind: "SONG", id: queryId, shortTag: null } };
   }
 
-  return { ok: false, error: "暂时无法识别这种 QQ 音乐链接" };
+  return { ok: false, error: "暂时无法识别该 QQ 音乐链接" };
 }
 
 /** 纯解析：只负责从链接中提取 provider / kind / id，不联网。 */

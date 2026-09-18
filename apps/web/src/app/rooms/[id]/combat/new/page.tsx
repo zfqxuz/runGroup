@@ -100,7 +100,7 @@ export default async function NewCombatPage({
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         {canRequest === false ? (
-          <p className="text-sm text-white/50">本房已关闭玩家发起战斗申请的开关。</p>
+          <p className="text-sm text-white/50">本房间未开启玩家发起战斗申请。</p>
         ) : selectable.length === 0 ? (
           <p className="text-sm text-white/50">
             {isKP ? "先准备至少一张 NPC 卡，或等待玩家带入角色。" : "你还没有通过审核的角色卡。"}
@@ -116,9 +116,9 @@ export default async function NewCombatPage({
               defaultEnemyRefs={defaultEnemyRefs}
             />
             {isKP ? (
-              <p className="text-[11px] text-white/35">同一个角色只能选一边；已选我方的单位不会再允许选敌方。</p>
+              <p className="text-[11px] text-white/35">同一角色只能加入一方。</p>
             ) : (
-              <p className="text-[11px] text-white/35">提交后 KP 会在审批页选择敌方单位。</p>
+              <p className="text-[11px] text-white/35">提交后由 KP 选择敌方单位。</p>
             )}
             <button
               type="submit"

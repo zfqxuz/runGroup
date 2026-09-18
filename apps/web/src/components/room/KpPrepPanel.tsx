@@ -84,10 +84,10 @@ export default function KpPrepPanel(props: Props) {
         </div>
 
         <details className="mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-3">
-          <summary className="cursor-pointer text-[11px] text-white/45">可用章节 / 遭遇（开局快照，只读）</summary>
+          <summary className="cursor-pointer text-[11px] text-white/45">可用章节 / 遭遇（只读）</summary>
           <div className="mt-2 flex flex-col gap-2">
             <div>
-              <p className="text-[10px] text-white/35">正文章节（快照 sections）</p>
+              <p className="text-[10px] text-white/35">正文章节</p>
               {props.sections.length === 0 ? (
                 <p className="text-[10px] text-white/30">无</p>
               ) : (
@@ -137,7 +137,7 @@ export default function KpPrepPanel(props: Props) {
           <input type="hidden" name="returnTo" value={"/rooms/" + props.roomId} />
           <span className="text-[11px] text-white/45">切换场景</span>
           {props.sceneOptions.length === 0 ? (
-            <p className="text-xs text-white/40">团本没有结构化场景，可先去场景 / 地图页面创建。</p>
+            <p className="text-xs text-white/40">团本暂无场景，可先在「场景 / 地图」中创建。</p>
           ) : (
             <div className="flex flex-wrap gap-2">
               <select name="sceneId" defaultValue={props.state.currentSceneId ?? ""} className={inputClass + " min-w-[200px] flex-1"}>
@@ -196,7 +196,7 @@ export default function KpPrepPanel(props: Props) {
                   <input type="hidden" name="sceneId" value={props.sceneId ?? ""} />
                   <input type="hidden" name="returnTo" value={"/rooms/" + props.roomId} />
                   {props.backgroundAssets.length === 0 ? (
-                    <span className="text-[10px] text-white/35">还没有可选的团本 / 房间素材，可直接上传。</span>
+                    <span className="text-[10px] text-white/35">暂无可选素材，可直接上传。</span>
                   ) : (
                     <select name="assetId" className="min-w-[180px] flex-1 rounded border border-white/15 bg-ink-900 px-2 py-1.5 text-[11px] text-white/75 outline-none">
                       {props.backgroundAssets.map((asset) => (
@@ -222,7 +222,7 @@ export default function KpPrepPanel(props: Props) {
             <input type="hidden" name="roomId" value={props.roomId} />
             <input type="hidden" name="sceneId" value={props.sceneId} />
             <input type="hidden" name="returnTo" value={"/rooms/" + props.roomId} />
-            <p className="text-[11px] text-white/45">放置 PC / NPC Token 到当前场景</p>
+            <p className="text-[11px] text-white/45">放置角色 Token 到当前场景</p>
             {props.units.length === 0 ? (
               <p className="text-[10px] text-white/35">当前没有可放置的单位。</p>
             ) : (
@@ -239,7 +239,7 @@ export default function KpPrepPanel(props: Props) {
                 </button>
               </div>
             )}
-            <span className="text-[10px] text-white/30">同一角色全局唯一；其他场景已有的 Token 会被移动到当前场景。</span>
+            <span className="text-[10px] text-white/30">同一角色只会有一个 Token；放置后会移动到当前场景。</span>
           </form>
         )}
 
@@ -260,7 +260,7 @@ export default function KpPrepPanel(props: Props) {
           <div>
             <h2 className="text-sm font-medium text-red-200">主动开战</h2>
             <p className="mt-0.5 text-[10px] text-white/45">
-              KP 直接选择双方单位进入战斗，不需要玩家申请，也不需要审批。
+              选择双方单位后直接开战。
             </p>
           </div>
           <Link
@@ -303,7 +303,7 @@ export default function KpPrepPanel(props: Props) {
           />
           <label className="flex items-center gap-2 text-[11px] text-white/50">
             <input type="checkbox" name="isPublic" value="1" />
-            对所有成员公开（默认仅 KP 可见）
+            对所有成员公开
           </label>
           <button type="submit" className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400">
             发布线索
@@ -315,7 +315,6 @@ export default function KpPrepPanel(props: Props) {
           {props.clues.length === 0 ? (
             <p className="text-xs text-white/35">还没有线索。</p>
           ) : (
-            // 线索多时用可滚动 + 折叠行，避免整块面板被撑得很长。
             <div className="flex max-h-80 flex-col gap-1 overflow-y-auto overscroll-contain pr-1">
               {props.clues.map((clue) => (
                 <details key={clue.id} className="group rounded-lg border border-white/10 bg-ink-900/50">

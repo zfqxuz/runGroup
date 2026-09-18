@@ -78,7 +78,7 @@ export default function DanmakuPatternEditor(props: Props) {
         <div>
           <h3 className="text-sm font-medium text-sakura-300">弹幕演出</h3>
           <p className="mt-0.5 text-[11px] text-white/40">
-            纯视觉。展开型符卡循环播放到被击破，消费型符卡播放一次；不参与战斗判定。
+            仅视觉效果，不影响战斗判定。展开型循环播放至击破，消费型播放一次。
           </p>
         </div>
         <button
@@ -100,12 +100,12 @@ export default function DanmakuPatternEditor(props: Props) {
               className="block h-52 w-full sm:h-64"
             />
             <span className="pointer-events-none absolute left-2 top-2 rounded border border-white/15 bg-ink-900/70 px-1.5 py-0.5 text-[10px] text-white/45">
-              预览 · 60fps
+              预览
             </span>
           </div>
 
           <div>
-            <p className="text-[11px] text-white/45">添加图案（最多 3 层叠加）</p>
+            <p className="text-[11px] text-white/45">添加图层（最多 3 层）</p>
             <div className="mt-2 grid grid-cols-3 gap-1.5 sm:grid-cols-5">
               {DANMAKU_PRESET_TYPES.map((type) => (
                 <button
@@ -318,7 +318,7 @@ export default function DanmakuPatternEditor(props: Props) {
                   onChange={(event) => updateLayer(selected, { glow: event.target.checked })}
                   className="h-3.5 w-3.5 accent-sakura-500"
                 />
-                加色发光（更华丽，子弹多时略吃性能）
+                加色发光（更华丽，弹幕多时可能不流畅）
               </label>
 
               <details className="rounded-lg border border-white/10 bg-ink-900/40 p-2">

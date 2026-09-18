@@ -15,7 +15,7 @@ export default function DisbandRoomButton({ roomId, roomName }: Props) {
         const confirmed = window.confirm(
           "确定要解散「" +
             roomName +
-            "」吗？房间成员、聊天、战斗、团本关联数据都会被删除，且不可恢复。"
+            "」吗？房间内所有数据将被删除，且不可恢复。"
         );
         if (confirmed === false) event.preventDefault();
       }}

@@ -10,7 +10,7 @@ export async function GET(
   context: { params: { packId: string; versionId: string } }
 ): Promise<NextResponse> {
   const session = await auth();
-  if (session === null) return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+  if (session === null) return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
   if (session.user.role !== "ADMIN") return NextResponse.json({ ok: false, error: "无权访问" }, { status: 403 });
 
   const version = await prisma.rulePackVersion.findUnique({

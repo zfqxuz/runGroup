@@ -51,14 +51,10 @@ interface Props {
   readonly canCastMagic: boolean;
   readonly canCastSpellcard: boolean;
   readonly magicSpells: readonly MagicSpellOption[];
-  /** combatParticipant.id -> 攻击技能与实际伤害；伤害只读，由服务端装备数据生成。 */
   readonly attackOptionsByParticipant: Readonly<Record<string, readonly CombatAttackOption[]>>;
   readonly spellIdsByParticipant: Readonly<Record<string, readonly string[]>>;
-  /** combatParticipant.id -> 已装备的符卡（仅 TOUHOU）。 */
   readonly spellCardsByParticipant: Readonly<Record<string, readonly CombatSpellCardOption[]>>;
-  /** combatParticipant.id -> 已装备、可在战斗中使用的道具卡。 */
   readonly itemOptionsByParticipant: Readonly<Record<string, readonly CombatItemOption[]>>;
-  /** combatParticipant.id -> 立绘 / 头像 URL。 */
   readonly portraits: Readonly<Record<string, string>>;
 }
 
@@ -114,7 +110,7 @@ export default function CombatBoard(props: Props) {
       if (cancelled) return;
       if (payload.ok === false || payload.ticket === undefined) {
         setConn("offline");
-        setError("无法获取连接票据，请刷新页面");
+        setError("连接失败，请刷新页面重试。");
         return;
       }
       socket.auth = { ticket: payload.ticket };
@@ -369,7 +365,7 @@ export default function CombatBoard(props: Props) {
   function emitAction(action: CombatActionPayload): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     if (selectedActor === null) {
@@ -389,7 +385,7 @@ export default function CombatBoard(props: Props) {
   function emitChaseMove(steps: number): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     const actorIdForMove = chase?.activeActorId ?? null;
@@ -407,7 +403,7 @@ export default function CombatBoard(props: Props) {
   function emitChaseEndTurn(): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     const actorIdForTurn = chase?.activeActorId ?? null;
@@ -425,7 +421,7 @@ export default function CombatBoard(props: Props) {
   function emitChaseWithdraw(): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     const actorIdForWithdraw = chase?.activeActorId ?? null;
@@ -443,7 +439,7 @@ export default function CombatBoard(props: Props) {
   function emitChaseAttack(): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     const actorIdForAttack = chase?.activeActorId ?? null;
@@ -480,7 +476,7 @@ export default function CombatBoard(props: Props) {
   function submitReaction(targetIdValue: string): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     const draft = reactionDraftFor(targetIdValue);
@@ -587,7 +583,7 @@ export default function CombatBoard(props: Props) {
               {view === null ? "载入战斗..." : "战斗 · " + view.mode}
             </h2>
             <p className="mt-0.5 text-[11px] text-white/35">
-              {view === null ? "" : "第 " + view.round + " 轮 · tick " + view.tick + (activeActor === null ? "" : " · 当前 " + activeActor.name)}
+              {view === null ? "" : "第 " + view.round + " 轮 " + view.tick + (activeActor === null ? "" : " · 当前 " + activeActor.name)}
             </p>
           </div>
           <span className={"rounded-full border px-2 py-0.5 text-[11px] " + (conn === "online" ? "border-emerald-400/40 text-emerald-300" : "border-white/20 text-white/50")}>
@@ -720,7 +716,7 @@ export default function CombatBoard(props: Props) {
                   {chaseCanControl ? (
                     <div className="mt-3 rounded-lg border border-red-400/25 bg-red-400/5 p-3">
                       <p className="text-[11px] text-red-200/80">
-                        同地点冲突：追上不会自动掉血。攻击消耗 1 行动点，按普通攻击检定结算，目标可以闪避 / 反击。
+                        同地点攻击消耗 1 行动点，目标可闪避或反击。
                       </p>
                       {chaseAttackPending ? (
                         <p className="mt-2 text-xs text-amber-200">
@@ -771,7 +767,7 @@ export default function CombatBoard(props: Props) {
                             <input
                               value={activeChaseDamage}
                               readOnly
-                              title="伤害由角色实际装备决定，不可修改"
+                              title="伤害由实际装备决定"
                               className={inputClass + " w-28 cursor-not-allowed font-mono opacity-70"}
                             />
                           </label>
@@ -847,7 +843,7 @@ export default function CombatBoard(props: Props) {
                   <div className="mt-2">
                     {item.hp === null ? (
                       <p className="text-[11px] text-white/45">
-                        {hiddenStats ? "HP ？？？ · 数值未公开" : "HP " + (item.hpText ?? "情报未知")}
+                        {hiddenStats ? "HP ？？？" : "HP " + (item.hpText ?? "情报未知")}
                       </p>
                     ) : (
                       <>
@@ -994,7 +990,7 @@ export default function CombatBoard(props: Props) {
                     ? "当前没有可行动的参战单位。"
                     : isControlled(activeActor)
                       ? "当前单位还没就绪，请等待结算。"
-                      : "等待 " + activeActor.name + " 行动；你没有可操作单位，只能旁观。"}
+                      : "等待 " + activeActor.name + " 你没有可操作单位，只能旁观。"}
             </p>
           ) : (
             <div className="mt-3 flex flex-col gap-3">
@@ -1049,7 +1045,7 @@ export default function CombatBoard(props: Props) {
                   <input
                     value={activeAttackDamage}
                     readOnly
-                    title="伤害由角色实际装备决定，不可修改"
+                    title="伤害由实际装备决定"
                     className={inputClass + " cursor-not-allowed font-mono opacity-70"}
                   />
                 </label>
@@ -1113,8 +1109,8 @@ export default function CombatBoard(props: Props) {
                   {selectedSpellCard === null ? null : (
                     <p className="text-[10px] text-sakura-200/70">
                       {selectedSpellCard.mode === "DECLARATION"
-                        ? "展开型：生成独立 HP，被击破时会清弹；弹幕演出循环到被击破。"
-                        : "消费型：发动一次并附带消弹；弹幕演出只播放一次。"}
+                        ? "展开型：独立 HP，击破时清弹；演出循环播放。"
+                        : "消费型：发动一次并消弹，演出播放一次。"}
                       {selectedSpellCard.mode === "DECLARATION" && selectedActor !== null && selectedSpellCard.hpRatio !== null
                         ? " 独立 HP 约 " + Math.max(1, Math.round((selectedActor.maxHp ?? 0) * selectedSpellCard.hpRatio)) + "。"
                         : ""}
@@ -1170,7 +1166,7 @@ export default function CombatBoard(props: Props) {
                       目标：{selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
                         ? "自己"
                         : selectedSpell.target === "ALL"
-                          ? selectedSpell.targeting === "ENEMY" ? "全体敌方（AOE，所有目标都要应对）" : selectedSpell.targeting === "ALLY" ? "全体友方" : "场上全体"
+                          ? selectedSpell.targeting === "ENEMY" ? "全体敌方" : selectedSpell.targeting === "ALLY" ? "全体友方" : "场上全体"
                           : selectedSpell.targeting === "ENEMY" ? "单体敌方" : selectedSpell.targeting === "ALLY" ? "单体友方" : "任意单体"}
                       {selectedSpell.effects.length === 0 ? "" : " · 效果：" + selectedSpell.effects.join(" + ")}
                     </p>
@@ -1238,7 +1234,7 @@ export default function CombatBoard(props: Props) {
                 onClick={forceResolve}
                 className="mt-4 rounded-lg border border-white/15 px-3 py-2 text-xs text-white/50 transition hover:border-white/35"
               >
-                KP 强制结算（未行动按跳过）
+                KP 强制结算
               </button>
               <button
                 type="button"

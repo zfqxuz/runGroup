@@ -14,12 +14,12 @@ const inputClass =
   "rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-spirit-400";
 
 function statusText(status: string | null): string | null {
-  if (status === "saved") return "BGM 已开始播放，并已同步给全房间。";
-  if (status === "cleared") return "BGM 已停止，玩家端也会同步停止。";
+  if (status === "saved") return "BGM 已开始播放。";
+  if (status === "cleared") return "BGM 已停止。";
   if (status === "invalid") {
-    return "无法解析该链接。支持网易云音乐完整链接 / 短链，以及 QQ 音乐单曲完整链接 / App 分享短链；QQ 歌单暂不支持。";
+    return "无法识别链接。支持网易云音乐与 QQ 音乐单曲，暂不支持 QQ 歌单。";
   }
-  if (status === "game") return "当前没有可操作的对局，无法设置 BGM。";
+  if (status === "game") return "当前没有进行中的游戏。";
   return null;
 }
 
@@ -34,7 +34,7 @@ export default function KpBgmPanel(props: Props) {
         <div>
           <h2 className="text-sm font-medium text-spirit-200">BGM 播放</h2>
           <p className="mt-1 text-[11px] text-white/40">
-            粘贴网易云音乐或 QQ 音乐链接，房间内所有成员会加载同一个播放器。
+            粘贴网易云音乐或 QQ 音乐链接，房间内同步播放。
           </p>
         </div>
         <span className="rounded-full border border-spirit-400/30 px-2 py-0.5 text-[10px] text-spirit-200">
@@ -58,7 +58,7 @@ export default function KpBgmPanel(props: Props) {
           解析并播放
         </button>
         <p className="text-[10px] text-white/30">
-          受浏览器自动播放策略限制，玩家端可能需要在播放器上点一次播放；KP 也会在右侧房间视角里看到同一个播放器。
+          若未自动播放，请手动点击播放。
         </p>
       </form>
 

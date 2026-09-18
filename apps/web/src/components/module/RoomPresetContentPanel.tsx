@@ -25,7 +25,7 @@ export default async function RoomPresetContentPanel({ roomId, moduleId }: Props
       <section className="rounded-xl border border-dashed border-white/15 bg-ink-800/40 p-5">
         <h2 className="text-sm font-medium text-white/70">预设内容</h2>
         <p className="mt-2 text-xs leading-relaxed text-white/40">
-          本团本还没有应用到当前房间。先回准备页点击「应用团本预设到房间」，NPC / 线索 / 场景才会生成并在这里编辑。
+          该团本尚未应用到房间，请先在准备页应用预设。
         </p>
       </section>
     );
@@ -76,7 +76,7 @@ export default async function RoomPresetContentPanel({ roomId, moduleId }: Props
       <div>
         <h2 className="text-sm font-medium text-white/80">预设内容编辑（KP）</h2>
         <p className="mt-1 text-[11px] text-white/40">
-          这些对象来自当前房间已应用的团本预设。编辑只影响本房间，不会修改团本模板。
+          编辑仅影响本房间，不会修改团本模板。
         </p>
       </div>
 
@@ -172,7 +172,7 @@ export default async function RoomPresetContentPanel({ roomId, moduleId }: Props
                   {scene.isActive ? <span className="ml-2 rounded border border-emerald-400/30 px-1.5 py-0.5 text-[10px] text-emerald-300">当前</span> : null}
                 </span>
                 <span className="rounded border border-white/10 px-2 py-1 text-[11px] text-white/35">
-                  场景背景与结构请在团本编辑器中维护
+                  场景背景请在团本编辑器中维护
                 </span>
               </li>
             ))}

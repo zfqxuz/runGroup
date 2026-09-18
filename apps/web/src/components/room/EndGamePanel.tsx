@@ -42,11 +42,11 @@ const KIND_OPTIONS: readonly { readonly value: AdvancementKind; readonly label: 
 
 const TARGET_PLACEHOLDER: Record<AdvancementKind, string> = {
   SAN: "无需填写",
-  SKILL: "技能 id，例如 FIGHTING_BRAWL",
-  ATTRIBUTE: "属性键，例如 int / edu / luck",
+  SKILL: "技能（例如 格斗）",
+  ATTRIBUTE: "属性（例如 智力 / 教育 / 幸运）",
   ITEM: "物品名",
   RELATIONSHIP: "关系名",
-  OTHER: "奖励 / 成长说明键"
+  OTHER: "奖励 / 成长说明"
 };
 
 const inputClass =
@@ -97,7 +97,7 @@ export default function EndGamePanel({ roomId, gameId, characters, pendingGrowth
         <div>
           <h2 className="text-sm font-medium text-white/80">批量成长 / 奖励</h2>
           <p className="mt-1 text-[11px] text-white/35">
-            可一次给多名角色录入结束奖励；留空则直接结束本局。属性 / 技能 / SAN 会同步到基础角色卡，并写入成长记录。
+            可一次为多名角色录入奖励；留空则直接结束本局。奖励会同步到角色卡并记录成长。
           </p>
         </div>
         <button
@@ -112,7 +112,7 @@ export default function EndGamePanel({ roomId, gameId, characters, pendingGrowth
 
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-white/15 px-4 py-6 text-center text-xs text-white/35">
-          暂无批量成长。可以直接确认结束，或先添加奖励。
+          尚未添加奖励，可直接结束本局。
         </p>
       ) : (
         <div className="flex flex-col gap-3">
@@ -191,7 +191,7 @@ export default function EndGamePanel({ roomId, gameId, characters, pendingGrowth
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 pt-4">
         <p className="max-w-xl text-[11px] leading-relaxed text-amber-200/80">
-          确认后：Game 置为 ENDED，房间回到 LOBBY，全员取消准备。角色、物品、成长记录跨局保留。
+          确认后本局结束，房间回到准备状态。角色、物品与成长记录会保留。
         </p>
         <button
           type="submit"

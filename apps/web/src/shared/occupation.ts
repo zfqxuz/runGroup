@@ -110,16 +110,16 @@ export function validateOccupationSlotAssignments(
     const picked = raw.filter((id) => typeof id === "string" && id.length > 0);
     if (picked.length === 0) continue;
     if (picked.length !== slot.pick) {
-      errors.push(slot.symbol + " 空位需要选择 " + slot.pick + " 项，当前 " + picked.length + " 项");
+      errors.push(slot.symbol + " 空位还需选择 " + slot.pick + " 项，当前已选 " + picked.length + " 项");
       continue;
     }
     const allowed = new Set(occupationSlotCandidates(slot, allSkillIds).map((item) => item.skillId));
     for (const id of picked) {
       if (allowed.has(id) === false) {
-        errors.push(slot.symbol + " 空位的候选不包含技能：" + id);
+        errors.push(slot.symbol + " 该空位不能选择：" + id);
       }
       if (assigned.has(id)) {
-        errors.push("同一个技能不能占用两个空位：" + id);
+        errors.push("同一技能不能重复选择：" + id);
       }
       assigned.add(id);
     }

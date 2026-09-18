@@ -53,7 +53,7 @@ export default async function RoomCombatPanel(props: Props) {
               href={"/rooms/" + props.roomId + "/combat/" + active.id}
               className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-emerald-400"
             >
-              进入战斗页面
+              进入战斗
             </Link>
           )}
         </div>

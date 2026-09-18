@@ -165,7 +165,7 @@ export default async function ModuleDetailPage({
             <textarea name="occupationRecommendation" rows={3} defaultValue={moduleRecord.occupationRecommendation ?? ""} className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500" />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">Markdown 正文（仅 KP / 作者可见）</span>
+            <span className="text-xs text-white/50">正文（仅 KP / 作者可见）</span>
             <textarea name="content" rows={22} defaultValue={text} className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-xs leading-relaxed outline-none focus:border-sakura-500" />
           </label>
           <div>

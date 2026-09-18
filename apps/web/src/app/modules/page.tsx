@@ -23,7 +23,7 @@ export default async function ModuleSquarePage() {
           <Link href="/" className="text-xs text-white/40 transition hover:text-white/70">← 返回房间列表</Link>
           <h1 className="mt-2 text-2xl font-semibold">团本广场</h1>
           <p className="mt-1 text-sm text-white/50">
-            所有已发布的团本。这里只展示公开预览字段，完整内容由各房间 KP 在团本管理页查看。
+            所有已发布的团本。公开信息可供浏览，完整内容仅本房 KP 可见。
           </p>
         </div>
         <Link

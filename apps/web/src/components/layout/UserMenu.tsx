@@ -152,7 +152,7 @@ export default function UserMenu({ user }: Props) {
       router.refresh();
     } catch {
       setAvatarBusy(false);
-      setAvatarError("网络错误，上传失败");
+      setAvatarError("上传失败，请重试。");
     }
   }
 
@@ -307,7 +307,7 @@ export default function UserMenu({ user }: Props) {
                   )}
                 </span>
                 <p className="text-[11px] leading-5 text-white/40">
-                  支持 PNG / JPEG / WebP，最大 8 MB；上传后自动裁剪为正方形。
+                  支持常见图片格式，最大 8 MB；上传后会自动裁剪为正方形。
                 </p>
               </div>
               <input

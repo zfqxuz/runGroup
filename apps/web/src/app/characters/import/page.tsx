@@ -15,8 +15,7 @@ export default async function ImportCharacterPage(props: { searchParams: { error
         <Link href="/characters" className="text-xs text-white/40 transition hover:text-white/70">← 返回角色库</Link>
         <h1 className="mt-2 text-2xl font-semibold">导入 xlsx 人物卡</h1>
         <p className="mt-1 text-sm leading-relaxed text-white/50">
-          支持「COC7 空白卡」系列的「人物卡」工作表。导入后进入你的个人角色库；
-          带进房间仍然走 KP 审核流程。
+          支持导入 COC7 空白卡系列的人物卡；导入后进入角色库，带进房间仍需 KP 审核。
         </p>
       </header>
 
@@ -46,8 +45,8 @@ export default async function ImportCharacterPage(props: { searchParams: { error
       </form>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5 text-xs leading-relaxed text-white/40">
-        <p>目前导入范围：基础信息、九项属性、职业序号、技能（初始 / 成长 / 职业 / 兴趣）、信用评级、武器。</p>
-        <p className="mt-2">导入后若发现技能缺失，通常是因为该技能不在当前规则包中，后续会在规则包补全时自动恢复显示。</p>
+        <p>可导入基础信息、九项属性、职业、技能、信用评级与武器。</p>
+        <p className="mt-2">缺失的技能会在规则包补全后恢复显示。</p>
       </section>
     </main>
   );

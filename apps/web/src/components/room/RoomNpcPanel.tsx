@@ -51,7 +51,7 @@ export default async function RoomNpcPanel(props: Props) {
           </h2>
           <p className="mt-0.5 text-[11px] text-white/35">
             {props.isKP
-              ? "默认对玩家隐藏；点击「公开属性」后玩家才能看到名字、属性与技能。"
+              ? "默认对玩家隐藏；公开后玩家可见。"
               : "KP 只公开了这些单位的情报。"}
           </p>
         </div>

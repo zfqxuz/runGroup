@@ -49,7 +49,7 @@ export default function RoomInfoPanel(props: Props) {
         <div>
           <h2 className="text-sm font-medium text-white/80">线索与笔记</h2>
           <p className="mt-1 text-[11px] text-white/35">
-            线索由 KP 发布；已发现线索会记录到你的账号。笔记只对本人可见，KP 可追加 KP 专属笔记。
+            线索由 KP 发布；笔记仅自己可见，KP 可添加专属笔记。
           </p>
         </div>
         {props.clueStatus === "created" ? (
@@ -59,7 +59,7 @@ export default function RoomInfoPanel(props: Props) {
           <span className="text-[11px] text-emerald-300">已标记发现</span>
         ) : null}
         {props.clueStatus === "image" ? (
-          <span className="text-[11px] text-red-300">图片上传失败（仅支持 PNG / JPEG / WebP，且不超过 8MB）。</span>
+          <span className="text-[11px] text-red-300">图片上传失败；支持 PNG、JPEG、WebP，最大 8MB。</span>
         ) : null}
         {props.clueStatus === "invalid" ? (
           <span className="text-[11px] text-red-300">发布失败：标题不能为空，且内容与图片至少要有一项。</span>
@@ -150,7 +150,7 @@ export default function RoomInfoPanel(props: Props) {
               />
               <label className="flex items-center gap-2 text-[11px] text-white/50">
                 <input type="checkbox" name="isPublic" value="1" />
-                对所有成员公开（默认仅 KP 可见）
+                对所有成员公开
               </label>
               <button
                 type="submit"
@@ -209,7 +209,7 @@ export default function RoomInfoPanel(props: Props) {
       <div className="rounded-lg border border-white/10 bg-ink-900/50 p-4">
         <h3 className="text-xs font-medium text-white/70">手书 / 玩家资源（{props.handouts.length}）</h3>
         {props.handouts.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">本局团本没有 handout 资源。</p>
+          <p className="mt-3 text-xs text-white/35">本局团本没有可发放的线索。</p>
         ) : (
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {props.handouts.map((handout) => (

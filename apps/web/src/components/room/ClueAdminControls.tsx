@@ -113,7 +113,7 @@ export default function ClueAdminControls({ roomId, clue, members, sharedUserIds
                 </label>
               ))}
             </div>
-            <p className="text-[10px] text-white/30">勾选后会替换当前分享名单；全部取消表示撤回转发。</p>
+            <p className="text-[10px] text-white/30">全部取消表示撤回分享。</p>
             <button type="submit" className="self-start rounded border border-spirit-400/40 px-3 py-1.5 text-[11px] text-spirit-300">
               保存分享名单
             </button>

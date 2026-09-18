@@ -37,10 +37,10 @@ function hasOption(options: readonly ModuleStructureOption[], id: string | null)
 }
 
 const ERROR_LABELS: Record<string, string> = {
-  version: "状态已被其他操作更新，请刷新后重试。",
-  flags: "旗标必须是合法的 JSON 对象。",
-  counters: "计数器必须是合法的 JSON 对象。",
-  custom: "自定义状态必须是合法的 JSON 对象。",
+  version: "状态已更新，请刷新后重试。",
+  flags: "标记格式不正确。",
+  counters: "计数器格式不正确。",
+  custom: "其他状态格式不正确。",
   game: "当前没有可编辑的进行中局。"
 };
 
@@ -65,7 +65,7 @@ export default function RoomGameStatePanel(props: Props) {
 
       {props.saved ? (
         <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">
-          局内状态已保存，并已同步给在线成员。
+          局内状态已保存。
         </p>
       ) : null}
       {props.error === null ? null : (
@@ -122,7 +122,7 @@ export default function RoomGameStatePanel(props: Props) {
           </datalist>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">当前章节（ModuleChapter 结构化绑定）</span>
+              <span className="text-[11px] text-white/45">当前章节</span>
               {props.moduleChapters.length === 0 ? (
                 <input
                   name="currentChapterId"
@@ -150,7 +150,7 @@ export default function RoomGameStatePanel(props: Props) {
               )}
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">当前场景（房间 Scene 结构化绑定）</span>
+              <span className="text-[11px] text-white/45">当前场景</span>
               {props.moduleScenes.length === 0 ? (
                 <input
                   name="currentSceneId"
@@ -178,7 +178,7 @@ export default function RoomGameStatePanel(props: Props) {
               )}
               <label className="flex items-center gap-1.5 text-[10px] text-white/45">
                 <input type="checkbox" name="activateScene" value="1" className="accent-sakura-500" />
-                保存时将当前场景切换为激活场景（影响战术棋盘）
+                保存后，当前场景会成为激活场景。
               </label>
             </label>
             <label className="flex flex-col gap-1.5">
@@ -187,7 +187,7 @@ export default function RoomGameStatePanel(props: Props) {
                 <input
                   name="currentEncounterId"
                   defaultValue={props.state.currentEncounterId ?? ""}
-                  placeholder="团本里用 module-encounter 块定义遭遇"
+                  placeholder="可在团本内容中定义遭遇。"
                   className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
                 />
               ) : (
@@ -221,7 +221,7 @@ export default function RoomGameStatePanel(props: Props) {
           </div>
           <div className="mt-3 grid gap-3 lg:grid-cols-3">
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">旗标 JSON</span>
+              <span className="text-[11px] text-white/45">标记</span>
               <textarea
                 name="flags"
                 rows={5}
@@ -230,7 +230,7 @@ export default function RoomGameStatePanel(props: Props) {
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">计数器 JSON</span>
+              <span className="text-[11px] text-white/45">计数器</span>
               <textarea
                 name="counters"
                 rows={5}
@@ -239,7 +239,7 @@ export default function RoomGameStatePanel(props: Props) {
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">自定义 JSON</span>
+              <span className="text-[11px] text-white/45">其他状态</span>
               <textarea
                 name="custom"
                 rows={5}

@@ -119,20 +119,20 @@ export default function MagicEffectComposer(props: {
     try {
       const parsed: unknown = JSON.parse(text);
       if (Array.isArray(parsed) === false) {
-        setJsonError("JSON 必须是效果数组，例如 [{ \"type\": \"DAMAGE\", \"amount\": \"1d6\" }]");
+        setJsonError("请填写效果列表，例如：伤害 1d6。");
         return;
       }
       const next = parsed
         .map((effect, index) => draftFromEffect(effect, index))
         .filter((draft): draft is Draft => draft !== null);
       if (next.length !== parsed.length) {
-        setJsonError("有无法识别的效果（type 不在 14 种基础效果里），已忽略这些项。");
+        setJsonError("有无法识别的效果，已忽略。");
       } else {
         setJsonError(null);
       }
       setDrafts(next);
     } catch (error) {
-      setJsonError(error instanceof Error ? error.message : "JSON 解析失败");
+      setJsonError(error instanceof Error ? error.message : "格式解析失败");
     }
   }
 
@@ -156,7 +156,7 @@ export default function MagicEffectComposer(props: {
                   (mode === item ? "bg-sakura-500/15 text-sakura-300" : "text-white/45 hover:bg-white/5")
                 }
               >
-                {item === "form" ? "表单" : "JSON"}
+                {item === "form" ? "表单编辑" : "高级编辑"}
               </button>
             ))}
           </div>
@@ -184,7 +184,7 @@ export default function MagicEffectComposer(props: {
             placeholder='[{"type":"DAMAGE","amount":"1d6"}]'
           />
           {jsonError === null ? (
-            <p className="text-[10px] text-emerald-300/70">JSON 合法，已同步到表单。</p>
+            <p className="text-[10px] text-emerald-300/70">格式正确，已同步到表单。</p>
           ) : (
             <p className="text-[10px] text-red-300">{jsonError}</p>
           )}
@@ -260,7 +260,7 @@ export default function MagicEffectComposer(props: {
       }) : null}
 
       <details className="rounded border border-white/10 bg-ink-900/30 p-2">
-        <summary className="cursor-pointer text-[10px] text-white/35">查看当前组合 JSON</summary>
+        <summary className="cursor-pointer text-[10px] text-white/35">查看当前组合</summary>
         <pre className="mt-2 max-h-40 overflow-auto text-[10px] text-white/45">{serialized}</pre>
       </details>
     </div>

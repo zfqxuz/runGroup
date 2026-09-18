@@ -64,7 +64,7 @@ export default async function AdminRoomMagicPage({
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">1. 房间开关</h2>
           <p className="mt-1 text-[11px] text-white/40">
-            控制是否把团本 structured.magic 合并进 Room.ruleOverride。关闭后最终规则包不会带团本魔法。
+            关闭后最终规则包不会带团本魔法。
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <span className={diagnostics.room.magicEnabled ? "text-xs text-emerald-300" : "text-xs text-white/45"}>
@@ -87,16 +87,16 @@ export default async function AdminRoomMagicPage({
         </div>
 
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-          <h2 className="text-sm font-medium text-white/80">2. 团本 structured.magic</h2>
+          <h2 className="text-sm font-medium text-white/80">2. 团本特有魔法</h2>
           <p className="mt-1 text-[11px] text-white/40">
-            模板/导出的团本里如果有 spells 数据，会在这里显示；没有则说明导入时没有生成结构化魔法。
+            团本导入时生成的魔法表达式。
           </p>
           <p className="mt-3 text-xs text-white/60">
             {diagnostics.moduleMagic.title ?? diagnostics.room.selectedModuleTitle ?? "未选择团本"}
           </p>
           <p className="mt-1 text-[11px] text-white/40">
             解析法术：{diagnostics.moduleMagic.spellCount} 条
-            {diagnostics.moduleMagic.moduleId === null ? " · 未选择团本" : diagnostics.moduleMagic.loaded ? "" : " · 没有 structured.magic"}
+            {diagnostics.moduleMagic.moduleId === null ? " · 未选择团本" : diagnostics.moduleMagic.loaded ? "" : " · 团本无魔法数据"}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <form action={adminSyncRoomMagicAction}>
@@ -119,7 +119,7 @@ export default async function AdminRoomMagicPage({
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">3. Room.ruleOverride.magic</h2>
           <p className="mt-1 text-[11px] text-white/40">
-            由「启用魔法规则 / 从团本同步」写入；如果 enabled=false，它会覆盖绑定规则包里的魔法配置。
+            
           </p>
           <p className="mt-3 text-xs text-white/60">
             enabled = {String(diagnostics.roomOverrideMagic.enabled)} · spells = {diagnostics.roomOverrideMagic.spellCount}
@@ -146,7 +146,7 @@ export default async function AdminRoomMagicPage({
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">最终生效法术（{effectiveSpells.length}）</h2>
         {effectiveSpells.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">当前没有生效法术。</p>
+          <p className="mt-3 text-xs text-white/35">当前没有生效魔法。</p>
         ) : (
           <div className="mt-3 overflow-x-auto">
             <table className="w-full text-left text-xs">
@@ -184,7 +184,7 @@ export default async function AdminRoomMagicPage({
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">Room.ruleOverride 原始 JSON</h2>
+        <h2 className="text-sm font-medium text-white/80">原始配置（仅管理员）</h2>
         <pre className="mt-3 max-h-96 overflow-auto rounded-lg border border-white/10 bg-ink-900/60 p-3 font-mono text-[10px] leading-5 text-white/55">
           {JSON.stringify(roomRow?.ruleOverride ?? {}, null, 2)}
         </pre>

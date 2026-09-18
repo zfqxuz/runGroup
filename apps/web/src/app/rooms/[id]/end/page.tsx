@@ -41,7 +41,7 @@ function deltaText(delta: number | null): string {
 }
 
 const GROWTH_NOTICE: Record<string, string> = {
-  passed: "成长检定完成：有技能成功提升，已写入成长记录。",
+  passed: "成长检定完成，有技能提升。",
   failed: "成长检定完成：本次没有技能提升。",
   none: "没有待检定的成长点。",
   marked: "已标记成长点。",
@@ -167,7 +167,7 @@ export default async function EndGamePage({
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">结束本局 · 成长确认</h1>
         <p className="mt-1 text-sm text-white/50">
-          建议先确认本局成长与奖励，再结束。结束后房间回到准备页，角色、物品与成长记录都会保留。
+          可先确认本局成长与奖励。结束后房间回到准备页，角色与记录会保留。
         </p>
       </header>
 
@@ -175,8 +175,7 @@ export default async function EndGamePage({
         <section className="rounded-xl border border-amber-400/30 bg-amber-400/10 p-5">
           <h2 className="text-sm font-medium text-amber-100">当前没有进行中的局</h2>
           <p className="mt-2 text-xs leading-relaxed text-amber-100/80">
-            房间状态可能卡在 PLAYING / COMBAT / PAUSED，但数据库里没有可结束的 Game。
-            点击下方按钮会把房间直接重置为 LOBBY，并关闭残留战斗。
+            没有进行中的游戏，但房间状态异常。可将房间重置回准备状态。
           </p>
           <form action={endGameWithAdvancementsAction} className="mt-4">
             <input type="hidden" name="roomId" value={room.id} />
@@ -194,12 +193,12 @@ export default async function EndGamePage({
 
       {searchParams.error === "advancement" ? (
         <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-xs text-red-200">
-          成长 / 奖励数据不合法，请检查目标、数值与角色。属性 / 技能 / SAN 的数值变化必须是非零整数。
+          请检查角色、目标与数值；数值变化必须是非零整数。
         </p>
       ) : null}
       {searchParams.error === "game" ? (
         <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-xs text-red-200">
-          当前局状态或角色不匹配，无法写入成长。
+          当前状态无法记录成长。
         </p>
       ) : null}
       {searchParams.growth === undefined ? null : (
@@ -218,12 +217,12 @@ export default async function EndGamePage({
           <p className="mt-1 truncate text-sm text-white/80">{activeGame?.title ?? "无进行中的局"}</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
-          <p className="text-[10px] text-white/35">团本快照</p>
+          <p className="text-[10px] text-white/35">本局团本</p>
           <p className="mt-1 truncate text-sm text-white/80">
             {gameModule === null ? "无团本" : gameModule.title + " · v" + gameModule.version}
           </p>
           <p className="mt-0.5 text-[10px] text-white/35">
-            {gameModule === null ? "" : gameModule.source === "revision" ? "已锁定开局快照" : "旧局：未生成快照"}
+            {gameModule === null ? "" : gameModule.source === "revision" ? "已保存开局存档" : "旧局：未创建开局存档"}
           </p>
         </div>
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
@@ -241,7 +240,7 @@ export default async function EndGamePage({
             <div>
               <h2 className="text-sm font-medium text-amber-100">成长点确认</h2>
               <p className="mt-1 text-[11px] text-amber-100/70">
-                CoC 幕间成长检定：对每个待检定技能掷 1d100；结果大于当前技能值，或落在 96-100 时，技能 +1d10。
+                幕间成长：1d100 大于当前技能值或掷出 96–100 时，技能 +1d10。
               </p>
             </div>
             {pendingRows.length === 0 ? null : (

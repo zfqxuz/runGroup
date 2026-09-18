@@ -257,11 +257,11 @@ export default function CardBuilder(props: Props) {
             <input value={name} onChange={(event) => setName(event.target.value)} placeholder="例：梦想封印" className={inputClass} />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">副标题（可留空）</span>
+            <span className="text-xs text-white/50">副标题</span>
             <input value={subtitle} onChange={(event) => setSubtitle(event.target.value)} className={inputClass} />
           </label>
           <label className="flex flex-col gap-1.5 sm:col-span-2">
-            <span className="text-xs text-white/50">说明（可留空）</span>
+            <span className="text-xs text-white/50">说明</span>
             <input value={description} onChange={(event) => setDescription(event.target.value)} className={inputClass} />
           </label>
         </div>
@@ -287,7 +287,7 @@ export default function CardBuilder(props: Props) {
               </select>
             </label>
             <label className="flex flex-col gap-1.5 sm:col-span-2">
-              <span className="text-xs text-white/50">符卡说明（战斗日志展示用）</span>
+              <span className="text-xs text-white/50">符卡说明</span>
               <input value={danmaku} onChange={(event) => setDanmaku(event.target.value)} placeholder="例：被诅咒的符札如暴雨般倾泻" className={inputClass} />
             </label>
           </div>
@@ -334,7 +334,7 @@ export default function CardBuilder(props: Props) {
           <h2 className="text-sm font-medium text-white/80">武器</h2>
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5 sm:col-span-2">
-              <span className="text-xs text-white/50">武器类型（伤害 / 射程 / 使用技能由系统自动带出）</span>
+              <span className="text-xs text-white/50">武器类型（自动带出伤害、射程与技能）</span>
               <select value={weaponType} onChange={(event) => setWeaponType(event.target.value)} className={inputClass}>
                 {WEAPON_TYPES.map((item) => (
                   <option key={item.id} value={item.id}>
@@ -371,7 +371,7 @@ export default function CardBuilder(props: Props) {
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">通用效果 / 消耗</h2>
-        <p className="mt-1 text-[11px] text-white/45">魔法、道具、符卡、武器共用同一套效果；数值各自填写。</p>
+        <p className="mt-1 text-[11px] text-white/45"></p>
         <div className="mt-4">
           <MagicEffectComposer
             name="card-effects"
@@ -442,7 +442,7 @@ export default function CardBuilder(props: Props) {
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div>
-          <p className="text-sm text-white/70">保存后进入房间卡池，所有成员可见</p>
+          <p className="text-sm text-white/70">保存后所有成员可见</p>
           {message === null ? null : <p className="mt-1 text-xs text-red-300">{message}</p>}
         </div>
         <button

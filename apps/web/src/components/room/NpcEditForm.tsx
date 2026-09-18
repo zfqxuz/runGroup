@@ -37,7 +37,7 @@ function skillsText(skills: Record<string, number>): string {
 export default function NpcEditForm({ roomId, card, returnTo }: Props) {
   const parsed = NpcStatsSchema.safeParse(card.stats);
   if (parsed.success === false) {
-    return <p className="mt-2 text-[11px] text-amber-300">这张 NPC 卡的属性数据不完整，暂时无法编辑。</p>;
+    return <p className="mt-2 text-[11px] text-amber-300">该 NPC 卡属性不完整，暂时无法编辑。</p>;
   }
   const stats = parsed.data;
   return (
@@ -98,7 +98,7 @@ export default function NpcEditForm({ roomId, card, returnTo }: Props) {
           ))}
         </div>
         <label className="flex flex-col gap-1">
-          <span className="text-[10px] text-white/35">技能（示例：FIGHTING_BRAWL:60, DODGE:40）</span>
+          <span className="text-[10px] text-white/35">技能（每行一项，如 格斗:60、闪避:40）</span>
           <input name="skills" defaultValue={skillsText(stats.skills)} className={inputClass + " font-mono"} />
         </label>
         <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-white">

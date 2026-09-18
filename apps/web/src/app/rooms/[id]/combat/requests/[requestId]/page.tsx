@@ -81,7 +81,7 @@ export default async function CombatRequestPage({
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">申请方单位（{requestedUnits.length}）</h2>
         {requestedUnits.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">申请中没有可识别单位，可能已被删除。</p>
+          <p className="mt-3 text-xs text-white/35">申请中的单位可能已被删除。</p>
         ) : (
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">
             {requestedUnits.map((unit) => (

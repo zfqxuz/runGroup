@@ -8,13 +8,13 @@ export const dynamic = "force-dynamic";
 const COMMON_SETTINGS = [
   {
     key: "ai.moduleImport.model",
-    label: "DeepSeek 默认模型",
-    hint: "deepseek-flash 支持图片视觉输入，推荐作为默认模型；deepseek-v4-pro 为文本推理模型。"
+    label: "默认 AI 模型",
+    hint: "视觉模型支持图片，推荐默认；文本模型仅支持文本。"
   },
   {
     key: "ai.moduleImport.maxFiles",
-    label: "单次 AI 导入最大文件数",
-    hint: "JSON 数字，例如 30。"
+    label: "单次导入文件上限",
+    hint: "填写数字，例如 30。"
   }
 ] as const;
 
@@ -35,7 +35,7 @@ export default async function AdminSystemPage({
       <header>
         <Link href="/admin" className="text-xs text-white/40 transition hover:text-white/70">← 管理后台</Link>
         <h1 className="mt-2 text-2xl font-semibold">系统设置</h1>
-        <p className="mt-1 text-sm text-white/50">平台级配置，保存在 SystemSetting 表，AI 团本导入会优先读取这里的值。</p>
+        <p className="mt-1 text-sm text-white/50">平台级配置，AI 团本导入时优先使用。</p>
       </header>
 
       {searchParams.saved === undefined ? null : (
@@ -46,23 +46,23 @@ export default async function AdminSystemPage({
       )}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">n8n 团本解析工作流</h2>
+        <h2 className="text-sm font-medium text-white/80">AI 团本解析服务</h2>
         <p className="mt-2 text-xs text-white/45">
           工作流地址：{hasN8n ? n8nUrl : "未配置（请在部署环境设置 N8N_MODULE_PARSE_URL，例如 http://n8n:5678/webhook/module-parse）"}
         </p>
         <p className="mt-1 text-xs text-white/45">
-          当前导入解析器：{hasN8n ? "n8n 工作流（NPC 数值走确定性解析，DeepSeek 只负责正文抽取）" : "DeepSeek 直连（旧回退路径）"}
+          当前导入解析器：{hasN8n ? "n8n 工作流（NPC 数值走确定性解析，DeepSeek 只负责正文抽取）" : "备用模型直连"}
         </p>
-        <p className="mt-1 text-[11px] text-white/30">n8n 容器内部持有 DEEPSEEK_API_KEY，应用不再直接调用模型；n8n 端口默认只绑定 127.0.0.1。</p>
+        <p className="mt-1 text-[11px] text-white/30"></p>
       </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">DeepSeek 回退接入</h2>
+        <h2 className="text-sm font-medium text-white/80">备用模型接入</h2>
         <p className="mt-2 text-xs text-white/45">
-          API Key：{hasDeepseekKey ? "已从环境变量 DEEPSEEK_API_KEY 读取" : "未配置（n8n 正常时可不配置）"}
+          API Key：{hasDeepseekKey ? "已配置" : "未配置（解析服务可用时无需配置）"}
         </p>
         <p className="mt-1 text-xs text-white/45">Base URL：{baseUrl}</p>
-        <p className="mt-1 text-[11px] text-white/30">仅当 N8N_MODULE_PARSE_URL 为空时，应用才回退到 DeepSeek 直连。</p>
+        <p className="mt-1 text-[11px] text-white/30"></p>
       </section>
 
       {COMMON_SETTINGS.map((item) => {

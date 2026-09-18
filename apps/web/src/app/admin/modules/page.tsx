@@ -70,7 +70,7 @@ export default async function AdminModulesPage({
                   </p>
                 </td>
                 <td className="px-4 py-3 text-[10px] text-white/45">
-                  {moduleRecord.owner === null ? "平台/无主" : moduleRecord.owner.displayName ?? moduleRecord.owner.username}
+                  {moduleRecord.owner === null ? "平台" : moduleRecord.owner.displayName ?? moduleRecord.owner.username}
                   <br />
                   {moduleRecord.room === null ? "独立团本" : "房间：" + moduleRecord.room.name}
                 </td>

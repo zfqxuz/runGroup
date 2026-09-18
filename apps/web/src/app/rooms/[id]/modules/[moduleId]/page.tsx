@@ -99,7 +99,7 @@ export default async function ModuleDetailPage({
       ) : null}
       {searchParams.saved === "new" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
-          空白团本已创建，可以开始编辑标题、简介与正文。
+          空白团本已创建，可开始编辑。
         </p>
       ) : null}
       {searchParams.error === "active" ? (
@@ -114,7 +114,7 @@ export default async function ModuleDetailPage({
       ) : null}
       {searchParams.error === "preset-active" ? (
         <p className="rounded-xl border border-red-400/30 bg-red-400/10 px-4 py-3 text-sm text-red-200">
-          该团本已应用到某个房间的准备预设。请先在对应房间换预设或删除预设对象，再删除团本。
+          该团本已被房间使用。请先在对应房间更换或删除预设。
         </p>
       ) : null}
       {searchParams.error === "owner" ? (
@@ -163,7 +163,7 @@ export default async function ModuleDetailPage({
             </label>
           </div>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">Markdown 正文</span>
+            <span className="text-xs text-white/50">正文</span>
             <textarea
               name="content"
               rows={22}
@@ -225,7 +225,7 @@ export default async function ModuleDetailPage({
       ) : (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">资源</h2>
-          <p className="mt-3 text-xs text-white/35">地图、图片、手书与附件仅 KP / 团本作者可见。玩家只会看到公开元信息与 KP 主动分享的线索。</p>
+          <p className="mt-3 text-xs text-white/35">资源仅 KP 与团本作者可见；玩家只能看到公开信息与 KP 分享的线索。</p>
         </section>
       )}
 

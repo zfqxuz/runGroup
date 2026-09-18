@@ -115,7 +115,7 @@ export default async function SceneManagementPage({
         <div>
           <Link href={"/rooms/" + room.id} className="text-xs text-white/40 transition hover:text-white/70">← 返回跑团页</Link>
           <h1 className="mt-2 text-2xl font-semibold">场景 / 地图</h1>
-          <p className="mt-1 text-sm text-white/50">KP 可创建场景、上传地图、放置角色与 NPC Token；Token 图片自动取角色卡立绘 / 头像，未配置时显示默认占位，不再单独上传。</p>
+          <p className="mt-1 text-sm text-white/50">KP 可创建场景并放置角色 Token；Token 图会自动使用角色立绘或头像。</p>
         </div>
         <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">我的身份：{membership.role}</span>
       </header>
@@ -128,7 +128,7 @@ export default async function SceneManagementPage({
       )}
       {searchParams.saved === "module-scenes" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-sm text-emerald-200">
-          已从团本结构化数据生成场景：新增 {searchParams.scenes ?? "0"} 个场景 / {searchParams.encounters ?? "0"} 个遭遇。
+          已从团本结构化数据生成场景：新增 {searchParams.scenes ?? "0"} 个场景。
         </p>
       ) : null}
 
@@ -168,7 +168,7 @@ export default async function SceneManagementPage({
 
       {scenes.length === 0 ? (
         <p className="rounded-xl border border-dashed border-white/15 px-5 py-12 text-center text-sm text-white/40">
-          还没有场景。KP 创建场景后，跑团页会显示战术棋盘。
+          还没有场景。创建后，跑团页会显示战术棋盘。
         </p>
       ) : null}
 
@@ -302,7 +302,7 @@ export default async function SceneManagementPage({
               <div className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-xs text-white/60">地图图层（{scene.map.layers.length}）· 墙 {scene.map._count.walls} · 灯 {scene.map._count.lights}</p>
-                  <span className="text-[10px] text-white/30">场景页可管理图层图片；墙体 / 灯光 / 战雾在跑团页战术棋盘上操作。</span>
+                  <span className="text-[10px] text-white/30">图层图片在此管理；墙体、灯光与战雾在战术棋盘上操作。</span>
                 </div>
                 {isKP ? (
                   <div className="mt-3 flex flex-col gap-3">

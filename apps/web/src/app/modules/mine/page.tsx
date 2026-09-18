@@ -28,7 +28,7 @@ export default async function MyModulesPage({
         <div>
           <Link href="/" className="text-xs text-white/40 transition hover:text-white/70">← 返回房间列表</Link>
           <h1 className="mt-2 text-2xl font-semibold">我的团本</h1>
-          <p className="mt-1 text-sm text-white/50">你创建或导入的团本。只有你可以编辑和发布它们。</p>
+          <p className="mt-1 text-sm text-white/50">你创建或导入的团本，只有你可以编辑和发布。</p>
         </div>
         <Link
           href="/modules"
@@ -53,7 +53,7 @@ export default async function MyModulesPage({
       <section className="grid gap-3 rounded-xl border border-white/10 bg-ink-800/50 p-5 lg:grid-cols-2">
         <div>
           <h2 className="text-sm font-medium text-white/80">新建空白团本</h2>
-          <p className="mt-1 text-[11px] text-white/35">生成标准 14 章节模板，创建后再编辑内容和发布。</p>
+          <p className="mt-1 text-[11px] text-white/35">生成标准 14 章节模板，可继续编辑后发布。</p>
           <form action={createBlankModuleAction} className="mt-3 flex flex-wrap items-end gap-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">规则系统</span>

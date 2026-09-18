@@ -68,7 +68,7 @@ export default async function NewNpcPage({
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">准备 NPC / Boss</h1>
         <p className="mt-1 text-sm text-white/50">
-          从预设直接加入，或按本房规则自建。生成的是本场专属卡，不会进入个人卡库。
+          可从预设加入，也可按本房规则自建；仅在本场使用，不进入个人卡库。
         </p>
       </header>
 
@@ -212,7 +212,7 @@ export default async function NewNpcPage({
           </div>
 
           <label className={labelClass}>
-            <span className={spanClass}>技能（每行一个，格式 技能ID:数值）</span>
+            <span className={spanClass}>技能（每行一个，格式：技能:数值）</span>
             <textarea
               name="skills"
               rows={4}
@@ -221,7 +221,7 @@ export default async function NewNpcPage({
             />
           </label>
           <details className="rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2">
-            <summary className="cursor-pointer text-xs text-white/45">查看本包技能 ID</summary>
+            <summary className="cursor-pointer text-xs text-white/45">查看可用技能</summary>
             <div className="mt-2 flex max-h-52 flex-wrap gap-x-3 gap-y-1 overflow-y-auto">
               {skills.map((skill) => (
                 <span key={skill.id} className="font-mono text-[11px] text-white/40">

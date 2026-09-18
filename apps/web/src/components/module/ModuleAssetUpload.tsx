@@ -41,7 +41,7 @@ export default function ModuleAssetUpload(props: Props) {
       setPath(payload.relativePath);
       setPreview(payload.url ?? null);
     } catch {
-      setError("网络错误，上传失败");
+      setError("上传失败，请重试。");
     } finally {
       setBusy(false);
     }
@@ -65,7 +65,7 @@ export default function ModuleAssetUpload(props: Props) {
             name={props.name + "Path"}
             value={path}
             onChange={(event) => setPath(event.target.value)}
-            placeholder="资源相对路径，可直接上传"
+            placeholder="图片路径（也可直接上传）"
             className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-[11px] text-white/70 outline-none focus:border-sakura-500"
           />
           <div className="flex items-center gap-2">

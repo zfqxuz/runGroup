@@ -37,7 +37,7 @@ export default function ModuleAssetActions(props: Props) {
   }
 
   async function remove(): Promise<void> {
-    if (window.confirm("确定删除这个资源吗？引用它的正文可能需要手动修正。") === false) return;
+    if (window.confirm("确定删除这个资源吗？删除后引用可能失效。") === false) return;
     setBusy(true);
     setMessage(null);
     try {

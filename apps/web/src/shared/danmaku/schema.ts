@@ -41,7 +41,7 @@ export const DANMAKU_COLORS = [
   "#e2e8f0"
 ] as const;
 
-const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "颜色格式应为 #RRGGBB");
+const HexColorSchema = z.string().regex(/^#[0-9a-fA-F]{6}$/, "颜色格式不正确");
 
 /**
  * 一层图案 = 一个持续发射的弹幕发射器。

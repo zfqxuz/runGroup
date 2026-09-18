@@ -447,12 +447,12 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         ) : null}
         {allPlayersHaveApprovedCharacter === false ? (
           <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
-            每名 PL 至少需要一张审核通过的角色卡才能开始。
+            每名玩家至少需要一张通过审核的角色卡。
           </p>
         ) : null}
         {searchParams.error === "character" ? (
           <p className="mt-3 rounded-lg border border-amber-400/30 bg-amber-400/10 px-3 py-2 text-[11px] text-amber-200">
-            存在没有通过角色审核的 PL，暂时不能开始。
+            有玩家尚未通过角色审核。
           </p>
         ) : null}
         {searchParams.error === "game" ? (
@@ -462,7 +462,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         ) : null}
         {resuming ? (
           <p className="mt-3 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-[11px] text-spirit-200">
-            当前有一个暂停中的局。全员准备后，KP 点击“继续跑团”读取上次进度。
+            当前有暂停中的游戏。全员准备后，KP 可继续跑团。
           </p>
         ) : null}
       </section>
@@ -489,7 +489,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           <div className="mt-4 rounded-lg border border-amber-400/30 bg-amber-400/10 px-4 py-3">
             <p className="text-xs text-amber-200">本房间还没有选择团本。</p>
             <p className="mt-1 text-[11px] leading-relaxed text-amber-200/70">
-              可以前往团本管理导入 / 创建房间团本，也可以从团本广场选择已发布团本。
+              可前往团本管理创建或导入，也可从团本广场选择。
             </p>
           </div>
         ) : (
@@ -520,7 +520,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
                 </p>
               </div>
               <div>
-                <p className="text-[10px] text-white/35">职业推荐</p>
+                <p className="text-[10px] text-white/35">技能推荐</p>
                 <p className="mt-0.5 whitespace-pre-wrap leading-relaxed text-white/60">
                   {selectedModule.occupationRecommendation ?? "未填写"}
                 </p>
@@ -591,8 +591,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
                   {activePreset === null ? "" : activePreset.moduleId === selectedModule.id ? "（重新应用）" : "（切换预设）"}
                 </h3>
                 <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-                  点击后会从只读模板克隆：章节、场景地图、NPC/Boss 卡、武器/物品/证物卡、线索、遭遇与魔法规则。
-                  换预设时，上一次预设生成的房间对象会整批替换；玩家自己创建的内容不受影响。
+                  应用后会生成本局所需的场景、NPC、物品、线索与魔法；重复应用会替换上次生成的内容。
                 </p>
                 {activeGame === null ? null : (
                   <p className="mt-1 text-[11px] text-amber-300">
@@ -613,7 +612,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
 
         {searchParams.preset === "applied" ? (
           <p className="mt-3 rounded-lg border border-emerald-400/30 bg-emerald-400/10 px-3 py-2 text-[11px] text-emerald-200">
-            团本预设已应用：章节 {searchParams.chapters ?? "0"} / 场景 {searchParams.scenes ?? "0"} / NPC·Boss {searchParams.npcs ?? "0"} / 武器物品 {searchParams.items ?? "0"} / 线索证物 {searchParams.clues ?? "0"} / 遭遇 {searchParams.encounters ?? "0"}
+            团本预设已应用：章节 {searchParams.chapters ?? "0"} / NPC·Boss {searchParams.npcs ?? "0"}
             {isKP ? " / 魔法 " + (searchParams.magic ?? "0") : ""}。
           </p>
         ) : null}
@@ -645,7 +644,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
               <div>
                 <p className="text-xs font-medium text-purple-200">模组魔法规则（{selectedModuleMagic.spells.length}）</p>
                 <p className="mt-1 text-[11px] leading-relaxed text-white/45">
-                  由 n8n 工作流 / 团本结构化数据提前整理。开启后，本局规则包会纳入这些法术，战斗中可消耗 MP/SAN 施放。
+                  开启后，本局可使用团本中的魔法。
                 </p>
               </div>
               {isKP ? (
@@ -779,7 +778,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
           </form>
         ) : (
           <p className="mt-3 text-[11px] text-white/35">
-            角色库里没有可带入本房的角色；可以先去「我的角色」新建 / 导入，再回本页提交。
+            角色库暂无可带入的角色，可先去「我的角色」新建或导入。
           </p>
         )}
         {characterEntries.length === 0 ? (
@@ -984,7 +983,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
       {activeSceneForPrepare === null ? (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">战术棋盘</h2>
-          <p className="mt-2 text-xs text-white/40">还没有激活的场景。KP 可先到「场景 / 地图」创建并切换场景，再回来布置 Token、墙体与灯光。</p>
+          <p className="mt-2 text-xs text-white/40">还没有激活场景。KP 可先到「场景 / 地图」创建。</p>
         </section>
       ) : (
         <SceneBoard

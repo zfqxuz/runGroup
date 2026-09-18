@@ -38,13 +38,13 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
 
     // 3. 统一编辑页：第一页（属性 / 技能，必填）
     await page.goto("/characters/" + characterId + "/edit");
-    await expect(page.getByText("第一页 · 角色属性与技能（必填）")).toBeVisible();
+    await expect(page.getByText("角色基本属性与技能")).toBeVisible();
     await page.getByLabel("性别").fill("浏览器编辑");
     await page.locator('input[name="attr_edu"]').fill("70");
     await page.locator('input[name="attr_int"]').fill("60");
     await page.locator('[data-skill-id="FIGHTING_BRAWL"] [data-testid="skill-interest"]').fill("15");
-    await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
-    await expect(page.getByText("第二页 · 人物故事 / 财产 / 物品（选填）")).toBeVisible();
+    await page.getByRole("button", { name: "下一步" }).click();
+    await expect(page.getByText("人物故事 / 财产 / 持有物")).toBeVisible();
 
     // 4. 统一卡牌编辑页：创建一张卡并从角色编辑页加入（卡编辑收敛到一个页面）
     const libraryCard = await prisma.card.create({
@@ -71,14 +71,14 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
     await page.locator('input[name="attr_edu"]').fill("70");
     await page.locator('input[name="attr_int"]').fill("60");
     await page.locator('[data-skill-id="FIGHTING_BRAWL"] [data-testid="skill-interest"]').fill("15");
-    await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
-    await expect(page.getByText("第二页 · 人物故事 / 财产 / 物品（选填）")).toBeVisible();
+    await page.getByRole("button", { name: "下一步" }).click();
+    await expect(page.getByText("人物故事 / 财产 / 持有物")).toBeVisible();
 
     // 4.1.1 返回第一页必须仍可编辑
     await page.getByRole("button", { name: "上一步" }).click();
     await expect(page.locator('input[name="attr_edu"]')).toBeEnabled();
     await page.locator('input[name="attr_edu"]').fill("75");
-    await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
+    await page.getByRole("button", { name: "下一步" }).click();
 
     // 4.2 第二页：人物故事 + 财产 + 从可用卡里选卡加入
     await page.locator('textarea[name="bs_appearance"]').fill("浏览器编辑后的角色外貌");

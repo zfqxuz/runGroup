@@ -50,7 +50,7 @@ export default async function NewRoomPage({ searchParams }: { searchParams: { mo
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">创建房间</h1>
         <p className="mt-1 text-sm text-white/50">
-          开团前一次性锁定规则；KP 之后仍可覆盖，但会留下审计记录
+          开团前确认规则；之后仍可调整，并会留下记录。
         </p>
         {selectedModule === null ? null : (
           <p className="mt-2 rounded-lg border border-spirit-400/30 bg-spirit-400/10 px-3 py-2 text-xs text-spirit-200">
@@ -63,7 +63,7 @@ export default async function NewRoomPage({ searchParams }: { searchParams: { mo
               ? "请填写房间名后再创建。"
               : searchParams.error === "method"
                 ? "车卡方式不合法，请重新选择。"
-                : "创建房间失败，请重试；如果持续失败，请刷新页面或重启 dev server。"}
+                : "创建房间失败，请稍后重试。"}
           </p>
         )}
       </header>

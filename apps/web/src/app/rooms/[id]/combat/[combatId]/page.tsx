@@ -186,7 +186,7 @@ export default async function CombatDetailPage({
             <span className="rounded-full border border-sakura-500/40 px-2 py-0.5 text-sakura-400">
               我的身份：{membership.role}
             </span>
-            <span className="text-white/35">战斗逻辑与快照仍保存在原系统中</span>
+            <span className="text-white/35"></span>
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

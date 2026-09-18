@@ -52,7 +52,7 @@ export default async function ModuleListPage({
             <div>
               <h2 className="text-sm font-medium text-white/80">新建团本</h2>
               <p className="mt-1 text-[11px] text-white/35">
-                可以新建带标准 14 章节的空白团本，也可以直接导入 `.md` / `.zip` 标准包。
+                可新建标准 14 章节空白团本，或导入 .md / .zip 标准包。
               </p>
             </div>
             <form action={createBlankModuleAction}>

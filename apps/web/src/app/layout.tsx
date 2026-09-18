@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "东方 TRPG 平台",
-  description: "COC7 兼容的东方 Project 线上跑团平台"
+  description: "东方 Project 线上跑团平台"
 };
 
 export default async function RootLayout({

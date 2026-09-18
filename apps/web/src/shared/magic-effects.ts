@@ -29,9 +29,9 @@ const AMOUNT: MagicEffectField = {
 
 const DURATION_ROUNDS: MagicEffectField = {
   key: "durationTicks",
-  label: "持续行动轮次",
+  label: "持续轮次",
   kind: "number",
-  placeholder: "0 = 耗尽 / 战斗结束",
+  placeholder: "0 表示持续到战斗结束",
   defaultValue: "0"
 };
 
@@ -45,35 +45,35 @@ const DURATION_ACTIONS: MagicEffectField = {
 };
 
 export const MAGIC_EFFECT_DEFINITIONS: readonly MagicEffectDefinition[] = [
-  { type: "DAMAGE", label: "伤害", summary: "造成伤害，走伤害管线与护甲", fields: [AMOUNT] },
+  { type: "DAMAGE", label: "伤害", summary: "造成伤害（结算护甲）", fields: [AMOUNT] },
   { type: "HEAL", label: "治疗", summary: "恢复 HP", fields: [AMOUNT] },
   { type: "MP_RESTORE", label: "回 MP", summary: "恢复 MP", fields: [{ ...AMOUNT, defaultValue: "3" }] },
-  { type: "MP_DRAIN", label: "吸 MP", summary: "扣除目标 MP，同量转移给施法者", fields: [{ ...AMOUNT, defaultValue: "3" }] },
+  { type: "MP_DRAIN", label: "吸 MP", summary: "扣除目标 MP，并转移给施法者", fields: [{ ...AMOUNT, defaultValue: "3" }] },
   { type: "SAN_LOSS", label: "扣 SAN", summary: "扣除 SAN", fields: [{ ...AMOUNT, defaultValue: "1d4" }] },
   { type: "SAN_RESTORE", label: "回 SAN", summary: "恢复 SAN", fields: [{ ...AMOUNT, defaultValue: "3" }] },
   {
     type: "STATUS",
     label: "状态",
-    summary: "施加规则包中定义的状态",
+    summary: "施加状态",
     fields: [
-      { key: "key", label: "状态 key", kind: "text", placeholder: "例如 HASTE", defaultValue: "HASTE", required: true },
+      { key: "key", label: "状态名称", kind: "text", placeholder: "例如 加速", defaultValue: "HASTE", required: true },
       { key: "stacks", label: "层数", kind: "number", placeholder: "例如 1", defaultValue: "1" }
     ]
   },
   {
     type: "ARMOR",
     label: "护甲",
-    summary: "获得护甲池，1:1 吸收伤害，按行动轮次到期",
+    summary: "获得护甲，按行动轮次吸收伤害后消失",
     fields: [AMOUNT, DURATION_ROUNDS]
   },
   {
     type: "SUMMON",
     label: "召唤",
-    summary: "按独立 NPC 卡生成参战单位；无卡走通用兜底",
+    summary: "生成参战单位；可指定 NPC 卡",
     fields: [
       { key: "name", label: "召唤物名字", kind: "text", placeholder: "例如 次元蹒跚者", defaultValue: "召唤物", required: true },
-      { key: "key", label: "稳定 key（可选）", kind: "text", placeholder: "用于跨译名匹配", defaultValue: "" },
-      { key: "cardId", label: "指定房间 NPC 卡 id（可选）", kind: "text", placeholder: "留空则按名字匹配", defaultValue: "" },
+      { key: "key", label: "标识（可选）", kind: "text", placeholder: "用于匹配同名单位", defaultValue: "" },
+      { key: "cardId", label: "指定 NPC 卡（可选）", kind: "text", placeholder: "留空则按名字匹配", defaultValue: "" },
       { key: "count", label: "数量", kind: "number", placeholder: "例如 1", defaultValue: "1" },
       DURATION_ROUNDS
     ]
@@ -81,7 +81,7 @@ export const MAGIC_EFFECT_DEFINITIONS: readonly MagicEffectDefinition[] = [
   {
     type: "POSSESS",
     label: "夺舍",
-    summary: "操纵目标；充能池按战斗轮次 + 被夺舍 Token 移动消耗，耗尽归还控制权",
+    summary: "控制目标；控制期间按轮次与移动消耗，耗尽后归还控制权",
     fields: [{ key: "durationTurns", label: "操纵轮次", kind: "number", placeholder: "例如 1", defaultValue: "1", required: true }]
   },
   {
@@ -91,7 +91,7 @@ export const MAGIC_EFFECT_DEFINITIONS: readonly MagicEffectDefinition[] = [
     fields: [
       AMOUNT,
       { key: "durationTicks", label: "持续目标行动次数", kind: "number", placeholder: "例如 3", defaultValue: "3" },
-      { key: "key", label: "可选分组 key", kind: "text", placeholder: "留空则按法术 id", defaultValue: "" }
+      { key: "key", label: "分组（可选）", kind: "text", placeholder: "留空则跟随法术", defaultValue: "" }
     ]
   },
   { type: "STUN", label: "眩晕", summary: "强制跳过行动", fields: [DURATION_ACTIONS] },
@@ -99,9 +99,9 @@ export const MAGIC_EFFECT_DEFINITIONS: readonly MagicEffectDefinition[] = [
   {
     type: "CLEANSE",
     label: "净化",
-    summary: "清除状态 / 持续伤害 / 控制；keys 为空时清默认项",
+    summary: "清除状态、持续伤害与控制；留空则清除默认项",
     fields: [
-      { key: "keys", label: "要清除的 key（逗号分隔）", kind: "text", placeholder: "留空 = DOT + STUN + CONTROL", defaultValue: "" }
+      { key: "keys", label: "要清除的状态（逗号分隔）", kind: "text", placeholder: "留空 = 持续伤害 + 眩晕 + 控制", defaultValue: "" }
     ]
   }
 ];

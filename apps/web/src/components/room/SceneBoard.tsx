@@ -461,7 +461,7 @@ export default function SceneBoard(props: Props) {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">战术棋盘 · {props.scene.name}</h2>
         <p className="mt-2 text-xs text-white/45">
-          当前场景还没有配置地图；先放置 Token 会自动建立空白地图，KP 之后再补背景图。
+          当前场景没有地图；放置 Token 会自动创建空白地图。
         </p>
         {sceneSwitcher}
         {placementForm}
@@ -555,7 +555,7 @@ export default function SceneBoard(props: Props) {
             <p className="text-[10px] text-white/35">使用团本 / 房间素材作为背景</p>
             {props.backgroundAssets.length === 0 ? (
               <p className="rounded border border-white/10 bg-ink-800 px-2 py-1.5 text-[11px] text-white/35">
-                团本和房间还没有可用图片，先上传或到团本编辑器添加素材。
+                暂无可用图片，可先上传。
               </p>
             ) : (
               <select name="assetId" className="rounded border border-white/15 bg-ink-900 px-2 py-1.5 text-xs text-white/75 outline-none">
@@ -579,7 +579,7 @@ export default function SceneBoard(props: Props) {
 
       {props.isKP === false && shareableMembers.length > 0 ? (
         <div className="mt-4 rounded-xl border border-white/10 bg-ink-900/60 p-3">
-          <p className="text-[10px] text-white/35">共享战争视野（双向：对方也会看到你的视野）</p>
+          <p className="text-[10px] text-white/35">共享视野（对方也会看到你的视野）</p>
           <div className="mt-2 flex flex-wrap gap-2">
             {shareableMembers.map((member) => {
               const shared = props.sharedUserIds.includes(member.userId);

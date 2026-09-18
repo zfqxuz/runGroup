@@ -92,7 +92,7 @@ export default function RoomPlay(props: Props) {
       if (cancelled) return;
       if (payload.ok === false || payload.ticket === undefined) {
         setConn("offline");
-        setError("无法获取连接票据，请刷新页面");
+        setError("连接失败，请刷新页面重试。");
         return;
       }
       socket.auth = { ticket: payload.ticket };
@@ -257,7 +257,7 @@ export default function RoomPlay(props: Props) {
   function rollSkillCheck(): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     if (selectedCheckCharacter === null || effectiveSkillId.length === 0) {
@@ -309,7 +309,7 @@ export default function RoomPlay(props: Props) {
   function roll(): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
-      setError("连接已断开，请刷新页面后重试");
+      setError("连接已断开，请刷新后重试。");
       return;
     }
     if (diceMode === "CHECK") {
@@ -318,7 +318,7 @@ export default function RoomPlay(props: Props) {
     }
     const expression = normalizeDiceExpression(diceExpr).slice(0, 120);
     if (expression.length === 0) {
-      setError("请输入骰子表达式，例如 1d100");
+      setError("请输入骰子，例如 1d100");
       return;
     }
     setError(null);
@@ -450,7 +450,7 @@ export default function RoomPlay(props: Props) {
               onChange={(event) => setWhisperTargetId(event.target.value)}
               className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
             >
-              <option value="">选择对象</option>
+              <option value="">选择悄悄话对象</option>
               {members
                 .filter((member) => member.userId === props.currentUserId ? false : true)
                 .map((member) => (
@@ -533,7 +533,7 @@ export default function RoomPlay(props: Props) {
                           value={skillQuery}
                           onChange={(event) => setSkillQuery(event.target.value)}
                           onKeyDown={(event) => { if (event.key === "Enter") rollSkillCheck(); }}
-                          placeholder="输入技能名 / ID 检索"
+                          placeholder="搜索技能"
                           className="w-full rounded border border-white/15 bg-ink-800 px-2 py-1.5 text-xs outline-none focus:border-spirit-400"
                         />
                         <div className="mt-2 max-h-72 overflow-y-auto">
@@ -581,7 +581,7 @@ export default function RoomPlay(props: Props) {
                 if (error !== null) setError(null);
               }}
               onKeyDown={(event) => { if (event.key === "Enter") roll(); }}
-              placeholder="1d100  2d6+3（回车也可掷骰）"
+              placeholder="例如 1d100、2d6+3"
               className="min-w-[200px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 font-mono text-xs outline-none focus:border-spirit-400"
             />
           )}

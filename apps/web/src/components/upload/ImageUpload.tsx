@@ -43,7 +43,7 @@ export default function ImageUpload(props: Props) {
       payload = (await response.json()) as UploadResponse;
     } catch {
       setBusy(false);
-      setError("网络错误，上传失败");
+      setError("上传失败，请重试。");
       return;
     }
 

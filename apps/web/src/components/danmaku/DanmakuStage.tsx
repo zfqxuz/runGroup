@@ -121,7 +121,7 @@ export default function DanmakuStage(props: Props) {
           <p className={"text-xs font-medium " + (oneShot === null ? "text-white/70" : "text-sakura-300")}>
             {oneShot === null ? label : oneShot.name + " · 发动"}
           </p>
-          <p className="mt-0.5 text-[10px] text-white/35">纯视觉演出 · 不参与判定</p>
+          <p className="mt-0.5 text-[10px] text-white/35">纯视觉演出</p>
         </div>
         {activeParticipant?.declarationHp !== null && activeParticipant?.declarationHp !== undefined ? (
           <span className="rounded-lg border border-sakura-500/40 bg-ink-900/75 px-2.5 py-1.5 font-mono text-[11px] text-sakura-200">

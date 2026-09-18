@@ -28,7 +28,7 @@ export default async function GameHistoryPage() {
         <div>
           <Link href="/" className="text-xs text-white/40 transition hover:text-white/70">← 返回房间列表</Link>
           <h1 className="mt-2 text-2xl font-semibold">游戏历史</h1>
-          <p className="mt-1 text-sm text-white/50">你参与过的已结束局。进入后为只读视图。</p>
+          <p className="mt-1 text-sm text-white/50">你参与过的已结束游戏。</p>
         </div>
       </header>
 
@@ -50,7 +50,7 @@ export default async function GameHistoryPage() {
                 <p className="mt-1 text-[11px] text-white/40">
                   房间：{game.room.name} ·{" "}
                   {game.moduleRevision === null ? game.module?.title ?? "无团本" : game.moduleRevision.title}
-                  {game.moduleRevision === null ? "" : " · 快照 v" + game.moduleRevision.version} · {game.room.system}
+                  {game.moduleRevision === null ? "" : " · 存档" + game.moduleRevision.version} · {game.room.system}
                 </p>
               </div>
               <div className="shrink-0 text-right text-[11px] text-white/40">

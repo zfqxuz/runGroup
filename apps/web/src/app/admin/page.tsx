@@ -7,10 +7,10 @@ const MODULES_NAV = [
   { href: "/admin/users", title: "用户管理", description: "角色、禁用状态与管理员权限" },
   { href: "/admin/rooms", title: "房间管理", description: "房间状态、成员、规则包绑定与删除" },
   { href: "/admin/modules", title: "团本管理", description: "全站团本发布、下架与删除" },
-  { href: "/admin/rulepacks", title: "规则包管理", description: "创建、版本、发布、绑房与导入导出" },
-  { href: "/admin/magic", title: "魔法管理", description: "逐房间查看魔法链路：开关 / 团本 / 覆盖 / 最终生效" },
+  { href: "/admin/rulepacks", title: "规则包管理", description: "创建、版本、发布与绑定房间" },
+  { href: "/admin/magic", title: "魔法管理", description: "查看各房间的魔法开关与生效情况" },
   { href: "/admin/games", title: "游戏局", description: "查看全站开局与结束状态" },
-  { href: "/admin/system", title: "系统设置", description: "DeepSeek 等平台级配置" },
+  { href: "/admin/system", title: "系统设置", description: "AI 导入等平台配置" },
   { href: "/admin/audit", title: "审计日志", description: "所有管理员操作留痕" }
 ] as const;
 
@@ -44,7 +44,7 @@ export default async function AdminDashboardPage() {
     <div className="flex flex-col gap-6">
       <header>
         <h1 className="text-2xl font-semibold">管理后台</h1>
-        <p className="mt-1 text-sm text-white/50">平台数据、规则包与 AI 导入配置的总控台。</p>
+        <p className="mt-1 text-sm text-white/50">管理平台数据与配置。</p>
       </header>
 
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
@@ -52,7 +52,7 @@ export default async function AdminDashboardPage() {
         <StatCard label="房间" value={rooms} hint="含已结束" />
         <StatCard label="团本" value={modules} hint="全站团本总数" />
         <StatCard label="游戏局" value={games} hint="历史与进行中" />
-        <StatCard label="规则包" value={rulePacks} hint="DB 管理的规则包" />
+        <StatCard label="规则包" value={rulePacks} hint="可编辑规则包" />
         <StatCard label="审计记录" value={auditCount} hint="管理员操作留痕" />
       </section>
 

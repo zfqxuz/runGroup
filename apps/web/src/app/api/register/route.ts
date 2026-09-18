@@ -19,7 +19,7 @@ export async function POST(request: Request): Promise<NextResponse> {
 
   if (parsed.success === false) {
     return NextResponse.json(
-      { ok: false, error: parsed.error.issues[0]?.message ?? "参数不合法" },
+      { ok: false, error: parsed.error.issues[0]?.message ?? "提交内容有误" },
       { status: 400 }
     );
   }

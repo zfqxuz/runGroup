@@ -35,7 +35,7 @@ export default function RulePackConfigEditor(props: Props) {
 
   function patch(updater: (draft: Record<string, unknown>) => void): void {
     if (parsed === null) {
-      setError("JSON 不合法，无法用表单编辑，请先在 JSON 模式修正。");
+      setError("当前内容格式有误，请先在高级编辑中修正。");
       return;
     }
     const draft = structuredClone(parsed);
@@ -72,7 +72,7 @@ export default function RulePackConfigEditor(props: Props) {
           ))}
         </div>
         {parsed === null ? (
-          <span className="text-[11px] text-red-300">JSON 不合法</span>
+          <span className="text-[11px] text-red-300">格式不正确</span>
         ) : (
           <span className="text-[11px] text-emerald-300/70">
             已识别：{system || "未知系统"} · {skills.length} 技能 · {spells.length} 法术
@@ -143,10 +143,10 @@ export default function RulePackConfigEditor(props: Props) {
                 })
               }
             />
-            启用魔法规则（magic.enabled）
+            启用魔法规则
           </label>
           <p className="text-[11px] text-white/35">
-            技能 / 种族 / 战斗 / 法术等复杂结构请切到「JSON 编辑」修改。表单只覆盖系统与常用开关，不会动其它字段。
+            技能、种族、战斗、法术等复杂配置请使用「高级编辑」。
           </p>
         </>
       )}

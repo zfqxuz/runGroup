@@ -865,11 +865,11 @@ export default function CharacterBuilder(props: Props) {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center gap-3 text-xs">
         <span className={step === 1 ? "rounded-lg bg-sakura-500 px-3 py-1.5 font-medium text-white" : "rounded-lg border border-white/15 px-3 py-1.5 text-white/50"}>
-          第一页 · 角色属性与技能（必填）
+          角色基本属性与技能
         </span>
         <span className="text-white/30">→</span>
         <span className={step === 2 ? "rounded-lg bg-sakura-500 px-3 py-1.5 font-medium text-white" : "rounded-lg border border-white/15 px-3 py-1.5 text-white/50"}>
-          第二页 · 人物故事 / 财产 / 物品（选填）
+          人物故事 / 财产 / 持有物
         </span>
       </div>
       {step === 1 ? (
@@ -964,13 +964,13 @@ export default function CharacterBuilder(props: Props) {
                       </div>
                     )}
                     {occupationFreeChoice ? (
-                      <p className="mt-1 text-[10px] text-amber-300/80">含自选技能位，自选部分请按 KP 审核意见分配。</p>
+                      <p className="mt-1 text-[10px] text-amber-300/80">含自选技能位，请按 KP 要求分配。</p>
                     ) : null}
                   </>
                 ) : (
                   <div className="mt-3 rounded-lg border border-sakura-500/25 bg-sakura-500/5 p-3">
                     <p className="text-[11px] font-medium text-sakura-200">
-                      本职空位：先选择技能，选中后才会变为「本职」并可用职业点；不选则按兴趣技能处理。
+                      先选择技能才能使用职业点；未选择则按兴趣点计算。
                     </p>
                     {selectedProfile.fixed.length === 0 ? null : (
                       <p className="mt-1 text-[10px] leading-relaxed text-white/45">
@@ -1038,10 +1038,10 @@ export default function CharacterBuilder(props: Props) {
             </h2>
             <p className="mt-1 text-[11px] text-white/40">
               {canRoll
-                ? "天命 5 只能掷一次；掷完后从 5 组结果中选择 1 组，不能手动修改属性。"
+                ? "每组只能掷一次；从 5 组结果中选择 1 组，不可手动修改。"
                 : method?.kind === "POINT_BUY"
-                  ? "直接在九维输入框里填写数值，系统实时校验总和与单项范围。"
-                  : "直接填写九维属性；保存时由服务端校验范围。"}
+                  ? "直接填写九维属性，系统会校验总和与范围。"
+                  : "直接填写九维属性。"}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -1119,7 +1119,7 @@ export default function CharacterBuilder(props: Props) {
 
         {canRoll && rolled === false ? (
           <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-            先掷一次 5 组属性；鼠标点击下方结果里的「选用」后，9 维才会锁定为那一组。
+            掷出 5 组属性后，点击「选用」锁定一组。
           </p>
         ) : null}
 
@@ -1127,7 +1127,7 @@ export default function CharacterBuilder(props: Props) {
           <div className="mt-5 overflow-x-auto">
             <div className="mb-2 flex items-center justify-between gap-3">
               <p className="text-xs text-white/55">
-                {selectedSet === null ? "请从以下 5 组中选择 1 组：" : "已选择第 " + (selectedSet + 1) + " 组；只能掷一次，但可以重新选用其他组。"}
+                {selectedSet === null ? "请从以下 5 组中选择 1 组：" : "已选择第 " + (selectedSet + 1) + " 组；可重新选择其他组。"}
               </p>
             </div>
             <table className="w-full text-xs">
@@ -1268,7 +1268,7 @@ export default function CharacterBuilder(props: Props) {
             {ageConfirmed ? (
               <>
                 <span className="rounded-lg border border-emerald-400/40 bg-emerald-400/10 px-3 py-1.5 text-xs text-emerald-300">
-                  年龄补正已确认并锁定；最终属性按上方结果只读展示
+                  年龄补正已确认并锁定。
                 </span>
                 <button
                   type="button"
@@ -1293,7 +1293,7 @@ export default function CharacterBuilder(props: Props) {
       ) : null}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">衍生属性（实时计算）</h2>
+        <h2 className="text-sm font-medium text-white/80">衍生属性</h2>
         <div className="mt-4 grid gap-3 sm:grid-cols-4">
           {(["maxHp", "maxMp", "maxSan", "maxDp"] as const).map((key) => (
             <div
@@ -1336,7 +1336,7 @@ export default function CharacterBuilder(props: Props) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-[260px] flex-1">
             <h2 className="text-base font-semibold text-white/90">技能分配</h2>
-            <p className="mt-1 text-[11px] text-white/40">本职用职业点，其余用兴趣点，同一技能不能混用。</p>
+            <p className="mt-1 text-[11px] text-white/40">本职技能用职业点，其余用兴趣点；同一技能不能混用。</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg border border-sakura-500/35 bg-sakura-500/10 px-3 py-2 font-mono text-xs text-sakura-200">
@@ -1358,7 +1358,7 @@ export default function CharacterBuilder(props: Props) {
 
         {selectedOccupation === null ? (
           <p className="mt-3 rounded-lg border border-amber-400/25 bg-amber-400/10 px-3 py-2 text-xs text-amber-200">
-            还没选择职业。当前所有技能加点都按兴趣点计算，不能使用职业点。
+            尚未选择职业，当前只能使用兴趣点。
           </p>
         ) : null}
 
@@ -1366,7 +1366,7 @@ export default function CharacterBuilder(props: Props) {
           <input
             value={skillQuery}
             onChange={(event) => setSkillQuery(event.target.value)}
-            placeholder="搜索技能名 / ID"
+            placeholder="搜索技能"
             className="h-9 min-w-[180px] flex-1 rounded-lg border border-white/15 bg-ink-900 px-3 text-sm text-white/80 outline-none placeholder:text-white/25 focus:border-sakura-500"
           />
           <select
@@ -1569,7 +1569,7 @@ export default function CharacterBuilder(props: Props) {
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div>
-          <p className="text-sm text-white/70">第一页必须填完整；完成后进入第二页（人物故事 / 财产 / 持有物品，均可留空）。</p>
+          <p className="text-sm text-white/70"></p>
           {message === null ? null : (
             <p className="mt-1 text-xs text-red-300">{message}</p>
           )}
@@ -1579,7 +1579,7 @@ export default function CharacterBuilder(props: Props) {
           onClick={goStep2}
           className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400"
         >
-          下一步：人物故事 / 财产 / 物品
+          下一步
         </button>
       </section>
         </>
@@ -1627,19 +1627,19 @@ export default function CharacterBuilder(props: Props) {
         </div>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">调查员经历（JSON 数组，选填）</span>
+            <span className="text-xs text-white/50">调查员经历</span>
             <textarea name="bs_experiences" rows={3} value={bsExperiences} onChange={(event) => setBsExperiences(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">神话相关（JSON 数组，选填）</span>
+            <span className="text-xs text-white/50">神话相关</span>
             <textarea name="bs_mythosExperiences" rows={3} value={bsMythos} onChange={(event) => setBsMythos(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">调查员伙伴（JSON 数组，选填）</span>
+            <span className="text-xs text-white/50">调查员伙伴</span>
             <textarea name="bs_companions" rows={3} value={bsCompanions} onChange={(event) => setBsCompanions(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">法术一览（JSON 数组，选填；name 会作为持有法术）</span>
+            <span className="text-xs text-white/50">法术一览</span>
             <textarea name="bs_spellDetails" rows={3} value={bsSpells} onChange={(event) => setBsSpells(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
           </label>
         </div>
@@ -1678,7 +1678,7 @@ export default function CharacterBuilder(props: Props) {
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-sm font-medium text-white/80">持有物品（选填）</h2>
-            <p className="mt-1 text-[11px] text-white/40">从卡库选择；卡牌属性统一在卡牌编辑页维护。</p>
+            <p className="mt-1 text-[11px] text-white/40">从卡库选择；卡牌属性请在卡牌编辑页修改。</p>
           </div>
           <div className="flex gap-2">
             <a href={newCardHref} target="_blank" rel="noreferrer" className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">新建卡牌</a>

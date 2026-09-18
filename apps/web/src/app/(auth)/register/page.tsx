@@ -39,7 +39,7 @@ export default function RegisterPage() {
     const result = await signIn("credentials", { username, password, redirect: false });
     if (result?.error) {
       setBusy(false);
-      setError("注册成功，但自动登录失败，请手动登录");
+      setError("注册成功，请登录。");
       return;
     }
 
@@ -59,7 +59,7 @@ export default function RegisterPage() {
 
       <form onSubmit={onSubmit} className="flex flex-col gap-4">
         <label className="flex flex-col gap-1.5">
-          <span className="text-xs text-white/50">用户名（登录用，字母数字下划线连字符）</span>
+          <span className="text-xs text-white/50">用户名（3-32 位，仅字母、数字、_、-）</span>
           <input
             value={username}
             onChange={(event) => setUsername(event.target.value)}

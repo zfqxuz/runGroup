@@ -664,8 +664,8 @@ export default async function RoomPage({
         </p>
         <p className="mt-0.5 text-[11px] text-white/35">
           {activeGame === null
-            ? "当前没有进行中的局，但房间状态不是 LOBBY。可以结束并重置房间。"
-            : "暂停会保存当前状态并返回准备页；继续时全员需要重新准备。"}
+            ? "没有进行中的游戏，但房间状态异常。可结束并重置房间。"
+            : "暂停会保存进度并返回准备页；继续时全员需重新准备。"}
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -725,7 +725,7 @@ export default async function RoomPage({
               href={"/rooms/" + room.id + "/modules"}
               className="rounded-lg border border-spirit-400/40 px-3 py-1.5 text-xs text-spirit-400 transition hover:bg-spirit-400/10"
             >
-              团本编辑与素材
+              团本与素材
             </Link>
           ) : null}
           <span className="rounded-full border border-sakura-500/40 px-3 py-1 text-xs text-sakura-400">
@@ -736,7 +736,7 @@ export default async function RoomPage({
 
       {room.status === "ENDED" ? (
         <p className="rounded-xl border border-white/15 bg-ink-800/50 px-4 py-3 text-xs text-white/50">
-          房间已归档，仅保留历史数据与只读视图；发言、掷骰和战斗操作已停止。
+          房间已归档，仅可查看；发言、掷骰与战斗已停止。
         </p>
       ) : null}
 
@@ -745,14 +745,14 @@ export default async function RoomPage({
       {isKpSplit ? (
         <div className="flex flex-col gap-4">
           <p className="rounded-xl border border-sakura-500/30 bg-sakura-500/5 px-4 py-2 text-xs text-sakura-200">
-            KP 分屏模式：左侧为准备区（场景切换、线索公布），右侧为玩家实际看到的房间视角。
+            左侧为 KP 准备区，右侧为玩家视角。
           </p>
           <div className="grid items-start gap-6 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
             <aside className="flex flex-col gap-6 lg:sticky lg:top-20 lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
               {kpActionPanel}
               {activeGame === null || gameState === null ? (
                 <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5 text-xs text-white/50">
-                  当前没有可用的局内状态，暂时无法进入 KP 准备区。
+                  当前没有可进入的局。
                 </section>
               ) : (
                 <KpPrepPanel
@@ -782,7 +782,7 @@ export default async function RoomPage({
             <section className="min-w-0">
               <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-spirit-400/25 bg-spirit-400/5 px-4 py-2">
                 <h2 className="text-sm font-medium text-spirit-200">房间视角（与普通玩家一致）</h2>
-                <span className="text-[10px] text-white/35">此区域不包含 KP 专属控件</span>
+                <span className="text-[10px] text-white/35">此区域为玩家视角</span>
               </div>
               {playerContent}
             </section>

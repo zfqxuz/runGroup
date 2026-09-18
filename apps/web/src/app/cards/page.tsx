@@ -39,7 +39,7 @@ export default async function CardsLibraryPage() {
           </Link>
           <h1 className="mt-2 text-2xl font-semibold">我的卡牌库</h1>
           <p className="mt-1 text-sm text-white/50">
-            卡属于你自己，可带进任意房间（需 KP 审核）；也可以共享为模板供其他用户复制
+            卡牌属于你自己，可带进任意房间（需 KP 审核），也可共享为模板。
           </p>
         </div>
         <div className="flex gap-2">
@@ -127,7 +127,7 @@ export default async function CardsLibraryPage() {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div>
           <h2 className="text-sm font-medium text-white/80">共享模板库（{templates.length}）</h2>
-          <p className="mt-0.5 text-[11px] text-white/35">其他用户共享的模板卡；复制后进入你的卡库</p>
+          <p className="mt-0.5 text-[11px] text-white/35">其他玩家共享的模板，复制后进入你的卡库。</p>
         </div>
         {templates.length === 0 ? (
           <p className="mt-3 text-xs text-white/35">还没有可复制的共享模板</p>

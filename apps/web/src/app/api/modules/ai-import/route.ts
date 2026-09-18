@@ -13,11 +13,11 @@ const MAX_FILES = 40;
 export async function POST(request: Request): Promise<NextResponse> {
   const session = await auth();
   if (session === null) {
-    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
   }
   if (isAiImportConfigured() === false) {
     return NextResponse.json(
-      { ok: false, error: "未配置 n8n 团本解析工作流（N8N_MODULE_PARSE_URL），也没有配置 DEEPSEEK_API_KEY；管理员请在部署环境中配置后重启服务" },
+      { ok: false, error: "AI 导入服务暂不可用，请联系管理员。" },
       { status: 400 }
     );
   }
@@ -26,7 +26,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "提交内容有误" }, { status: 400 });
   }
 
   const roomId = String(form.get("roomId") ?? "").trim();
@@ -77,7 +77,7 @@ export async function POST(request: Request): Promise<NextResponse> {
     });
   } catch (error) {
     return NextResponse.json(
-      { ok: false, error: "无法创建后台任务：" + (error instanceof Error ? error.message : "未知错误") },
+      { ok: false, error: "无法创建后台任务：" + (error instanceof Error ? error.message : "操作失败，请稍后重试") },
       { status: 500 }
     );
   }
@@ -97,12 +97,12 @@ export async function POST(request: Request): Promise<NextResponse> {
 export async function GET(request: Request): Promise<NextResponse> {
   const session = await auth();
   if (session === null) {
-    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
   }
 
   const jobId = new URL(request.url).searchParams.get("jobId")?.trim() ?? "";
   if (jobId.length === 0) {
-    return NextResponse.json({ ok: false, error: "缺少 jobId" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "任务信息不完整" }, { status: 400 });
   }
 
   const job = await getAiImportJob(jobId, session.user.id);

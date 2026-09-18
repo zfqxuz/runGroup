@@ -96,7 +96,7 @@ export default async function HomePage(props: { searchParams: { error?: string; 
 
       {props.searchParams.disbanded === "1" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-200">
-          房间已解散，相关数据已删除。
+          房间已解散。
         </p>
       ) : null}
       {props.searchParams.error === "disband" ? (
@@ -106,7 +106,7 @@ export default async function HomePage(props: { searchParams: { error?: string; 
       ) : null}
       {props.searchParams.archived === "1" ? (
         <p className="rounded-xl border border-emerald-400/30 bg-emerald-400/10 px-4 py-3 text-xs text-emerald-200">
-          房间已归档，仍保留历史数据。
+          房间已归档，历史记录保留。
         </p>
       ) : null}
       {props.searchParams.error === "archive" ? (
@@ -180,7 +180,7 @@ export default async function HomePage(props: { searchParams: { error?: string; 
           </button>
         </form>
         <p className="mt-2 text-[11px] text-white/35">
-          向 KP 索取房间邀请码，输入后即可进入准备页或跑团页。
+          向 KP 索取邀请码，输入后即可进入房间。
         </p>
       </section>
 

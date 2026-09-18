@@ -2543,3 +2543,12 @@ ECS 在国内，从 GHCR 拉镜像经常 10~20 分钟甚至超时（本轮 deplo
 ### 3. 全站用户可见文案清单（待用户给映射）
 - 新增 `docs/UI-TEXT-INVENTORY.md`：从 `src/app`、`src/components`、`src/shared` 自动抽取中文 UI 文案，按文件分组，每条带 ID（如 `app-auth-login-page-tsx-1`）与「你的修改」空列，共 104 个文件、约 2171 条。
 - 用途：用户在清单里填新文案，开发按 ID 替换；也可直接按「页面 + 原文 → 新文」反馈。
+
+## 67. 应用用户提交的文案映射（本轮）
+
+- 用户在 `docs/UI-TEXT-INVENTORY.md` 里填了 **336 条映射**（76 个文件）。
+- 应用方式：脚本按「文件 + 原文 → 新文案」替换，跳过注释/代码片段；共自动应用 321 条，跳过 7 条（注释/代码伪影），手工处理 8 条 + 7 条跳过项。
+- 手工处理：房间 prepare/scenes 统计精简、规则集编辑/效果编辑的 JSON 错误文案与 tab 名、丹娘弹幕摘要只保留间隔、AI 导入结果行整理。
+- **回滚了一处误伤**：`shared/occupation.ts` 的 `countFromText` 正则里的捕获片段被当成文案删除，已恢复原正则（否则职业点数解析会失效）；`verify-occupation-slots`、`verify-chargen-rules` 回归通过。
+- 同步更新 Playwright 用例里写死的旧文案（步骤标题、下一步按钮）。
+- 验证：`npm test` 218、typecheck、next build、Playwright 2/2、真实服务器层 E2E 56/56。

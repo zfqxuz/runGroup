@@ -47,7 +47,7 @@ export default function GrowthCheckForm({
       <input type="hidden" name="gameId" value={gameId} />
       <input type="hidden" name="returnTo" value={returnTo} />
       <p className="text-[11px] text-white/45">
-        标记本局使用成功、需要幕间成长检定的技能。结束本局时可一键掷骰结算。
+        标记本局成功使用且需要成长的技能；结束本局时可统一结算。
       </p>
       <div className="mt-2 grid gap-2 sm:grid-cols-4">
         <label className="flex flex-col gap-1">
@@ -82,7 +82,7 @@ export default function GrowthCheckForm({
         </label>
         <label className="flex flex-col gap-1">
           <span className="text-[10px] text-white/35">备注</span>
-          <input name="note" maxLength={500} placeholder="使用场景 / 说明" className={inputClass} />
+          <input name="note" maxLength={500} placeholder="说明" className={inputClass} />
         </label>
         <div className="flex items-end">
           <button

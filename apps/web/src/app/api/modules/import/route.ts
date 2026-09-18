@@ -64,14 +64,14 @@ async function uniqueSlug(roomId: string | null, base: string): Promise<string> 
 export async function POST(request: Request): Promise<NextResponse> {
   const session = await auth();
   if (session === null) {
-    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
   }
 
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "提交内容有误" }, { status: 400 });
   }
 
   const roomId = String(form.get("roomId") ?? "").trim();

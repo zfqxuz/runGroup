@@ -62,7 +62,7 @@ const NOTICE_LABELS: Record<string, string> = {
 };
 
 const ERROR_LABELS: Record<string, string> = {
-  growth: "成长点数据不合法，或该技能不在当前规则包中。",
+  growth: "成长点无效，或该技能不在当前规则包中。",
   game: "当前局状态不允许进行成长检定。"
 };
 
@@ -76,7 +76,7 @@ export default function RoomAdvancementPanel(props: Props) {
         <div>
           <h2 className="text-sm font-medium text-white/80">成长与奖励</h2>
           <p className="mt-1 text-[11px] text-white/35">
-            成长记录会标注来源，并单独保存；属性 / 技能 / SAN 变动会同步到角色卡。
+            属性、技能与 SAN 变动会同步到角色卡。
           </p>
         </div>
         <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">
@@ -98,7 +98,7 @@ export default function RoomAdvancementPanel(props: Props) {
       {props.growthChecks.length > 0 ? (
         <div className="mt-4 rounded-lg border border-amber-400/25 bg-amber-400/5 p-3">
           <p className="text-[11px] font-medium text-amber-200">
-            待检定成长点（CoC 幕间：d100 大于技能值或 96-100 时 +1d10）
+            待检定成长点（1d100 大于技能值或掷出 96–100 时 +1d10）
           </p>
           <ul className="mt-2 flex flex-col divide-y divide-white/5">
             {props.growthChecks.map((check) => (
@@ -222,11 +222,11 @@ export default function RoomAdvancementPanel(props: Props) {
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">目标 / 说明键</span>
+              <span className="text-[11px] text-white/45">目标 / 说明</span>
               <input
                 name="target"
                 list="advancement-targets"
-                placeholder="attr / skill id / 物品名"
+                placeholder="属性 / 技能 / 物品名"
                 className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500"
               />
             </label>

@@ -82,7 +82,7 @@ export default async function AdminRulePackDetailPage({
               </div>
               <div className="flex shrink-0 flex-wrap items-center gap-2">
                 <Link href={"/admin/rulepacks/" + pack.id + "/versions/" + version.id + "/export"} className="rounded border border-white/15 px-2 py-1 text-[10px] text-white/55 transition hover:text-white">
-                  导出 JSON
+                  导出规则包
                 </Link>
                 {version.status === "PUBLISHED" ? (
                   <form action={adminSetRulePackVersionStatusAction}>
@@ -105,7 +105,7 @@ export default async function AdminRulePackDetailPage({
           <form action={deleteRulePackAdminAction} className="mt-4 border-t border-white/10 pt-4">
             <input type="hidden" name="packId" value={pack.id} />
             <button type="submit" className="rounded border border-red-400/30 px-3 py-1.5 text-[10px] text-red-300 transition hover:bg-red-400/10">
-              删除整个规则包（无绑定时可用）
+              删除规则包（未被房间使用时可用）
             </button>
           </form>
         )}
@@ -119,11 +119,10 @@ export default async function AdminRulePackDetailPage({
             <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
               <h2 className="text-sm font-medium text-white/80">魔法规则</h2>
               <p className="mt-1 text-[11px] leading-relaxed text-white/40">
-                该版本没有 `magic` / `spells`。房间里的魔法通常来自团本 `structured.magic`，
-                也可以在下面的完整 RulePack JSON 里加入 `magic` 字段后发布新版本。
+                该版本未配置魔法。魔法通常随团本导入，也可在下方的高级编辑中添加。
               </p>
               <Link href="/admin/magic" className="mt-2 inline-block text-xs text-spirit-300 transition hover:text-spirit-200">
-                去魔法管理查看房间生效链路 →
+                查看房间魔法生效情况 →
               </Link>
             </section>
           );
@@ -169,7 +168,7 @@ export default async function AdminRulePackDetailPage({
               </table>
             </div>
             <Link href="/admin/magic" className="mt-3 inline-block text-xs text-spirit-300 transition hover:text-spirit-200">
-              去魔法管理查看房间生效链路 →
+              查看房间魔法生效情况 →
             </Link>
           </section>
         );
@@ -178,7 +177,7 @@ export default async function AdminRulePackDetailPage({
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">新建版本</h2>
-          <p className="mt-1 text-[11px] text-white/35">新版本默认草稿。发布后可在“绑定房间”中选择。</p>
+          <p className="mt-1 text-[11px] text-white/35">新版本为草稿，发布后可绑定房间。</p>
           <form action={createRulePackVersionAction} className="mt-4 grid gap-3">
             <input type="hidden" name="packId" value={pack.id} />
             <label className="flex flex-col gap-1.5">
@@ -190,7 +189,7 @@ export default async function AdminRulePackDetailPage({
               <input name="notes" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500" />
             </label>
             <div className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">规则集配置（表单 / JSON 双模式）</span>
+              <span className="text-[11px] text-white/45">规则集配置</span>
               <RulePackConfigEditor initialJson={latestConfigText} />
             </div>
             <div>
@@ -200,8 +199,8 @@ export default async function AdminRulePackDetailPage({
         </div>
 
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-          <h2 className="text-sm font-medium text-white/80">导入 JSON 版本</h2>
-          <p className="mt-1 text-[11px] text-white/35">上传一个完整 RulePack JSON 文件，作为新草稿版本落库。</p>
+          <h2 className="text-sm font-medium text-white/80">导入规则包版本</h2>
+          <p className="mt-1 text-[11px] text-white/35">上传规则包文件，创建新的草稿版本。</p>
           <form action={importRulePackVersionAction} className="mt-4 grid gap-3">
             <input type="hidden" name="packId" value={pack.id} />
             <label className="flex flex-col gap-1.5">
@@ -209,7 +208,7 @@ export default async function AdminRulePackDetailPage({
               <input name="version" placeholder="1.2.0" required className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500" />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">JSON 文件</span>
+              <span className="text-[11px] text-white/45">规则包文件</span>
               <input
                 type="file"
                 name="file"

@@ -110,10 +110,10 @@ function NpcForm(props: { moduleId: string; entry: StructuredModuleEntry | null;
         ))}
       </div>
       <label className={labelClass}><span className={captionClass}>描述</span><textarea name="description" rows={2} defaultValue={textOf(data, "description")} className={inputClass} /></label>
-      <label className={labelClass}><span className={captionClass}>技能（SKILL:值，逗号分隔）</span><input name="skills" defaultValue={skillsTextOf(data)} className={inputClass + " font-mono"} /></label>
+      <label className={labelClass}><span className={captionClass}>技能（技能:数值，逗号分隔）</span><input name="skills" defaultValue={skillsTextOf(data)} className={inputClass + " font-mono"} /></label>
       <div className="grid gap-3 sm:grid-cols-2">
         <ModuleAssetUpload moduleId={props.moduleId} name="portrait" kind="IMAGE" label="角色立绘 / Token 图（可上传）" currentPath={portrait.length > 0 ? portrait : null} currentUrl={assetUrl(props.assets, portrait)} />
-        <label className={labelClass}><span className={captionClass}>Token 图路径（留空则用默认占位）</span><input name="tokenPath" defaultValue={textOf(data, "token")} className={inputClass + " font-mono"} /></label>
+        <label className={labelClass}><span className={captionClass}>Token 图（留空使用默认图）</span><input name="tokenPath" defaultValue={textOf(data, "token")} className={inputClass + " font-mono"} /></label>
       </div>
       <label className="flex items-center gap-2 text-[11px] text-white/55">
         <input type="checkbox" name="isPublic" value="1" defaultChecked={boolOf(data, "isPublic", false)} />
@@ -138,7 +138,7 @@ function ItemForm(props: { moduleId: string; entry: StructuredModuleEntry | null
       <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
         <label className={labelClass}><span className={captionClass}>伤害（近战可用 db）</span><input name="damage" defaultValue={textOf(data, "damage")} className={inputClass} /></label>
         <label className={labelClass}><span className={captionClass}>射程</span><input name="range" defaultValue={textOf(data, "range")} className={inputClass} /></label>
-        <label className={labelClass}><span className={captionClass}>技能 ID</span><input name="skillId" defaultValue={textOf(data, "skillId")} className={inputClass} /></label>
+        <label className={labelClass}><span className={captionClass}>技能</span><input name="skillId" defaultValue={textOf(data, "skillId")} className={inputClass} /></label>
         <label className={labelClass}><span className={captionClass}>命中修正</span><input name="accuracyMod" type="number" defaultValue={numberOf(data, "accuracyMod", 0)} className={inputClass} /></label>
         <label className={labelClass}><span className={captionClass}>MP 消耗</span><input name="mpCost" defaultValue={textOf(data, "mpCost")} className={inputClass} /></label>
       </div>
@@ -157,7 +157,7 @@ function ClueForm(props: { moduleId: string; entry: StructuredModuleEntry | null
     <FormShell moduleId={props.moduleId} kind="clue" entityId={props.entry?.id ?? ""} returnTo={props.returnTo}>
       <div className="grid gap-2 sm:grid-cols-2">
         <label className={labelClass}><span className={captionClass}>标题</span><input name="title" defaultValue={textOf(data, "title", props.entry?.title ?? "")} className={inputClass} /></label>
-        <label className={labelClass}><span className={captionClass}>关联证物 id（可选）</span><input name="linkedItemId" defaultValue={textOf(data, "linkedItemId")} className={inputClass} /></label>
+        <label className={labelClass}><span className={captionClass}>关联证物（可选）</span><input name="linkedItemId" defaultValue={textOf(data, "linkedItemId")} className={inputClass} /></label>
       </div>
       <label className={labelClass}><span className={captionClass}>线索正文</span><textarea name="content" rows={4} defaultValue={textOf(data, "content")} className={inputClass} /></label>
       <div className="grid gap-3 sm:grid-cols-2">
@@ -237,9 +237,9 @@ function MagicForm(props: {
         <label className={labelClass}>
           <span className={captionClass}>目标数量</span>
           <select name="target" defaultValue={target} className={inputClass}>
-            <option value="SELF">SELF 自己</option>
-            <option value="ONE">ONE 单体</option>
-            <option value="ALL">ALL 全体</option>
+            <option value="SELF">自己</option>
+            <option value="ONE">单体</option>
+            <option value="ALL">全体</option>
           </select>
         </label>
         <label className={labelClass}>
@@ -247,9 +247,9 @@ function MagicForm(props: {
           <select name="targeting" defaultValue={targeting} className={inputClass}>
             <option value="">自动</option>
             <option value="SELF">SELF</option>
-            <option value="ALLY">ALLY 友方</option>
-            <option value="ENEMY">ENEMY 敌方</option>
-            <option value="ANY">ANY 任意</option>
+            <option value="ALLY">友方</option>
+            <option value="ENEMY">敌方</option>
+            <option value="ANY">任意</option>
           </select>
         </label>
         <label className={labelClass + " sm:col-span-2"}>
@@ -283,9 +283,9 @@ export default function ModuleEntityEditors({ moduleId, content, assets, returnT
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-spirit-400/30 bg-spirit-400/5 p-4">
-        <h2 className="text-sm font-medium text-spirit-300">结构化内容编辑</h2>
+        <h2 className="text-sm font-medium text-spirit-300">内容编辑</h2>
         <p className="mt-1 text-[11px] text-white/40">
-          直接编辑角色 / 物品 / 线索 / 场景。保存后会同步写入标准 Markdown 的结构化块与只读模板，应用团本预设时生效。
+          编辑角色、物品、线索与场景；保存后会在应用团本预设时生效。
         </p>
       </div>
 

@@ -50,7 +50,7 @@ export default async function AdminMagicPage({
         overrideSpellCount: override.spellCount,
         rulePackLabel:
           room.rulePack === null
-            ? "内置 / 未绑定"
+            ? "内置包 / 未绑定"
             : room.rulePack.pack.name + " v" + room.rulePack.version
       };
     })
@@ -66,7 +66,7 @@ export default async function AdminMagicPage({
         <Link href="/admin" className="text-xs text-white/40 transition hover:text-white/70">← 管理后台</Link>
         <h1 className="mt-2 text-2xl font-semibold">魔法管理</h1>
         <p className="mt-1 text-sm text-white/50">
-          查看每个房间的魔法配置链路：房间开关 → 团本 structured.magic → Room.ruleOverride → 最终生效规则包。
+          查看各房间的魔法开关与生效情况。
         </p>
         <div className="mt-3 flex flex-wrap gap-2">
           <Link
@@ -98,12 +98,12 @@ export default async function AdminMagicPage({
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
           <p className="text-[11px] text-white/40">团本中解析出魔法的房间</p>
           <p className="mt-1 text-2xl font-semibold text-spirit-300">{withModuleMagic}</p>
-          <p className="mt-1 text-[10px] text-white/30">selected module structured.magic 非空</p>
+          <p className="mt-1 text-[10px] text-white/30">已选团本含魔法数据</p>
         </div>
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
-          <p className="text-[11px] text-white/40">开关 + 有法术数据</p>
+          <p className="text-[11px] text-white/40">开关开启且团本有魔法</p>
           <p className="mt-1 text-2xl font-semibold text-emerald-300">{effectiveLikely}</p>
-          <p className="mt-1 text-[10px] text-white/30">还需要规则包版本 / 冲突检查确认最终生效</p>
+          <p className="mt-1 text-[10px] text-white/30">待规则包确认</p>
         </div>
       </section>
 
@@ -150,7 +150,7 @@ export default async function AdminMagicPage({
                     href={"/admin/magic/" + row.id}
                     className="rounded border border-spirit-400/40 px-2 py-1 text-[10px] text-spirit-300 transition hover:bg-spirit-400/10"
                   >
-                    查看链路
+                    查看详情
                   </Link>
                 </td>
               </tr>

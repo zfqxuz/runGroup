@@ -218,8 +218,7 @@ export default function KpValueEditor(props: Props) {
         <div>
           <h2 className="text-sm font-medium text-purple-200">KP 数值调整（玩家 / NPC）</h2>
           <p className="mt-0.5 text-[10px] text-white/45">
-            任意阶段可用：HP / MP / SAN / DP、九项属性、技能。非战斗写入角色卡 / NPC 卡，
-            战斗中同时实时同步到战斗单位。留空表示不修改。
+            可调整 HP、MP、SAN、DP、属性与技能；留空表示不修改。
           </p>
         </div>
       </div>
@@ -267,7 +266,7 @@ export default function KpValueEditor(props: Props) {
       </details>
 
       <details className="mt-2 rounded-lg border border-white/10 bg-ink-900/40 p-2">
-        <summary className="cursor-pointer text-[11px] text-white/50">技能（ID:数值，每行一项）</summary>
+        <summary className="cursor-pointer text-[11px] text-white/50">技能（每行一项，如 格斗:60）</summary>
         <textarea
           value={skillsText}
           onChange={(event) => setSkillsText(event.target.value)}
@@ -290,7 +289,7 @@ export default function KpValueEditor(props: Props) {
           onClick={requestValues}
           className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35"
         >
-          重新读取实时值
+          刷新实时数值
         </button>
         {source === null ? null : (
           <span className="text-[10px] text-white/35">

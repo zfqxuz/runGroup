@@ -236,5 +236,5 @@ export function fallbackDanmakuPattern(seedSource = "spell"): DanmakuPattern {
 }
 
 export function patternLayerSummary(layer: DanmakuLayer): string {
-  return `${DANMAKU_LAYER_LABELS[layer.type]} · ${layer.count} 发 / ${layer.interval} 帧`;
+  return `${layer.interval} 帧`;
 }

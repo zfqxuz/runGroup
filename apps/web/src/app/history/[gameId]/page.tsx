@@ -74,7 +74,7 @@ export default async function GameHistoryDetailPage({ params }: { params: { game
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-medium text-white/80">使用团本</h2>
             <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/45">
-              {gameModule.source === "revision" ? "本局快照" : "历史数据"} · v{gameModule.version}
+              {gameModule.source === "revision" ? "本局存档" : "历史记录"} · v{gameModule.version}
             </span>
           </div>
           <p className="mt-2 text-sm text-white/80">{gameModule.title}</p>
@@ -120,9 +120,9 @@ export default async function GameHistoryDetailPage({ params }: { params: { game
         </div>
         <div className="mt-3 grid gap-3 lg:grid-cols-3">
           {[
-            ["旗标", flags],
-            ["计数器", counters],
-            ["自定义", custom]
+            ["标记", flags],
+            ["计数", counters],
+            ["其他", custom]
           ].map(([label, value]) => (
             <div key={String(label)} className="rounded-lg border border-white/10 bg-ink-900/60 p-3">
               <p className="text-[10px] text-white/35">{String(label)}</p>

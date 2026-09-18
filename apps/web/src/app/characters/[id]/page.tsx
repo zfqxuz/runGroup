@@ -230,7 +230,7 @@ export default async function CharacterDetailPage({
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">装备与物品</h2>
         {equipment.weapons.length === 0 && equipment.items.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">这张卡没有武器或随身物品记录。</p>
+          <p className="mt-3 text-xs text-white/35">暂无武器或随身物品。</p>
         ) : (
           <div className="mt-4 flex flex-col gap-4">
             {equipment.weapons.length === 0 ? null : (
@@ -374,7 +374,7 @@ export default async function CharacterDetailPage({
               成长记录（{advancementRows.length}/{allAdvancementRows.length}）
             </h2>
             <p className="mt-1 text-[11px] text-white/35">
-              可按类型、来源与局筛选；属性 / 技能 / SAN 记录支持编辑或撤销，撤销后不再计入成长汇总。
+              记录支持编辑或撤销，撤销后不计入成长汇总。
             </p>
           </div>
           <Link

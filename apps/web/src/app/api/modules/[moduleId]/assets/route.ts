@@ -89,14 +89,14 @@ export async function POST(
 ): Promise<NextResponse> {
   const session = await auth();
   if (session === null) {
-    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
   }
 
   let form: FormData;
   try {
     form = await request.formData();
   } catch {
-    return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "提交内容有误" }, { status: 400 });
   }
 
   const moduleRecord = await prisma.module.findUnique({
@@ -125,7 +125,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "不支持的文件格式" }, { status: 400 });
   }
   if (upload.size > MAX_ASSET_BYTES) {
-    return NextResponse.json({ ok: false, error: "资源超过 20MB 上限" }, { status: 413 });
+    return NextResponse.json({ ok: false, error: "文件不能超过 20MB" }, { status: 413 });
   }
 
   try {
@@ -201,14 +201,14 @@ export async function DELETE(
 ): Promise<NextResponse> {
   const session = await auth();
   if (session === null) {
-    return NextResponse.json({ ok: false, error: "未登录" }, { status: 401 });
+    return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
   }
 
   let payload: { roomId?: unknown; moduleAssetId?: unknown };
   try {
     payload = (await request.json()) as { roomId?: unknown; moduleAssetId?: unknown };
   } catch {
-    return NextResponse.json({ ok: false, error: "请求格式不合法" }, { status: 400 });
+    return NextResponse.json({ ok: false, error: "提交内容有误" }, { status: 400 });
   }
   const roomId = typeof payload.roomId === "string" ? payload.roomId.trim() : "";
   const moduleAssetId = typeof payload.moduleAssetId === "string" ? payload.moduleAssetId : "";

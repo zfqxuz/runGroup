@@ -94,9 +94,9 @@ export default function AiModuleImporter(props: Props) {
           return;
         }
       }
-      setMessage("任务仍在进行，但等待时间过长；请稍后重新发起或到「我的团本」查看。");
+      setMessage("解析时间较长，请稍后在「我的团本」查看。");
     } catch {
-      setMessage("请求失败：网络中断或服务已重启，请稍后用同样素材重试。");
+      setMessage("请求失败，请稍后重试。");
     } finally {
       setBusy(false);
     }
@@ -123,7 +123,7 @@ export default function AiModuleImporter(props: Props) {
           />
           <span className="text-[10px] leading-4 text-white/30">
             支持 md / txt / json / yaml / csv / docx / pptx / xlsx / pdf（自动抽取正文、内嵌图片与矢量页面渲染）/ png / jpg / webp / gif / avif / bmp / tiff / heic；
-            单文件最大 25MB，最多 40 个，图片最多 12 张；长文本会分段解析后合并，不会因为模型输出上限丢内容（正文上限约 90 万字、80 段，超限会明确要求拆分而不是静默截断）。
+            单文件最大 25MB，最多 40 个文件、12 张图片；长文本会分段解析后合并，不会因为模型输出上限丢内容（正文上限约 90 万字、80 段，超限会明确要求拆分而不是静默截断）。
           </span>
         </label>
 
@@ -142,16 +142,16 @@ export default function AiModuleImporter(props: Props) {
         </label>
 
         <label className="flex flex-col gap-1.5 lg:col-span-2">
-          <span className="text-xs text-white/50">模型（n8n 工作流会透传给 DeepSeek；涉及图片素材时推荐 deepseek-flash）</span>
+          <span className="text-xs text-white/50">模型（处理图片素材时建议选择视觉模型）</span>
           <select name="model" defaultValue="" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500">
-            <option value="">使用后台/环境默认（默认 deepseek-flash，支持 vision）</option>
-            <option value="deepseek-flash">deepseek-flash（推荐 · 支持图片视觉）</option>
-            <option value="deepseek-v4-pro">deepseek-v4-pro（文本推理）</option>
+            <option value="">使用默认模型（支持图片）</option>
+            <option value="deepseek-flash">视觉模型（推荐，支持图片）</option>
+            <option value="deepseek-v4-pro">文本模型（仅支持文本）</option>
           </select>
         </label>
 
         <label className="flex flex-col gap-1.5 lg:col-span-2">
-          <span className="text-xs text-white/50">给 n8n 工作流的额外要求（可选）</span>
+          <span className="text-xs text-white/50">额外要求（可选）</span>
           <textarea
             name="instructions"
             rows={3}
@@ -167,10 +167,10 @@ export default function AiModuleImporter(props: Props) {
           disabled={busy}
           className="rounded-lg bg-sakura-500 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
         >
-          {busy ? "n8n 工作流解析中…" : "n8n 工作流解析团本"}
+          {busy ? "正在解析…" : "AI 解析团本"}
         </button>
         {busy ? (
-          <span className="text-[11px] text-white/35">任务在后台运行，页面每 2-3 秒刷新进度；公网穿透断开或关闭页面也不会中断，生成完成后会出现在「我的团本」。</span>
+          <span className="text-[11px] text-white/35">任务会在后台继续，完成后可在「我的团本」查看。</span>
         ) : null}
       </div>
 
@@ -179,10 +179,10 @@ export default function AiModuleImporter(props: Props) {
           {message}
           {result?.model === undefined
             ? ""
-            : "（模型 " + result.model +
-              "，文本段 " + String(result.chunksCompleted ?? 0) + "/" + String(result.chunks ?? 0) +
-              "，图片 " + String(result.imagesAnalyzed ?? result.imagesUsed ?? 0) + "/" + String(result.imagesUsed ?? 0) +
-              "，调用 " + String(result.aiCalls ?? result.attempts ?? 1) + " 次）"}
+            : " " + result.model +
+              " · " + String(result.chunksCompleted ?? 0) + "/" + String(result.chunks ?? 0) +
+              " · " + String(result.imagesAnalyzed ?? result.imagesUsed ?? 0) + "/" + String(result.imagesUsed ?? 0) +
+              " · " + String(result.aiCalls ?? result.attempts ?? 1) + " 次"}
         </p>
       )}
 

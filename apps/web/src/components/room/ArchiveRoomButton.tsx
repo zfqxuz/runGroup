@@ -13,7 +13,7 @@ export default function ArchiveRoomButton({ roomId, roomName }: Props) {
       action={archiveRoomAction}
       onSubmit={(event) => {
         const confirmed = window.confirm(
-          "确定要归档「" + roomName + "」吗？归档后房间不再出现在进行中列表，但历史数据会保留。"
+          "确定要归档「" + roomName + "」吗？归档后将从进行中列表移除，历史记录保留。"
         );
         if (confirmed === false) event.preventDefault();
       }}

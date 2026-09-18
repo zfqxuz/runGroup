@@ -39,7 +39,7 @@ export default async function AdminRulePacksPage({
         <div>
           <Link href="/admin" className="text-xs text-white/40 transition hover:text-white/70">← 管理后台</Link>
           <h1 className="mt-2 text-2xl font-semibold">规则包管理</h1>
-          <p className="mt-1 text-sm text-white/50">P2-2：规则包从代码注册表升级为数据库管理，支持创建、版本、发布、绑房、导入导出与审计。</p>
+          <p className="mt-1 text-sm text-white/50">管理规则包、版本、发布与房间绑定。</p>
         </div>
         <form action={syncBuiltinRulePacksAction}>
           <button type="submit" className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-300 transition hover:bg-spirit-400/10">
@@ -61,14 +61,14 @@ export default async function AdminRulePacksPage({
       <section className="grid gap-4 xl:grid-cols-2">
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">新建规则包</h2>
-          <p className="mt-1 text-[11px] text-white/35">从内置包复制，或粘贴完整 RulePack JSON。新包默认草稿，需发布版本后才能绑定房间。</p>
+          <p className="mt-1 text-[11px] text-white/35">从内置包复制，或粘贴规则包内容。新包为草稿，发布后可绑定房间。</p>
           <form action={createRulePackAction} className="mt-4 grid gap-3 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">名称</span>
               <input name="name" required className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500" />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-[11px] text-white/45">slug（唯一）</span>
+              <span className="text-[11px] text-white/45">标识（唯一）</span>
               <input name="slug" placeholder="my-pack" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500" />
             </label>
             <label className="flex flex-col gap-1.5">
@@ -81,7 +81,7 @@ export default async function AdminRulePacksPage({
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">复制内置包（可选）</span>
               <select name="baseSlug" defaultValue="" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500">
-                <option value="">不复制 / 使用下方 JSON</option>
+                <option value="">不复制 / 手动填写</option>
                 <option value="coc7-baseline">coc7-baseline</option>
                 <option value="touhou-ext">touhou-ext</option>
               </select>
@@ -91,7 +91,7 @@ export default async function AdminRulePacksPage({
               <input name="description" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500" />
             </label>
             <label className="flex flex-col gap-1.5 sm:col-span-2">
-              <span className="text-[11px] text-white/45">RulePack JSON（可选）</span>
+              <span className="text-[11px] text-white/45">规则包内容（可选）</span>
               <textarea name="config" rows={4} placeholder='{"id":"my-pack","version":"1.0.0",...}' className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-[11px] outline-none focus:border-sakura-500" />
             </label>
             <div>
@@ -104,7 +104,7 @@ export default async function AdminRulePacksPage({
 
         <div className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
           <h2 className="text-sm font-medium text-white/80">绑定房间</h2>
-          <p className="mt-1 text-[11px] text-white/35">把已发布版本绑定到房间，房间后续判定、战斗、成长都使用该版本；留空表示回退内置包。</p>
+          <p className="mt-1 text-[11px] text-white/35">将已发布版本绑定到房间；留空则使用内置包。</p>
           <form action={bindRoomRulePackAction} className="mt-4 grid gap-3">
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">房间</span>
@@ -118,7 +118,7 @@ export default async function AdminRulePacksPage({
             <label className="flex flex-col gap-1.5">
               <span className="text-[11px] text-white/45">已发布版本</span>
               <select name="versionId" className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500">
-                <option value="">解绑 / 使用内置包</option>
+                <option value="">解绑并使用内置包</option>
                 {versions.map((version) => (
                   <option key={version.id} value={version.id}>
                     {version.pack.name} · v{version.version}（{version.pack.system}）
@@ -148,7 +148,7 @@ export default async function AdminRulePacksPage({
           </thead>
           <tbody className="divide-y divide-white/5">
             {packs.length === 0 ? (
-              <tr><td colSpan={5} className="px-4 py-10 text-center text-xs text-white/35">还没有数据库规则包，点击右上角“同步内置规则包”开始。</td></tr>
+              <tr><td colSpan={5} className="px-4 py-10 text-center text-xs text-white/35">还没有规则包，点击右上角「同步内置规则包」开始。</td></tr>
             ) : null}
             {packs.map((pack) => {
               const roomCount = pack.versions.reduce((sum, version) => sum + version._count.rooms, 0);

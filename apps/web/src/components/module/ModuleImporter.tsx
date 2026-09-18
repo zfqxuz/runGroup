@@ -62,7 +62,7 @@ function StandardImporter(props: Props) {
       {props.roomId === undefined ? null : <input type="hidden" name="roomId" value={props.roomId} />}
       <div className="flex flex-wrap items-end gap-3">
         <label className="min-w-[260px] flex-1">
-          <span className="mb-1.5 block text-xs text-white/50">选择 .md 或 .zip 标准团本包</span>
+          <span className="mb-1.5 block text-xs text-white/50">选择团本包（.md 或 .zip）</span>
           <input
             type="file"
             name="file"
@@ -122,7 +122,7 @@ export default function ModuleImporter(props: Props) {
               : "border-white/15 text-white/50 hover:text-white")
           }
         >
-          n8n 工作流解析
+          AI 解析
         </button>
       </div>
       {mode === "standard" ? <StandardImporter roomId={props.roomId} /> : <AiModuleImporter roomId={props.roomId} />}

@@ -330,7 +330,7 @@ export default function PlayerDashboard(props: Props) {
       </div>
 
       <div>
-        <p className="text-[11px] text-white/40">状态（buff / debuff）</p>
+        <p className="text-[11px] text-white/40">状态（增益 / 减益）</p>
         {vitals.conditions.length === 0 ? (
           <p className="mt-1.5 text-[11px] text-white/30">当前没有特殊状态</p>
         ) : (

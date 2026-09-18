@@ -79,7 +79,7 @@ export default function RoomSetupForm(props: Props) {
             placeholder="例：红魔馆异变调查"
             className={inputClass}
           />
-          <span className="text-[11px] text-white/35">房间名必填；不填会被服务端退回本页。</span>
+          <span className="text-[11px] text-white/35">房间名必填。</span>
         </label>
         <input type="hidden" name="system" value={system} />
       </section>
@@ -87,7 +87,7 @@ export default function RoomSetupForm(props: Props) {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">模组</h2>
         <p className="mt-1 text-[11px] text-white/35">
-          决定技能表、种族与可用卡池。角色卡和卡牌不能跨模组使用。
+          决定技能、种族与卡池；角色和卡牌不能跨模组使用。
         </p>
         <div className="mt-3 flex gap-2">
           {(["COC7", "TOUHOU"] as const).map((key) => (
@@ -110,7 +110,7 @@ export default function RoomSetupForm(props: Props) {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">背景年代</h2>
         <p className="mt-1 text-[11px] text-white/35">
-          仅 COC7 生效。年代会过滤职业与本职业技能，并写入房间内创建的角色。
+          仅 COC7 生效；决定可用职业与技能。
         </p>
         {system === "COC7" ? (
           <div className="mt-3 flex flex-col gap-2">
@@ -135,7 +135,7 @@ export default function RoomSetupForm(props: Props) {
             ))}
           </div>
         ) : (
-          <p className="mt-3 text-xs text-white/35">东方模组使用幻想乡年代规则，不设置现代 / 1920 年代。</p>
+          <p className="mt-3 text-xs text-white/35">东方模组使用幻想乡背景。</p>
         )}
       </section>
 
@@ -185,8 +185,8 @@ export default function RoomSetupForm(props: Props) {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <h2 className="text-sm font-medium text-white/80">战斗中允许发生的事件</h2>
-            <p className="mt-1 text-[11px] text-white/35">默认全部开启，勾选「禁用」则本房不生效</p>
+            <h2 className="text-sm font-medium text-white/80">战斗事件</h2>
+            <p className="mt-1 text-[11px] text-white/35">默认开启；勾选「禁用」则关闭。</p>
           </div>
           <span className="shrink-0 rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/50">
             启用 {active.events.length - disabled.length} / {active.events.length}
@@ -225,7 +225,7 @@ export default function RoomSetupForm(props: Props) {
           <div>
             <h2 className="text-sm font-medium text-white/80">玩家角色可见性</h2>
             <p className="mt-1 text-[11px] text-white/35">
-              默认玩家之间可见彼此角色属性；选择“私密”后，玩家只能看到自己的角色卡，KP 始终可见全部。
+              默认所有玩家可见；选择「私密」后，玩家只能看到自己的角色卡，KP 可见全部。
             </p>
           </div>
           <select
@@ -244,7 +244,7 @@ export default function RoomSetupForm(props: Props) {
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-sm font-medium text-white/80">战斗申请</h2>
-            <p className="mt-1 text-[11px] text-white/35">开启后 PL 可发起战斗申请，由 KP 审批；KP 始终可直接发起</p>
+            <p className="mt-1 text-[11px] text-white/35">开启后玩家可申请战斗，由 KP 审批；KP 可直接开战。</p>
           </div>
           <label className="flex shrink-0 items-center gap-2 pt-0.5">
             <input
