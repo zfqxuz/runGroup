@@ -2452,3 +2452,27 @@ sourceData:
 - `e2e/character-lifecycle.spec.ts`（真实 Chromium 点击）：真实登录 → 上传真实 `COC7zfq.xlsx` → 统一编辑页第一页改属性/技能 → 下一步 → 第二页写人物故事/财产/新增物品卡 → 保存 → 断言 DB（属性/技能/背景故事/财产/物品卡）→ 建真实战斗 → 战斗页点「使用道具」→ 断言回血与次数扣减。
 - `npm run test:e2e`：2 passed（生命周期 13.4s + 白天对比度 706ms）。
 - 回归：`npm test` 218、typecheck、next build 全过。
+
+## 64. 镜像仓库从 GHCR 切到阿里云 ACR（准备中）
+
+### 背景
+ECS 在国内，从 GHCR 拉镜像经常 10~20 分钟甚至超时（本轮 deploy 卡在 `docker compose pull app`）。
+阿里云 ECS 同地域走 ACR 的 VPC 地址是内网，通常几十秒完成。
+
+### ACR 信息（用户提供）
+- 地域：华东1（杭州）
+- 仓库：`touhou-trpg/touhou-trpg`
+- 公网：`crpi-nqwu6u57qjindq7p.cn-hangzhou.personal.cr.aliyuncs.com/touhou-trpg/touhou-trpg`
+- VPC：`crpi-nqwu6u57qjindq7p-vpc.cn-hangzhou.personal.cr.aliyuncs.com/touhou-trpg/touhou-trpg`
+- 登录用户名：`nick0587535571`
+
+### workflow 改动（`.github/workflows/deploy.yml`）
+- 构建推送目标从 `ghcr.io/zfqxuz/rungroup` 改为 `<ACR 公网>/touhou-trpg/touhou-trpg`（GitHub runner 推公网地址）。
+- `build-and-push` 输出两个镜像名：`image`（公网，推送用）与 `vpc_image`（VPC，ECS 拉取用，`APP_IMAGE` 写这个）。
+- ECS 部署脚本：有 `ACR_USERNAME/ACR_PASSWORD` 时用 VPC 地址 `docker login`，然后 `docker compose pull app`；ACR 仓库是公开的，没凭证也能匿名拉。
+- 支持用仓库 Variables 覆盖：`ACR_VPC_REGISTRY`、`ACR_REPOSITORY`（默认已填当前值）。
+
+### 还需要用户做的
+1. 在 ACR「访问凭证」页设置固定密码。
+2. GitHub 仓库 Secrets 增加：`ACR_USERNAME=nick0587535571`、`ACR_PASSWORD=<固定密码>`。
+3. 确认 ECS 在华东1（杭州）；若不在，把仓库 Variable `ACR_VPC_REGISTRY` 改成公网地址 `crpi-nqwu6u57qjindq7p.cn-hangzhou.personal.cr.aliyuncs.com`（仍比 GHCR 快）。
