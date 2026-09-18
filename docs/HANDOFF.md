@@ -2476,3 +2476,17 @@ ECS 在国内，从 GHCR 拉镜像经常 10~20 分钟甚至超时（本轮 deplo
 1. 在 ACR「访问凭证」页设置固定密码。
 2. GitHub 仓库 Secrets 增加：`ACR_USERNAME=nick0587535571`、`ACR_PASSWORD=<固定密码>`。
 3. 确认 ECS 在华东1（杭州）；若不在，把仓库 Variable `ACR_VPC_REGISTRY` 改成公网地址 `crpi-nqwu6u57qjindq7p.cn-hangzhou.personal.cr.aliyuncs.com`（仍比 GHCR 快）。
+
+### 64.1 切换结果（已验证）
+- 第一次失败：`denied: unknown manifest class for application/vnd.oci.empty.v1+json` —— ACR 个人版不支持 buildx 默认的 OCI 证明清单（attestation）。
+- 修复：`docker/build-push-action` 加 `provenance: false`、`sbom: false`。
+- 修复后 run `35314007730`：**success，总耗时 5m27s**（verify 33s + build-and-push 2m42s + deploy 2m4s）。
+  - deploy 2m4s 内含 ECS `docker compose pull app`（从 ACR 公网拉取，ECS 北京 / ACR 杭州，VPC 不通）+ 起容器 + 健康检查 + prisma migrate。
+  - 对比切换前 GHCR：deploy 卡在 pull，run 33 分钟仍超时被取消。
+- 生产验证：`/characters/new` 含「第一页 / 人物故事 / 持有物品」；`/characters` 列表含「编辑 / 删除」；CSS 含白天模式深色覆盖；health 200。
+- 若以后把 ECS 放到杭州（或 ACR 换到北京），把仓库 Variable `ACR_PULL_REGISTRY` 覆盖成 VPC 地址即可走内网。
+
+### 64.2 推送通道说明
+- GitHub 的 gh OAuth token 没有 `workflow` scope，且本机到 `github.com/login/oauth/*` 网络超时，无法 refresh。
+- 解决：给仓库加了一个 **write 部署密钥** `dsh-push-key`（id 163677015），本地 `origin` 改为 SSH 并用该密钥推送；SSH 推送不受 OAuth `workflow` scope 限制。
+- 如不再需要，可在仓库 Settings → Deploy keys 删除该密钥。
