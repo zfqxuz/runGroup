@@ -2,9 +2,11 @@ import Link from "next/link";
 import ClueAdminControls, { type ClueMemberOption } from "@/components/room/ClueAdminControls";
 import KpBgmPanel from "@/components/room/KpBgmPanel";
 import KpCombatRequestPanel from "@/components/room/KpCombatRequestPanel";
+import KpDrawer, { KpDrawerSection } from "@/components/room/KpDrawer";
 import KpValueEditor from "@/components/room/KpValueEditor";
 import ImageUpload from "@/components/upload/ImageUpload";
 import { setGameSceneAction } from "@/server/actions/game";
+import { prisma } from "@/server/db/prisma";
 import { applyMapBackgroundAction, createSceneTokenAction, setSceneFogAction } from "@/server/actions/scene";
 import { createClueAction, setAllCluesPrivateAction } from "@/server/actions/room-info";
 import type { RoomBgmView } from "@/shared/bgm";
@@ -53,10 +55,14 @@ const inputClass =
   "rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm outline-none focus:border-sakura-500";
 
 /** KP 专属准备区：场景切换、线索公布与定向分享。 */
-export default function KpPrepPanel(props: Props) {
+export default async function KpPrepPanel(props: Props) {
   const currentScene = props.sceneOptions.find((scene) => scene.id === props.state.currentSceneId) ?? null;
+  const pendingCombatRequestCount = await prisma.combatRequest.count({
+    where: { roomId: props.roomId, status: "PENDING_REVIEW" }
+  });
   return (
-    <div className="flex flex-col gap-4">
+    <KpDrawer title="KP 准备区">
+      <KpDrawerSection id="scene" label="场景与地图" description="切换场景、上传地图背景、放置 Token">
       <section className="rounded-xl border border-sakura-500/30 bg-sakura-500/5 p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -252,9 +258,13 @@ export default function KpPrepPanel(props: Props) {
           </Link>
         </div>
       </section>
+      </KpDrawerSection>
 
-      <KpBgmPanel roomId={props.roomId} gameId={props.gameId} bgm={props.bgm} status={props.bgmStatus} />
+      <KpDrawerSection id="bgm" label="背景音乐" description="房间 BGM 与播放状态">
+        <KpBgmPanel roomId={props.roomId} gameId={props.gameId} bgm={props.bgm} status={props.bgmStatus} />
+      </KpDrawerSection>
 
+      <KpDrawerSection id="combat" label="主动开战" description="选择双方单位直接发起战斗">
       <section className="rounded-xl border border-red-400/30 bg-red-400/5 p-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -271,11 +281,23 @@ export default function KpPrepPanel(props: Props) {
           </Link>
         </div>
       </section>
+      </KpDrawerSection>
 
-      <KpValueEditor roomId={props.roomId} units={props.units} />
+      <KpDrawerSection id="values" label="数值调整" description="HP / MP / SAN / DP、属性与技能">
+        <KpValueEditor roomId={props.roomId} units={props.units} />
+      </KpDrawerSection>
 
-      <KpCombatRequestPanel roomId={props.roomId} />
+      <KpDrawerSection
+        id="requests"
+        label="战斗申请"
+        description={pendingCombatRequestCount > 0 ? "有新的玩家战斗申请待审批" : "当前没有待审批申请"}
+        badge={pendingCombatRequestCount > 0 ? pendingCombatRequestCount : undefined}
+        autoOpen={pendingCombatRequestCount > 0}
+      >
+        <KpCombatRequestPanel roomId={props.roomId} />
+      </KpDrawerSection>
 
+      <KpDrawerSection id="clues" label="线索公布" description="发布线索、公开状态与定向分享">
       <section id="kp-clues" className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-start justify-between gap-2">
           <div>
@@ -357,6 +379,7 @@ export default function KpPrepPanel(props: Props) {
           )}
         </div>
       </section>
-    </div>
+      </KpDrawerSection>
+    </KpDrawer>
   );
 }

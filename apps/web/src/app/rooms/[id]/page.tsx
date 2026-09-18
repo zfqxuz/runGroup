@@ -493,41 +493,56 @@ export default async function RoomPage({
     activeGame === null
       ? null
       : activeGame.characters.find((item) => item.userId === session.user.id) ?? null;
-  const dashboardData: DashboardData | null =
+  // 开局后才审核通过 / 补交的角色可能还没有 GameCharacter；
+  // 准备区 / 地图左侧仍应展示个人状态，这里回退读取已审核角色卡。
+  const ownApprovedCharacterEntry =
     ownGameCharacter === null
+      ? await prisma.roomCharacterEntry.findFirst({
+          where: { roomId: room.id, status: "APPROVED", character: { userId: session.user.id } },
+          include: {
+            character: {
+              include: { occupationRef: true, portrait: true, avatar: true }
+            }
+          },
+          orderBy: { submittedAt: "asc" }
+        })
+      : null;
+  const dashboardSource = ownGameCharacter ?? ownApprovedCharacterEntry;
+  const dashboardData: DashboardData | null =
+    dashboardSource === null
       ? null
       : {
-          characterId: ownGameCharacter.characterId,
-          name: ownGameCharacter.character.name,
-          occupation: ownGameCharacter.character.occupation,
-          hp: ownGameCharacter.currentHp,
-          maxHp: ownGameCharacter.character.maxHp,
-          mp: ownGameCharacter.currentMp,
-          maxMp: ownGameCharacter.character.maxMp,
-          san: ownGameCharacter.currentSan,
-          maxSan: ownGameCharacter.character.maxSan,
-          dp: ownGameCharacter.currentDp,
-          maxDp: ownGameCharacter.character.maxDp,
+          characterId: dashboardSource.characterId,
+          name: dashboardSource.character.name,
+          occupation: dashboardSource.character.occupation,
+          hp: ownGameCharacter?.currentHp ?? dashboardSource.character.hp,
+          maxHp: dashboardSource.character.maxHp,
+          mp: ownGameCharacter?.currentMp ?? dashboardSource.character.mp,
+          maxMp: dashboardSource.character.maxMp,
+          san: ownGameCharacter?.currentSan ?? dashboardSource.character.san,
+          maxSan: dashboardSource.character.maxSan,
+          dp: ownGameCharacter?.currentDp ?? dashboardSource.character.dp,
+          maxDp: dashboardSource.character.maxDp,
           attributes: {
-            str: ownGameCharacter.character.str,
-            con: ownGameCharacter.character.con,
-            siz: ownGameCharacter.character.siz,
-            dex: ownGameCharacter.character.dex,
-            app: ownGameCharacter.character.app,
-            int: ownGameCharacter.character.int,
-            pow: ownGameCharacter.character.pow,
-            edu: ownGameCharacter.character.edu,
-            luck: ownGameCharacter.character.luck
+            str: dashboardSource.character.str,
+            con: dashboardSource.character.con,
+            siz: dashboardSource.character.siz,
+            dex: dashboardSource.character.dex,
+            app: dashboardSource.character.app,
+            int: dashboardSource.character.int,
+            pow: dashboardSource.character.pow,
+            edu: dashboardSource.character.edu,
+            luck: dashboardSource.character.luck
           },
-          conditions: parseConditions(ownGameCharacter.conditions).map((condition) => ({
+          conditions: parseConditions(ownGameCharacter?.conditions).map((condition) => ({
             id: condition.id,
             type: condition.type,
             unit: condition.duration.unit,
             remaining: condition.duration.remaining,
             note: condition.duration.note ?? null
           })),
-          portraitUrl: ownGameCharacter.character.portrait?.url ?? ownGameCharacter.character.avatar?.url ?? null,
-          equipment: characterEquipmentOf(ownGameCharacter.character.sourceData)
+          portraitUrl: dashboardSource.character.portrait?.url ?? dashboardSource.character.avatar?.url ?? null,
+          equipment: characterEquipmentOf(dashboardSource.character.sourceData)
         };
 
   const playerContent = (
