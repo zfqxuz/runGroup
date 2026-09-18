@@ -32,12 +32,12 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
     await page.goto("/characters/import");
     await page.setInputFiles('input[type="file"][name="file"]', FILE);
     await page.getByRole("button", { name: "解析并导入" }).click();
-    await page.waitForURL(/\/characters\/[^/]+\?imported=1/, { timeout: 60_000 });
+    // Excel 导入后应直接落到统一编辑页，而不是旧的只读详情页。
+    await page.waitForURL(/\/characters\/[^/]+\/edit\?imported=1/, { timeout: 60_000 });
     const characterId = new URL(page.url()).pathname.split("/")[2] ?? "";
     expect(characterId.length).toBeGreaterThan(0);
 
     // 3. 统一编辑页：第一页（属性 / 技能，必填）
-    await page.goto("/characters/" + characterId + "/edit");
     await expect(page.getByText("角色基本属性与技能")).toBeVisible();
     await page.getByLabel("性别").fill("浏览器编辑");
     await page.locator('input[name="attr_edu"]').fill("70");
