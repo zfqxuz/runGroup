@@ -7,7 +7,13 @@ import { CARD_KINDS, type CardKind } from "@/shared/card";
 
 export const dynamic = "force-dynamic";
 
-export default async function EditCardPage({ params }: { params: { id: string } }) {
+export default async function EditCardPage({
+  params,
+  searchParams
+}: {
+  params: { id: string };
+  searchParams: { returnTo?: string };
+}) {
   const session = await auth();
   if (session === null) redirect("/login");
   const card = await prisma.card.findUnique({ where: { id: params.id } });
@@ -29,6 +35,7 @@ export default async function EditCardPage({ params }: { params: { id: string } 
         roomId={null}
         system={system}
         isTouhou={system === "TOUHOU"}
+        returnTo={searchParams.returnTo ?? null}
         spellDefaults={
           spell === undefined
             ? null

@@ -46,22 +46,52 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
     await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
     await expect(page.getByText("第二页 · 人物故事 / 财产 / 物品（选填）")).toBeVisible();
 
-    // 4. 第二页：人物故事 + 财产 + 新增物品卡（新增/编辑物品）
+    // 4. 统一卡牌编辑页：创建一张卡并从角色编辑页加入（卡编辑收敛到一个页面）
+    const libraryCard = await prisma.card.create({
+      data: {
+        scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
+        name: "浏览器道具·治疗药剂",
+        stats: {
+          effects: [{ type: "HEAL", amount: "1d6" }], targeting: "SELF", targetScope: "SELF",
+          cost: { mp: 0, san: null, uses: 2, cooldownRounds: 0 }, usableIn: ["COMBAT"],
+          selectableEffects: [], equippedEffects: null, effect: "", uses: 2, sanCost: null
+        } as never
+      }
+    });
+    await page.goto("/cards/" + libraryCard.id + "/edit?returnTo=" + encodeURIComponent("/characters/" + characterId + "/edit"));
+    await expect(page.getByRole("heading", { name: /编辑卡牌/ })).toBeVisible();
+    await page.getByLabel("卡名").fill("浏览器道具·强效治疗药剂");
+    await page.getByRole("button", { name: "保存卡牌" }).click();
+    await page.waitForURL((url) => url.pathname === "/characters/" + characterId + "/edit", { timeout: 30_000 });
+    const editedCard = await prisma.card.findUniqueOrThrow({ where: { id: libraryCard.id } });
+    expect(editedCard.name).toBe("浏览器道具·强效治疗药剂");
+
+    // 4.1 第一页：属性 / 技能
+    await page.getByLabel("性别").fill("浏览器编辑");
+    await page.locator('input[name="attr_edu"]').fill("70");
+    await page.locator('input[name="attr_int"]').fill("60");
+    await page.locator('[data-skill-id="FIGHTING_BRAWL"] [data-testid="skill-interest"]').fill("15");
+    await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
+    await expect(page.getByText("第二页 · 人物故事 / 财产 / 物品（选填）")).toBeVisible();
+
+    // 4.1.1 返回第一页必须仍可编辑
+    await page.getByRole("button", { name: "上一步" }).click();
+    await expect(page.locator('input[name="attr_edu"]')).toBeEnabled();
+    await page.locator('input[name="attr_edu"]').fill("75");
+    await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
+
+    // 4.2 第二页：人物故事 + 财产 + 从可用卡里选卡加入
     await page.locator('textarea[name="bs_appearance"]').fill("浏览器编辑后的角色外貌");
     await page.locator('input[name="asset_creditRating"]').fill("35");
-    await page.getByRole("button", { name: "+ 新增物品卡" }).click();
-    const itemCard = page.getByTestId("item-card").first();
-    await itemCard.getByTestId("item-name").fill("浏览器道具·强效治疗药剂");
-    await itemCard.getByTestId("item-uses").fill("2");
-    await itemCard.getByTestId("item-cooldown").fill("1");
-    await itemCard.getByTestId("item-effects").fill(JSON.stringify([{ type: "HEAL", amount: "2d6" }]));
-    await itemCard.getByTestId("item-effects").blur();
+    const availableRow = page.locator("li").filter({ hasText: editedCard.name }).last();
+    await availableRow.getByTestId("item-add").click();
+    await expect(page.getByTestId("item-card").filter({ hasText: editedCard.name })).toBeVisible();
     await page.getByRole("button", { name: "保存修改" }).click();
     await page.waitForURL((url) => url.pathname === "/characters/" + characterId, { timeout: 60_000 });
 
-    // 5. 断言 DB：角色属性 / 技能 / 背景故事 / 财产 / 物品卡
+    // 5. 断言 DB：角色属性 / 技能 / 背景故事 / 财产 / 卡牌编辑 / 物品加入
     const afterEdit = await prisma.character.findUniqueOrThrow({ where: { id: characterId } });
-    expect(afterEdit.edu).toBe(70);
+    expect(afterEdit.edu).toBe(75);
     expect(afterEdit.int).toBe(60);
     expect(afterEdit.gender).toBe("浏览器编辑");
     expect(((afterEdit.skillAllocation as any)?.interest?.FIGHTING_BRAWL ?? 0)).toBe(15);
@@ -70,8 +100,8 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
     expect(((afterEdit.sourceData as Record<string, unknown>).assets as Record<string, unknown>).creditRating).toBe("35");
     const item = await prisma.card.findFirstOrThrow({ where: { characterId, name: "浏览器道具·强效治疗药剂" } });
     expect(item.type).toBe("ITEM");
-    expect((item.stats as Record<string, unknown>).effects).toEqual([{ type: "HEAL", amount: "2d6" }]);
-    expect(((item.stats as Record<string, unknown>).cost as Record<string, unknown>).uses).toBe(2);
+    expect(item.characterId).toBe(characterId);
+    expect((item.stats as Record<string, unknown>).effects).toEqual([{ type: "HEAL", amount: "1d6" }]);
 
     // 6. 建真实房间 / 局 / 场景 / 地图 / Token / 战斗
     const room = await prisma.room.create({

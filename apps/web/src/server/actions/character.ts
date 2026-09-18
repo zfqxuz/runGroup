@@ -128,51 +128,32 @@ async function persistCharacterItems(
   });
   const existingById = new Map(existing.map((card) => [card.id, card]));
   const kept = new Set<string>();
+
   for (const draft of items) {
-    const name = draft.name.trim();
-    if (name.length === 0) continue;
-    const stats = parseItemStatsForKind(draft.kind, draft.stats);
-    if (stats === null) continue;
-    if (draft.id !== undefined && existingById.has(draft.id)) {
-      const card = existingById.get(draft.id);
-      if (card === undefined || (card.scope === "COMPENDIUM" && card.ownerId !== userId)) continue;
-      await prisma.card.update({
-        where: { id: draft.id },
-        data: {
-          type: draft.kind as never,
-          name,
-          subtitle: draft.subtitle ?? null,
-          description: draft.description ?? null,
-          stats: stats as never,
-          isEquipped: true
-        }
-      });
-      kept.add(draft.id);
+    const cardId = draft.id;
+    if (typeof cardId !== "string" || cardId.length === 0) continue;
+    if (existingById.has(cardId)) {
+      kept.add(cardId);
       continue;
     }
-    const created = await prisma.card.create({
-      data: {
-        scope: "CHARACTER",
-        ownerId: userId,
-        characterId,
-        type: draft.kind as never,
-        name,
-        subtitle: draft.subtitle ?? null,
-        description: draft.description ?? null,
-        system: "COC7",
-        isEquipped: true,
-        stats: stats as never
-      },
-      select: { id: true }
+    // 从卡库加入：只允许本人拥有的卡，卡属性在卡牌编辑页维护。
+    const card = await prisma.card.findUnique({ where: { id: cardId }, select: { id: true, ownerId: true } });
+    if (card === null || card.ownerId !== userId) continue;
+    await prisma.card.update({
+      where: { id: cardId },
+      data: { characterId, isEquipped: true }
     });
-    kept.add(created.id);
+    kept.add(cardId);
   }
+
   for (const card of existing) {
     if (kept.has(card.id)) continue;
     if (card.scope === "CHARACTER" && card.ownerId === userId) {
       await prisma.card.delete({ where: { id: card.id } }).catch(() => undefined);
     } else {
-      await prisma.card.update({ where: { id: card.id }, data: { characterId: null, isEquipped: false, equipSlot: null } }).catch(() => undefined);
+      await prisma.card
+        .update({ where: { id: card.id }, data: { characterId: null, isEquipped: false, equipSlot: null } })
+        .catch(() => undefined);
     }
   }
 }
@@ -218,7 +199,8 @@ export async function saveCharacter(
       era,
       age: input.age ?? null,
       ageAllocation: input.ageAllocation ?? null,
-      enforceAttributeMethod: true,
+      // 属性允许直接编辑：车卡方式只作为初始掷骰/点购辅助，不再强制约束最终数值。
+      enforceAttributeMethod: false,
       applyAgeAdjustment: true
     },
     { pack, compiled, occupation, era, existing: null, canEditSkills: true }

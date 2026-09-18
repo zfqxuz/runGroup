@@ -2490,3 +2490,37 @@ ECS 在国内，从 GHCR 拉镜像经常 10~20 分钟甚至超时（本轮 deplo
 - GitHub 的 gh OAuth token 没有 `workflow` scope，且本机到 `github.com/login/oauth/*` 网络超时，无法 refresh。
 - 解决：给仓库加了一个 **write 部署密钥** `dsh-push-key`（id 163677015），本地 `origin` 改为 SSH 并用该密钥推送；SSH 推送不受 OAuth `workflow` scope 限制。
 - 如不再需要，可在仓库 Settings → Deploy keys 删除该密钥。
+
+## 65. 角色编辑页体验修正（本轮）
+
+按用户反馈调整：
+
+### 1. 持有物品改为「从卡库选择」
+- 第二页「持有物品」不再内联新建/编辑物品卡，改为：
+  - 上半部分是**已持有**卡，显示名称/类型/效果，可「卸下」或「编辑卡牌」；
+  - 下半部分是**当前可用卡**（本人 COMPENDIUM、未装备给其他角色），点「加入」即加入本角色；
+  - 卡库没有可用卡时，提示并给「去卡牌编辑页创建」入口；
+  - 「新建卡牌 / 编辑卡牌」都跳统一的卡牌编辑页 `/cards/new`、`/cards/[id]/edit`，并带 `returnTo` 保存后回到角色编辑页；提供「刷新卡库」按钮。
+- 服务端 `persistCharacterItems` 改为：`items` 只传卡 id → 本人拥有的卡就 `characterId/isEquipped` 绑定；被移除的 COMPENDIUM 卡只卸下，CHARACTER 专属卡删除。卡属性只在卡牌编辑页维护。
+
+### 2. 卡牌编辑收敛到一个页面
+- `CardBuilder` 支持 `returnTo`；`/cards/new` 与 `/cards/[id]/edit` 都读取 `returnTo` 并在保存后返回。
+- 角色编辑页不再有第二套卡牌编辑表单。
+
+### 3. 返回上一步可继续编辑
+- 根因：`editable = canRoll === false`，默认掷骰组车卡时属性一直是只读。
+- 修复：属性始终可直接编辑（掷骰/点购只作为辅助）；`step1Error` 不再强制「必须先掷骰/点完点」；服务端创建路径也 `enforceAttributeMethod: false`，仍校验 min/max、职业点与兴趣点规则。
+
+### 4. 按钮点击后文字看不清
+- 用 Playwright 扫描 day/night 所有按钮的文字/背景对比度，定位到：
+  - 夜间模式 `bg-sakura-500 + text-white` 仅 2.36:1；
+  - `/rooms/new` 选中态 `bg-sakura-500 text-sakura-400` 仅 1.23:1。
+- 修复：`globals.css` 对实心亮色底（sakura/emerald/sky/violet/purple/amber/spirit/orange 等 300~500）统一强制深色字（#0b0a14），并覆盖 `hover/active/focus` 状态；白色遮罩除外。
+- 说明：白字压亮粉底只有 ~2.4:1，按用户「深字配浅底」原则改成深字（~7:1）。
+
+### 5. 描述文字精简
+- 精简角色编辑页的年龄补正、技能分配、页头等长说明。
+
+### 6. 验证
+- Playwright：`e2e/character-lifecycle.spec.ts` 全流程（真实 Excel → 卡牌编辑页改名 → 两页编辑/返回可编辑 → 从可用卡加入 → 保存 → 真实战斗用道具）通过；`e2e/theme-contrast.spec.ts` 通过。
+- `npm test` 218、typecheck、next build 通过。

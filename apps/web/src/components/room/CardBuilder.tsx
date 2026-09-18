@@ -37,6 +37,8 @@ interface Props {
   system: string;
   isTouhou: boolean;
   spellDefaults: SpellDefaults | null;
+  /** 保存后返回的地址（角色编辑页里打开卡牌编辑时用）。 */
+  returnTo?: string | null;
   /** 传入表示编辑已有卡。 */
   initial?: {
     readonly cardId: string;
@@ -229,7 +231,7 @@ export default function CardBuilder(props: Props) {
       setMessage(result.error ?? "保存失败");
       return;
     }
-    router.push(props.roomId === null ? "/cards" : "/rooms/" + props.roomId);
+    router.push(props.returnTo ?? (props.roomId === null ? "/cards" : "/rooms/" + props.roomId));
     router.refresh();
   }
 

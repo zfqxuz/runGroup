@@ -35,7 +35,6 @@ import {
   type OccupationSkillAccess,
   type OccupationView
 } from "@/shared/occupation";
-import { WEAPON_TYPES } from "@/shared/card";
 
 export interface CharacterItemDraft {
   id?: string;
@@ -44,6 +43,16 @@ export interface CharacterItemDraft {
   subtitle?: string | null;
   description?: string | null;
   stats: Record<string, unknown>;
+  scope?: string;
+}
+
+export interface CharacterAvailableCard {
+  readonly id: string;
+  readonly kind: "WEAPON" | "ITEM" | "SPELLCARD";
+  readonly name: string;
+  readonly subtitle?: string | null;
+  readonly stats: Record<string, unknown>;
+  readonly scope?: string;
 }
 
 export interface CharacterEditorInitial {
@@ -78,6 +87,10 @@ interface Props {
   initial?: CharacterEditorInitial | null;
   /** EDIT：是否重新套用 COC7 年龄补正（仅当角色存有原始属性时为 true）。 */
   applyAgeAdjustment?: boolean;
+  /** 当前可用卡的候选列表（来自用户卡库）。 */
+  availableCards?: readonly CharacterAvailableCard[];
+  /** 卡牌创建 / 编辑完成后返回的地址。 */
+  returnTo?: string;
 }
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -210,6 +223,15 @@ export default function CharacterBuilder(props: Props) {
     other: assetText(initial, "other")
   }));
   const [items, setItems] = useState<CharacterItemDraft[]>(() => (initial?.items ?? []).map((item) => ({ ...item })));
+  const [extraAvailable, setExtraAvailable] = useState<CharacterAvailableCard[]>([]);
+  const availableList = [...(props.availableCards ?? []), ...extraAvailable].filter((card) => items.every((item) => item.id !== card.id));
+  const editorReturnTo = props.returnTo ?? (isEdit
+    ? "/characters/" + String(props.characterId ?? initial?.id ?? "") + "/edit"
+    : props.roomId === null
+      ? "/characters/new"
+      : "/rooms/" + props.roomId + "/characters/new");
+  const cardEditHref = (cardId: string): string => "/cards/" + cardId + "/edit?returnTo=" + encodeURIComponent(editorReturnTo);
+  const newCardHref = "/cards/new?returnTo=" + encodeURIComponent(editorReturnTo);
   const [skillQuery, setSkillQuery] = useState("");
   const [skillCategory, setSkillCategory] = useState<string>("ALL");
   const [skillIdentityFilters, setSkillIdentityFilters] = useState<("OCCUPATION" | "INTEREST")[]>([]);
@@ -660,8 +682,6 @@ export default function CharacterBuilder(props: Props) {
       if (name.trim().length === 0) return "角色名不能为空。";
       return creditIssue;
     }
-    if (canRoll && selectedSet === null) return "请先掷 5 组属性并选择其中一组。";
-    if (canRoll === false && pointCheck !== null && pointCheck.valid === false) return "属性点尚未分配完毕。";
     if (isCoc7 && ageConfirmed === false) return "请先完成并确认年龄补正。";
     if (creditIssue !== null) return creditIssue;
     if (name.trim().length === 0) return "角色名不能为空。";
@@ -722,55 +742,50 @@ export default function CharacterBuilder(props: Props) {
     return output;
   }
 
-  function updateItem(index: number, patch: Partial<CharacterItemDraft>): void {
-    setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  function itemEffects(item: CharacterItemDraft): unknown[] {
+    return Array.isArray(item.stats.effects) ? item.stats.effects : [];
   }
 
-  function updateItemStats(index: number, patch: Record<string, unknown>): void {
-    setItems((current) =>
-      current.map((item, i) => (i === index ? { ...item, stats: { ...item.stats, ...patch } } : item))
-    );
+  function effectSummary(item: CharacterItemDraft): string {
+    return itemEffects(item)
+      .map((effect) => {
+        if (effect === null || typeof effect !== "object") return "";
+        const record = effect as Record<string, unknown>;
+        const type = typeof record.type === "string" ? record.type : "";
+        const amount = record.amount === undefined ? "" : String(record.amount);
+        return amount.length === 0 ? type : type + " " + amount;
+      })
+      .filter((text) => text.length > 0)
+      .join(" + ");
   }
 
-  function addItem(): void {
+  function addAvailableCard(card: CharacterAvailableCard): void {
     setItems((current) => [
       ...current,
       {
-        kind: "ITEM",
-        name: "",
-        stats: {
-          effects: [],
-          targeting: "SELF",
-          targetScope: "SELF",
-          cost: { mp: 0, san: null, uses: null, cooldownRounds: 0 },
-          usableIn: ["COMBAT"],
-          selectableEffects: [],
-          equippedEffects: null,
-          effect: ""
-        }
+        id: card.id,
+        kind: card.kind,
+        name: card.name,
+        subtitle: card.subtitle ?? null,
+        description: null,
+        stats: card.stats,
+        scope: card.scope
       }
     ]);
   }
 
   function removeItem(index: number): void {
-    setItems((current) => current.filter((_item, i) => i !== index));
-  }
-
-  function itemCost(item: CharacterItemDraft): Record<string, unknown> {
-    const value = item.stats.cost;
-    return value !== null && typeof value === "object" && Array.isArray(value) === false
-      ? (value as Record<string, unknown>)
-      : {};
-  }
-
-  function itemEffects(item: CharacterItemDraft): unknown[] {
-    return Array.isArray(item.stats.effects) ? item.stats.effects : [];
-  }
-
-  function updateItemCost(index: number, patch: Record<string, unknown>): void {
-    setItems((current) =>
-      current.map((item, i) => (i === index ? { ...item, stats: { ...item.stats, cost: { ...itemCost(item), ...patch } } } : item))
-    );
+    setItems((current) => {
+      const removed = current[index];
+      if (removed !== undefined && removed.scope === "COMPENDIUM" && removed.id !== undefined) {
+        setExtraAvailable((list) =>
+          list.some((card) => card.id === removed.id)
+            ? list
+            : [...list, { id: removed.id as string, kind: removed.kind, name: removed.name, subtitle: removed.subtitle ?? null, stats: removed.stats, scope: removed.scope }]
+        );
+      }
+      return current.filter((_item, i) => i !== index);
+    });
   }
 
   async function submit(): Promise<void> {
@@ -815,11 +830,11 @@ export default function CharacterBuilder(props: Props) {
       backstory: collectBackstory(),
       assets: collectAssets(),
       items: items
-        .filter((item) => item.name.trim().length > 0)
+        .filter((item) => item.id !== undefined && item.id.length > 0)
         .map((item) => ({
-          id: item.id,
+          id: item.id as string,
           kind: item.kind,
-          name: item.name.trim(),
+          name: item.name,
           subtitle: item.subtitle ?? null,
           description: item.description ?? null,
           stats: item.stats
@@ -1064,7 +1079,8 @@ export default function CharacterBuilder(props: Props) {
           {ATTRIBUTE_KEYS.map((key) => {
             const raw = attributes[key];
             const effective = outcome.attributes[key];
-            const editable = canRoll === false;
+            // 属性始终可直接编辑：掷骰 / 点购只是辅助，不再锁定输入。
+            const editable = true;
             return (
               <div key={key} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
                 <p className="text-xs text-white/50">{ATTRIBUTE_LABELS[key]}</p>
@@ -1167,9 +1183,7 @@ export default function CharacterBuilder(props: Props) {
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>
               <h2 className="text-sm font-medium text-white/80">年龄补正</h2>
-              <p className="mt-1 text-[11px] leading-relaxed text-white/40">
-                官方规则只规定扣减总额与可扣属性，由玩家一次性分配；确认后最终属性只读，修改年龄可重新分配。
-              </p>
+              <p className="mt-1 text-[11px] text-white/40">按规则分配扣减；改年龄可重新分配。</p>
             </div>
             <label className="flex items-center gap-2">
               <span className="text-xs text-white/50">年龄</span>
@@ -1322,9 +1336,7 @@ export default function CharacterBuilder(props: Props) {
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-[260px] flex-1">
             <h2 className="text-base font-semibold text-white/90">技能分配</h2>
-            <p className="mt-1 text-xs leading-relaxed text-white/50">
-              职业写明的本职 + 你自行选中的本职只能用职业点；可选本职在选中前、以及其余所有技能都视为兴趣，只能用兴趣点。同一技能不能混用两种点数；填了一边后另一边会锁定，点右侧「清空」可改。
-            </p>
+            <p className="mt-1 text-[11px] text-white/40">本职用职业点，其余用兴趣点，同一技能不能混用。</p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-lg border border-sakura-500/35 bg-sakura-500/10 px-3 py-2 font-mono text-xs text-sakura-200">
@@ -1665,102 +1677,60 @@ export default function CharacterBuilder(props: Props) {
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h2 className="text-sm font-medium text-white/80">持有物品 / 物品卡（选填）</h2>
-            <p className="mt-1 text-[11px] text-white/40">新建角色或编辑角色都能在这里新增 / 修改物品卡；保存后写入该角色。</p>
+            <h2 className="text-sm font-medium text-white/80">持有物品（选填）</h2>
+            <p className="mt-1 text-[11px] text-white/40">从卡库选择；卡牌属性统一在卡牌编辑页维护。</p>
           </div>
-          <button type="button" onClick={addItem} className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">
-            + 新增物品卡
-          </button>
+          <div className="flex gap-2">
+            <a href={newCardHref} target="_blank" rel="noreferrer" className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">新建卡牌</a>
+            <button type="button" onClick={() => router.refresh()} className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/60 transition hover:border-white/35">刷新卡库</button>
+          </div>
         </div>
+
         {items.length === 0 ? (
-          <p className="mt-3 text-xs text-white/35">还没有物品，点右上角新增。</p>
+          <p className="mt-3 text-xs text-white/35">还没有持有物品。</p>
         ) : (
-          <div className="mt-4 flex flex-col gap-3">
+          <ul className="mt-4 flex flex-col gap-2">
             {items.map((item, index) => (
-              <div key={item.id ?? "new-" + String(index)} data-testid="item-card" className="rounded-lg border border-white/15 bg-ink-900/60 p-4">
-                <div className="grid gap-3 sm:grid-cols-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-white/50">名称</span>
-                    <input data-testid="item-name" value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} className={inputClass} />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-white/50">类型</span>
-                    <select data-testid="item-kind" value={item.kind} onChange={(event) => updateItem(index, { kind: event.target.value as CharacterItemDraft["kind"] })} className={inputClass}>
-                      <option value="ITEM">道具卡</option>
-                      <option value="WEAPON">武器卡</option>
-                      <option value="SPELLCARD">符卡</option>
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-white/50">武器类型（仅武器）</span>
-                    <select
-                      value={typeof item.stats.weaponType === "string" ? item.stats.weaponType : "BRAWL"}
-                      onChange={(event) => updateItemStats(index, { weaponType: event.target.value })}
-                      className={inputClass}
-                    >
-                      {WEAPON_TYPES.map((weapon) => (
-                        <option key={weapon.id} value={weapon.id}>{weapon.label} · {weapon.damage}</option>
-                      ))}
-                    </select>
-                  </label>
+              <li key={item.id ?? "item-" + String(index)} data-testid="item-card" className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/15 bg-ink-900/60 px-3 py-2">
+                <div className="min-w-0">
+                  <p className="truncate text-sm text-white/80">{item.name}</p>
+                  <p className="mt-0.5 text-[11px] text-white/40">
+                    {item.kind === "WEAPON" ? "武器" : item.kind === "SPELLCARD" ? "符卡" : "道具"}
+                    {effectSummary(item).length === 0 ? "" : " · " + effectSummary(item)}
+                  </p>
                 </div>
-                <div className="mt-3 grid gap-3 sm:grid-cols-3">
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-white/50">MP 消耗</span>
-                    <input
-                      type="number"
-                      value={String(itemCost(item).mp ?? 0)}
-                      onChange={(event) => updateItemCost(index, { mp: Number(event.target.value) || 0 })}
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-white/50">使用次数（留空 = 不限）</span>
-                    <input
-                      data-testid="item-uses"
-                      type="number"
-                      value={itemCost(item).uses === null || itemCost(item).uses === undefined ? "" : String(itemCost(item).uses)}
-                      onChange={(event) => updateItemCost(index, { uses: event.target.value.trim().length === 0 ? null : Number(event.target.value) })}
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="flex flex-col gap-1.5">
-                    <span className="text-xs text-white/50">冷却轮次</span>
-                    <input
-                      data-testid="item-cooldown"
-                      type="number"
-                      value={String(itemCost(item).cooldownRounds ?? 0)}
-                      onChange={(event) => updateItemCost(index, { cooldownRounds: Number(event.target.value) || 0 })}
-                      className={inputClass}
-                    />
-                  </label>
+                <div className="flex shrink-0 gap-1">
+                  {item.id === undefined ? null : (
+                    <a href={cardEditHref(item.id)} target="_blank" rel="noreferrer" className="rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10">编辑卡牌</a>
+                  )}
+                  <button type="button" onClick={() => removeItem(index)} className="rounded-md border border-white/15 px-2 py-1 text-[11px] text-white/50 transition hover:border-white/35 hover:text-white">卸下</button>
                 </div>
-                <label className="mt-3 flex flex-col gap-1.5">
-                  <span className="text-xs text-white/50">效果 JSON（通用 14 种效果数组，失焦保存）</span>
-                  <textarea
-                    rows={3}
-                    data-testid="item-effects"
-                    defaultValue={JSON.stringify(itemEffects(item))}
-                    onBlur={(event) => {
-                      try {
-                        const parsed: unknown = JSON.parse(event.target.value);
-                        if (Array.isArray(parsed)) updateItemStats(index, { effects: parsed });
-                      } catch {
-                        // 解析失败时保留原值
-                      }
-                    }}
-                    className={inputClass + " font-mono text-[11px]"}
-                  />
-                </label>
-                <div className="mt-3 flex justify-end">
-                  <button type="button" onClick={() => removeItem(index)} className="rounded-lg border border-red-400/40 px-3 py-1.5 text-xs text-red-300 transition hover:bg-red-400/10">
-                    移除物品
-                  </button>
-                </div>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         )}
+
+        <div className="mt-4 border-t border-white/10 pt-3">
+          <p className="text-[11px] text-white/40">当前可用卡（{availableList.length}）</p>
+          {availableList.length === 0 ? (
+            <p className="mt-2 text-xs text-white/35">
+              卡库没有可加入的卡，
+              <a href={newCardHref} target="_blank" rel="noreferrer" className="ml-1 text-sakura-400 hover:underline">去卡牌编辑页创建</a>
+            </p>
+          ) : (
+            <ul className="mt-2 flex flex-col gap-2">
+              {availableList.map((card) => (
+                <li key={card.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-white/10 bg-ink-900/40 px-3 py-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-white/75">{card.name}</p>
+                    <p className="mt-0.5 text-[11px] text-white/40">{card.kind === "WEAPON" ? "武器" : card.kind === "SPELLCARD" ? "符卡" : "道具"}</p>
+                  </div>
+                  <button type="button" data-testid="item-add" onClick={() => addAvailableCard(card)} className="shrink-0 rounded-md border border-emerald-400/40 px-2 py-1 text-[11px] text-emerald-300 transition hover:bg-emerald-400/10">加入</button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
       </section>
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">

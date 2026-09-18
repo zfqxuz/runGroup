@@ -27,6 +27,11 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
     where: { system: room.system, era: { in: [...availableEra(room.era)] } },
     orderBy: { code: "asc" }
   });
+  const availableCards = await prisma.card.findMany({
+    where: { ownerId: session.user.id, scope: "COMPENDIUM", characterId: null, system: room.system },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, type: true, name: true, subtitle: true, stats: true, scope: true }
+  });
 
   return (
     <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
@@ -52,6 +57,17 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
         era={room.era}
         occupations={occupations.map(toOccupationView)}
         mode="CREATE"
+        returnTo={"/rooms/" + room.id + "/characters/new"}
+        availableCards={availableCards
+          .filter((card) => card.type === "WEAPON" || card.type === "ITEM" || card.type === "SPELLCARD")
+          .map((card) => ({
+            id: card.id,
+            kind: card.type as "WEAPON" | "ITEM" | "SPELLCARD",
+            name: card.name,
+            subtitle: card.subtitle,
+            stats: card.stats !== null && typeof card.stats === "object" && Array.isArray(card.stats) === false ? (card.stats as Record<string, unknown>) : {},
+            scope: card.scope
+          }))}
       />
     </main>
   );

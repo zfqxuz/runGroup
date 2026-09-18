@@ -5,7 +5,7 @@ import { auth } from "@/server/auth";
 
 export const dynamic = "force-dynamic";
 
-export default async function NewLibraryCardPage(props: { searchParams: { system?: string } }) {
+export default async function NewLibraryCardPage(props: { searchParams: { system?: string; returnTo?: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
 
@@ -20,6 +20,7 @@ export default async function NewLibraryCardPage(props: { searchParams: { system
         roomId={null}
         system={system}
         isTouhou={system === "TOUHOU"}
+        returnTo={props.searchParams.returnTo ?? null}
         spellDefaults={
           spell === undefined
             ? null

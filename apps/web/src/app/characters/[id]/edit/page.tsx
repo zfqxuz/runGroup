@@ -78,6 +78,12 @@ export default async function EditCharacterPage({
     room = membership.room;
   }
 
+  const availableCards = await prisma.card.findMany({
+    where: { ownerId: character.userId, scope: "COMPENDIUM", characterId: null, system: character.system },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, type: true, name: true, subtitle: true, stats: true, scope: true }
+  });
+
   const system = (room?.system ?? character.system) === "TOUHOU" ? "TOUHOU" : "COC7";
   const pack = resolveRulePack(system === "TOUHOU" ? "touhou-ext" : "coc7-baseline", builtinRegistry());
   const occupations = await prisma.occupation.findMany({
@@ -140,9 +146,7 @@ export default async function EditCharacterPage({
           ← 返回
         </Link>
         <h1 className="mt-2 text-2xl font-semibold">编辑角色 · {character.name}</h1>
-        <p className="mt-1 text-sm text-white/50">
-          第一页填角色属性与技能（必填），第二页填人物故事 / 财产 / 持有物品（选填）。
-        </p>
+        <p className="mt-1 text-xs text-white/45">第一页必填，第二页选填。</p>
       </header>
       <CharacterBuilder
         roomId={roomId}
@@ -155,6 +159,17 @@ export default async function EditCharacterPage({
         characterId={character.id}
         initial={initial}
         applyAgeAdjustment={applyAgeAdjustment}
+        returnTo={"/characters/" + character.id + "/edit" + (roomId === null ? "" : "?roomId=" + roomId)}
+        availableCards={availableCards
+          .filter((card) => card.type === "WEAPON" || card.type === "ITEM" || card.type === "SPELLCARD")
+          .map((card) => ({
+            id: card.id,
+            kind: card.type as "WEAPON" | "ITEM" | "SPELLCARD",
+            name: card.name,
+            subtitle: card.subtitle,
+            stats: recordOf(card.stats),
+            scope: card.scope
+          }))}
       />
     </main>
   );
