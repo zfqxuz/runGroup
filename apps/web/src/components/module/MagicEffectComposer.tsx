@@ -103,7 +103,10 @@ export default function MagicEffectComposer(props: {
   }
 
   function addDraft(): void {
-    setDrafts((current) => [...current, draftFromType(newType)]);
+    if (effectiveNewType.length === 0) return;
+    // 用当前允许的默认效果，避免换成道具卡后仍加入 DAMAGE。
+    setNewType(effectiveNewType);
+    setDrafts((current) => [...current, draftFromType(effectiveNewType)]);
   }
 
   function switchMode(next: "form" | "json"): void {

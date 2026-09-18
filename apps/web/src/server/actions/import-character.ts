@@ -258,5 +258,6 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
   }
 
   revalidatePath("/characters");
-  redirect("/characters/" + character.id + "?imported=1");
+  // 导入后直接进新的统一编辑页（两页：属性技能 / 故事财产物品），不再落旧的详情页。
+  redirect("/characters/" + character.id + "/edit?imported=1");
 }

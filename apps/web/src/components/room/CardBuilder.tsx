@@ -110,7 +110,7 @@ export default function CardBuilder(props: Props) {
   const [uses, setUses] = useState(stats0.uses === null || stats0.uses === undefined ? "" : String(stats0.uses));
   const [sanCost, setSanCost] = useState(stringOr(stats0.sanCost, ""));
 
-  // 通用效果 / 目标 / 消耗（魔法、道具、符卡、武器共用）
+  // 额外效果 / 目标 / 消耗（魔法、道具、符卡、武器共用）
   const [effectsJson, setEffectsJson] = useState(() =>
     JSON.stringify(Array.isArray(stats0.effects) ? stats0.effects : [])
   );
@@ -265,6 +265,62 @@ export default function CardBuilder(props: Props) {
             <input value={description} onChange={(event) => setDescription(event.target.value)} className={inputClass} />
           </label>
         </div>
+        <div className="mt-5 border-t border-white/10 pt-4">
+          <h3 className="text-xs font-medium text-white/70">目标与消耗</h3>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">目标阵营</span>
+              <select value={targeting} onChange={(event) => setTargeting(event.target.value)} className={inputClass}>
+                {CARD_TARGETINGS.map((item) => (
+                  <option key={item} value={item}>{CARD_TARGETING_LABELS[item]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">作用范围</span>
+              <select value={targetScope} onChange={(event) => setTargetScope(event.target.value)} className={inputClass}>
+                {CARD_TARGET_SCOPES.map((item) => (
+                  <option key={item} value={item}>{CARD_TARGET_SCOPE_LABELS[item]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">灵力 / MP 消耗</span>
+              <input type="number" value={costMp} onChange={(event) => setCostMp(Number(event.target.value) || 0)} className={inputClass} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">SAN 消耗（如 1d3）</span>
+              <input value={costSan} onChange={(event) => setCostSan(event.target.value)} className={inputClass + " font-mono"} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">使用次数（留空 = 无限）</span>
+              <input value={costUses} onChange={(event) => setCostUses(event.target.value)} className={inputClass} />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">冷却轮次</span>
+              <input type="number" value={cooldownRounds} onChange={(event) => setCooldownRounds(Number(event.target.value) || 0)} className={inputClass} />
+            </label>
+            <div className="flex flex-col gap-1.5 sm:col-span-2">
+              <span className="text-xs text-white/50">可用场景</span>
+              <div className="flex items-center gap-3 text-xs text-white/60">
+                {CARD_USABLE_IN.map((item) => (
+                  <label key={item} className="flex items-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      checked={usableIn.includes(item)}
+                      onChange={(event) =>
+                        setUsableIn((current) =>
+                          event.target.checked ? [...new Set([...current, item])] : current.filter((value) => value !== item)
+                        )
+                      }
+                    />
+                    {item === "COMBAT" ? "战斗内" : "战斗外"}
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </section>
 
       {kind === "SPELLCARD" ? (
@@ -347,12 +403,12 @@ export default function CardBuilder(props: Props) {
               <span className="text-xs text-white/50">命中修正</span>
               <input type="number" value={accuracyMod} onChange={(event) => setAccuracyMod(Number(event.target.value) || 0)} className={inputClass} />
             </label>
-            <div className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2">
-              <p className="text-[11px] text-white/45">自动结果</p>
-              <p className="mt-1 font-mono text-sm text-white/80">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">伤害</span>
+              <div className="w-full rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-sm text-white/80">
                 {weaponTypeDefinition(weaponType).damage} · {RANGE_LABELS[weaponTypeDefinition(weaponType).range]} · {weaponTypeDefinition(weaponType).skillId}
-              </p>
-            </div>
+              </div>
+            </label>
           </div>
         </section>
       ) : null}
@@ -370,8 +426,7 @@ export default function CardBuilder(props: Props) {
       ) : null}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <h2 className="text-sm font-medium text-white/80">通用效果 / 消耗</h2>
-        <p className="mt-1 text-[11px] text-white/45"></p>
+        <h2 className="text-sm font-medium text-white/80">额外效果</h2>
         <div className="mt-4">
           <MagicEffectComposer
             name="card-effects"
@@ -385,59 +440,7 @@ export default function CardBuilder(props: Props) {
             当前卡类型不能用这些效果：{disallowedEffects.join("、")}（请更换或删除）
           </p>
         )}
-        <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">目标阵营</span>
-            <select value={targeting} onChange={(event) => setTargeting(event.target.value)} className={inputClass}>
-              {CARD_TARGETINGS.map((item) => (
-                <option key={item} value={item}>{CARD_TARGETING_LABELS[item]}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">作用范围</span>
-            <select value={targetScope} onChange={(event) => setTargetScope(event.target.value)} className={inputClass}>
-              {CARD_TARGET_SCOPES.map((item) => (
-                <option key={item} value={item}>{CARD_TARGET_SCOPE_LABELS[item]}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">灵力 / MP 消耗</span>
-            <input type="number" value={costMp} onChange={(event) => setCostMp(Number(event.target.value) || 0)} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">SAN 消耗（如 1d3）</span>
-            <input value={costSan} onChange={(event) => setCostSan(event.target.value)} className={inputClass + " font-mono"} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">使用次数（留空 = 无限）</span>
-            <input value={costUses} onChange={(event) => setCostUses(event.target.value)} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1.5">
-            <span className="text-xs text-white/50">冷却轮次</span>
-            <input type="number" value={cooldownRounds} onChange={(event) => setCooldownRounds(Number(event.target.value) || 0)} className={inputClass} />
-          </label>
-          <div className="flex flex-col gap-1.5 sm:col-span-2">
-            <span className="text-xs text-white/50">可用场景</span>
-            <div className="flex items-center gap-3 text-xs text-white/60">
-              {CARD_USABLE_IN.map((item) => (
-                <label key={item} className="flex items-center gap-1.5">
-                  <input
-                    type="checkbox"
-                    checked={usableIn.includes(item)}
-                    onChange={(event) =>
-                      setUsableIn((current) =>
-                        event.target.checked ? [...new Set([...current, item])] : current.filter((value) => value !== item)
-                      )
-                    }
-                  />
-                  {item === "COMBAT" ? "战斗内" : "战斗外"}
-                </label>
-              ))}
-            </div>
-          </div>
-        </div>
+
       </section>
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
