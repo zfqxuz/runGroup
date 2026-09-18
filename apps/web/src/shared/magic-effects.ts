@@ -1,6 +1,6 @@
 import type { MagicEffect } from "@touhou/rules";
 
-export type MagicEffectFieldKind = "text" | "number";
+export type MagicEffectFieldKind = "text" | "number" | "npc-card";
 
 export interface MagicEffectField {
   readonly key: string;
@@ -73,7 +73,7 @@ export const MAGIC_EFFECT_DEFINITIONS: readonly MagicEffectDefinition[] = [
     fields: [
       { key: "name", label: "召唤物名字", kind: "text", placeholder: "例如 次元蹒跚者", defaultValue: "召唤物", required: true },
       { key: "key", label: "标识（可选）", kind: "text", placeholder: "用于匹配同名单位", defaultValue: "" },
-      { key: "cardId", label: "指定 NPC 卡（可选）", kind: "text", placeholder: "留空则按名字匹配", defaultValue: "" },
+      { key: "cardId", label: "指定 NPC 卡（可选）", kind: "npc-card", placeholder: "留空则按名字匹配", defaultValue: "" },
       { key: "count", label: "数量", kind: "number", placeholder: "例如 1", defaultValue: "1" },
       DURATION_ROUNDS
     ]

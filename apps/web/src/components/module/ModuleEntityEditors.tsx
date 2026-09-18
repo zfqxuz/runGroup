@@ -1,6 +1,6 @@
 import { PRESET_TIERS, RARITIES } from "@touhou/rules";
 import ModuleAssetUpload from "@/components/module/ModuleAssetUpload";
-import MagicEffectComposer from "@/components/module/MagicEffectComposer";
+import MagicEffectComposer, { type NpcCardOption } from "@/components/module/MagicEffectComposer";
 import { deleteModuleEntityAction, saveModuleEntityAction } from "@/server/actions/module-entity";
 import { structuredOfContent, type StructuredModuleEntry } from "@/server/modules/structure";
 
@@ -20,6 +20,15 @@ function textOf(data: Record<string, unknown>, key: string, fallback = ""): stri
   const value = data[key];
   if (typeof value === "string") return value;
   if (typeof value === "number") return String(value);
+  return fallback;
+}
+
+function textOfAny(data: Record<string, unknown>, keys: readonly string[], fallback = ""): string {
+  for (const key of keys) {
+    const value = data[key];
+    if (typeof value === "string" && value.trim().length > 0) return value.trim();
+    if (typeof value === "number") return String(value);
+  }
   return fallback;
 }
 
@@ -211,6 +220,7 @@ function MagicForm(props: {
   readonly moduleId: string;
   readonly entry: StructuredModuleEntry | null;
   readonly returnTo: string;
+  readonly npcCards?: readonly NpcCardOption[];
 }) {
   const data = props.entry?.data ?? {};
   const target = textOf(data, "target", "ONE");
@@ -260,6 +270,8 @@ function MagicForm(props: {
       <MagicEffectComposer
         name="effects"
         initialEffects={Array.isArray(data.effects) ? data.effects : []}
+        npcCards={props.npcCards}
+        npcBinding="name"
       />
     </FormShell>
   );
@@ -280,6 +292,11 @@ function Section(props: {
 
 export default function ModuleEntityEditors({ moduleId, content, assets, returnTo }: Props) {
   const structured = structuredOfContent(content);
+  const npcCards: NpcCardOption[] = structured.npcs.map((entry) => ({
+    id: entry.id,
+    name: textOfAny(entry.data, ["name", "title"], entry.title),
+    key: textOfAny(entry.data, ["key", "sourceKey", "id"], entry.id)
+  }));
   return (
     <div className="flex flex-col gap-4">
       <div className="rounded-xl border border-spirit-400/30 bg-spirit-400/5 p-4">
@@ -344,12 +361,12 @@ export default function ModuleEntityEditors({ moduleId, content, assets, returnT
               <span className="flex-1">{entry.title}</span>
               <DeleteForm moduleId={moduleId} kind="magic" entityId={entry.id} label="法术" returnTo={returnTo} />
             </summary>
-            <MagicForm moduleId={moduleId} entry={entry} returnTo={returnTo} />
+            <MagicForm moduleId={moduleId} entry={entry} returnTo={returnTo} npcCards={npcCards} />
           </details>
         ))}
         <details className="rounded-lg border border-dashed border-white/15 bg-ink-900/40 p-3">
           <summary className="cursor-pointer text-xs text-spirit-300">+ 新增法术</summary>
-          <MagicForm moduleId={moduleId} entry={null} returnTo={returnTo} />
+          <MagicForm moduleId={moduleId} entry={null} returnTo={returnTo} npcCards={npcCards} />
         </details>
       </Section>
 

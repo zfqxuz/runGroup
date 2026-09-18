@@ -18,6 +18,15 @@ export default async function NewCardPage({ params }: { params: { id: string } }
   if (membership === null) notFound();
 
   const room = membership.room;
+  const npcCards = await prisma.card.findMany({
+    where: {
+      roomId: room.id,
+      type: "NPC",
+      ...(membership.role === "KP" ? {} : { isPublic: true })
+    },
+    select: { id: true, name: true },
+    orderBy: { name: "asc" }
+  });
   const pack = resolveRulePack(
     room.system === "TOUHOU" ? "touhou-ext" : "coc7-baseline",
     builtinRegistry()
@@ -40,6 +49,7 @@ export default async function NewCardPage({ params }: { params: { id: string } }
         roomId={room.id}
         system={room.system}
         isTouhou={room.system === "TOUHOU"}
+        npcCards={npcCards}
         spellDefaults={
           spell === undefined
             ? null

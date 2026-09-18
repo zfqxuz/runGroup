@@ -9,6 +9,12 @@ interface Draft {
   values: Record<string, string>;
 }
 
+export interface NpcCardOption {
+  readonly id: string;
+  readonly name: string;
+  readonly key?: string;
+}
+
 function draftFromEffect(value: unknown, index: number): Draft | null {
   if (value === null || typeof value !== "object" || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
@@ -40,11 +46,21 @@ export default function MagicEffectComposer(props: {
   readonly onChange?: (serialized: string) => void;
   /** 只允许添加这些效果类型；不传表示全部允许。 */
   readonly allowedTypes?: readonly string[];
+  /** 召唤效果可绑定的 NPC 卡；只展示名称，不展示 id。 */
+  readonly npcCards?: readonly NpcCardOption[];
+  /**
+   * 召唤绑定写入方式：
+   * - card：写入 cardId（房间卡编辑）；
+   * - name：写入 name/key（团本编辑器暂无房间 Card id）。
+   */
+  readonly npcBinding?: "card" | "name";
 }) {
   const allowedSet = props.allowedTypes === undefined ? null : new Set(props.allowedTypes);
   const allowedDefinitions = MAGIC_EFFECT_DEFINITIONS.filter(
     (definition) => allowedSet === null || allowedSet.has(definition.type)
   );
+  const npcCards = props.npcCards ?? [];
+  const npcBinding = props.npcBinding ?? "card";
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     props.initialEffects
       .map((effect, index) => draftFromEffect(effect, index))
@@ -75,6 +91,45 @@ export default function MagicEffectComposer(props: {
     setDrafts((current) =>
       current.map((draft) => (draft.id === id ? { ...draft, values: { ...draft.values, [key]: value } } : draft))
     );
+  }
+
+  function updateValues(id: string, patch: Record<string, string>): void {
+    setDrafts((current) =>
+      current.map((draft) => (draft.id === id ? { ...draft, values: { ...draft.values, ...patch } } : draft))
+    );
+  }
+
+  function npcOptionById(id: string): NpcCardOption | undefined {
+    return npcCards.find((card) => card.id === id);
+  }
+
+  function npcValueOf(draft: Draft): string {
+    if (npcBinding === "name") {
+      const name = (draft.values.name ?? "").trim();
+      const selected = npcCards.find(
+        (card) => card.name === name || (card.key !== undefined && card.key === name)
+      );
+      return selected?.id ?? (name.length > 0 ? "__custom__" : "");
+    }
+    return draft.values.cardId ?? "";
+  }
+
+  function changeNpc(draftId: string, value: string): void {
+    const option = value.length === 0 || value === "__custom__" ? undefined : npcOptionById(value);
+    if (npcBinding === "name") {
+      if (option === undefined) {
+        // 不绑定具体卡时保留玩家已经填写的召唤物名字 / 标识，只清掉 cardId。
+        if (value.length === 0) updateValues(draftId, { cardId: "" });
+        return;
+      }
+      updateValues(draftId, { cardId: "", name: option.name, key: option.key ?? option.name });
+      return;
+    }
+    if (option === undefined) {
+      updateValues(draftId, { cardId: value });
+      return;
+    }
+    updateValues(draftId, { cardId: option.id, name: option.name, key: option.key ?? option.name });
   }
 
   function changeType(id: string, type: string): void {
@@ -243,20 +298,50 @@ export default function MagicEffectComposer(props: {
               </div>
             </div>
             <div className="mt-2 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {definition.fields.map((field) => (
-                <label key={field.key} className="flex flex-col gap-1">
-                  <span className="text-[10px] text-white/35">
-                    {field.label}
-                    {field.required === true ? " *" : ""}
-                  </span>
-                  <input
-                    value={draft.values[field.key] ?? ""}
-                    onChange={(event) => updateValue(draft.id, field.key, event.target.value)}
-                    placeholder={field.placeholder}
-                    className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75 outline-none focus:border-sakura-500"
-                  />
-                </label>
-              ))}
+              {definition.fields.map((field) => {
+                const npcValue = field.kind === "npc-card" ? npcValueOf(draft) : "";
+                const hasCustomNpc =
+                  field.kind === "npc-card" &&
+                  (npcBinding === "name"
+                    ? npcValue === "__custom__"
+                    : npcValue.length > 0 && npcOptionById(npcValue) === undefined);
+                return (
+                  <label key={field.key} className="flex flex-col gap-1">
+                    <span className="text-[10px] text-white/35">
+                      {field.label}
+                      {field.required === true ? " *" : ""}
+                    </span>
+                    {field.kind === "npc-card" ? (
+                      <select
+                        value={npcValue}
+                        onChange={(event) => changeNpc(draft.id, event.target.value)}
+                        className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75 outline-none focus:border-sakura-500"
+                      >
+                        <option value="">不绑定，按名字匹配</option>
+                        {npcCards.map((card) => (
+                          <option key={card.id} value={card.id}>
+                            {card.name}
+                          </option>
+                        ))}
+                        {hasCustomNpc ? (
+                          <option value={npcBinding === "name" ? "__custom__" : npcValue}>
+                            {npcBinding === "name"
+                              ? ((draft.values.name ?? "").trim() || "当前绑定")
+                              : "当前绑定（未找到 NPC 卡）"}
+                          </option>
+                        ) : null}
+                      </select>
+                    ) : (
+                      <input
+                        value={draft.values[field.key] ?? ""}
+                        onChange={(event) => updateValue(draft.id, field.key, event.target.value)}
+                        placeholder={field.placeholder}
+                        className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75 outline-none focus:border-sakura-500"
+                      />
+                    )}
+                  </label>
+                );
+              })}
             </div>
           </div>
         );

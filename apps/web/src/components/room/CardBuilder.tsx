@@ -40,6 +40,8 @@ interface Props {
   spellDefaults: SpellDefaults | null;
   /** 保存后返回的地址（角色编辑页里打开卡牌编辑时用）。 */
   returnTo?: string | null;
+  /** 召唤效果可绑定的房间 NPC 卡（只展示名称）。 */
+  npcCards?: readonly { readonly id: string; readonly name: string; readonly key?: string }[];
   /** 传入表示编辑已有卡。 */
   initial?: {
     readonly cardId: string;
@@ -433,6 +435,7 @@ export default function CardBuilder(props: Props) {
             initialEffects={Array.isArray(stats0.effects) ? stats0.effects : []}
             onChange={setEffectsJson}
             allowedTypes={allowedEffectTypesForKind(kind)}
+            npcCards={props.npcCards}
           />
         </div>
         {disallowedEffects.length === 0 ? null : (
