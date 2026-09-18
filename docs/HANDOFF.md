@@ -2524,3 +2524,22 @@ ECS 在国内，从 GHCR 拉镜像经常 10~20 分钟甚至超时（本轮 deplo
 ### 6. 验证
 - Playwright：`e2e/character-lifecycle.spec.ts` 全流程（真实 Excel → 卡牌编辑页改名 → 两页编辑/返回可编辑 → 从可用卡加入 → 保存 → 真实战斗用道具）通过；`e2e/theme-contrast.spec.ts` 通过。
 - `npm test` 218、typecheck、next build 通过。
+
+## 66. 效果规则收敛 + 全站文案清单（本轮）
+
+### 1. 效果按卡类型限制（参考 COC7）
+- `shared/card.ts` 新增 `EFFECT_TYPES_BY_KIND` / `allowedEffectTypesForKind` / `disallowedEffectTypesForKind`：
+  - **武器（WEAPON）**：只允许 `DAMAGE`、`DOT`（伤害类）；
+  - **道具（ITEM）**：不允许 `DAMAGE`、`DOT`，其余辅助/功能效果可用；
+  - **符卡（SPELLCARD）**：全部允许。
+- `MagicEffectComposer` 支持 `allowedTypes`：添加/修改效果时只列出允许项；已有的不允许效果会标红提示「当前卡类型不允许该效果，请更换或删除」。
+- `saveCard` 服务端拒绝不符合卡类型的效果；`convertCardStats` 道具↔武器互转时自动过滤目标类型不允许的效果。
+
+### 2. 效果不再「可选生效」
+- 移除 `selectableEffects` / `equippedEffects` 字段与「装备时选效果」逻辑：**卡上所有效果一律生效**；要停用就删掉该效果。
+- `activeCardEffects` 改为返回全部效果；`equipCardAction` 不再处理效果选择；角色页装备列表直接展示全部效果；`loadItemsByParticipant` / 战斗消耗直接使用全部效果。
+- `e2e-real-magic` 更新为：卡上多效果同时生效、道具禁用伤害、武器只允许伤害/DOT、转换过滤；本地真实 E2E **56/56**。
+
+### 3. 全站用户可见文案清单（待用户给映射）
+- 新增 `docs/UI-TEXT-INVENTORY.md`：从 `src/app`、`src/components`、`src/shared` 自动抽取中文 UI 文案，按文件分组，每条带 ID（如 `app-auth-login-page-tsx-1`）与「你的修改」空列，共 104 个文件、约 2171 条。
+- 用途：用户在清单里填新文案，开发按 ID 替换；也可直接按「页面 + 原文 → 新文」反馈。

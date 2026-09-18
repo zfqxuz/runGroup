@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { MagicEffectSchema, type MagicEffect } from "@touhou/rules";
+import { MAGIC_EFFECT_TYPES, MagicEffectSchema, type MagicEffect } from "@touhou/rules";
 import { DanmakuPatternSchema } from "./danmaku/schema";
 
 /** 通用卡牌效果 / 目标 / 消耗：魔法、道具、符卡、武器共用同一套结构。 */
@@ -38,31 +38,12 @@ export const CardBaseStatsSchema = z.object({
   targetScope: z.enum(CARD_TARGET_SCOPES).default("ONE"),
   cost: CardCostSchema.default({}),
   /** 可在哪些场景使用：战斗内 / 战斗外。 */
-  usableIn: z.array(z.enum(CARD_USABLE_IN)).default(["COMBAT"]),
-  /** 装备时可由玩家选择是否生效的效果下标；未列出的效果固定生效。 */
-  selectableEffects: z.array(z.number().int().min(0)).default([]),
-  /** 装备时实际选中的效果下标；null 表示全部效果生效。 */
-  equippedEffects: z.array(z.number().int().min(0)).nullable().default(null)
+  usableIn: z.array(z.enum(CARD_USABLE_IN)).default(["COMBAT"])
 });
 
-/**
- * 计算一张卡当前实际生效的效果。
- * - equippedEffects 为空 / null：全部效果生效；
- * - 否则：取下标命中的效果。装备时会把固定生效的效果下标一并写入。
- */
-export function activeCardEffects(stats: {
-  readonly effects: readonly MagicEffect[];
-  readonly equippedEffects?: readonly number[] | null;
-}): readonly MagicEffect[] {
-  const effects = stats.effects;
-  const selected = stats.equippedEffects;
-  if (selected === null || selected === undefined || selected.length === 0) return [...effects];
-  return effects.filter((_effect, index) => selected.includes(index));
-}
-
-/** 这张卡是否有「装备时可选」的效果；没有时装备不需要弹选择。 */
-export function hasSelectableEffects(stats: { readonly selectableEffects?: readonly number[] | null }): boolean {
-  return (stats.selectableEffects ?? []).length > 0;
+/** 卡上所有效果一律生效；要停用某个效果就把它从卡里移除。 */
+export function activeCardEffects(stats: { readonly effects: readonly MagicEffect[] }): readonly MagicEffect[] {
+  return [...stats.effects];
 }
 
 /** 武器类型 → 使用技能 / 射程 / 基础伤害。伤害由系统自动带出。 */
@@ -98,6 +79,30 @@ export const CARD_KIND_LABELS: Record<CardKind, string> = {
   WEAPON: "武器卡",
   ITEM: "道具卡"
 };
+
+/**
+ * 每种卡允许的效果类型：
+ * - 武器：只有伤害类（伤害 / 持续伤害）；
+ * - 道具：伤害类以外的辅助/功能效果；
+ * - 符卡：全部。
+ */
+export const EFFECT_TYPES_BY_KIND: Record<CardKind, readonly MagicEffect["type"][]> = {
+  WEAPON: ["DAMAGE", "DOT"],
+  ITEM: [
+    "HEAL", "MP_RESTORE", "MP_DRAIN", "SAN_LOSS", "SAN_RESTORE", "STATUS",
+    "ARMOR", "SUMMON", "POSSESS", "STUN", "CONTROL", "CLEANSE"
+  ],
+  SPELLCARD: [...MAGIC_EFFECT_TYPES]
+};
+
+export function allowedEffectTypesForKind(kind: CardKind): readonly MagicEffect["type"][] {
+  return EFFECT_TYPES_BY_KIND[kind] ?? EFFECT_TYPES_BY_KIND.ITEM;
+}
+
+export function disallowedEffectTypesForKind(kind: CardKind, effects: readonly { readonly type: string }[]): string[] {
+  const allowed = new Set<string>(allowedEffectTypesForKind(kind));
+  return [...new Set(effects.filter((effect) => allowed.has(effect.type) === false).map((effect) => effect.type))];
+}
 
 /** 符卡强化方向，对应 RulePack 的 spellcard.enhance。 */
 export const ENHANCE_TYPES = ["DANMAKU", "MELEE", "SPELL", "AREA"] as const;

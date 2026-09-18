@@ -125,7 +125,7 @@ async function main(): Promise<void> {
       stats: {
         effects: [{ type: "HEAL", amount: "1d6" }], targeting: "SELF", targetScope: "SELF",
         cost: { mp: 0, san: null, uses: 3, cooldownRounds: 0 }, usableIn: ["COMBAT"],
-        selectableEffects: [], equippedEffects: null, effect: "", uses: null, sanCost: null
+        effect: "", uses: null, sanCost: null
       } as never
     }
   });
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
         effects: [{ type: "HEAL", amount: "1d6" }, { type: "ARMOR", amount: "3", durationTicks: "0" }],
         targeting: "SELF", targetScope: "SELF",
         cost: { mp: 0, san: null, uses: null, cooldownRounds: 0 }, usableIn: ["COMBAT"],
-        selectableEffects: [0, 1], equippedEffects: null, effect: "", uses: null, sanCost: null
+        effect: "", uses: null, sanCost: null
       } as never
     }
   });

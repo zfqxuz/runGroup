@@ -26,8 +26,8 @@ import { cleanupDefeatedSummons } from "../src/server/socket/combat";
 import { findCondition, parseConditions } from "@touhou/rules";
 import { endCombat, resolveImmediateAction, resolveInitiativeTurn, submitAction, endTurn } from "@touhou/combat";
 import { consumeItemUse, loadItemsByParticipant, prepareItemAction } from "../src/server/combat/items";
-import { computeEquippedEffects, convertCardStats } from "../src/server/card/equipment";
-import { activeCardEffects, ItemStatsSchema } from "../src/shared/card";
+import { convertCardStats } from "../src/server/card/equipment";
+import { activeCardEffects, allowedEffectTypesForKind, disallowedEffectTypesForKind, ItemStatsSchema } from "../src/shared/card";
 
 const MARK = "E2E-" + Date.now().toString(36);
 const SOURCE_NPC_ID = process.env.E2E_SOURCE_NPC_ID ?? "cmu409s9n005hcq5g9z9vbthp"; // 真实房间里的「食尸鬼（秘境使者）」
@@ -483,15 +483,23 @@ async function main(): Promise<void> {
     });
     check(damageResult.ok === false, "战斗外禁止伤害类法术", damageResult.error);
 
-    // ---------- 10. 道具卡：装备效果选择 + 战斗内真实使用 ----------
+    // ---------- 10. 卡牌效果规则 + 战斗内真实使用 ----------
+    check(
+      disallowedEffectTypesForKind("ITEM", [{ type: "DAMAGE" }, { type: "HEAL" }]).join(",") === "DAMAGE",
+      "道具禁止伤害类效果"
+    );
+    check(
+      disallowedEffectTypesForKind("WEAPON", [{ type: "HEAL" }, { type: "DOT" }]).join(",") === "HEAL",
+      "武器只允许伤害 / 持续伤害"
+    );
+    check(allowedEffectTypesForKind("WEAPON").includes("DOT"), "武器允许 DOT");
+
     const itemStats = (effects: unknown[], overrides: Record<string, unknown>) => ({
       effects,
       targeting: "SELF",
       targetScope: "SELF",
       cost: { mp: 0, san: null, uses: null, cooldownRounds: 0 },
       usableIn: ["COMBAT"],
-      selectableEffects: [],
-      equippedEffects: null,
       effect: "",
       uses: null,
       sanCost: null,
@@ -506,43 +514,20 @@ async function main(): Promise<void> {
         }) as never
       }
     });
-    const damageCard = await prisma.card.create({
-      data: {
-        scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
-        name: MARK + "·燃烧瓶", characterId: player.id, isEquipped: true,
-        stats: itemStats([{ type: "DAMAGE", amount: "1d4" }], {
-          targeting: "ENEMY",
-          targetScope: "ONE",
-          cost: { mp: 0, san: null, uses: null, cooldownRounds: 1 }
-        }) as never
-      }
-    });
-    // 两条效果、只勾选第 2 条：验证「装备时选效果」真的只让选中项生效。
     const mixedCard = await prisma.card.create({
       data: {
         scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
         name: MARK + "·圣水", characterId: player.id, isEquipped: true,
         stats: itemStats(
           [{ type: "HEAL", amount: "1d6" }, { type: "ARMOR", amount: "3", durationTicks: "0" }],
-          { selectableEffects: [0, 1], equippedEffects: [1] }
+          { cost: { mp: 0, san: null, uses: null, cooldownRounds: 1 } }
         ) as never
       }
     });
-    createdItemCardIds.push(healCard.id, damageCard.id, mixedCard.id);
+    createdItemCardIds.push(healCard.id, mixedCard.id);
 
     const mixedParsed = ItemStatsSchema.parse(mixedCard.stats);
-    const mixedActive = activeCardEffects(mixedParsed);
-    check(
-      mixedActive.length === 1 && mixedActive[0]?.type === "ARMOR",
-      "装备时勾选效果：只让选中的第 2 条效果生效",
-      mixedActive
-    );
-
-    check(
-      JSON.stringify(computeEquippedEffects(2, [0, 1], [1])) === JSON.stringify([1]) &&
-        computeEquippedEffects(2, [], []) === null,
-      "装备效果选择算法：固定生效 + 玩家勾选"
-    );
+    check(activeCardEffects(mixedParsed).length === 2, "卡上所有效果一律生效（不再勾选）");
 
     const convertedWeapon = convertCardStats("ITEM", "WEAPON", mixedCard.stats);
     const convertedBack = convertCardStats("WEAPON", "ITEM", convertedWeapon);
@@ -550,8 +535,8 @@ async function main(): Promise<void> {
       convertedWeapon !== null &&
         (convertedWeapon as Record<string, unknown>).weaponType === "BRAWL" &&
         Array.isArray((convertedWeapon as Record<string, unknown>).effects) &&
-        ((convertedWeapon as Record<string, unknown>).effects as unknown[]).length === 2,
-      "道具卡可转换为武器卡并保留通用效果",
+        ((convertedWeapon as Record<string, unknown>).effects as unknown[]).length === 0,
+      "道具转武器会过滤掉非伤害效果",
       convertedWeapon
     );
     check(convertedBack !== null && convertCardStats("WEAPON", "SPELLCARD", convertedWeapon) === null, "武器卡可转回道具卡，非法转换被拒绝");
@@ -567,9 +552,9 @@ async function main(): Promise<void> {
 
     const combatItems = itemRuntime.itemsByParticipant.get(itemPc.id) ?? [];
     check(
-      combatItems.length === 3 &&
-        combatItems.find((item) => item.cardId === mixedCard.id)?.effects.length === 1,
-      "战斗内只加载已装备、可战斗使用的道具，且只带生效效果",
+      combatItems.length === 2 &&
+        combatItems.find((item) => item.cardId === mixedCard.id)?.effects.length === 2,
+      "战斗内加载到道具，且卡上全部效果都生效",
       combatItems.map((item) => ({ name: item.name, effects: item.effects.map((effect) => effect.type) }))
     );
 
@@ -589,24 +574,25 @@ async function main(): Promise<void> {
       check(third.ok === false && third.error.includes("次数"), "使用次数耗尽后拒绝再次使用", third.ok ? undefined : third.error);
     }
 
-    const damageOption = combatItems.find((item) => item.cardId === damageCard.id);
-    if (damageOption === undefined) { check(false, "找到伤害道具选项"); return; }
-    const hpBeforeItemDamage = itemNpc.hp;
-    const preparedDamage = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: damageCard.id, targetId: itemNpc.id }, itemRuntime.state.round);
-    check(preparedDamage.ok === true, "服务端解析伤害道具行动", preparedDamage.ok ? undefined : preparedDamage.error);
-    if (preparedDamage.ok === true) {
-      consumeItemUse(itemPc, preparedDamage.item, itemRuntime.state.round);
-      resolveImmediateAction(itemRuntime.pack, itemRuntime.state, preparedDamage.action, { [itemNpc.id]: { type: "PASS" } });
-      check(itemNpc.hp < hpBeforeItemDamage, "战斗内使用伤害道具真实扣血", { hp: itemNpc.hp, before: hpBeforeItemDamage });
-      const cooldown = itemPc.itemCooldownUntil?.[damageCard.id] ?? 0;
+    const mixedOption = combatItems.find((item) => item.cardId === mixedCard.id);
+    if (mixedOption === undefined) { check(false, "找到多效果道具选项"); return; }
+    itemPc.hp = 4;
+    const armorBefore = itemPc.armor;
+    const preparedMixed = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: mixedCard.id }, itemRuntime.state.round);
+    check(preparedMixed.ok === true, "服务端解析多效果道具行动", preparedMixed.ok ? undefined : preparedMixed.error);
+    if (preparedMixed.ok === true) {
+      consumeItemUse(itemPc, preparedMixed.item, itemRuntime.state.round);
+      resolveImmediateAction(itemRuntime.pack, itemRuntime.state, preparedMixed.action, {});
+      check(itemPc.hp > 4 && itemPc.armor > armorBefore, "多效果道具：治疗与护甲同时生效", { hp: itemPc.hp, armor: itemPc.armor });
+      const cooldown = itemPc.itemCooldownUntil?.[mixedCard.id] ?? 0;
       check(cooldown === itemRuntime.state.round + 1, "道具冷却写入到期轮次", { cooldown, round: itemRuntime.state.round });
-      const blocked = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: damageCard.id, targetId: itemNpc.id }, itemRuntime.state.round);
+      const blocked = prepareItemAction(itemRuntime.pack, itemPc, combatItems, { actorId: itemPc.id, kind: "ITEM", itemCardId: mixedCard.id }, itemRuntime.state.round);
       check(blocked.ok === false && blocked.error.includes("冷却"), "冷却中拒绝再次使用", blocked.ok ? undefined : blocked.error);
     }
 
     endCombat(itemRuntime.state, "E2E 结束道具验证战斗");
     await saveCombatState(itemCombat.combatId, itemRuntime.state);
-    await prisma.card.updateMany({ where: { id: { in: [healCard.id, damageCard.id, mixedCard.id] } }, data: { characterId: null, isEquipped: false } });
+    await prisma.card.updateMany({ where: { id: { in: [healCard.id, mixedCard.id] } }, data: { characterId: null, isEquipped: false } });
   } finally {
     clearCombatRuntime(combatId ?? "");
     // 清理测试数据（Room 级联删除场景 / 地图 / Token / 卡 / 战斗 / 局）

@@ -1,31 +1,14 @@
-import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema, weaponTypeDefinition, type CardKind } from "@/shared/card";
+import {
+  ItemStatsSchema,
+  SpellCardStatsSchema,
+  WeaponStatsSchema,
+  allowedEffectTypesForKind,
+  weaponTypeDefinition,
+  type CardKind
+} from "@/shared/card";
 
 /**
- * 装备时计算「实际生效的效果下标」。
- *
- * - 未标记 selectableEffects 的效果固定生效；
- * - selectableEffects 里的效果由玩家勾选（requested）；
- * - 没有任何可选效果时返回 null（表示全部效果生效）。
- */
-export function computeEquippedEffects(
-  effectsCount: number,
-  selectableEffects: readonly number[],
-  requested: readonly number[]
-): number[] | null {
-  if (effectsCount <= 0) return null;
-  const validSelectable = [...new Set(selectableEffects)]
-    .filter((index) => Number.isInteger(index) && index >= 0 && index < effectsCount)
-    .sort((a, b) => a - b);
-  if (validSelectable.length === 0) return null;
-  const mandatory = Array.from({ length: effectsCount }, (_value, index) => index).filter(
-    (index) => validSelectable.includes(index) === false
-  );
-  const chosen = requested.filter((index) => validSelectable.includes(index));
-  return [...new Set([...mandatory, ...chosen])].sort((a, b) => a - b);
-}
-
-/**
- * 道具卡 ↔ 武器卡互转：通用字段（效果 / 目标 / 消耗 / 场景）原样保留，
+ * 道具卡 ↔ 武器卡互转：通用字段（效果 / 目标 / 消耗 / 场景）按目标类型过滤后保留，
  * 专属字段按目标类型重建；返回 null 表示结果不合法。
  */
 export function convertCardStats(fromKind: CardKind, toKind: CardKind, stats: unknown): unknown | null {
@@ -36,8 +19,16 @@ export function convertCardStats(fromKind: CardKind, toKind: CardKind, stats: un
     stats !== null && typeof stats === "object" && Array.isArray(stats) === false
       ? (stats as Record<string, unknown>)
       : {};
-  const generic: Record<string, unknown> = {};
-  for (const key of ["effects", "targeting", "targetScope", "cost", "usableIn", "selectableEffects", "equippedEffects"]) {
+  const allowed = new Set<string>(allowedEffectTypesForKind(toKind));
+  const rawEffects = Array.isArray(source.effects) ? source.effects : [];
+  // 转换后只保留目标卡类型允许的效果（例如道具上的治疗不会跟着变进武器）。
+  const effects = rawEffects.filter((effect) => {
+    if (effect === null || typeof effect !== "object" || Array.isArray(effect)) return false;
+    const type = (effect as Record<string, unknown>).type;
+    return typeof type === "string" && allowed.has(type);
+  });
+  const generic: Record<string, unknown> = { effects };
+  for (const key of ["targeting", "targetScope", "cost", "usableIn"]) {
     if (source[key] !== undefined) generic[key] = source[key];
   }
   const cost =

@@ -38,13 +38,24 @@ export default function MagicEffectComposer(props: {
   readonly initialEffects: readonly unknown[];
   /** 受控回调：每次效果变化都会回传序列化 JSON（非表单场景使用）。 */
   readonly onChange?: (serialized: string) => void;
+  /** 只允许添加这些效果类型；不传表示全部允许。 */
+  readonly allowedTypes?: readonly string[];
 }) {
+  const allowedSet = props.allowedTypes === undefined ? null : new Set(props.allowedTypes);
+  const allowedDefinitions = MAGIC_EFFECT_DEFINITIONS.filter(
+    (definition) => allowedSet === null || allowedSet.has(definition.type)
+  );
   const [drafts, setDrafts] = useState<Draft[]>(() =>
     props.initialEffects
       .map((effect, index) => draftFromEffect(effect, index))
       .filter((draft): draft is Draft => draft !== null)
   );
-  const [newType, setNewType] = useState<string>(MAGIC_EFFECT_DEFINITIONS[0]?.type ?? "DAMAGE");
+  const [newType, setNewType] = useState<string>(
+    (props.allowedTypes === undefined ? MAGIC_EFFECT_DEFINITIONS[0]?.type : allowedDefinitions[0]?.type) ?? "DAMAGE"
+  );
+  const effectiveNewType = allowedDefinitions.some((definition) => definition.type === newType)
+    ? newType
+    : (allowedDefinitions[0]?.type ?? "");
   const [mode, setMode] = useState<"form" | "json">("form");
   const [jsonText, setJsonText] = useState("");
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -149,14 +160,14 @@ export default function MagicEffectComposer(props: {
               </button>
             ))}
           </div>
-          <select value={newType} onChange={(event) => setNewType(event.target.value)} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75">
-            {MAGIC_EFFECT_DEFINITIONS.map((definition) => (
+          <select value={effectiveNewType} onChange={(event) => setNewType(event.target.value)} disabled={allowedDefinitions.length === 0} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75 disabled:opacity-40">
+            {allowedDefinitions.map((definition) => (
               <option key={definition.type} value={definition.type}>
                 {definition.label}（{definition.type}）
               </option>
             ))}
           </select>
-          <button type="button" onClick={addDraft} className="rounded border border-spirit-400/40 px-2 py-1 text-xs text-spirit-300 transition hover:bg-spirit-400/10">
+          <button type="button" onClick={addDraft} disabled={allowedDefinitions.length === 0} className="rounded border border-spirit-400/40 px-2 py-1 text-xs text-spirit-300 transition hover:bg-spirit-400/10 disabled:opacity-40">
             + 添加效果
           </button>
         </div>
@@ -194,13 +205,18 @@ export default function MagicEffectComposer(props: {
             <div className="flex flex-wrap items-center gap-2">
               <span className="text-[10px] text-white/30">#{index + 1}</span>
               <select value={draft.type} onChange={(event) => changeType(draft.id, event.target.value)} className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-xs text-white/75">
-                {MAGIC_EFFECT_DEFINITIONS.map((item) => (
+                {MAGIC_EFFECT_DEFINITIONS.filter(
+                  (item) => allowedSet === null || allowedSet.has(item.type) || item.type === draft.type
+                ).map((item) => (
                   <option key={item.type} value={item.type}>
                     {item.label}（{item.type}）
                   </option>
                 ))}
               </select>
               <span className="text-[10px] text-white/35">{definition.summary}</span>
+              {allowedSet !== null && allowedSet.has(draft.type) === false ? (
+                <span className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] text-red-300">当前卡类型不允许该效果，请更换或删除</span>
+              ) : null}
               <div className="ml-auto flex items-center gap-1">
                 <button
                   type="button"

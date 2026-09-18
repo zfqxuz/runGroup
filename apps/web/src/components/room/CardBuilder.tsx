@@ -5,7 +5,6 @@ import { useState } from "react";
 import { saveCard, type SaveCardResult } from "@/server/actions/card";
 import DanmakuPatternEditor from "@/components/danmaku/DanmakuPatternEditor";
 import MagicEffectComposer from "@/components/module/MagicEffectComposer";
-import { MAGIC_EFFECT_DEFINITIONS } from "@/shared/magic-effects";
 import {
   CARD_KIND_LABELS,
   CARD_TARGETINGS,
@@ -13,6 +12,8 @@ import {
   CARD_TARGET_SCOPES,
   CARD_TARGET_SCOPE_LABELS,
   CARD_USABLE_IN,
+  allowedEffectTypesForKind,
+  disallowedEffectTypesForKind,
   ENHANCE_LABELS,
   ENHANCE_TYPES,
   RANGE_LABELS,
@@ -123,13 +124,6 @@ export default function CardBuilder(props: Props) {
       ? stringOr(stats0.targetScope, "ONE")
       : "ONE"
   );
-  const [selectableEffects, setSelectableEffects] = useState<number[]>(() => {
-    const raw = stats0.selectableEffects;
-    if (Array.isArray(raw)) {
-      return raw.filter((item): item is number => typeof item === "number" && Number.isInteger(item) && item >= 0);
-    }
-    return [];
-  });
   const [costMp, setCostMp] = useState(numberOr(cost0.mp, numberOr(stats0.mpCost, 0)));
   const [costSan, setCostSan] = useState(stringOr(cost0.san, ""));
   const [costUses, setCostUses] = useState(cost0.uses === null || cost0.uses === undefined ? "" : String(cost0.uses));
@@ -154,18 +148,11 @@ export default function CardBuilder(props: Props) {
     }
   }
 
-  function toggleSelectable(index: number): void {
-    setSelectableEffects((current) =>
-      current.includes(index) ? current.filter((item) => item !== index) : [...current, index].sort((a, b) => a - b)
-    );
-  }
-
   function genericStats(): Record<string, unknown> {
     return {
       effects: parseEffects(),
       targeting,
       targetScope,
-      selectableEffects,
       cost: {
         mp: costMp,
         san: costSan.trim().length === 0 ? null : costSan.trim(),
@@ -234,6 +221,15 @@ export default function CardBuilder(props: Props) {
     router.push(props.returnTo ?? (props.roomId === null ? "/cards" : "/rooms/" + props.roomId));
     router.refresh();
   }
+
+  const disallowedEffects = disallowedEffectTypesForKind(
+    kind,
+    (Array.isArray(parseEffects()) ? parseEffects() : [])
+      .map((effect) => {
+        const type = recordOf(effect).type;
+        return { type: typeof type === "string" ? type : "" };
+      })
+  );
 
   const tabClass = (active: boolean): string =>
     active
@@ -381,31 +377,13 @@ export default function CardBuilder(props: Props) {
             name="card-effects"
             initialEffects={Array.isArray(stats0.effects) ? stats0.effects : []}
             onChange={setEffectsJson}
+            allowedTypes={allowedEffectTypesForKind(kind)}
           />
         </div>
-        {parseEffects().length === 0 ? null : (
-          <div className="mt-3 rounded-lg border border-white/10 bg-ink-900/50 p-3">
-            <p className="text-[11px] text-white/45">装备时可选效果：勾选后玩家可在装备时决定是否生效；不勾选表示固定生效</p>
-            <div className="mt-2 flex flex-col gap-1.5">
-              {parseEffects().map((effect, index) => {
-                const type = recordOf(effect).type;
-                const label =
-                  typeof type === "string"
-                    ? MAGIC_EFFECT_DEFINITIONS.find((definition) => definition.type === type)?.label ?? type
-                    : "效果 " + String(index + 1);
-                return (
-                  <label key={index} className="flex items-center gap-2 text-xs text-white/60">
-                    <input
-                      type="checkbox"
-                      checked={selectableEffects.includes(index)}
-                      onChange={() => toggleSelectable(index)}
-                    />
-                    {String(index + 1)}. {label}
-                  </label>
-                );
-              })}
-            </div>
-          </div>
+        {disallowedEffects.length === 0 ? null : (
+          <p className="mt-2 rounded border border-red-400/40 px-2 py-1 text-[11px] text-red-300">
+            当前卡类型不能用这些效果：{disallowedEffects.join("、")}（请更换或删除）
+          </p>
         )}
         <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1.5">

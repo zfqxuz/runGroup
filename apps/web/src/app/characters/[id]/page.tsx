@@ -33,20 +33,8 @@ function cardStatsOf(type: string, stats: unknown): CardStats | null {
   return parseCardStats(type as CardKind, stats);
 }
 
-function activeEffectIndexes(stats: CardStats): number[] {
-  const selected = stats.equippedEffects;
-  if (selected === null || selected === undefined || selected.length === 0) {
-    return stats.effects.map((_effect, index) => index);
-  }
-  return selected.filter((index) => index < stats.effects.length);
-}
-
-function activeEffectLabels(stats: CardStats): string[] {
-  const indexes = activeEffectIndexes(stats);
-  return indexes.map((index) => {
-    const effect = stats.effects[index];
-    return effect === undefined ? "" : magicEffectLabel(effect);
-  }).filter((label) => label.length > 0);
+function effectLabels(stats: CardStats): string[] {
+  return stats.effects.map((effect) => magicEffectLabel(effect));
 }
 
 const LABELS: Record<string, string> = {
@@ -626,7 +614,7 @@ export default async function CharacterDetailPage({
                     <p className="text-[11px] text-white/35">{card.type} · {RARITY_LABELS[card.rarity]}</p>
                     {stats === null || stats.effects.length === 0 ? null : (
                       <p className="mt-1 text-[11px] text-emerald-200/80">
-                        生效：{activeEffectLabels(stats).join(" + ")}
+                        效果：{effectLabels(stats).join(" + ")}
                       </p>
                     )}
                   </div>
@@ -651,9 +639,7 @@ export default async function CharacterDetailPage({
           <div className="mt-4 grid gap-2 sm:grid-cols-2">
             {library.map((card) => {
               const stats = cardStatsOf(card.type, card.stats);
-              const selectable = stats?.selectableEffects ?? [];
               const effects = stats?.effects ?? [];
-              const active = stats === null ? [] : activeEffectIndexes(stats);
               return (
                 <form key={card.id} action={equipCardAction} className={"flex flex-col gap-2 rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}>
                   <input type="hidden" name="cardId" value={card.id} />
@@ -665,29 +651,8 @@ export default async function CharacterDetailPage({
                     </div>
                     <button type="submit" className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10">装备</button>
                   </div>
-                  {effects.length === 0 ? null : selectable.length === 0 ? (
-                    <p className="text-[11px] text-white/35">生效：{effects.map((effect) => magicEffectLabel(effect)).join(" + ")}</p>
-                  ) : (
-                    <div className="rounded-md border border-white/10 bg-ink-950/40 p-2">
-                      <p className="text-[11px] text-white/40">装备时选择生效效果</p>
-                      <div className="mt-1 flex flex-col gap-1">
-                        {effects.map((effect, index) => {
-                          const isSelectable = selectable.includes(index);
-                          const checked = isSelectable ? active.includes(index) : true;
-                          return (
-                            <label key={index} className="flex items-center gap-2 text-[11px] text-white/60">
-                              {isSelectable ? (
-                                <input type="checkbox" name="selectedEffects" value={index} defaultChecked={checked} />
-                              ) : (
-                                <span className="inline-block h-3 w-3 rounded-sm border border-emerald-400/50 bg-emerald-400/20" title="固定生效" />
-                              )}
-                              {magicEffectLabel(effect)}
-                              {isSelectable ? null : <span className="text-white/30">（固定生效）</span>}
-                            </label>
-                          );
-                        })}
-                      </div>
-                    </div>
+                  {effects.length === 0 ? null : (
+                    <p className="text-[11px] text-white/35">效果：{effects.map((effect) => magicEffectLabel(effect)).join(" + ")}</p>
                   )}
                 </form>
               );
