@@ -15,7 +15,6 @@ import {
 } from "@touhou/rules";
 import ImageUpload from "@/components/upload/ImageUpload";
 import BackstoryPanel from "@/components/character/BackstoryPanel";
-import DeleteCharacterButton from "@/components/character/DeleteCharacterButton";
 import { characterEquipmentOf } from "@/shared/character-equipment";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { revertAdvancementAction, updateAdvancementAction } from "@/server/actions/advancement";
@@ -208,21 +207,6 @@ export default async function CharacterDetailPage({
               {character.occupation}
             </span>
           )}
-        </div>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <Link
-            href={"/characters/" + character.id + "/manage"}
-            className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400"
-          >
-            角色管理
-          </Link>
-          <Link
-            href={"/characters/" + character.id + "/edit"}
-            className="rounded-lg border border-white/15 px-3 py-1.5 text-xs text-white/70 transition hover:border-white/35"
-          >
-            编辑角色
-          </Link>
-          <DeleteCharacterButton characterId={character.id} characterName={character.name} />
         </div>
         {character.roomEntries.length === 0 ? null : (
           <p className="mt-2 flex flex-wrap gap-2 text-[11px] text-white/40">

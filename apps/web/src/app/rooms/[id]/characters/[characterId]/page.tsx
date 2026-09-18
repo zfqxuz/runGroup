@@ -223,10 +223,10 @@ export default async function CharacterPage({
       {canManage ? (
         <div className="flex justify-end">
           <Link
-            href={"/characters/" + character.id + "/manage?roomId=" + room.id}
+            href={"/characters/" + character.id + "/edit?roomId=" + room.id}
             className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400"
           >
-            角色管理（属性 / 技能 / 装备）
+            编辑角色（属性 / 技能 / 物品）
           </Link>
         </div>
       ) : null}

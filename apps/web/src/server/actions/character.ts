@@ -19,6 +19,7 @@ import {
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { validateCharacterDraft } from "@/server/character/draft";
+import { ItemStatsSchema, SpellCardStatsSchema, WeaponStatsSchema } from "@/shared/card";
 import {
   isSkillCreationWithinCap,
   occupationChoiceLimits,
@@ -69,6 +70,19 @@ export interface SaveCharacterInput {
   } | null;
   /** 角色管理：背景故事 JSON。 */
   backstory?: unknown;
+  /** 角色管理：财产 / 资产。 */
+  assets?: Record<string, unknown> | null;
+  /** 角色编辑页：持有物品卡（新增 / 编辑一并提交）。 */
+  items?: readonly CharacterItemDraft[] | null;
+}
+
+export interface CharacterItemDraft {
+  readonly id?: string;
+  readonly kind: "WEAPON" | "ITEM" | "SPELLCARD";
+  readonly name: string;
+  readonly subtitle?: string | null;
+  readonly description?: string | null;
+  readonly stats: unknown;
 }
 
 export interface SaveCharacterResult {
@@ -89,6 +103,78 @@ function readPointMap(value: unknown): Record<string, number> | null {
     if (number > 0) out[key] = number;
   }
   return out;
+}
+
+
+function parseItemStatsForKind(kind: string, stats: unknown): unknown | null {
+  const parsed =
+    kind === "WEAPON"
+      ? WeaponStatsSchema.safeParse(stats)
+      : kind === "SPELLCARD"
+        ? SpellCardStatsSchema.safeParse(stats)
+        : ItemStatsSchema.safeParse(stats);
+  return parsed.success ? parsed.data : null;
+}
+
+/** 角色编辑页提交的持有物品：更新已有 / 新增；不在列表里的角色专属卡删除，库卡只卸下。 */
+async function persistCharacterItems(
+  userId: string,
+  characterId: string,
+  items: readonly CharacterItemDraft[]
+): Promise<void> {
+  const existing = await prisma.card.findMany({
+    where: { characterId },
+    select: { id: true, scope: true, ownerId: true }
+  });
+  const existingById = new Map(existing.map((card) => [card.id, card]));
+  const kept = new Set<string>();
+  for (const draft of items) {
+    const name = draft.name.trim();
+    if (name.length === 0) continue;
+    const stats = parseItemStatsForKind(draft.kind, draft.stats);
+    if (stats === null) continue;
+    if (draft.id !== undefined && existingById.has(draft.id)) {
+      const card = existingById.get(draft.id);
+      if (card === undefined || (card.scope === "COMPENDIUM" && card.ownerId !== userId)) continue;
+      await prisma.card.update({
+        where: { id: draft.id },
+        data: {
+          type: draft.kind as never,
+          name,
+          subtitle: draft.subtitle ?? null,
+          description: draft.description ?? null,
+          stats: stats as never,
+          isEquipped: true
+        }
+      });
+      kept.add(draft.id);
+      continue;
+    }
+    const created = await prisma.card.create({
+      data: {
+        scope: "CHARACTER",
+        ownerId: userId,
+        characterId,
+        type: draft.kind as never,
+        name,
+        subtitle: draft.subtitle ?? null,
+        description: draft.description ?? null,
+        system: "COC7",
+        isEquipped: true,
+        stats: stats as never
+      },
+      select: { id: true }
+    });
+    kept.add(created.id);
+  }
+  for (const card of existing) {
+    if (kept.has(card.id)) continue;
+    if (card.scope === "CHARACTER" && card.ownerId === userId) {
+      await prisma.card.delete({ where: { id: card.id } }).catch(() => undefined);
+    } else {
+      await prisma.card.update({ where: { id: card.id }, data: { characterId: null, isEquipped: false, equipSlot: null } }).catch(() => undefined);
+    }
+  }
 }
 
 export async function saveCharacter(
@@ -146,6 +232,9 @@ export async function saveCharacter(
       system,
       reviewStatus: "PENDING_REVIEW",
       name: result.name,
+      playerName: input.profile?.playerName ?? null,
+      gender: input.profile?.gender ?? null,
+      residence: input.profile?.residence ?? null,
       occupation: result.occupation?.name ?? null,
       occupationId: result.occupation?.id ?? null,
       era: result.era,
@@ -163,10 +252,13 @@ export async function saveCharacter(
       raceMods: {
         method: input.chargenMethod,
         flags: [...result.raceFlags],
+        baseAttributes: input.attributes,
+        ageAdjusted: system === "COC7",
         ...(system === "COC7" && result.age !== null ? { age: result.age, ageAllocation: result.ageAllocation } : {})
       },
       skills: result.skills,
       skillAllocation: result.skillAllocation as never,
+      sourceData: (input.assets === undefined || input.assets === null ? undefined : { assets: input.assets }) as never,
       hp: result.derived.maxHp,
       maxHp: result.derived.maxHp,
       mp: result.derived.maxMp,
@@ -185,7 +277,11 @@ export async function saveCharacter(
     });
     revalidatePath("/rooms/" + room.id);
   }
+  if (input.items !== undefined && input.items !== null) {
+    await persistCharacterItems(session.user.id, character.id, input.items);
+  }
   revalidatePath("/characters");
+  revalidatePath("/characters/" + character.id);
   return { ok: true, characterId: character.id };
 }
 
@@ -254,8 +350,12 @@ export async function updateCharacterAction(
   const existingAgeAdjusted = existingMods.ageAdjusted === false ? false : true;
   const existingMethod = typeof existingMods.method === "string" ? existingMods.method : null;
   const targetAge = input.age ?? existing.age ?? 30;
-  const ageChanged = Math.floor(Number(targetAge)) !== Math.floor(Number(existing.age ?? 30));
-  const applyAgeAdjustment = system === "COC7" && (existingAgeAdjusted || ageChanged);
+  const hasBaseAttributes =
+    existingMods.baseAttributes !== null &&
+    typeof existingMods.baseAttributes === "object" &&
+    Array.isArray(existingMods.baseAttributes) === false;
+  // 只有「存过原始属性」的 COC7 角色才重新套年龄补正，避免对已补正过的旧角色二次扣减。
+  const applyAgeAdjustment = system === "COC7" && existingAgeAdjusted && hasBaseAttributes;
   const ageAllocationInput =
     input.ageAllocation ?? (existingMods.ageAllocation as Coc7AgeAllocation | undefined) ?? null;
 
@@ -297,7 +397,8 @@ export async function updateCharacterAction(
   if (system === "COC7" && result.age !== null) {
     raceMods.age = result.age;
     raceMods.ageAllocation = result.ageAllocation;
-    raceMods.ageAdjusted = applyAgeAdjustment;
+    raceMods.ageAdjusted = applyAgeAdjustment || existingAgeAdjusted;
+    if (applyAgeAdjustment) raceMods.baseAttributes = input.attributes;
   }
 
   const clampResource = (value: number | undefined, fallback: number, max: number): number => {
@@ -308,6 +409,13 @@ export async function updateCharacterAction(
   };
   const resources = input.resources ?? null;
   const profile = input.profile ?? null;
+
+  const existingSource = existing.sourceData !== null && typeof existing.sourceData === "object" && Array.isArray(existing.sourceData) === false
+    ? { ...(existing.sourceData as Record<string, unknown>) }
+    : {};
+  if (input.assets !== undefined && input.assets !== null) {
+    existingSource.assets = input.assets;
+  }
 
   await prisma.character.update({
     where: { id: existing.id },
@@ -335,6 +443,7 @@ export async function updateCharacterAction(
       raceMods: raceMods as never,
       skills: result.skills,
       skillAllocation: result.skillAllocation as never,
+      sourceData: existingSource as never,
       hp: clampResource(resources?.hp, existing.hp <= 0 ? result.derived.maxHp : existing.hp, result.derived.maxHp),
       maxHp: result.derived.maxHp,
       mp: clampResource(resources?.mp, existing.mp <= 0 ? result.derived.maxMp : existing.mp, result.derived.maxMp),
@@ -346,6 +455,9 @@ export async function updateCharacterAction(
     }
   });
 
+  if (input.items !== undefined && input.items !== null) {
+    await persistCharacterItems(session.user.id, existing.id, input.items);
+  }
   revalidatePath("/characters");
   revalidatePath("/characters/" + existing.id);
   if (room !== null) {

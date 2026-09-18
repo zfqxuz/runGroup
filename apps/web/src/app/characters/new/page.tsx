@@ -29,6 +29,7 @@ export default async function NewLibraryCharacterPage(props: { searchParams: { s
         chargenMethod={pack.attributes.methods[0]?.id ?? "destiny5"}
         era={era}
         occupations={occupations.map(toOccupationView)}
+        mode="CREATE"
       />
     </main>
   );

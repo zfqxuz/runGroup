@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import DeleteCharacterButton from "@/components/character/DeleteCharacterButton";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -38,23 +39,27 @@ export default async function CharactersLibraryPage() {
         ) : (
           <ul className="mt-4 flex flex-col divide-y divide-white/5">
             {characters.map((character) => (
-              <li key={character.id} className="py-3">
-                <Link href={"/characters/" + character.id} className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm text-white/80">
-                      {character.name}
-                      {character.race === null ? null : (
-                        <span className="ml-2 text-[11px] text-sakura-400">{character.race}</span>
-                      )}
-                    </p>
-                    <p className="mt-0.5 text-[11px] text-white/35">
-                      {character.system} · HP {character.maxHp} · SAN {character.maxSan}
-                    </p>
-                  </div>
-                  <span className="rounded-full border border-white/15 px-2 py-0.5 text-[10px] text-white/50">
-                    {character.roomEntries.length} 个房间申请
-                  </span>
+              <li key={character.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+                <Link href={"/characters/" + character.id} className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-white/80">
+                    {character.name}
+                    {character.race === null ? null : (
+                      <span className="ml-2 text-[11px] text-sakura-400">{character.race}</span>
+                    )}
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-white/35">
+                    {character.system} · HP {character.maxHp} · SAN {character.maxSan} · {character.roomEntries.length} 个房间申请
+                  </p>
                 </Link>
+                <div className="flex shrink-0 items-center gap-2">
+                  <Link
+                    href={"/characters/" + character.id + "/edit"}
+                    className="rounded-md border border-sakura-500/50 bg-sakura-500/10 px-3 py-1.5 text-xs text-sakura-300 transition hover:bg-sakura-500/20"
+                  >
+                    编辑
+                  </Link>
+                  <DeleteCharacterButton characterId={character.id} characterName={character.name} />
+                </div>
               </li>
             ))}
           </ul>

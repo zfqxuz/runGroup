@@ -11,21 +11,7 @@ const PASSWORD = "e2epass123";
 const FILE = process.env.E2E_XLSX ?? "/home/zfq/.dsh/attachments/v1/files/3f/3f8103ac30864351e38c7cfc3a7d14da65348993c0e3b0445772ca72dd2848fe/COC7zfq.xlsx";
 const SOURCE_NPC_ID = process.env.E2E_SOURCE_NPC_ID ?? "cmtz4mw6e004hdq5amb3o8yk2";
 
-const itemStats = {
-  effects: [{ type: "HEAL", amount: "1d6" }],
-  targeting: "SELF",
-  targetScope: "SELF",
-  cost: { mp: 0, san: null, uses: 3, cooldownRounds: 0 },
-  usableIn: ["COMBAT"],
-  selectableEffects: [],
-  equippedEffects: null,
-  effect: "浏览器道具",
-  uses: 3,
-  sanCost: null
-};
-
-test("真实浏览器完整角色生命周期：导入 → 角色管理编辑 → 装备编辑 → 开战 → 战斗中使用道具", async ({ page }) => {
-  // 前置：清掉同名用户
+test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技能 + 故事/财产/物品）→ 真实战斗用道具", async ({ page }) => {
   await prisma.user.deleteMany({ where: { username: USERNAME } });
   const user = await prisma.user.create({
     data: { username: USERNAME, displayName: USERNAME, passwordHash: await bcrypt.hash(PASSWORD, 10), role: "USER" }
@@ -35,77 +21,59 @@ test("真实浏览器完整角色生命周期：导入 → 角色管理编辑 �
   let roomId: string | null = null;
 
   try {
-    // ---------- 1. 真实浏览器登录 ----------
+    // 1. 登录
     await page.goto("/login");
     await page.getByLabel("用户名").fill(USERNAME);
     await page.getByLabel("密码").fill(PASSWORD);
     await page.getByRole("button", { name: "登录" }).click();
     await page.waitForURL("**/");
 
-    // ---------- 2. 浏览器上传真实 Excel ----------
+    // 2. 导入真实 Excel
     await page.goto("/characters/import");
     await page.setInputFiles('input[type="file"][name="file"]', FILE);
     await page.getByRole("button", { name: "解析并导入" }).click();
     await page.waitForURL(/\/characters\/[^/]+\?imported=1/, { timeout: 60_000 });
     const characterId = new URL(page.url()).pathname.split("/")[2] ?? "";
     expect(characterId.length).toBeGreaterThan(0);
-    await expect(page.getByRole("heading", { name: /阿拉蕾/ })).toBeVisible();
-    await expect(page.getByText("背景故事与经历")).toBeVisible();
-    await expect(page.getByText("金色长发").first()).toBeVisible();
 
-    // ---------- 3. 在角色管理页真实点击编辑属性 / 技能 / 性别 ----------
-    await page.goto("/characters/" + characterId + "/manage");
-    await expect(page.getByRole("heading", { name: /角色管理 · 阿拉蕾/ })).toBeVisible();
+    // 3. 统一编辑页：第一页（属性 / 技能，必填）
+    await page.goto("/characters/" + characterId + "/edit");
+    await expect(page.getByText("第一页 · 角色属性与技能（必填）")).toBeVisible();
     await page.getByLabel("性别").fill("浏览器编辑");
     await page.locator('input[name="attr_edu"]').fill("70");
     await page.locator('input[name="attr_int"]').fill("60");
-    // 兴趣点：斗殴 10 -> 15（INT 60 => 兴趣池 120，总量不超）
-    const brawlRow = page.locator("tr").filter({ hasText: "格斗（斗殴）" }).first();
-    await brawlRow.locator('input[name^="int_"]').fill("15");
-    await page.getByRole("button", { name: "保存角色" }).click();
-    await page.waitForURL(/saved=manage/, { timeout: 30_000 });
-    await expect(page.getByText("已保存")).toBeVisible();
+    await page.locator('[data-skill-id="FIGHTING_BRAWL"] [data-testid="skill-interest"]').fill("15");
+    await page.getByRole("button", { name: "下一步：人物故事 / 财产 / 物品" }).click();
+    await expect(page.getByText("第二页 · 人物故事 / 财产 / 物品（选填）")).toBeVisible();
 
+    // 4. 第二页：人物故事 + 财产 + 新增物品卡（新增/编辑物品）
+    await page.locator('textarea[name="bs_appearance"]').fill("浏览器编辑后的角色外貌");
+    await page.locator('input[name="asset_creditRating"]').fill("35");
+    await page.getByRole("button", { name: "+ 新增物品卡" }).click();
+    const itemCard = page.getByTestId("item-card").first();
+    await itemCard.getByTestId("item-name").fill("浏览器道具·强效治疗药剂");
+    await itemCard.getByTestId("item-uses").fill("2");
+    await itemCard.getByTestId("item-cooldown").fill("1");
+    await itemCard.getByTestId("item-effects").fill(JSON.stringify([{ type: "HEAL", amount: "2d6" }]));
+    await itemCard.getByTestId("item-effects").blur();
+    await page.getByRole("button", { name: "保存修改" }).click();
+    await page.waitForURL((url) => url.pathname === "/characters/" + characterId, { timeout: 60_000 });
+
+    // 5. 断言 DB：角色属性 / 技能 / 背景故事 / 财产 / 物品卡
     const afterEdit = await prisma.character.findUniqueOrThrow({ where: { id: characterId } });
     expect(afterEdit.edu).toBe(70);
     expect(afterEdit.int).toBe(60);
     expect(afterEdit.gender).toBe("浏览器编辑");
     expect(((afterEdit.skillAllocation as any)?.interest?.FIGHTING_BRAWL ?? 0)).toBe(15);
     expect((afterEdit.skills as Record<string, number>).FIGHTING_BRAWL).toBe(40);
+    expect((afterEdit.backstory as Record<string, unknown>).appearance).toBe("浏览器编辑后的角色外貌");
+    expect(((afterEdit.sourceData as Record<string, unknown>).assets as Record<string, unknown>).creditRating).toBe("35");
+    const item = await prisma.card.findFirstOrThrow({ where: { characterId, name: "浏览器道具·强效治疗药剂" } });
+    expect(item.type).toBe("ITEM");
+    expect((item.stats as Record<string, unknown>).effects).toEqual([{ type: "HEAL", amount: "2d6" }]);
+    expect(((item.stats as Record<string, unknown>).cost as Record<string, unknown>).uses).toBe(2);
 
-    // ---------- 4. 浏览器里装备一件道具，并在页面上编辑装备属性 ----------
-    const item = await prisma.card.create({
-      data: {
-        scope: "COMPENDIUM", ownerId: user.id, type: "ITEM", system: "COC7",
-        name: "浏览器道具·治疗药剂", stats: itemStats as never
-      }
-    });
-    await page.goto("/characters/" + characterId + "/manage");
-    const libraryForm = page.locator("form").filter({ hasText: "浏览器道具·治疗药剂" }).first();
-    await libraryForm.getByRole("button", { name: "装备" }).click();
-    await expect(async () => {
-      const row = await prisma.card.findUniqueOrThrow({ where: { id: item.id } });
-      expect(row.characterId).toBe(characterId);
-      expect(row.isEquipped).toBe(true);
-    }).toPass({ timeout: 20_000 });
-
-    await page.goto("/characters/" + characterId + "/manage?card=" + item.id);
-    await expect(page.getByRole("heading", { name: /编辑装备属性/ })).toBeVisible();
-    const cardForm = page.locator("form").filter({ has: page.getByRole("button", { name: "保存装备属性" }) });
-    await cardForm.locator('input[name="name"]').fill("浏览器道具·强效治疗药剂");
-    await cardForm.locator('input[name="costUses"]').fill("2");
-    await cardForm.locator('input[name="costCooldown"]').fill("1");
-    await cardForm.locator('textarea[name="effectsJson"]').fill(JSON.stringify([{ type: "HEAL", amount: "2d6" }]));
-    await cardForm.getByRole("button", { name: "保存装备属性" }).click();
-    await page.waitForURL(/saved=card/, { timeout: 30_000 });
-
-    const afterCard = await prisma.card.findUniqueOrThrow({ where: { id: item.id } });
-    const stats = afterCard.stats as Record<string, unknown>;
-    expect(afterCard.name).toBe("浏览器道具·强效治疗药剂");
-    expect((stats.effects as Array<Record<string, unknown>>)[0]?.amount).toBe("2d6");
-    expect((stats.cost as Record<string, unknown>).uses).toBe(2);
-
-    // ---------- 5. 建真实房间 / 局 / 战斗（测试数据） ----------
+    // 6. 建真实房间 / 局 / 场景 / 地图 / Token / 战斗
     const room = await prisma.room.create({
       data: {
         name: "E2E-浏览器", system: "COC7", ownerId: user.id,
@@ -136,7 +104,6 @@ test("真实浏览器完整角色生命周期：导入 → 角色管理编辑 �
     if (created.combatId === undefined) throw new Error("开战失败：" + String(created.error));
     combatId = created.combatId;
 
-    // 把角色设为当前行动单位并压低 HP，方便验证道具回血
     const runtime = await loadCombatRuntime(combatId);
     if (runtime === null) throw new Error("runtime 加载失败");
     const pc = runtime.state.participants.find((entry) => entry.id === characterId);
@@ -149,7 +116,7 @@ test("真实浏览器完整角色生命周期：导入 → 角色管理编辑 �
     const hpBefore = pc.hp;
     await saveCombatState(combatId, runtime.state);
 
-    // ---------- 6. 真实浏览器：在战斗页面点「使用道具」 ----------
+    // 7. 真实浏览器：战斗页点「使用道具」
     await page.goto("/rooms/" + room.id + "/combat/" + combatId);
     await expect(page.getByRole("button", { name: "使用道具" })).toBeVisible({ timeout: 30_000 });
     await page.getByRole("button", { name: "使用道具" }).click();

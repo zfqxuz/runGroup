@@ -1,100 +1,161 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
+import { builtinRegistry, resolveRulePack, type AttributeSet } from "@touhou/rules";
+import CharacterBuilder, { type CharacterEditorInitial, type CharacterItemDraft } from "@/components/room/CharacterBuilder";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
-import { updateCharacterProfileAction } from "@/server/actions/character";
+import { availableEra, toOccupationView } from "@/shared/occupation";
 
 export const dynamic = "force-dynamic";
 
-const inputClass =
-  "w-full rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-sm text-white outline-none focus:border-sakura-500";
+function recordOf(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && Array.isArray(value) === false
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function pointMapOf(value: unknown): Record<string, number> {
+  const output: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(recordOf(value))) {
+    const number = Math.floor(Number(raw));
+    if (Number.isFinite(number) && number > 0) output[key] = number;
+  }
+  return output;
+}
+
+function slotsOf(value: unknown): Record<string, string[]> {
+  const output: Record<string, string[]> = {};
+  for (const [key, raw] of Object.entries(recordOf(value))) {
+    output[key] = Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+  }
+  return output;
+}
+
+function attributesOf(base: Record<string, unknown>): AttributeSet {
+  return {
+    str: Math.floor(Number(base.str ?? 0)),
+    con: Math.floor(Number(base.con ?? 0)),
+    siz: Math.floor(Number(base.siz ?? 0)),
+    dex: Math.floor(Number(base.dex ?? 0)),
+    app: Math.floor(Number(base.app ?? 0)),
+    int: Math.floor(Number(base.int ?? 0)),
+    pow: Math.floor(Number(base.pow ?? 0)),
+    edu: Math.floor(Number(base.edu ?? 0)),
+    luck: Math.floor(Number(base.luck ?? 0))
+  };
+}
 
 export default async function EditCharacterPage({
   params,
   searchParams
 }: {
   params: { id: string };
-  searchParams?: { error?: string };
+  searchParams: { roomId?: string };
 }) {
   const session = await auth();
   if (session === null) redirect("/login");
-  const character = await prisma.character.findUnique({ where: { id: params.id } });
-  if (character === null || character.userId !== session.user.id) notFound();
+
+  const character = await prisma.character.findUnique({
+    where: { id: params.id },
+    include: { cards: { where: { characterId: params.id }, orderBy: { createdAt: "asc" } } }
+  });
+  if (character === null) notFound();
+
+  const roomId = searchParams.roomId ?? null;
+  const isOwner = character.userId === session.user.id;
+  let room = null;
+  if (isOwner === false) {
+    if (roomId === null) notFound();
+    const membership = await prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId: session.user.id } },
+      include: { room: true }
+    });
+    if (membership === null || membership.role !== "KP") notFound();
+    const entry = await prisma.roomCharacterEntry.findUnique({
+      where: { roomId_characterId: { roomId, characterId: character.id } }
+    });
+    if (entry === null || entry.status !== "APPROVED") notFound();
+    room = membership.room;
+  }
+
+  const system = (room?.system ?? character.system) === "TOUHOU" ? "TOUHOU" : "COC7";
+  const pack = resolveRulePack(system === "TOUHOU" ? "touhou-ext" : "coc7-baseline", builtinRegistry());
+  const occupations = await prisma.occupation.findMany({
+    where: { system, era: { in: [...availableEra(room?.era ?? character.era)] } },
+    orderBy: { code: "asc" }
+  });
+
+  const mods = recordOf(character.raceMods);
+  const base = recordOf(mods.baseAttributes);
+  const hasBase = Object.keys(base).length > 0;
+  const ageAdjusted = mods.ageAdjusted === false ? false : true;
+  const applyAgeAdjustment = system === "COC7" && hasBase && ageAdjusted;
+  const allocation = recordOf(character.skillAllocation);
+
+  const initial: CharacterEditorInitial = {
+    id: character.id,
+    name: character.name,
+    playerName: character.playerName,
+    gender: character.gender,
+    residence: character.residence,
+    race: character.race,
+    attributes: applyAgeAdjustment
+      ? attributesOf(base)
+      : {
+          str: character.str,
+          con: character.con,
+          siz: character.siz,
+          dex: character.dex,
+          app: character.app,
+          int: character.int,
+          pow: character.pow,
+          edu: character.edu,
+          luck: character.luck
+        },
+    age: character.age,
+    ageAllocation: recordOf(mods.ageAllocation),
+    occupationId: character.occupationId,
+    occupationAdded: pointMapOf(allocation.occupation),
+    interestAdded: pointMapOf(allocation.interest),
+    slotAssignments: slotsOf(allocation.slots),
+    backstory: recordOf(character.backstory),
+    assets: recordOf(recordOf(character.sourceData).assets),
+    items: character.cards.map((card): CharacterItemDraft => ({
+      id: card.id,
+      kind: card.type === "WEAPON" || card.type === "SPELLCARD" ? card.type : "ITEM",
+      name: card.name,
+      subtitle: card.subtitle,
+      description: card.description,
+      stats: recordOf(card.stats)
+    }))
+  };
 
   return (
-    <main className="mx-auto flex min-h-screen max-w-2xl flex-col gap-5 px-6 py-12">
+    <main className="mx-auto flex min-h-screen max-w-6xl flex-col gap-6 px-6 py-12">
       <header>
-        <Link href={"/characters/" + character.id} className="text-xs text-white/40 transition hover:text-white/70">
-          ← 返回角色
+        <Link
+          href={roomId === null ? "/characters" : "/rooms/" + roomId + "/characters/" + character.id}
+          className="text-xs text-white/40 transition hover:text-white/70"
+        >
+          ← 返回
         </Link>
-        <h1 className="mt-2 text-xl font-semibold">编辑角色卡</h1>
-      </header>
-
-      {searchParams?.error === undefined ? null : (
-        <p className="rounded-lg border border-red-400/30 bg-red-400/5 px-4 py-3 text-sm text-red-300">
-          {searchParams.error}
+        <h1 className="mt-2 text-2xl font-semibold">编辑角色 · {character.name}</h1>
+        <p className="mt-1 text-sm text-white/50">
+          第一页填角色属性与技能（必填），第二页填人物故事 / 财产 / 持有物品（选填）。
         </p>
-      )}
-
-      <form action={updateCharacterProfileAction} className="flex flex-col gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
-        <input type="hidden" name="characterId" value={character.id} />
-        <div className="grid gap-4 sm:grid-cols-2">
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            角色名
-            <input name="name" defaultValue={character.name} maxLength={50} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            玩家名
-            <input name="playerName" defaultValue={character.playerName ?? ""} maxLength={50} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            职业
-            <input name="occupation" defaultValue={character.occupation ?? ""} maxLength={50} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            年龄
-            <input name="age" type="number" min={15} max={90} defaultValue={character.age ?? ""} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            性别
-            <input name="gender" defaultValue={character.gender ?? ""} maxLength={20} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            住地
-            <input name="residence" defaultValue={character.residence ?? ""} maxLength={80} className={inputClass} />
-          </label>
-        </div>
-        <p className="text-[11px] text-white/35">当前资源（留空表示不修改）</p>
-        <div className="grid gap-4 sm:grid-cols-4">
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            HP
-            <input name="hp" type="number" defaultValue={character.hp} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            MP
-            <input name="mp" type="number" defaultValue={character.mp} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            SAN
-            <input name="san" type="number" defaultValue={character.san} className={inputClass} />
-          </label>
-          <label className="flex flex-col gap-1 text-xs text-white/50">
-            DP
-            <input name="dp" type="number" defaultValue={character.dp} className={inputClass} />
-          </label>
-        </div>
-        <div className="flex justify-end gap-2">
-          <Link
-            href={"/characters/" + character.id}
-            className="rounded-lg border border-white/15 px-4 py-2 text-xs text-white/60 transition hover:border-white/35"
-          >
-            取消
-          </Link>
-          <button type="submit" className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400">
-            保存
-          </button>
-        </div>
-      </form>
+      </header>
+      <CharacterBuilder
+        roomId={roomId}
+        system={system}
+        pack={pack}
+        chargenMethod={typeof mods.method === "string" ? mods.method : pack.attributes.methods[0]?.id ?? "manual"}
+        era={room?.era ?? character.era ?? null}
+        occupations={occupations.map(toOccupationView)}
+        mode="EDIT"
+        characterId={character.id}
+        initial={initial}
+        applyAgeAdjustment={applyAgeAdjustment}
+      />
     </main>
   );
 }

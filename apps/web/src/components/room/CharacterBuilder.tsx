@@ -23,7 +23,7 @@ import {
   type Coc7PhysicalAttribute,
   type RulePack
 } from "@touhou/rules";
-import { saveCharacter, type SaveCharacterResult } from "@/server/actions/character";
+import { saveCharacter, updateCharacterAction, type SaveCharacterResult } from "@/server/actions/character";
 import {
   ERA_LABELS,
   hasFreeSkillChoice,
@@ -35,6 +35,35 @@ import {
   type OccupationSkillAccess,
   type OccupationView
 } from "@/shared/occupation";
+import { WEAPON_TYPES } from "@/shared/card";
+
+export interface CharacterItemDraft {
+  id?: string;
+  kind: "WEAPON" | "ITEM" | "SPELLCARD";
+  name: string;
+  subtitle?: string | null;
+  description?: string | null;
+  stats: Record<string, unknown>;
+}
+
+export interface CharacterEditorInitial {
+  readonly id: string;
+  readonly name: string;
+  readonly playerName?: string | null;
+  readonly gender?: string | null;
+  readonly residence?: string | null;
+  readonly race: string | null;
+  readonly attributes: AttributeSet;
+  readonly age: number | null;
+  readonly ageAllocation: Coc7AgeAllocation;
+  readonly occupationId: string | null;
+  readonly occupationAdded: Record<string, number>;
+  readonly interestAdded: Record<string, number>;
+  readonly slotAssignments: Record<string, string[]>;
+  readonly backstory: Record<string, unknown>;
+  readonly assets: Record<string, unknown>;
+  readonly items: readonly CharacterItemDraft[];
+}
 
 interface Props {
   roomId: string | null;
@@ -43,6 +72,12 @@ interface Props {
   chargenMethod: string;
   era: string | null;
   occupations: readonly OccupationView[];
+  /** CREATE = 新建角色；EDIT = 编辑已有角色。两者是同一套页面。 */
+  mode?: "CREATE" | "EDIT";
+  characterId?: string;
+  initial?: CharacterEditorInitial | null;
+  /** EDIT：是否重新套用 COC7 年龄补正（仅当角色存有原始属性时为 true）。 */
+  applyAgeAdjustment?: boolean;
 }
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -102,26 +137,79 @@ function defaultAttributesForMethod(
   return base as unknown as AttributeSet;
 }
 
+function backstoryText(initial: CharacterEditorInitial | null, key: string): string {
+  const value = initial?.backstory?.[key];
+  return typeof value === "string" ? value : "";
+}
+
+function backstoryJson(initial: CharacterEditorInitial | null, key: string): string {
+  const value = initial?.backstory?.[key];
+  return JSON.stringify(Array.isArray(value) ? value : []);
+}
+
+function assetText(initial: CharacterEditorInitial | null, key: string): string {
+  const value = initial?.assets?.[key];
+  if (value === null || value === undefined) return "";
+  return typeof value === "number" ? String(value) : typeof value === "string" ? value : "";
+}
+
 export default function CharacterBuilder(props: Props) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [race, setRace] = useState<string | null>(null);
+  const initial = props.initial ?? null;
+  const isEdit = props.mode === "EDIT";
+  const applyAgeAdjustment = props.applyAgeAdjustment ?? true;
+  const [step, setStep] = useState<1 | 2>(1);
+  const [name, setName] = useState(initial?.name ?? "");
+  const [playerName, setPlayerName] = useState(initial?.playerName ?? "");
+  const [gender, setGender] = useState(initial?.gender ?? "");
+  const [residence, setResidence] = useState(initial?.residence ?? "");
+  const [race, setRace] = useState<string | null>(initial?.race ?? null);
   const initialMethod =
     props.pack.attributes.methods.find((item) => item.id === props.chargenMethod) ??
     props.pack.attributes.methods[0];
-  const [attributes, setAttributes] = useState<AttributeSet>(() => defaultAttributesForMethod(initialMethod));
-  const [age, setAge] = useState<number>(30);
-  const [ageInput, setAgeInput] = useState<string>("30");
-  const [ageAllocation, setAgeAllocation] = useState<Coc7AgeAllocation>({});
-  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [attributes, setAttributes] = useState<AttributeSet>(
+    () => initial?.attributes ?? defaultAttributesForMethod(initialMethod)
+  );
+  const [age, setAge] = useState<number>(initial?.age ?? 30);
+  const [ageInput, setAgeInput] = useState<string>(String(initial?.age ?? 30));
+  const [ageAllocation, setAgeAllocation] = useState<Coc7AgeAllocation>(initial?.ageAllocation ?? {});
+  const [ageConfirmed, setAgeConfirmed] = useState(initial !== null);
   const [sets, setSets] = useState<AttributeSetOption[]>([]);
   const [selectedSet, setSelectedSet] = useState<number | null>(null);
-  const [occupationId, setOccupationId] = useState<string>("");
-  const [occupationAdded, setOccupationAdded] = useState<Record<string, number>>({});
-  const [slotAssignments, setSlotAssignments] = useState<Record<string, string[]>>({});
-  const [interestAdded, setInterestAdded] = useState<Record<string, number>>({});
+  const [occupationId, setOccupationId] = useState<string>(initial?.occupationId ?? "");
+  const [occupationAdded, setOccupationAdded] = useState<Record<string, number>>(initial?.occupationAdded ?? {});
+  const [slotAssignments, setSlotAssignments] = useState<Record<string, string[]>>(initial?.slotAssignments ?? {});
+  const [interestAdded, setInterestAdded] = useState<Record<string, number>>(initial?.interestAdded ?? {});
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // 第二页（选填）：人物故事 / 财产 / 持有物品
+  const [bsAppearance, setBsAppearance] = useState(() => backstoryText(initial, "appearance"));
+  const [bsBeliefs, setBsBeliefs] = useState(() => backstoryText(initial, "beliefs"));
+  const [bsSignificantPeople, setBsSignificantPeople] = useState(() => backstoryText(initial, "significantPeople"));
+  const [bsMeaningfulPlaces, setBsMeaningfulPlaces] = useState(() => backstoryText(initial, "meaningfulPlaces"));
+  const [bsTreasuredPossessions, setBsTreasuredPossessions] = useState(() => backstoryText(initial, "treasuredPossessions"));
+  const [bsTraits, setBsTraits] = useState(() => backstoryText(initial, "traits"));
+  const [bsSecrets, setBsSecrets] = useState(() => backstoryText(initial, "secrets"));
+  const [bsScars, setBsScars] = useState(() => backstoryText(initial, "scars"));
+  const [bsPhobias, setBsPhobias] = useState(() => backstoryText(initial, "phobias"));
+  const [bsExperiences, setBsExperiences] = useState(() => backstoryJson(initial, "experiences"));
+  const [bsMythos, setBsMythos] = useState(() => backstoryJson(initial, "mythosExperiences"));
+  const [bsCompanions, setBsCompanions] = useState(() => backstoryJson(initial, "companions"));
+  const [bsSpells, setBsSpells] = useState(() => backstoryJson(initial, "spellDetails"));
+  const [assetFields, setAssetFields] = useState<Record<string, string>>(() => ({
+    creditRating: assetText(initial, "creditRating"),
+    livingStandard: assetText(initial, "livingStandard"),
+    consumption: assetText(initial, "consumption"),
+    otherAssetsValue: assetText(initial, "otherAssetsValue"),
+    cash: assetText(initial, "cash"),
+    cashUnit: assetText(initial, "cashUnit"),
+    vehicle: assetText(initial, "vehicle"),
+    residence: assetText(initial, "residence"),
+    luxury: assetText(initial, "luxury"),
+    securities: assetText(initial, "securities"),
+    other: assetText(initial, "other")
+  }));
+  const [items, setItems] = useState<CharacterItemDraft[]>(() => (initial?.items ?? []).map((item) => ({ ...item })));
   const [skillQuery, setSkillQuery] = useState("");
   const [skillCategory, setSkillCategory] = useState<string>("ALL");
   const [skillIdentityFilters, setSkillIdentityFilters] = useState<("OCCUPATION" | "INTEREST")[]>([]);
@@ -133,9 +221,9 @@ export default function CharacterBuilder(props: Props) {
   const ageCheck = useMemo(() => checkCoc7AgeAllocation(age, ageAllocation), [age, ageAllocation]);
   // 年龄补正只有在玩家一次性确认后才应用到后续计算；未确认前始终保留基础属性。
   const ageAppliedAttributes = useMemo(() => {
-    if (isCoc7 === false || ageConfirmed === false) return attributes;
+    if (isCoc7 === false || ageConfirmed === false || applyAgeAdjustment === false) return attributes;
     return applyCoc7AgeAdjustment(attributes, age, ageAllocation);
-  }, [attributes, age, ageAllocation, ageConfirmed, isCoc7]);
+  }, [attributes, age, ageAllocation, ageConfirmed, isCoc7, applyAgeAdjustment]);
   const agePreviewAttributes = useMemo(
     () => (isCoc7 ? applyCoc7AgeAdjustment(attributes, age, ageAllocation) : attributes),
     [attributes, age, ageAllocation, isCoc7]
@@ -154,8 +242,8 @@ export default function CharacterBuilder(props: Props) {
   );
 
   const pointCheck = useMemo(
-    () => (method?.kind === "POINT_BUY" ? checkPointBuy(method, attributes) : null),
-    [method, attributes]
+    () => (isEdit ? null : method?.kind === "POINT_BUY" ? checkPointBuy(method, attributes) : null),
+    [isEdit, method, attributes]
   );
 
   const effectiveVars = baseOutcome.attributes as unknown as Record<string, number>;
@@ -346,9 +434,9 @@ export default function CharacterBuilder(props: Props) {
 
   const raceOptions = Object.entries(props.pack.races);
   const raceInfo = race === null ? null : props.pack.races[race];
-  const canRoll = method?.kind === "ROLL_SETS";
+  const canRoll = isEdit ? false : method?.kind === "ROLL_SETS";
   const rolled = sets.length > 0;
-  const attributesValid = (canRoll ? selectedSet !== null : pointCheck === null || pointCheck.valid) && (isCoc7 === false || ageConfirmed);
+  const attributesValid = (isEdit ? true : canRoll ? selectedSet !== null : pointCheck === null || pointCheck.valid) && (isCoc7 === false || ageConfirmed);
   const derivedReady = canRoll ? selectedSet !== null : true;
 
   function updateAttribute(key: AttributeKey, value: number): void {
@@ -567,21 +655,129 @@ export default function CharacterBuilder(props: Props) {
     setMessage(null);
   }
 
+  function step1Error(): string | null {
+    if (isEdit) {
+      if (name.trim().length === 0) return "角色名不能为空。";
+      return creditIssue;
+    }
+    if (canRoll && selectedSet === null) return "请先掷 5 组属性并选择其中一组。";
+    if (canRoll === false && pointCheck !== null && pointCheck.valid === false) return "属性点尚未分配完毕。";
+    if (isCoc7 && ageConfirmed === false) return "请先完成并确认年龄补正。";
+    if (creditIssue !== null) return creditIssue;
+    if (name.trim().length === 0) return "角色名不能为空。";
+    return null;
+  }
+
+  function goStep2(): void {
+    const error = step1Error();
+    if (error !== null) {
+      setMessage(error);
+      return;
+    }
+    setMessage(null);
+    setStep(2);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function parseJsonArray(value: string): unknown[] {
+    const text = value.trim();
+    if (text.length === 0) return [];
+    try {
+      const parsed: unknown = JSON.parse(text);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function collectBackstory(): Record<string, unknown> {
+    const spellDetails = parseJsonArray(bsSpells);
+    return {
+      appearance: bsAppearance.trim() || null,
+      beliefs: bsBeliefs.trim() || null,
+      significantPeople: bsSignificantPeople.trim() || null,
+      meaningfulPlaces: bsMeaningfulPlaces.trim() || null,
+      treasuredPossessions: bsTreasuredPossessions.trim() || null,
+      traits: bsTraits.trim() || null,
+      secrets: bsSecrets.trim() || null,
+      scars: bsScars.trim() || null,
+      phobias: bsPhobias.trim() || null,
+      experiences: parseJsonArray(bsExperiences),
+      mythosExperiences: parseJsonArray(bsMythos),
+      companions: parseJsonArray(bsCompanions),
+      spellDetails,
+      spells: spellDetails
+        .map((item) => (item !== null && typeof item === "object" ? (item as { name?: unknown }).name : undefined))
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    };
+  }
+
+  function collectAssets(): Record<string, unknown> {
+    const output: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(assetFields)) {
+      const trimmed = value.trim();
+      if (trimmed.length === 0) continue;
+      output[key] = key === "cash" ? Number(trimmed) : trimmed;
+    }
+    return output;
+  }
+
+  function updateItem(index: number, patch: Partial<CharacterItemDraft>): void {
+    setItems((current) => current.map((item, i) => (i === index ? { ...item, ...patch } : item)));
+  }
+
+  function updateItemStats(index: number, patch: Record<string, unknown>): void {
+    setItems((current) =>
+      current.map((item, i) => (i === index ? { ...item, stats: { ...item.stats, ...patch } } : item))
+    );
+  }
+
+  function addItem(): void {
+    setItems((current) => [
+      ...current,
+      {
+        kind: "ITEM",
+        name: "",
+        stats: {
+          effects: [],
+          targeting: "SELF",
+          targetScope: "SELF",
+          cost: { mp: 0, san: null, uses: null, cooldownRounds: 0 },
+          usableIn: ["COMBAT"],
+          selectableEffects: [],
+          equippedEffects: null,
+          effect: ""
+        }
+      }
+    ]);
+  }
+
+  function removeItem(index: number): void {
+    setItems((current) => current.filter((_item, i) => i !== index));
+  }
+
+  function itemCost(item: CharacterItemDraft): Record<string, unknown> {
+    const value = item.stats.cost;
+    return value !== null && typeof value === "object" && Array.isArray(value) === false
+      ? (value as Record<string, unknown>)
+      : {};
+  }
+
+  function itemEffects(item: CharacterItemDraft): unknown[] {
+    return Array.isArray(item.stats.effects) ? item.stats.effects : [];
+  }
+
+  function updateItemCost(index: number, patch: Record<string, unknown>): void {
+    setItems((current) =>
+      current.map((item, i) => (i === index ? { ...item, stats: { ...item.stats, cost: { ...itemCost(item), ...patch } } } : item))
+    );
+  }
+
   async function submit(): Promise<void> {
-    if (canRoll && selectedSet === null) {
-      setMessage("请先掷 5 组属性并选择其中一组。");
-      return;
-    }
-    if (canRoll === false && pointCheck !== null && pointCheck.valid === false) {
-      setMessage("属性点尚未分配完毕。");
-      return;
-    }
-    if (isCoc7 && ageConfirmed === false) {
-      setMessage("请先完成并确认年龄补正。");
-      return;
-    }
-    if (creditIssue !== null) {
-      setMessage(creditIssue);
+    const error = step1Error();
+    if (error !== null) {
+      setMessage(error);
+      setStep(1);
       return;
     }
     setBusy(true);
@@ -593,7 +789,7 @@ export default function CharacterBuilder(props: Props) {
       if (total > 0) skills[skill.id] = total;
     }
 
-    const result: SaveCharacterResult = await saveCharacter({
+    const payload = {
       roomId: props.roomId,
       system: props.system,
       name,
@@ -610,15 +806,40 @@ export default function CharacterBuilder(props: Props) {
       slotAssignments: selectedProfile === null ? null : slotAssignments,
       era: props.era,
       age: isCoc7 ? age : null,
-      ageAllocation: isCoc7 ? ageAllocation : null
-    });
+      ageAllocation: isCoc7 ? ageAllocation : null,
+      profile: {
+        playerName: playerName.trim() || null,
+        gender: gender.trim() || null,
+        residence: residence.trim() || null
+      },
+      backstory: collectBackstory(),
+      assets: collectAssets(),
+      items: items
+        .filter((item) => item.name.trim().length > 0)
+        .map((item) => ({
+          id: item.id,
+          kind: item.kind,
+          name: item.name.trim(),
+          subtitle: item.subtitle ?? null,
+          description: item.description ?? null,
+          stats: item.stats
+        }))
+    };
+
+    const result: SaveCharacterResult = isEdit && props.characterId !== undefined
+      ? await updateCharacterAction({ ...payload, characterId: props.characterId })
+      : await saveCharacter(payload);
 
     setBusy(false);
     if (result.ok === false) {
       setMessage(result.error ?? "保存失败");
       return;
     }
-    router.push(props.roomId === null ? "/characters" : "/rooms/" + props.roomId);
+    if (isEdit && props.characterId !== undefined) {
+      router.push("/characters/" + props.characterId);
+    } else {
+      router.push(props.roomId === null ? "/characters" : "/rooms/" + props.roomId);
+    }
     router.refresh();
   }
 
@@ -627,12 +848,35 @@ export default function CharacterBuilder(props: Props) {
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap items-center gap-3 text-xs">
+        <span className={step === 1 ? "rounded-lg bg-sakura-500 px-3 py-1.5 font-medium text-white" : "rounded-lg border border-white/15 px-3 py-1.5 text-white/50"}>
+          第一页 · 角色属性与技能（必填）
+        </span>
+        <span className="text-white/30">→</span>
+        <span className={step === 2 ? "rounded-lg bg-sakura-500 px-3 py-1.5 font-medium text-white" : "rounded-lg border border-white/15 px-3 py-1.5 text-white/50"}>
+          第二页 · 人物故事 / 财产 / 物品（选填）
+        </span>
+      </div>
+      {step === 1 ? (
+        <>
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">基本信息</h2>
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="flex flex-col gap-1.5">
             <span className="text-xs text-white/50">角色名</span>
             <input value={name} onChange={(event) => setName(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">玩家名</span>
+            <input value={playerName} onChange={(event) => setPlayerName(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">性别</span>
+            <input value={gender} onChange={(event) => setGender(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">住地</span>
+            <input value={residence} onChange={(event) => setResidence(event.target.value)} className={inputClass} />
           </label>
           {raceOptions.length > 0 ? (
             <label className="flex flex-col gap-1.5">
@@ -827,6 +1071,7 @@ export default function CharacterBuilder(props: Props) {
                 <div className="mt-2">
                   {editable ? (
                     <input
+                      name={"attr_" + key}
                       type="number"
                       min={method?.kind === "POINT_BUY" ? method.perAttributeMin : props.pack.attributes.min}
                       max={method?.kind === "POINT_BUY" ? method.perAttributeMax : props.pack.attributes.max}
@@ -1219,7 +1464,7 @@ export default function CharacterBuilder(props: Props) {
                           : null;
 
                   return (
-                    <div key={skill.id} className="rounded-xl border border-white/10 bg-ink-900/70 p-3">
+                    <div key={skill.id} data-skill-id={skill.id} className="rounded-xl border border-white/10 bg-ink-900/70 p-3">
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-1.5">
@@ -1259,6 +1504,7 @@ export default function CharacterBuilder(props: Props) {
                             <span className="font-mono text-white/30">上限 {maxOccupationAdd + base}</span>
                           </span>
                           <input
+                            data-testid="skill-occupation"
                             type="number"
                             min={0}
                             step={1}
@@ -1274,6 +1520,7 @@ export default function CharacterBuilder(props: Props) {
                             <span className="font-mono text-white/30">上限 {maxInterestAdd + base}</span>
                           </span>
                           <input
+                            data-testid="skill-interest"
                             type="number"
                             min={0}
                             step={1}
@@ -1310,22 +1557,235 @@ export default function CharacterBuilder(props: Props) {
 
       <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div>
-          <p className="text-sm text-white/70">
-            {props.roomId === null ? "保存到我的角色库" : "保存后将提交给本房 KP 审核"}
-          </p>
+          <p className="text-sm text-white/70">第一页必须填完整；完成后进入第二页（人物故事 / 财产 / 持有物品，均可留空）。</p>
           {message === null ? null : (
             <p className="mt-1 text-xs text-red-300">{message}</p>
           )}
         </div>
         <button
           type="button"
-          disabled={[busy, name.trim().length === 0, attributesValid === false, creditIssue !== null].includes(true)}
-          onClick={submit}
-          className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
+          onClick={goStep2}
+          className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400"
         >
-          {busy ? "保存中…" : "保存角色卡"}
+          下一步：人物故事 / 财产 / 物品
         </button>
       </section>
+        </>
+      ) : (
+        <>
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">人物故事（选填）</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">角色外貌</span>
+            <textarea name="bs_appearance" rows={2} value={bsAppearance} onChange={(event) => setBsAppearance(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">思想与信念</span>
+            <textarea name="bs_beliefs" rows={2} value={bsBeliefs} onChange={(event) => setBsBeliefs(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">重要之人</span>
+            <textarea name="bs_significantPeople" rows={2} value={bsSignificantPeople} onChange={(event) => setBsSignificantPeople(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">意义非凡之地</span>
+            <textarea name="bs_meaningfulPlaces" rows={2} value={bsMeaningfulPlaces} onChange={(event) => setBsMeaningfulPlaces(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">宝贵之物</span>
+            <textarea name="bs_treasuredPossessions" rows={2} value={bsTreasuredPossessions} onChange={(event) => setBsTreasuredPossessions(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">特质</span>
+            <textarea name="bs_traits" rows={2} value={bsTraits} onChange={(event) => setBsTraits(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">难言之隐</span>
+            <textarea name="bs_secrets" rows={2} value={bsSecrets} onChange={(event) => setBsSecrets(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">伤口和疤痕</span>
+            <textarea name="bs_scars" rows={2} value={bsScars} onChange={(event) => setBsScars(event.target.value)} className={inputClass} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">恐惧症和狂躁症</span>
+            <textarea name="bs_phobias" rows={2} value={bsPhobias} onChange={(event) => setBsPhobias(event.target.value)} className={inputClass} />
+          </label>
+        </div>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">调查员经历（JSON 数组，选填）</span>
+            <textarea name="bs_experiences" rows={3} value={bsExperiences} onChange={(event) => setBsExperiences(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">神话相关（JSON 数组，选填）</span>
+            <textarea name="bs_mythosExperiences" rows={3} value={bsMythos} onChange={(event) => setBsMythos(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">调查员伙伴（JSON 数组，选填）</span>
+            <textarea name="bs_companions" rows={3} value={bsCompanions} onChange={(event) => setBsCompanions(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
+          </label>
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">法术一览（JSON 数组，选填；name 会作为持有法术）</span>
+            <textarea name="bs_spellDetails" rows={3} value={bsSpells} onChange={(event) => setBsSpells(event.target.value)} className={inputClass + " font-mono text-[11px]"} />
+          </label>
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">财产（选填）</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-3">
+          {([
+            ["信用评级", "creditRating"],
+            ["生活水平", "livingStandard"],
+            ["消费水平", "consumption"],
+            ["其他资产", "otherAssetsValue"],
+            ["现金", "cash"],
+            ["现金单位", "cashUnit"],
+            ["交通工具", "vehicle"],
+            ["住所", "residence"],
+            ["奢侈品", "luxury"],
+            ["股票 / 证券", "securities"],
+            ["其他", "other"]
+          ] as const).map(([label, key]) => (
+            <label key={key} className="flex flex-col gap-1.5">
+              <span className="text-xs text-white/50">{label}</span>
+              <input
+                name={"asset_" + key}
+                value={assetFields[key] ?? ""}
+                onChange={(event) => setAssetFields((current) => ({ ...current, [key]: event.target.value }))}
+                className={inputClass}
+              />
+            </label>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-medium text-white/80">持有物品 / 物品卡（选填）</h2>
+            <p className="mt-1 text-[11px] text-white/40">新建角色或编辑角色都能在这里新增 / 修改物品卡；保存后写入该角色。</p>
+          </div>
+          <button type="button" onClick={addItem} className="rounded-lg border border-sakura-500/40 px-3 py-1.5 text-xs text-sakura-400 transition hover:bg-sakura-500/10">
+            + 新增物品卡
+          </button>
+        </div>
+        {items.length === 0 ? (
+          <p className="mt-3 text-xs text-white/35">还没有物品，点右上角新增。</p>
+        ) : (
+          <div className="mt-4 flex flex-col gap-3">
+            {items.map((item, index) => (
+              <div key={item.id ?? "new-" + String(index)} data-testid="item-card" className="rounded-lg border border-white/15 bg-ink-900/60 p-4">
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-white/50">名称</span>
+                    <input data-testid="item-name" value={item.name} onChange={(event) => updateItem(index, { name: event.target.value })} className={inputClass} />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-white/50">类型</span>
+                    <select data-testid="item-kind" value={item.kind} onChange={(event) => updateItem(index, { kind: event.target.value as CharacterItemDraft["kind"] })} className={inputClass}>
+                      <option value="ITEM">道具卡</option>
+                      <option value="WEAPON">武器卡</option>
+                      <option value="SPELLCARD">符卡</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-white/50">武器类型（仅武器）</span>
+                    <select
+                      value={typeof item.stats.weaponType === "string" ? item.stats.weaponType : "BRAWL"}
+                      onChange={(event) => updateItemStats(index, { weaponType: event.target.value })}
+                      className={inputClass}
+                    >
+                      {WEAPON_TYPES.map((weapon) => (
+                        <option key={weapon.id} value={weapon.id}>{weapon.label} · {weapon.damage}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-3">
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-white/50">MP 消耗</span>
+                    <input
+                      type="number"
+                      value={String(itemCost(item).mp ?? 0)}
+                      onChange={(event) => updateItemCost(index, { mp: Number(event.target.value) || 0 })}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-white/50">使用次数（留空 = 不限）</span>
+                    <input
+                      data-testid="item-uses"
+                      type="number"
+                      value={itemCost(item).uses === null || itemCost(item).uses === undefined ? "" : String(itemCost(item).uses)}
+                      onChange={(event) => updateItemCost(index, { uses: event.target.value.trim().length === 0 ? null : Number(event.target.value) })}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1.5">
+                    <span className="text-xs text-white/50">冷却轮次</span>
+                    <input
+                      data-testid="item-cooldown"
+                      type="number"
+                      value={String(itemCost(item).cooldownRounds ?? 0)}
+                      onChange={(event) => updateItemCost(index, { cooldownRounds: Number(event.target.value) || 0 })}
+                      className={inputClass}
+                    />
+                  </label>
+                </div>
+                <label className="mt-3 flex flex-col gap-1.5">
+                  <span className="text-xs text-white/50">效果 JSON（通用 14 种效果数组，失焦保存）</span>
+                  <textarea
+                    rows={3}
+                    data-testid="item-effects"
+                    defaultValue={JSON.stringify(itemEffects(item))}
+                    onBlur={(event) => {
+                      try {
+                        const parsed: unknown = JSON.parse(event.target.value);
+                        if (Array.isArray(parsed)) updateItemStats(index, { effects: parsed });
+                      } catch {
+                        // 解析失败时保留原值
+                      }
+                    }}
+                    className={inputClass + " font-mono text-[11px]"}
+                  />
+                </label>
+                <div className="mt-3 flex justify-end">
+                  <button type="button" onClick={() => removeItem(index)} className="rounded-lg border border-red-400/40 px-3 py-1.5 text-xs text-red-300 transition hover:bg-red-400/10">
+                    移除物品
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <div>
+          <p className="text-sm text-white/70">第二页都是选填，可以直接提交。</p>
+          {message === null ? null : (
+            <p className="mt-1 text-xs text-red-300">{message}</p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button type="button" onClick={() => setStep(1)} className="rounded-lg border border-white/15 px-5 py-2.5 text-sm text-white/70 transition hover:border-white/35">
+            上一步
+          </button>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={submit}
+            className="rounded-lg bg-sakura-500 px-6 py-2.5 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
+          >
+            {busy ? "提交中…" : isEdit ? "保存修改" : props.roomId === null ? "创建角色" : "提交给 KP 审核"}
+          </button>
+        </div>
+      </section>
+        </>
+      )}
     </div>
   );
 }

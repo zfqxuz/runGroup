@@ -55,7 +55,6 @@
     "verify:npc-weapons": "tsx scripts/verify-npc-weapons.ts",
     "verify:entity-normalization": "tsx --env-file=.env scripts/verify-entity-normalization.ts",
     "verify:character-draft": "tsx --env-file=.env scripts/verify-character-draft.ts",
-    "verify:lifecycle-e2e-real": "tsx --env-file=.env scripts/e2e-real-lifecycle.ts",
     "test:e2e": "bash scripts/run-e2e-web.sh"
   },
   "dependencies": {

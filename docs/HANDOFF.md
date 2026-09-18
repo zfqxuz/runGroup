@@ -2415,3 +2415,40 @@ sourceData:
 - `npm run test:e2e` 真实 Chromium：1 passed。
 - `npm test` 218 通过、`typecheck`、`next build` 通过。
 - 本地 `e2e-real-lifecycle.ts` 25/25、`e2e-real-magic.ts` 54/54（服务器层）。
+
+## 63. 一套角色创建/编辑页 + 两页结构 + 白天模式对比度（本轮）
+
+按用户最终要求重构角色入口与编辑页。
+
+### 1. 角色列表页 = 唯一编辑入口
+- `/characters` 列表每行新增「编辑」「删除」：编辑进统一编辑页，删除走 `deleteCharacterAction`（二次确认）。
+- 角色详情页 `/characters/[id]` **移除**编辑 / 删除 / 角色管理入口，详情页只读。
+
+### 2. 新建与编辑是同一套页面
+- `/characters/new`（`mode=CREATE`）与 `/characters/[id]/edit`（`mode=EDIT`）都渲染同一个 `CharacterBuilder`。
+- 房间路径 `/rooms/[id]/characters/new` 与房间内「编辑角色」入口也复用同一套页面（KP 通过 `?roomId=` 编辑需已审核角色）。
+- 旧的 `/characters/[id]/manage` 保留为 302 跳转到 `/edit`，避免旧链接失效。
+
+### 3. 编辑页分两页
+- **第一页（必填）**：基础信息（角色名 / 玩家名 / 性别 / 住地 / 职业 / 种族）+ 九项属性 + 年龄补正 + 衍生属性 + 技能分配（职业点 / 兴趣点 / 空位）。点「下一步」才进第二页；第一页不合法会拦下并提示。
+- **第二页（选填）**：人物故事（9 项纯输入框 + 经历 / 神话 / 伙伴 / 法术 JSON，不再做成一张张卡片）+ 财产（信用评级 / 现金 / 住所 / 交通等输入框）+ 持有物品（可新增 / 编辑 / 移除物品卡）。
+- 「上一步」可回第一页；「保存修改 / 创建角色 / 提交 KP」在第二页提交。
+- 编辑模式不再要求重掷属性 / 重新分配点数；属性可直接改，技能点仍走同一套 COC7 规则（`validateCharacterDraft`）。
+- 年龄补正只在角色存有 `raceMods.baseAttributes` 时重新套用；导入卡（`ageAdjusted=false`）不会二次扣减。
+
+### 4. 物品卡随角色一起保存
+- `SaveCharacterInput` 新增 `profile / assets / items`；`saveCharacter` 与 `updateCharacterAction` 都会：
+  - 写入 `playerName / gender / residence`、`backstory`、`sourceData.assets`；
+  - `persistCharacterItems` 对 `items` 做 upsert：新建的角色专属卡写入 `characterId`；编辑时更新已存在卡、删除被移除的角色专属卡、库卡则只卸下。
+- 编辑页第二页新增/编辑的物品，保存后直接可在战斗里使用（`loadItemsByParticipant` 读已装备 ITEM 卡）。
+
+### 5. 白天模式对比度规则
+- 原则：浅色字必须配深色底，深色字必须配浅色底。
+- `globals.css` 新增 `[data-theme="day"]` 覆盖：所有 `text-<color>-100~400`（含 `/50~/90` 透明度变体）统一换成同色系深色（red→#b91c1c、amber→#b45309、emerald→#047857、sakura→#be185d、spirit/sky→#1d4ed8、purple→#7e22ce 等）。
+- 深色遮罩（`bg-black/60|80`）上的 `text-white/70|80` 在白天模式强制保持浅色，避免黑底深字。
+- 新增 Playwright 用例 `e2e/theme-contrast.spec.ts`：切 day 主题后断言浅黄/绿/粉气泡文字亮度 < 0.5、黑底白字亮度 > 0.8。
+
+### 6. Playwright 验证
+- `e2e/character-lifecycle.spec.ts`（真实 Chromium 点击）：真实登录 → 上传真实 `COC7zfq.xlsx` → 统一编辑页第一页改属性/技能 → 下一步 → 第二页写人物故事/财产/新增物品卡 → 保存 → 断言 DB（属性/技能/背景故事/财产/物品卡）→ 建真实战斗 → 战斗页点「使用道具」→ 断言回血与次数扣减。
+- `npm run test:e2e`：2 passed（生命周期 13.4s + 白天对比度 706ms）。
+- 回归：`npm test` 218、typecheck、next build 全过。

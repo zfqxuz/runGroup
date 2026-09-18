@@ -51,6 +51,7 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
         chargenMethod={room.chargenMethod ?? "destiny5"}
         era={room.era}
         occupations={occupations.map(toOccupationView)}
+        mode="CREATE"
       />
     </main>
   );
