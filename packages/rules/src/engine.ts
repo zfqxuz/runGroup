@@ -6,6 +6,7 @@ import {
   CHECK_RANK,
   DERIVED_KEYS,
   type AttributeSet,
+  type CheckDifficulty,
   type CheckResult,
   type DerivedStats
 } from "./types";
@@ -160,6 +161,18 @@ export function resolveCheck(
   if (effectiveTarget < fumbleSkillBelow && roll >= fumbleRangeFrom) return make("FUMBLE");
   if (roll >= fumbleFlat) return make("FUMBLE");
   return make("FAIL");
+}
+
+/** 技能检定的难度要求。 */
+export const REQUIRED_CHECK_RANK: Readonly<Record<CheckDifficulty, number>> = {
+  REGULAR: CHECK_RANK.REGULAR,
+  HARD: CHECK_RANK.HARD,
+  EXTREME: CHECK_RANK.EXTREME
+};
+
+/** 检定结果是否达到指定难度（用于困难/极难检定）。 */
+export function meetsDifficulty(check: CheckOutcome, difficulty: CheckDifficulty): boolean {
+  return check.rank >= REQUIRED_CHECK_RANK[difficulty];
 }
 
 /** 对抗检定：先比成功等级，同级时比技能值，再同级比先攻属性。 */

@@ -118,8 +118,8 @@ function main(): void {
   );
   expectIds(
     [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-no-base")],
-    ["PASS", "DODGE", "COUNTER"],
-    "COC7 反击是斗殴检定，没写技能也应能用基础值反击"
+    ["PASS", "DODGE"],
+    "COC7 没有实际格斗攻击选项时不应下发反击"
   );
   expectIds(
     [...allowedReactionTypesForParticipant(touhou, new Map([["touhou-no-skill", []]]), "touhou-no-skill")],
@@ -133,19 +133,28 @@ function main(): void {
   );
   expectIds(
     [...allowedReactionTypesForParticipant(coc, counterSkills, "coc-civilian", false, "FIREARMS_HANDGUN")],
-    ["PASS", "DODGE"],
-    "COC7 射击攻击不能被反击"
+    ["PASS", "SEEK_COVER"],
+    "COC7 射击攻击不能闪避/反击，只能寻找掩体"
   );
   expectIds(
-    [...reactionTypesForAttack(allowedReactionTypes(coc), "THROW")],
-    ["PASS", "DODGE"],
-    "COC7 投掷类远程攻击不能被反击"
+    [...reactionTypesForAttack(allowedReactionTypes(coc), "THROW", "COC7")],
+    ["PASS", "SEEK_COVER"],
+    "COC7 投掷类远程攻击不能闪避/反击，只能寻找掩体"
   );
   expectIds(
-    [...reactionTypesForAttack(allowedReactionTypes(coc), "FIGHTING_AXE")],
+    [...reactionTypesForAttack(allowedReactionTypes(coc), "FIGHTING_AXE", "COC7")],
     ["PASS", "DODGE", "COUNTER"],
     "COC7 近战武器仍允许被反击"
   );
+  const swordOptions = attackOptionsForParticipant(coc, cocPlayer, [
+    { name: "长剑", stats: { range: "MELEE" } }
+  ]);
+  ensure(swordOptions[0]?.skillId === "格斗（剑）", "COC7 剑应映射到格斗（剑）专精");
+  const shotgunBands = attackOptionsForParticipant(coc, cocPlayer, [
+    { name: "霰弹枪", stats: { range: "FAR", damage: "4D6/2D6/1D6" } }
+  ]);
+  ensure((shotgunBands[0]?.damageBands.length ?? 0) === 3, "霰弹枪应拆出三个距离档");
+  ensure(shotgunBands[0]?.damageType === "NONE", "霰弹枪伤害类型应为不可贯穿");
 
   const cocActionContext = {
     pack: coc,

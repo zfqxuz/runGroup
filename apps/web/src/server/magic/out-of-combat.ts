@@ -8,8 +8,7 @@ import {
   spellTargeting,
   type CompiledRulePack,
   type GameCondition,
-  type MagicSpell
-} from "@touhou/rules";
+  type MagicSpell, spendMagicPoints } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 import { createPersistentSummonCard } from "@/server/magic/summons";
 import { activeCombatSeats } from "@/server/combat/setup";
@@ -221,9 +220,39 @@ export async function castOutsideCombat(input: OutOfCombatCastInput): Promise<Ou
 
   const mpCost = Math.max(0, Math.floor(evalNumber(input.pack, input.spell.mpCost, vars)));
   const sanCost = Math.max(0, Math.floor(evalNumber(input.pack, input.spell.sanCost, vars)));
-  if (mpCost > 0 && caster.mp < mpCost) return { ok: false, error: "MP 不足", log };
   if (sanCost > 0 && caster.san < sanCost) return { ok: false, error: "SAN 不足", log };
-  const nextCaster: ActorSnapshot = { ...caster, mp: caster.mp - mpCost, san: caster.san - sanCost };
+  const spent = spendMagicPoints(caster.mp, caster.hp, mpCost, input.pack.pack.magicPoint);
+  if (spent.allowed === false) return { ok: false, error: spent.error ?? "MP 不足", log };
+  const nextCasterBase: ActorSnapshot = { ...caster, mp: spent.mpAfter, san: caster.san - sanCost };
+  if (spent.hpLoss > 0 && mpCost > 0) {
+    nextCasterBase.hp = Math.max(0, nextCasterBase.hp - spent.hpLoss);
+    log.push(
+      "MP 只有 " +
+        spent.mpAfter +
+        "，不足 " +
+        spent.shortfall +
+        " 点；从 HP 扣除 " +
+        spent.hpLoss +
+        "（HP " +
+        (nextCasterBase.hp + spent.hpLoss) +
+        "→" +
+        nextCasterBase.hp +
+        "）"
+    );
+    if (nextCasterBase.hp <= 0) {
+      nextCasterBase.conditions = nextCasterBase.conditions.filter((condition) => condition.type !== "UNCONSCIOUS");
+      nextCasterBase.conditions.push(
+        makeCondition({
+          type: "UNCONSCIOUS",
+          unit: "NARRATIVE",
+          visibility: "PUBLIC",
+          note: "MP 透支导致 HP 归零"
+        })
+      );
+      log.push(nextCasterBase.name + " 因 MP 透支失去意识");
+    }
+  }
+  const nextCaster: ActorSnapshot = nextCasterBase;
   const sameActor = caster.kind === target.kind && caster.id === target.id;
   const nextTarget: ActorSnapshot = sameActor
     ? nextCaster

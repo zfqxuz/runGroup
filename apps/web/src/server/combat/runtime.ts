@@ -41,6 +41,15 @@ export interface CombatRuntime {
   pendingFlee: { readonly targetId: string; readonly actorId: string } | null;
   /** 本次战斗中由 SUMMON 生成、已同步为持久 NPC 卡的 participant id。 */
   readonly summonCardIds: Set<string>;
+  /** U-6：战斗绑定场景的网格信息；没有场景 / 地图时为 null。 */
+  readonly sceneGrid: {
+    readonly width: number;
+    readonly height: number;
+    readonly gridSize: number;
+    readonly gridType: string;
+  } | null;
+  /** U-6：participant.id → 该单位在当前场景的 Token 坐标。 */
+  readonly tokenPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
 }
 
 const cache = new Map<string, CombatRuntime>();
@@ -155,6 +164,40 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       publicCharacterIds.add(member.activeCharacterId);
     }
   }
+
+  // U-6：读取战斗场景里的 Token 坐标，供战斗 UI 展示实际英尺距离。
+  let sceneGrid: CombatRuntime["sceneGrid"] = null;
+  const tokenPositions = new Map<string, { readonly x: number; readonly y: number }>();
+  if (combat.sceneId !== null) {
+    const tokens = await prisma.token.findMany({
+      where: { roomId: combat.roomId, map: { sceneId: combat.sceneId } },
+      select: {
+        characterId: true,
+        cardId: true,
+        x: true,
+        y: true,
+        map: { select: { width: true, height: true, gridSize: true, gridType: true } }
+      }
+    });
+    for (const token of tokens) {
+      const participant = state.participants.find(
+        (item) =>
+          (item.characterId !== null && item.characterId === token.characterId) ||
+          (item.characterId === null && token.cardId !== null && item.id === token.cardId)
+      );
+      if (participant === undefined) continue;
+      tokenPositions.set(participant.id, { x: token.x, y: token.y });
+      if (sceneGrid === null) {
+        sceneGrid = {
+          width: token.map.width,
+          height: token.map.height,
+          gridSize: token.map.gridSize,
+          gridType: token.map.gridType
+        };
+      }
+    }
+  }
+
   const runtime: CombatRuntime = {
     combatId,
     roomId: combat.roomId,
@@ -172,7 +215,9 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     reactions: {},
     chaseAttack: null,
     pendingFlee: null,
-    summonCardIds: new Set(state.participants.filter((participant) => participant.summonedBy !== null && participant.summonedBy !== undefined).map((participant) => participant.id))
+    summonCardIds: new Set(state.participants.filter((participant) => participant.summonedBy !== null && participant.summonedBy !== undefined).map((participant) => participant.id)),
+    sceneGrid,
+    tokenPositions
   };
   cache.set(combatId, runtime);
   return runtime;
@@ -229,7 +274,9 @@ export function viewForUser(runtime: CombatRuntime, userId: string): CombatView 
       ...participant,
       controlledByViewer: canControl(runtime, userId, participant.id)
     })),
-    pendingReactions: [...runtime.pendingReactions.entries()].map(([targetId, actorId]) => ({ actorId, targetId }))
+    pendingReactions: [...runtime.pendingReactions.entries()].map(([targetId, actorId]) => ({ actorId, targetId })),
+    sceneGrid: runtime.sceneGrid,
+    tokens: Object.fromEntries(runtime.tokenPositions)
   };
 }
 

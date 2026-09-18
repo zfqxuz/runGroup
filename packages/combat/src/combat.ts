@@ -1,9 +1,11 @@
 import {
+  diceBounds,
   evaluate,
   compile as compileExpr,
   parseDice,
   rollDice,
   rollDie,
+  rollPercentile,
   type Rng
 } from "@touhou/formula";
 import {
@@ -14,6 +16,7 @@ import {
   resolveCheck,
   resolveOpposed,
   resolveActionCost,
+  coc7Build,
   computeAtbMax,
   computeBaseSpeed,
   computeDerived,
@@ -21,11 +24,13 @@ import {
   fromMicro,
   isHostileSpell,
   schedule,
+  spendMagicPoints,
   speedMultiplierOf,
   spellEffectsOf,
   spellTargeting,
   type ActiveStatusEffect,
   type AttributeSet,
+  type CheckOutcome,
   type CompiledRulePack,
   type DefenseType,
   type DerivedStats,
@@ -197,7 +202,12 @@ export function addParticipant(
     declaration: null,
     usedSpellCards: [],
     isIdentified: init.isIdentified ?? init.kind === "PLAYER",
-    isPublic: init.isPublic ?? false
+    isPublic: init.isPublic ?? false,
+    skipNextAction: 0,
+    reactionsThisRound: 0,
+    initiativeMod: 0,
+    grappledBy: null,
+    disarmed: false
   };
   state.participants.push(participant);
   return participant;
@@ -373,6 +383,9 @@ export function submitAction(state: CombatState, submission: ActionSubmission): 
 export interface DefenseReaction {
   readonly type: DefenseType;
   readonly skill?: string;
+  /** COC7 反击成功时反击者对攻击者使用的武器伤害表达式（由服务端按装备解析）。 */
+  readonly damage?: string;
+  readonly weaponName?: string;
 }
 
 export interface ResolveResult {
@@ -387,6 +400,8 @@ interface ResolveContext {
   readonly reactions: Readonly<Record<string, DefenseReaction>>;
   readonly queue: ActionSubmission[];
   readonly cancelled: Set<string>;
+  /** 同一动作内多次攻击共享掩体检定结果，避免每发重新掷骰。 */
+  readonly coverCache?: Map<string, { readonly penaltyDice: number; readonly forfeited: boolean }>;
 }
 
 function reactionFor(ctx: ResolveContext, defenderId: string): DefenseReaction {
@@ -486,6 +501,81 @@ function removeParticipant(state: CombatState, id: string): void {
  *
  * duration = 0 表示持续到耗尽 / 战斗结束。
  */
+/**
+ * D-2：回合结束时自动结算 DOT / 环境持续伤害。
+ * 每层 DOT 掷一次伤害表达式，走 COC7 伤害管线（重伤 / 昏迷 / 濒死 / 死亡），并扣减 1 轮持续时间。
+ */
+export function resolveRoundEndDotDamage(pack: CompiledRulePack, state: CombatState): void {
+  const hasDot = state.participants.some((participant) =>
+    (participant.conditions ?? []).some(
+      (condition) => condition.type === "DOT" && condition.duration.unit === "ROUND" && condition.duration.remaining > 0
+    )
+  );
+  if (hasDot === false) return;
+  const ctx: ResolveContext = {
+    pack,
+    state,
+    reactions: {},
+    queue: [],
+    cancelled: new Set<string>(),
+    coverCache: new Map()
+  };
+  for (const participant of [...state.participants]) {
+    if (participant.defeated) continue;
+    const current = participant.conditions ?? [];
+    const dots = current.filter(
+      (condition) => condition.type === "DOT" && condition.duration.unit === "ROUND" && condition.duration.remaining > 0
+    );
+    if (dots.length === 0) continue;
+    let next = [...current];
+    for (const dot of dots) {
+      const expression =
+        typeof dot.data.expression === "string" && dot.data.expression.trim().length > 0
+          ? dot.data.expression
+          : "1d3";
+      const damageType = typeof dot.data.damageType === "string" ? dot.data.damageType : "持续伤害";
+      let amount = 0;
+      try {
+        amount = Math.max(
+          0,
+          Math.floor(rollDice(parseDice(expression), nextRollRng(state, "dot:" + participant.id + ":" + state.round)).total)
+        );
+      } catch {
+        amount = 0;
+      }
+      if (amount > 0) {
+        const before = participant.hp;
+        applyDamageToParticipant(ctx, participant, amount);
+        pushLog(state, {
+          kind: "DAMAGE",
+          actorId: participant.id,
+          targetId: participant.id,
+          text:
+            participant.name +
+            " 受到「" +
+            damageType +
+            "」持续伤害 " +
+            amount +
+            " 点（HP " +
+            before +
+            " → " +
+            participant.hp +
+            "）",
+          data: { rollType: "DOT", damageType, expression, damage: amount }
+        });
+      }
+      const remaining = Math.max(0, Math.floor(dot.duration.remaining) - 1);
+      next =
+        remaining > 0
+          ? next.map((condition) =>
+              condition.id === dot.id ? { ...condition, duration: { ...condition.duration, remaining } } : condition
+            )
+          : next.filter((condition) => condition.id !== dot.id);
+    }
+    participant.conditions = next;
+  }
+}
+
 function expireRoundTimers(state: CombatState): void {
   for (const participant of [...state.participants]) {
     if (participant.armorExpiresAtRound !== null && participant.armorExpiresAtRound !== undefined && state.round >= participant.armorExpiresAtRound) {
@@ -541,6 +631,82 @@ function absorbWithArmor(target: CombatParticipantState, amount: number): { abso
   const absorbed = Math.min(armor, damage);
   if (absorbed > 0) target.armor = armor - absorbed;
   return { absorbed, remaining: damage - absorbed };
+}
+
+/**
+ * COC7 MP 消耗：不足时按规则包配置转扣 HP。
+ * 该函数只处理资源，不处理该行动本身的效果；返回 false 表示资源不足且规则不允许透支。
+ */
+function spendCombatMagicPoints(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  cost: number,
+  sourceLabel: string
+): boolean {
+  const amount = Math.max(0, Math.floor(cost));
+  if (amount <= 0) return true;
+
+  if (ctx.pack.system !== "COC7") {
+    actor.mp = Math.max(0, actor.mp - amount);
+    return true;
+  }
+
+  const rules = ctx.pack.pack.magicPoint;
+  const spent = spendMagicPoints(actor.mp, actor.hp, amount, rules);
+  if (spent.allowed === false) {
+    pushLog(ctx.state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 的 MP 与 HP 不足以支付" + sourceLabel + "（需要 " + amount + " 点）"
+    });
+    return false;
+  }
+
+  actor.mp = spent.mpAfter;
+  actor.vars.mp = actor.mp;
+  if (spent.hpLoss > 0) {
+    actor.hp = Math.max(0, actor.hp - spent.hpLoss);
+    actor.vars.hp = actor.hp;
+    pushLog(ctx.state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: actor.id,
+      text:
+        actor.name +
+        " 的 MP 只有 " +
+        spent.mpAfter +
+        "，不足 " +
+        spent.shortfall +
+        " 点；按规则从 HP 扣除 " +
+        spent.hpLoss +
+        "（HP " +
+        (actor.hp + spent.hpLoss) +
+        "→" +
+        actor.hp +
+        "）",
+      data: { rollType: "MP_OVERFLOW_TO_HP", shortfall: spent.shortfall, hpLoss: spent.hpLoss }
+    });
+    if (actor.hp <= 0) {
+      actor.hp = 0;
+      actor.prone = true;
+      actor.unconscious = true;
+      actor.defeated = true;
+      actor.isReady = false;
+      if (combatEventEnabled(ctx.pack, "DYING") && actor.majorWound === true) {
+        actor.dying = true;
+        actor.dyingSinceRound = ctx.state.round;
+      }
+      pushLog(ctx.state, {
+        kind: "DEFEAT",
+        actorId: actor.id,
+        targetId: actor.id,
+        text: actor.name + " 因 MP 透支失去战斗能力",
+        data: { rollType: "MP_OVERFLOW_DOWN" }
+      });
+    }
+  }
+  return true;
 }
 
 function applyDamageToParticipant(
@@ -768,6 +934,182 @@ function skillValueOf(
   return fallback;
 }
 
+function rollCombatCheck(
+  pack: CompiledRulePack,
+  rng: Rng,
+  target: number,
+  bonusDice = 0,
+  penaltyDice = 0
+): { roll: number; check: CheckOutcome; detail: string } {
+  const percentile = rollPercentile(rng, bonusDice, penaltyDice);
+  return {
+    roll: percentile.roll,
+    check: resolveCheck(pack, percentile.roll, target),
+    detail: percentile.detail
+  };
+}
+
+interface DiceModifierSource {
+  readonly label: string;
+  readonly bonusDice: number;
+  readonly penaltyDice: number;
+}
+
+function diceModifierCount(value: unknown): number {
+  if (value === true) return 1;
+  if (typeof value !== "number" || Number.isFinite(value) === false) return 0;
+  return Math.max(0, Math.min(5, Math.floor(value)));
+}
+
+/**
+ * 自定义状态提供的战斗修正。
+ * data 约定：
+ * - attackBonusDice / attackPenaltyDice
+ * - defenseBonusDice / defensePenaltyDice
+ * 布尔 true 等价于 1；数值会限制在 0–5。
+ */
+function conditionDiceModifierSources(
+  participant: CombatParticipantState,
+  side: "attack" | "defense"
+): DiceModifierSource[] {
+  const sources: DiceModifierSource[] = [];
+  for (const condition of participant.conditions ?? []) {
+    const data = condition.data ?? {};
+    const bonusDice = diceModifierCount(data[side + "BonusDice"]);
+    const penaltyDice = diceModifierCount(data[side + "PenaltyDice"]);
+    if (bonusDice === 0 && penaltyDice === 0) continue;
+    const note = condition.duration.note;
+    sources.push({
+      label:
+        typeof note === "string" && note.length > 0
+          ? note
+          : condition.type,
+      bonusDice,
+      penaltyDice
+    });
+  }
+  return sources;
+}
+
+/** 防御侧（闪避 / 反击 / 战技对抗）通用修正来源。 */
+function defenseDiceModifierSources(participant: CombatParticipantState): DiceModifierSource[] {
+  const sources: DiceModifierSource[] = [];
+  if (participant.grappledBy !== null && participant.grappledBy !== undefined) {
+    sources.push({ label: "被擒抱", bonusDice: 0, penaltyDice: 1 });
+  }
+  if (
+    (participant.conditions ?? []).some(
+      (condition) => condition.type === "INSANITY" && condition.data.penaltyDice === 1
+    )
+  ) {
+    sources.push({ label: "疯狂发作", bonusDice: 0, penaltyDice: 1 });
+  }
+  sources.push(...conditionDiceModifierSources(participant, "defense"));
+  return sources;
+}
+
+function totalDiceModifiers(sources: readonly DiceModifierSource[]): {
+  readonly bonusDice: number;
+  readonly penaltyDice: number;
+} {
+  let bonusDice = 0;
+  let penaltyDice = 0;
+  for (const source of sources) {
+    bonusDice += source.bonusDice;
+    penaltyDice += source.penaltyDice;
+  }
+  return { bonusDice, penaltyDice };
+}
+
+/** 把修正来源格式化成可读文本，写入日志避免黑箱。 */
+function modifierSourceText(sources: readonly DiceModifierSource[]): string {
+  const parts: string[] = [];
+  for (const source of sources) {
+    if (source.bonusDice === 0 && source.penaltyDice === 0) continue;
+    const dice: string[] = [];
+    if (source.bonusDice > 0) dice.push(source.bonusDice + " 奖励骰");
+    if (source.penaltyDice > 0) dice.push(source.penaltyDice + " 惩罚骰");
+    parts.push(source.label + " " + dice.join(" + "));
+  }
+  if (parts.length === 0) return "";
+  return "（修正：" + parts.join("；") + "）";
+}
+
+function isCoc7RangedAttackSkill(skill: string): boolean {
+  return skill.startsWith("FIREARMS_") || skill === "THROW";
+}
+
+function maxDamageOfExpression(source: string): number {
+  try {
+    return diceBounds(parseDice(source)).max;
+  } catch {
+    return 0;
+  }
+}
+
+function formatDiceDetail(
+  details: readonly { readonly sign: 1 | -1; readonly count: number; readonly sides: number; readonly values: readonly number[] }[]
+): string {
+  return details
+    .map((detail) => (detail.sign < 0 ? "-" : "+") + detail.count + "d" + detail.sides + "[" + detail.values.join(", ") + "]")
+    .join("  ");
+}
+
+interface PhysicalDamageOutcome {
+  readonly total: number;
+  readonly mode: "NORMAL" | "EXTREME_BLUNT" | "EXTREME_IMPALING";
+  readonly expression: string;
+  readonly detail: string;
+}
+
+/**
+ * COC7 物理伤害：
+ * - 普通成功：正常掷伤害表达式（含 DB）；
+ * - 极难 / 大成功：钝击取最大值 + DB；贯穿再额外掷一次武器伤害骰。
+ */
+function physicalDamageForAttack(
+  damageSource: string,
+  damageBonus: string,
+  damageType: ActionSubmission["damageType"],
+  attackCheck: CheckOutcome,
+  rng: Rng
+): PhysicalDamageOutcome {
+  const isExtreme = attackCheck.result === "EXTREME" || attackCheck.result === "CRITICAL";
+  const baseExpression = damageSource.replace(/\bdb\b/gi, "0");
+  const effectiveDamageBonus = /\bdb\b/i.test(damageSource) ? (damageBonus.length > 0 ? damageBonus : "0") : "0";
+
+  if (isExtreme === false) {
+    const expression = expandDamageBonus(damageSource, damageBonus);
+    const rolled = rollDice(parseDice(expression), rng);
+    return {
+      total: rolled.total,
+      mode: "NORMAL",
+      expression,
+      detail: formatDiceDetail(rolled.details)
+    };
+  }
+
+  const maxBase = maxDamageOfExpression(baseExpression);
+  const maxBonus = maxDamageOfExpression(effectiveDamageBonus);
+  if (damageType === "IMPALING") {
+    const extra = rollDice(parseDice(baseExpression), rng);
+    const total = maxBase + maxBonus + extra.total;
+    return {
+      total,
+      mode: "EXTREME_IMPALING",
+      expression: maxBase + " + DB " + maxBonus + " + 额外 " + baseExpression,
+      detail: "最大武器 " + maxBase + " + DB " + maxBonus + " + 额外 " + baseExpression + " = " + extra.total
+    };
+  }
+  const total = maxBase + maxBonus;
+  return {
+    total,
+    mode: "EXTREME_BLUNT",
+    expression: String(maxBase) + " + DB " + String(maxBonus),
+    detail: "最大武器 " + maxBase + " + DB " + maxBonus + " = " + total
+  };
+}
+
 function resolveAttack(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -776,29 +1118,9 @@ function resolveAttack(
 ): void {
   const state = ctx.state;
   const rng = nextRollRng(state, `attack:${actor.id}`);
+  const isCoc7 = ctx.pack.system === "COC7";
   const skillName = submission.skill ?? "DANMAKU";
   const target = skillValueOf(ctx.pack, actor, skillName, 0) + (submission.accuracyMod ?? 0);
-  const attackRoll = rollDie(rng, 100);
-  const attackCheck = resolveCheck(ctx.pack, attackRoll, target);
-
-  pushLog(state, {
-    kind: "CHECK",
-    actorId: actor.id,
-    targetId: defender.id,
-    text: `攻击检定：${actor.name} 使用「${skillName}」掷 1d100 = ${attackRoll}，目标值 ${target} → ${attackCheck.result}`,
-    data: { rollType: "ATTACK", skill: skillName, roll: attackRoll, target, result: attackCheck.result }
-  });
-
-  if (isSuccess(attackCheck.result) === false) {
-    pushLog(state, {
-      kind: "ACTION",
-      actorId: actor.id,
-      targetId: defender.id,
-      text: `攻击落空：${actor.name} 的 1d100 = ${attackRoll} 未通过「${skillName}」检定`,
-      data: { rollType: "ATTACK", roll: attackRoll, target }
-    });
-    return;
-  }
 
   let reaction = reactionFor(ctx, defender.id);
   const blockedEvent = disabledReactionFor(ctx.pack, reaction.type);
@@ -811,21 +1133,225 @@ function resolveAttack(
     });
     reaction = { type: "PASS" };
   }
-  let defenseSuccess = false;
 
-  const isCoc7 = ctx.pack.system === "COC7";
+  // COC7：火器不能被闪避/反击；服务端应只下发 PASS / SEEK_COVER，引擎再做一道防线。
+  if (
+    isCoc7 &&
+    isCoc7RangedAttackSkill(skillName) &&
+    (reaction.type === "DODGE" || reaction.type === "COUNTER")
+  ) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: defender.name + " 不能对火器使用" + (reaction.type === "DODGE" ? "闪避" : "反击") + "，按未应对处理"
+    });
+    reaction = { type: "PASS" };
+  }
+
+  const attackModifierSources: DiceModifierSource[] = [];
+  const submittedBonusDice = diceModifierCount(submission.bonusDice);
+  const submittedPenaltyDice = diceModifierCount(submission.penaltyDice);
+  if (submittedBonusDice > 0 || submittedPenaltyDice > 0) {
+    attackModifierSources.push({
+      label:
+        submission.bonusDiceSource !== undefined && submission.bonusDiceSource.length > 0
+          ? submission.bonusDiceSource
+          : (submission.shotCount ?? 1) > 1
+            ? "连射"
+            : "行动修正",
+      bonusDice: submittedBonusDice,
+      penaltyDice: submittedPenaltyDice
+    });
+  }
+  if (isCoc7 && actor.grappledBy !== null && actor.grappledBy !== undefined) {
+    attackModifierSources.push({ label: "被擒抱", bonusDice: 0, penaltyDice: 1 });
+  }
+  if (
+    isCoc7 &&
+    (actor.conditions ?? []).some(
+      (condition) => condition.type === "INSANITY" && condition.data.penaltyDice === 1
+    )
+  ) {
+    attackModifierSources.push({ label: "疯狂发作", bonusDice: 0, penaltyDice: 1 });
+  }
+  attackModifierSources.push(...conditionDiceModifierSources(actor, "attack"));
+  let coverForfeited = false;
+
+  // 寻找掩体：成功使攻击者本次射击承受 1 枚惩罚骰；无论成功与否都放弃下一次攻击。
+  // 同一动作内多次射击共享同一次掩体检定。
+  if (reaction.type === "SEEK_COVER") {
+    if (isCoc7 === false || isCoc7RangedAttackSkill(skillName) === false) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: defender.id,
+        targetId: actor.id,
+        text: defender.name + " 的寻找掩体不适用于本次攻击，按未应对处理"
+      });
+      reaction = { type: "PASS" };
+    } else {
+      const coverKey = actor.id + ":" + defender.id;
+      let coverResult = ctx.coverCache?.get(coverKey);
+      if (coverResult === undefined) {
+        const coverTarget = skillValueOf(ctx.pack, defender, reaction.skill ?? "DODGE", defender.attributes.dex);
+        const cover = rollCombatCheck(ctx.pack, rng, coverTarget);
+        const coverSuccess = isSuccess(cover.check.result);
+        coverResult = { penaltyDice: coverSuccess ? 1 : 0, forfeited: true };
+        ctx.coverCache?.set(coverKey, coverResult);
+        pushLog(state, {
+          kind: "CHECK",
+          actorId: defender.id,
+          targetId: actor.id,
+          text:
+            "寻找掩体检定：" +
+            defender.name +
+            " 掷 1d100 = " +
+            cover.roll +
+            "，目标值 " +
+            coverTarget +
+            " → " +
+            cover.check.result +
+            (coverSuccess ? "（攻击者本次射击承受 1 枚惩罚骰）" : "（掩体失败）"),
+          data: { rollType: "SEEK_COVER", roll: cover.roll, target: coverTarget, result: cover.check.result, success: coverSuccess }
+        });
+      }
+      if (coverResult.penaltyDice > 0) {
+        attackModifierSources.push({
+          label: "目标寻找掩体",
+          bonusDice: 0,
+          penaltyDice: coverResult.penaltyDice
+        });
+      }
+      coverForfeited = coverResult.forfeited;
+    }
+  }
+
+  const shotText =
+    submission.shotCount !== undefined && submission.shotCount > 1
+      ? "（第 " + ((submission.shotIndex ?? 0) + 1) + "/" + submission.shotCount + " 发）"
+      : "";
+
+  // COC7 寡不敌众：目标本轮已经闪避/反击过，后续近战攻击 +1 奖励骰。
+  if (isCoc7 && skillName.startsWith("FIGHTING_") && (defender.reactionsThisRound ?? 0) > 0) {
+    attackModifierSources.push({ label: "寡不敌众", bonusDice: 1, penaltyDice: 0 });
+  }
+
+  const attackDice = totalDiceModifiers(attackModifierSources);
+  const attackBonusDice = attackDice.bonusDice;
+  const attackPenaltyDice = attackDice.penaltyDice;
+  const attackUsesPercentile = isCoc7 || attackBonusDice > 0 || attackPenaltyDice > 0;
+  const attack = attackUsesPercentile
+    ? rollCombatCheck(ctx.pack, rng, target, attackBonusDice, attackPenaltyDice)
+    : (() => {
+        const rawRoll = rollDie(rng, 100);
+        return { roll: rawRoll, check: resolveCheck(ctx.pack, rawRoll, target), detail: "" };
+      })();
+  const attackRoll = attack.roll;
+  const attackCheck = attack.check;
+  const attackRollDetail =
+    attackUsesPercentile && attackBonusDice + attackPenaltyDice > 0 ? "（" + attack.detail + "）" : "";
+  const attackModifierText = modifierSourceText(attackModifierSources);
+
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: defender.id,
+    text:
+      "攻击检定：" +
+      actor.name +
+      " 使用「" +
+      skillName +
+      "」掷 1d100 = " +
+      attackRoll +
+      "，目标值 " +
+      target +
+      " → " +
+      attackCheck.result +
+      attackRollDetail +
+      attackModifierText +
+      shotText,
+    data: {
+      rollType: "ATTACK",
+      skill: skillName,
+      roll: attackRoll,
+      target,
+      result: attackCheck.result,
+      shotIndex: submission.shotIndex ?? 0,
+      shotCount: submission.shotCount ?? 1,
+      modifiers: attackModifierText
+    }
+  });
+
+  if (isSuccess(attackCheck.result) === false) {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: "攻击落空：" + actor.name + " 的 1d100 = " + attackRoll + " 未通过「" + skillName + "」检定",
+      data: { rollType: "ATTACK", roll: attackRoll, target }
+    });
+    if (coverForfeited) {
+      const alreadyForfeited = (defender.skipNextAction ?? 0) > 0;
+      defender.skipNextAction = Math.max(1, defender.skipNextAction ?? 0);
+      if (alreadyForfeited === false) {
+        pushLog(state, {
+          kind: "STATUS",
+          actorId: defender.id,
+          targetId: null,
+          text: defender.name + " 寻找掩体后放弃下一次攻击",
+          data: { rollType: "SEEK_COVER_FORFEIT" }
+        });
+      }
+    }
+    return;
+  }
+
+  let defenseSuccess = false;
+  let counterDamageSource: string | null = null;
   const counterLabel = isCoc7 ? "反击" : "消弹对抗";
+
   if (reaction.type === "DODGE") {
     const dodgeTarget = skillValueOf(ctx.pack, defender, reaction.skill ?? "DODGE", defender.attributes.dex);
-    const dodgeRoll = rollDie(rng, 100);
-    const dodgeCheck = resolveCheck(ctx.pack, dodgeRoll, dodgeTarget);
-    defenseSuccess = isSuccess(dodgeCheck.result);
+    const dodgeUsesPercentile = isCoc7 || attackUsesPercentile;
+    const dodgeModifierSources = isCoc7 ? defenseDiceModifierSources(defender) : [];
+    const dodgeDice = totalDiceModifiers(dodgeModifierSources);
+    const dodgeModifierText = modifierSourceText(dodgeModifierSources);
+    const dodge = dodgeUsesPercentile
+      ? rollCombatCheck(ctx.pack, rng, dodgeTarget, dodgeDice.bonusDice, dodgeDice.penaltyDice)
+      : (() => {
+          const rawRoll = rollDie(rng, 100);
+          return { roll: rawRoll, check: resolveCheck(ctx.pack, rawRoll, dodgeTarget), detail: "" };
+        })();
+    if (isCoc7) {
+      defenseSuccess = dodge.check.rank >= attackCheck.rank;
+    } else {
+      defenseSuccess = isSuccess(dodge.check.result);
+    }
     pushLog(state, {
       kind: "CHECK",
       actorId: defender.id,
       targetId: actor.id,
-      text: `${isCoc7 ? "闪避" : "擦弹"}检定：${defender.name} 掷 1d100 = ${dodgeRoll}，目标值 ${dodgeTarget} → ${dodgeCheck.result}`,
-      data: { rollType: "DODGE", roll: dodgeRoll, target: dodgeTarget, result: dodgeCheck.result }
+      text:
+        (isCoc7 ? "闪避" : "擦弹") +
+        "检定：" +
+        defender.name +
+        " 掷 1d100 = " +
+        dodge.roll +
+        "，目标值 " +
+        dodgeTarget +
+        " → " +
+        dodge.check.result +
+        dodgeModifierText +
+        (isCoc7 ? "（攻击 " + attackCheck.result + "）" : ""),
+      data: {
+        rollType: "DODGE",
+        roll: dodge.roll,
+        target: dodgeTarget,
+        result: dodge.check.result,
+        attackResult: attackCheck.result,
+        success: defenseSuccess,
+        modifiers: dodgeModifierText
+      }
     });
   } else if (reaction.type === "COUNTER") {
     const counterTarget = skillValueOf(
@@ -834,40 +1360,179 @@ function resolveAttack(
       reaction.skill ?? (isCoc7 ? "FIGHTING_BRAWL" : "DANMAKU"),
       defender.attributes.dex
     );
-    const counterRoll = rollDie(rng, 100);
-    const opposed = resolveOpposed(
-      ctx.pack,
-      { roll: attackRoll, target },
-      { roll: counterRoll, target: counterTarget }
-    );
-    defenseSuccess = opposed.winner === "DEFENDER";
-    pushLog(state, {
-      kind: "CHECK",
-      actorId: defender.id,
-      targetId: actor.id,
-      text: `${counterLabel}对抗：攻击方 ${attackRoll}/${target} vs ${defender.name} ${counterRoll}/${counterTarget} → ${defender.name}${defenseSuccess ? "成功" : "失败"}`,
-      data: { rollType: "COUNTER", attackRoll, attackTarget: target, counterRoll, counterTarget, success: defenseSuccess }
-    });
+    if (isCoc7 || attackUsesPercentile) {
+      const counterModifierSources = isCoc7 ? defenseDiceModifierSources(defender) : [];
+      const counterDice = totalDiceModifiers(counterModifierSources);
+      const counterModifierText = modifierSourceText(counterModifierSources);
+      const counter = rollCombatCheck(
+        ctx.pack,
+        rng,
+        counterTarget,
+        counterDice.bonusDice,
+        counterDice.penaltyDice
+      );
+      if (isCoc7) {
+        defenseSuccess = counter.check.rank > attackCheck.rank;
+        if (defenseSuccess) counterDamageSource = reaction.damage ?? "1d3+db";
+      } else {
+        const opposed = resolveOpposed(
+          ctx.pack,
+          { roll: attackRoll, target },
+          { roll: counter.roll, target: counterTarget }
+        );
+        defenseSuccess = opposed.winner === "DEFENDER";
+      }
+      pushLog(state, {
+        kind: "CHECK",
+        actorId: defender.id,
+        targetId: actor.id,
+        text:
+          counterLabel +
+          "对抗：攻击方 " +
+          attackRoll +
+          "/" +
+          target +
+          " vs " +
+          defender.name +
+          " " +
+          counter.roll +
+          "/" +
+          counterTarget +
+          " → " +
+          defender.name +
+          (defenseSuccess ? "成功" : "失败") +
+          counterModifierText,
+        data: {
+          rollType: "COUNTER",
+          attackRoll,
+          attackTarget: target,
+          counterRoll: counter.roll,
+          counterTarget,
+          success: defenseSuccess,
+          attackResult: attackCheck.result,
+          counterResult: counter.check.result,
+          modifiers: counterModifierText
+        }
+      });
+    } else {
+      const counterRoll = rollDie(rng, 100);
+      const opposed = resolveOpposed(
+        ctx.pack,
+        { roll: attackRoll, target },
+        { roll: counterRoll, target: counterTarget }
+      );
+      defenseSuccess = opposed.winner === "DEFENDER";
+      pushLog(state, {
+        kind: "CHECK",
+        actorId: defender.id,
+        targetId: actor.id,
+        text:
+          counterLabel +
+          "对抗：攻击方 " +
+          attackRoll +
+          "/" +
+          target +
+          " vs " +
+          defender.name +
+          " " +
+          counterRoll +
+          "/" +
+          counterTarget +
+          " → " +
+          defender.name +
+          (defenseSuccess ? "成功" : "失败"),
+        data: { rollType: "COUNTER", attackRoll, attackTarget: target, counterRoll, counterTarget, success: defenseSuccess }
+      });
+    }
   }
 
-  const damageSource = expandDamageBonus(submission.damage ?? "0", actor.damageBonus);
-  const damageRng = nextRollRng(state, `damage:${actor.id}:${defender.id}`);
-  const damageRoll = rollDice(parseDice(damageSource), damageRng);
-  const detailText = damageRoll.details
-    .map((detail) => (detail.sign < 0 ? "-" : "+") + detail.count + "d" + detail.sides + "[" + detail.values.join(", ") + "]")
-    .join("  ");
-  pushLog(state, {
-    kind: "DAMAGE",
-    actorId: actor.id,
-    targetId: defender.id,
-    text: `伤害骰：${actor.name} 的「${damageSource}」= ${damageRoll.total}（${detailText}），范围 ${damageRoll.min}~${damageRoll.max}`,
-    data: { rollType: "DAMAGE_ROLL", expression: damageSource, roll: damageRoll.total, min: damageRoll.min, max: damageRoll.max }
-  });
+  if (isCoc7 && (reaction.type === "DODGE" || reaction.type === "COUNTER")) {
+    defender.reactionsThisRound = (defender.reactionsThisRound ?? 0) + 1;
+  }
+
+  let damageTotal = 0;
+  let damageExpression = "";
+  let damageDetail = "";
+  let damageModeText = "";
+  if (isCoc7) {
+    const physical = physicalDamageForAttack(
+      submission.damage ?? "0",
+      actor.damageBonus,
+      submission.damageType,
+      attackCheck,
+      nextRollRng(state, `damage:${actor.id}:${defender.id}`)
+    );
+    damageTotal = physical.total;
+    damageExpression = physical.expression;
+    damageDetail = physical.detail;
+    damageModeText =
+      physical.mode === "NORMAL" ? "" : physical.mode === "EXTREME_IMPALING" ? "（贯穿极限伤害）" : "（钝击极限伤害）";
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: defender.id,
+      text:
+        "伤害骰：" +
+        actor.name +
+        " 的「" +
+        damageExpression +
+        "」= " +
+        damageTotal +
+        damageModeText +
+        "（" +
+        damageDetail +
+        "）" +
+        shotText,
+      data: {
+        rollType: "DAMAGE_ROLL",
+        expression: damageExpression,
+        roll: damageTotal,
+        mode: physical.mode,
+        shotIndex: submission.shotIndex ?? 0,
+        shotCount: submission.shotCount ?? 1
+      }
+    });
+  } else {
+    const damageSource = expandDamageBonus(submission.damage ?? "0", actor.damageBonus);
+    const damageRng = nextRollRng(state, `damage:${actor.id}:${defender.id}`);
+    const damageRoll = rollDice(parseDice(damageSource), damageRng);
+    damageTotal = damageRoll.total;
+    damageExpression = damageSource;
+    damageDetail = formatDiceDetail(damageRoll.details);
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: defender.id,
+      text:
+        "伤害骰：" +
+        actor.name +
+        " 的「" +
+        damageSource +
+        "」= " +
+        damageRoll.total +
+        "（" +
+        damageDetail +
+        "），范围 " +
+        damageRoll.min +
+        "~" +
+        damageRoll.max +
+        shotText,
+      data: {
+        rollType: "DAMAGE_ROLL",
+        expression: damageSource,
+        roll: damageRoll.total,
+        min: damageRoll.min,
+        max: damageRoll.max,
+        shotIndex: submission.shotIndex ?? 0,
+        shotCount: submission.shotCount ?? 1
+      }
+    });
+  }
 
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
 
   const outcome = applyDamagePipeline(ctx.pack, {
-    baseDamage: damageRoll.total,
+    baseDamage: damageTotal,
     defense: reaction.type,
     defenseSuccess,
     shieldMultiplier,
@@ -875,26 +1540,42 @@ function resolveAttack(
   });
 
   if (outcome.mpCost > 0) defender.mp = Math.max(0, defender.mp - outcome.mpCost);
-  if (outcome.mpGained > 0) {
-    defender.mp = Math.min(defender.maxMp, defender.mp + outcome.mpGained);
-  }
+  if (outcome.mpGained > 0) defender.mp = Math.min(defender.maxMp, defender.mp + outcome.mpGained);
 
   const armorResult = absorbWithArmor(defender, outcome.damage);
   const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining);
   const defenseText =
     reaction.type === "PASS"
       ? "未应对"
-      : (reaction.type === "DODGE" ? "闪避" : reaction.type === "COUNTER" ? counterLabel : "防御") +
-        (defenseSuccess ? "成功" : "失败");
+      : reaction.type === "DODGE"
+        ? (isCoc7 ? "闪避" : "擦弹") + (defenseSuccess ? "成功" : "失败")
+        : reaction.type === "COUNTER"
+          ? counterLabel + (defenseSuccess ? "成功" : "失败")
+          : reaction.type === "SEEK_COVER"
+            ? "寻找掩体"
+            : "防御" + (defenseSuccess ? "成功" : "失败");
 
   pushLog(state, {
     kind: "DAMAGE",
     actorId: actor.id,
     targetId: defender.id,
-    text: `伤害结算：${actor.name} → ${defender.name}，应对=${defenseText}，原始 ${damageRoll.total} → 最终 ${outcome.damage}${armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed + "（剩余 " + defender.armor + "）" : ""}${outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）"}`,
+    text:
+      "伤害结算：" +
+      actor.name +
+      " → " +
+      defender.name +
+      "，应对=" +
+      defenseText +
+      "，原始 " +
+      damageTotal +
+      " → 最终 " +
+      outcome.damage +
+      (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed + "（剩余 " + defender.armor + "）" : "") +
+      (outcome.steps.length === 0 ? "" : "（" + outcome.steps.join("；") + "）") +
+      shotText,
     data: {
       rollType: "DAMAGE_SETTLE",
-      rawDamage: damageRoll.total,
+      rawDamage: damageTotal,
       damage: outcome.damage,
       armorAbsorbed: armorResult.absorbed,
       armorRemaining: defender.armor,
@@ -906,6 +1587,203 @@ function resolveAttack(
       mpCost: outcome.mpCost,
       mpGained: outcome.mpGained
     }
+  });
+
+  // COC7 反击成功：防守方对攻击者造成一次常规伤害。
+  if (counterDamageSource !== null) {
+    const counterExpression = expandDamageBonus(counterDamageSource, defender.damageBonus);
+    const counterRoll = rollDice(parseDice(counterExpression), nextRollRng(state, `counter-damage:${defender.id}:${actor.id}`));
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: "反击伤害骰：" + defender.name + " 的「" + counterExpression + "」= " + counterRoll.total + "（" + formatDiceDetail(counterRoll.details) + "）",
+      data: { rollType: "COUNTER_DAMAGE_ROLL", expression: counterExpression, roll: counterRoll.total }
+    });
+    const counterArmor = absorbWithArmor(actor, counterRoll.total);
+    const counterApplied = applyDamageToParticipant(ctx, actor, counterArmor.remaining);
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: defender.id,
+      targetId: actor.id,
+      text:
+        "反击伤害结算：" +
+        defender.name +
+        " → " +
+        actor.name +
+        "，最终 " +
+        Math.max(0, counterRoll.total - counterArmor.absorbed) +
+        (counterArmor.absorbed > 0 ? "，护甲吸收 " + counterArmor.absorbed : ""),
+      data: {
+        rollType: "COUNTER_DAMAGE_SETTLE",
+        rawDamage: counterRoll.total,
+        armorAbsorbed: counterArmor.absorbed,
+        toHp: counterApplied.toHp
+      }
+    });
+  }
+
+  if (coverForfeited) {
+    const alreadyForfeited = (defender.skipNextAction ?? 0) > 0;
+    defender.skipNextAction = Math.max(1, defender.skipNextAction ?? 0);
+    if (alreadyForfeited === false) {
+      pushLog(state, {
+        kind: "STATUS",
+        actorId: defender.id,
+        targetId: null,
+        text: defender.name + " 寻找掩体后放弃下一次攻击",
+        data: { rollType: "SEEK_COVER_FORFEIT" }
+      });
+    }
+  }
+}
+
+function resolveManeuver(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  defender: CombatParticipantState
+): void {
+  const state = ctx.state;
+  if (ctx.pack.system !== "COC7") {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: "只有 COC7 支持战技"
+    });
+    return;
+  }
+  const maneuver = submission.maneuver;
+  if (maneuver === undefined) {
+    pushLog(state, { kind: "SYSTEM", actorId: actor.id, targetId: defender.id, text: "缺少战技类型" });
+    return;
+  }
+  const actorBuild = coc7Build(actor.attributes.str + actor.attributes.siz);
+  const defenderBuild = coc7Build(defender.attributes.str + defender.attributes.siz);
+  if (defenderBuild >= actorBuild + 3) {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: actor.name + " 对 " + defender.name + " 使用战技失败：对方体格高 3 点以上，战技无法进行",
+      data: { rollType: "MANEUVER", maneuver, impossible: true }
+    });
+    return;
+  }
+  const buildPenalty = Math.min(2, Math.max(0, defenderBuild - actorBuild));
+  const grapplePenalty = actor.grappledBy !== null && actor.grappledBy !== undefined ? 1 : 0;
+  const penaltyDice = buildPenalty + grapplePenalty;
+  const rng = nextRollRng(state, `maneuver:${actor.id}:${defender.id}`);
+  const target = skillValueOf(ctx.pack, actor, "FIGHTING_BRAWL", actor.attributes.dex);
+  const attack = rollCombatCheck(ctx.pack, rng, target, 0, penaltyDice);
+  const labels: Record<NonNullable<ActionSubmission["maneuver"]>, string> = {
+    DISARM: "缴械",
+    TRIP: "踢倒",
+    GRAPPLE: "擒拿"
+  };
+  const label = labels[maneuver];
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: defender.id,
+    text:
+      "战技（" +
+      label +
+      "）检定：" +
+      actor.name +
+      " 掷 1d100 = " +
+      attack.roll +
+      "，目标值 " +
+      target +
+      "（体格差惩罚骰 " +
+      penaltyDice +
+      "）→ " +
+      attack.check.result,
+    data: { rollType: "MANEUVER_ATTACK", maneuver, roll: attack.roll, target, result: attack.check.result, penaltyDice }
+  });
+  if (isSuccess(attack.check.result) === false) {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: actor.name + " 的战技（" + label + "）失败",
+      data: { rollType: "MANEUVER", maneuver, success: false }
+    });
+    return;
+  }
+
+  let reaction = reactionFor(ctx, defender.id);
+  if (reaction.type === "SEEK_COVER" || reaction.type === "DEFEND") reaction = { type: "PASS" };
+  let defenderWins = false;
+  if (reaction.type === "DODGE") {
+    const dodgeTarget = skillValueOf(ctx.pack, defender, reaction.skill ?? "DODGE", defender.attributes.dex);
+    const dodge = rollCombatCheck(ctx.pack, rng, dodgeTarget);
+    defenderWins = dodge.check.rank >= attack.check.rank;
+    defender.reactionsThisRound = (defender.reactionsThisRound ?? 0) + 1;
+    pushLog(state, {
+      kind: "CHECK",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: "战技闪避检定：" + defender.name + " 掷 1d100 = " + dodge.roll + "，目标值 " + dodgeTarget + " → " + dodge.check.result,
+      data: { rollType: "MANEUVER_DODGE", roll: dodge.roll, target: dodgeTarget, result: dodge.check.result, success: defenderWins }
+    });
+  } else if (reaction.type === "COUNTER") {
+    const counterTarget = skillValueOf(
+      ctx.pack,
+      defender,
+      reaction.skill ?? "FIGHTING_BRAWL",
+      defender.attributes.dex
+    );
+    const counter = rollCombatCheck(ctx.pack, rng, counterTarget);
+    defenderWins = counter.check.rank > attack.check.rank;
+    defender.reactionsThisRound = (defender.reactionsThisRound ?? 0) + 1;
+    pushLog(state, {
+      kind: "CHECK",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: "战技反击对抗：" + defender.name + " 掷 1d100 = " + counter.roll + "，目标值 " + counterTarget + " → " + counter.check.result,
+      data: { rollType: "MANEUVER_COUNTER", roll: counter.roll, target: counterTarget, result: counter.check.result, success: defenderWins }
+    });
+  } else {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: defender.name + " 未应对战技",
+      data: { rollType: "MANEUVER", success: false }
+    });
+  }
+
+  if (defenderWins) {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: defender.name + " 化解了" + actor.name + " 的战技（" + label + "）",
+      data: { rollType: "MANEUVER", maneuver, success: false }
+    });
+    return;
+  }
+
+  if (maneuver === "TRIP") {
+    defender.prone = true;
+  } else if (maneuver === "GRAPPLE") {
+    defender.grappledBy = actor.id;
+  } else {
+    defender.disarmed = true;
+  }
+  pushLog(state, {
+    kind: "ACTION",
+    actorId: actor.id,
+    targetId: defender.id,
+    text:
+      actor.name +
+      " 的战技（" +
+      label +
+      "）成功：" +
+      (maneuver === "TRIP" ? defender.name + " 倒地" : maneuver === "GRAPPLE" ? defender.name + " 被擒抱" : defender.name + " 被缴械"),
+    data: { rollType: "MANEUVER", maneuver, success: true }
   });
 }
 
@@ -1205,6 +2083,22 @@ export function reactionTargetIdsForAction(
   const requestedTargetId = action.targetId ?? null;
 
   if (action.kind === "DANMAKU") {
+    if (action.routine !== undefined && action.routine.length > 0) {
+      const ids = new Set<string>();
+      for (const step of action.routine) {
+        if (step.targetId === actor.id) continue;
+        const target = findParticipant(state, step.targetId);
+        if (target === undefined || target.defeated) continue;
+        ids.add(target.id);
+      }
+      return [...ids];
+    }
+    if (requestedTargetId === null || requestedTargetId === actor.id) return [];
+    const target = findParticipant(state, requestedTargetId);
+    return target === undefined || target.defeated ? [] : [target.id];
+  }
+
+  if (action.kind === "MANEUVER") {
     if (requestedTargetId === null || requestedTargetId === actor.id) return [];
     const target = findParticipant(state, requestedTargetId);
     return target === undefined || target.defeated ? [] : [target.id];
@@ -1467,16 +2361,20 @@ export function applyForcedSkips(state: CombatState): void {
     if (participant.defeated || participant.isReady === false) continue;
     const stun = participant.stunActions ?? 0;
     const control = participant.controlActions ?? 0;
-    if (stun + control <= 0) continue;
+    const skip = participant.skipNextAction ?? 0;
+    if (stun + control + skip <= 0) continue;
     if (state.pending[participant.id] !== undefined) continue;
     if (stun > 0) participant.stunActions = stun - 1;
-    else participant.controlActions = control - 1;
+    else if (control > 0) participant.controlActions = control - 1;
+    else participant.skipNextAction = Math.max(0, skip - 1);
     state.pending[participant.id] = { actorId: participant.id, kind: "PASS" };
     pushLog(state, {
       kind: "STATUS",
       actorId: participant.id,
       targetId: null,
-      text: participant.name + " 因" + (stun > 0 ? "眩晕" : "控制") + "跳过行动"
+      text:
+        participant.name +
+        (stun > 0 ? " 因眩晕跳过行动" : control > 0 ? " 因控制跳过行动" : " 因寻找掩体放弃下一次攻击")
     });
   }
 }
@@ -1508,7 +2406,7 @@ function resolveMagic(
   } catch {
     sanCost = 0;
   }
-  actor.mp = Math.max(0, actor.mp - mpCost);
+  if (spendCombatMagicPoints(ctx, actor, mpCost, "法术「" + spell.name + "」") === false) return;
   actor.san = Math.max(0, actor.san - sanCost);
 
   resolveTargetedEffects(ctx, actor, submission, spell, { mpCost, sanCost }, { logKind: "SPELLCARD", verb: "施放" });
@@ -1550,7 +2448,7 @@ function resolveItem(
       sanCost = 0;
     }
   }
-  actor.mp = Math.max(0, actor.mp - mpCost);
+  if (spendCombatMagicPoints(ctx, actor, mpCost, "道具「" + itemName + "」") === false) return;
   actor.san = Math.max(0, actor.san - sanCost);
 
   const targetScope = submission.targetScope ?? (submission.targeting === "SELF" ? "SELF" : "ONE");
@@ -1676,6 +2574,19 @@ function resolveOne(
       actor.isReady = false;
       pushLog(state, { kind: "DEFEAT", actorId: actor.id, targetId: null, text: `${actor.name} 脱离了战斗` });
       return;
+    case "MANEUVER": {
+      if (targetId === null) {
+        pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: `${actor.name} 的战技没有目标` });
+        return;
+      }
+      const defender = findParticipant(state, targetId);
+      if (defender === undefined || defender.defeated) {
+        pushLog(state, { kind: "ACTION", actorId: actor.id, targetId, text: `${actor.name} 的战技目标已不在场` });
+        return;
+      }
+      resolveManeuver(ctx, actor, submission, defender);
+      return;
+    }
     case "ITEM": {
       if (submission.effects !== undefined && submission.effects.length > 0) {
         resolveItem(ctx, actor, submission);
@@ -1703,6 +2614,47 @@ function resolveOne(
       });
       return;
     case "DANMAKU": {
+      // U-3：多目标 / 多技能 routine：按步骤逐条结算，每步可换技能 / 目标 / 连射。
+      if (submission.routine !== undefined && submission.routine.length > 0) {
+        for (const step of submission.routine) {
+          if (actor.defeated) break;
+          const stepTarget = findParticipant(state, step.targetId);
+          if (stepTarget === undefined || stepTarget.defeated) {
+            pushLog(state, {
+              kind: "ACTION",
+              actorId: actor.id,
+              targetId: step.targetId,
+              text: actor.name + " 的攻击目标已不在场"
+            });
+            continue;
+          }
+          const stepSkill = step.skill ?? submission.skill;
+          const shotCount = Math.max(1, Math.min(3, Math.floor(step.shots ?? 1)));
+          for (let shotIndex = 0; shotIndex < shotCount; shotIndex += 1) {
+            if (actor.defeated || stepTarget.defeated) break;
+            resolveAttack(
+              ctx,
+              actor,
+              {
+                actorId: actor.id,
+                kind: "DANMAKU",
+                targetId: step.targetId,
+                skill: stepSkill,
+                damage: step.damage ?? submission.damage,
+                damageType: step.damageType ?? submission.damageType,
+                accuracyMod: step.accuracyMod,
+                bonusDice: step.bonusDice,
+                bonusDiceSource: step.bonusDiceSource,
+                penaltyDice: (step.penaltyDice ?? 0) + (shotCount > 1 ? 1 : 0),
+                shotIndex,
+                shotCount
+              },
+              stepTarget
+            );
+          }
+        }
+        return;
+      }
       if (targetId === null) {
         pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: `${actor.name} 的弹幕没有目标` });
         return;
@@ -1712,7 +2664,22 @@ function resolveOne(
         pushLog(state, { kind: "ACTION", actorId: actor.id, targetId, text: `${actor.name} 的目标已不在场` });
         return;
       }
-      resolveAttack(ctx, actor, submission, defender);
+      const shotCount = Math.max(1, Math.min(3, Math.floor(submission.shots ?? 1)));
+      for (let shotIndex = 0; shotIndex < shotCount; shotIndex += 1) {
+        if (actor.defeated || defender.defeated) break;
+        resolveAttack(
+          ctx,
+          actor,
+          {
+            ...submission,
+            shots: undefined,
+            penaltyDice: (submission.penaltyDice ?? 0) + (shotCount > 1 ? 1 : 0),
+            shotIndex,
+            shotCount
+          },
+          defender
+        );
+      }
       return;
     }
   }
@@ -1743,7 +2710,8 @@ export function resolveImmediateAction(
     state,
     reactions,
     queue: [action],
-    cancelled: new Set<string>()
+    cancelled: new Set<string>(),
+    coverCache: new Map()
   };
   const acted: string[] = [];
   while (ctx.queue.length > 0) {
@@ -1806,7 +2774,14 @@ export function resolvePending(
     if (submission !== undefined) queue.push(submission);
   }
 
-  const ctx: ResolveContext = { pack, state, reactions, queue, cancelled: new Set<string>() };
+  const ctx: ResolveContext = {
+    pack,
+    state,
+    reactions,
+    queue,
+    cancelled: new Set<string>(),
+    coverCache: new Map()
+  };
   state.pending = {};
 
   for (const participant of order) applyStartOfTurnEffects(ctx, participant);
@@ -1833,12 +2808,19 @@ export function resolvePending(
     if (participant.defeated) continue;
     const submission = submissions[participant.id];
     const kind = submission?.kind ?? "PASS";
-    const costKind = kind === "OUT_OF_RULE" || kind === "MAGIC" ? "SPELLCARD" : kind;
+    const costKind =
+      kind === "OUT_OF_RULE" || kind === "MAGIC"
+        ? "SPELLCARD"
+        : kind === "MANEUVER"
+          ? "DANMAKU"
+          : kind;
     const cost = submission?.atbCost ?? resolveActionCost(pack, costKind, participant.vars);
     consumeAction(participant, cost);
   }
 
   state.round += 1;
+  for (const participant of state.participants) participant.reactionsThisRound = 0;
+  resolveRoundEndDotDamage(pack, state);
   expireRoundTimers(state);
   resolveDyingChecks(pack, state);
   state.phase = checkEnd(state) ? "ENDED" : "ATB_CHARGING";
@@ -1866,7 +2848,7 @@ export function buildInitiativeOrder(
         score = item.attributes.dex;
       }
     }
-    return { id: item.id, score };
+    return { id: item.id, score: score + (item.initiativeMod ?? 0) };
   });
   // RANDOM 的随机键必须预生成，不能塞进排序比较器（比较器会被调用多次且顺序不定）
   const tieKeys = new Map<string, number>();
@@ -1899,6 +2881,7 @@ function syncInitiativeReady(state: CombatState): void {
 
 /** 开一轮：重排顺序、把指针归零。 */
 export function beginInitiativeRound(pack: CompiledRulePack, state: CombatState): void {
+  for (const participant of state.participants) participant.reactionsThisRound = 0;
   state.initiativeOrder = buildInitiativeOrder(pack, state);
   state.activeIndex = 0;
   state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
@@ -1936,6 +2919,7 @@ export function endTurn(
     state.initiativeOrder = buildInitiativeOrder(pack, state);
     state.activeIndex = 0;
     state.round += 1;
+    resolveRoundEndDotDamage(pack, state);
     expireRoundTimers(state);
     resolveDyingChecks(pack, state);
     state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';
@@ -1967,7 +2951,8 @@ export function resolveInitiativeTurn(
     state,
     reactions,
     queue: submission === undefined ? [] : [submission],
-    cancelled: new Set<string>()
+    cancelled: new Set<string>(),
+    coverCache: new Map()
   };
   applyStartOfTurnEffects(ctx, actor);
   delete state.pending[actorId];

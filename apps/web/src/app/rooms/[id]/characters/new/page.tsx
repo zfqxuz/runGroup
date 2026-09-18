@@ -5,6 +5,7 @@ import CharacterBuilder from "@/components/room/CharacterBuilder";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { availableEra, toOccupationView } from "@/shared/occupation";
+import { specialtyCandidatesOf } from "@/shared/specialty";
 
 export const dynamic = "force-dynamic";
 
@@ -55,6 +56,7 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
         pack={pack}
         chargenMethod={room.chargenMethod ?? "destiny5"}
         era={room.era}
+        specialtyCandidates={specialtyCandidatesOf(room.ruleOverride)}
         occupations={occupations.map(toOccupationView)}
         mode="CREATE"
         returnTo={"/rooms/" + room.id + "/characters/new"}

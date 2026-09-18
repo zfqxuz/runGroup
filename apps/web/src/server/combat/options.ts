@@ -1,9 +1,10 @@
 import type { ActionSubmission } from "@touhou/combat";
 import { parseDice } from "@touhou/formula";
-import { spellEffectsOf, spellTargeting, type CompiledRulePack } from "@touhou/rules";
+import { spellEffectsOf, spellTargeting, spendMagicPoints, type CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
+import type { WeaponDamageBand, WeaponDamageType } from "@/shared/card";
 
-export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "FLEE";
+export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "FLEE";
 
 export interface CombatOptionParticipant {
   readonly id: string;
@@ -20,28 +21,94 @@ export interface WeaponLike {
 export interface CombatAttackOption {
   readonly skillId: string;
   readonly damage: string;
+  readonly damageType: WeaponDamageType;
+  readonly damageBands: readonly WeaponDamageBand[];
+  readonly shots?: readonly number[];
   readonly weaponName: string | null;
   readonly source: "WEAPON" | "UNARMED" | "DEFAULT";
 }
 
-/**
- * 从武器卡的伤害文本中取第一个可解析的表达式。
- * 例如猎枪的 "4D6/2D6/1D6" 按近距离伤害 4D6 处理；"1D10+DB" 保留 DB 交给战斗引擎替换。
- */
-function weaponDamageOf(weapon: WeaponLike): string | null {
-  const stats = (weapon.stats ?? {}) as { readonly damage?: unknown };
+function parseDamageBands(weapon: WeaponLike): readonly WeaponDamageBand[] {
+  const stats = (weapon.stats ?? {}) as {
+    readonly damage?: unknown;
+    readonly damageBands?: unknown;
+    readonly range?: unknown;
+  };
+  const explicit = stats.damageBands;
+  if (Array.isArray(explicit)) {
+    const bands: WeaponDamageBand[] = [];
+    for (const raw of explicit) {
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) continue;
+      const record = raw as Record<string, unknown>;
+      const label = nonEmptyString(record.label) ?? "伤害";
+      const expression = nonEmptyString(record.expression);
+      if (expression === null) continue;
+      const rawMax = record.maxFeet;
+      const maxFeet =
+        rawMax === "DEX"
+          ? "DEX"
+          : typeof rawMax === "number" && Number.isFinite(rawMax)
+            ? rawMax
+            : null;
+      try {
+        parseDice(expression.replace(/db/gi, "0"));
+      } catch {
+        continue;
+      }
+      bands.push({ label, expression, maxFeet });
+    }
+    if (bands.length > 0) return bands;
+  }
+
   const damage = nonEmptyString(stats.damage);
-  if (damage === null) return null;
+  if (damage === null) return [];
   const candidates = damage.split(/[/／;；|]/).map((part) => part.trim()).filter((part) => part.length > 0);
-  for (const candidate of candidates) {
+  const parsed = candidates.filter((candidate) => {
     try {
       parseDice(candidate.replace(/db/gi, "0"));
-      return candidate;
+      return true;
     } catch {
-      // 尝试下一个伤害档位。
+      return false;
     }
+  });
+  if (parsed.length === 0) return [];
+  if (parsed.length === 1) return [{ label: "普通", expression: parsed[0] as string, maxFeet: null }];
+  return parsed.map((expression, index) => ({
+    label: index === 0 ? "近距离" : index === 1 ? "普通" : "远距离",
+    expression,
+    maxFeet: index === 0 ? "DEX" : null
+  }));
+}
+
+function inferWeaponDamageType(weapon: WeaponLike, skillId: string): WeaponDamageType {
+  const stats = (weapon.stats ?? {}) as {
+    readonly damageType?: unknown;
+    readonly impale?: unknown;
+    readonly type?: unknown;
+  };
+  const explicit = nonEmptyString(stats.damageType);
+  if (explicit === "BLUNT" || explicit === "IMPALING" || explicit === "NONE") return explicit;
+  if (stats.impale === true) return "IMPALING";
+  const name = weapon.name.toLowerCase();
+  if (skillId.startsWith("FIREARMS_")) {
+    if (/霰弹|shotgun|鸟枪/.test(name)) return "NONE";
+    return "IMPALING";
   }
-  return null;
+  if (/剑|刀|匕首|矛|枪头|箭|blade|sword|knife|dagger|spear/.test(name)) return "IMPALING";
+  return "BLUNT";
+}
+
+function shotsForWeapon(weapon: WeaponLike, skillId: string): readonly number[] | undefined {
+  const stats = (weapon.stats ?? {}) as { readonly shots?: unknown; readonly attacks?: unknown };
+  if (Array.isArray(stats.shots)) {
+    const shots = stats.shots.filter((item): item is number => typeof item === "number" && Number.isInteger(item) && item > 0);
+    if (shots.length > 0) return [...new Set(shots)].sort((a, b) => a - b);
+  }
+  if (skillId === "FIREARMS_HANDGUN") return [1, 2, 3];
+  if (typeof stats.attacks === "number" && Number.isInteger(stats.attacks) && stats.attacks > 1) {
+    return Array.from({ length: stats.attacks }, (_item, index) => index + 1);
+  }
+  return undefined;
 }
 
 function defaultDamageFor(pack: CompiledRulePack, skillId: string): string {
@@ -73,19 +140,17 @@ function inferWeaponSkillId(pack: CompiledRulePack, weapon: WeaponLike): string 
   if (explicit === null ? false : known.has(explicit)) return explicit;
   const range = nonEmptyString(stats.range);
   if (pack.system === "COC7") {
+    const name = weapon.name.toLowerCase();
     if (range === "MELEE") {
-      const name = weapon.name.toLowerCase();
-      if (name.includes("斧") || name.includes("axe")) {
-        return known.has("FIGHTING_AXE") ? "FIGHTING_AXE" : null;
-      }
+      if (/剑|sword/.test(name) && known.has("格斗（剑）")) return "格斗（剑）";
+      if (/斧|axe/.test(name) && known.has("FIGHTING_AXE")) return "FIGHTING_AXE";
+      if (/矛|spear/.test(name) && known.has("格斗（矛）")) return "格斗（矛）";
+      if (/鞭|whip/.test(name) && known.has("格斗（鞭子）")) return "格斗（鞭子）";
       return known.has("FIGHTING_BRAWL") ? "FIGHTING_BRAWL" : null;
     }
     if (range === "NEAR") return known.has("FIREARMS_HANDGUN") ? "FIREARMS_HANDGUN" : null;
     if (range === "FAR") {
-      const name = weapon.name.toLowerCase();
-      if (name.includes("弓") || name.includes("bow")) {
-        return known.has("FIREARMS_BOW") ? "FIREARMS_BOW" : null;
-      }
+      if (/弓|弩|bow|crossbow/.test(name) && known.has("FIREARMS_BOW")) return "FIREARMS_BOW";
       return known.has("FIREARMS_RIFLE") ? "FIREARMS_RIFLE" : null;
     }
     return known.has("FIGHTING_BRAWL") ? "FIGHTING_BRAWL" : null;
@@ -158,11 +223,22 @@ export function attackOptionsForParticipant(
   }
   return allowedSkills.map((skillId) => {
     const weapon = weaponBySkill.get(skillId) ?? null;
-    const damage = weapon === null ? null : weaponDamageOf(weapon);
     const unarmed = weapon === null && pack.system === "COC7" && skillId === "FIGHTING_BRAWL";
+    const fallbackDamage = defaultDamageFor(pack, skillId);
+    const parsedBands = weapon === null ? [] : parseDamageBands(weapon);
+    const bands: readonly WeaponDamageBand[] =
+      parsedBands.length > 0 ? parsedBands : [{ label: "普通", expression: fallbackDamage, maxFeet: null }];
+    const damage = bands[0]?.expression ?? fallbackDamage;
+    const damageType = weapon === null
+      ? (skillId === "FIGHTING_BRAWL" ? "BLUNT" : "NONE")
+      : inferWeaponDamageType(weapon, skillId);
+    const shots = weapon === null ? undefined : shotsForWeapon(weapon, skillId);
     return {
       skillId,
-      damage: damage ?? defaultDamageFor(pack, skillId),
+      damage,
+      damageType,
+      damageBands: bands,
+      ...(shots === undefined ? {} : { shots }),
       weaponName: weapon?.name ?? (unarmed ? "徒手" : null),
       source: weapon === null ? (unarmed ? ("UNARMED" as const) : ("DEFAULT" as const)) : ("WEAPON" as const)
     };
@@ -189,16 +265,24 @@ export async function loadNpcWeaponsByParticipant(
   combatId: string,
   participants: readonly { readonly id: string; readonly kind: "PLAYER" | "NPC" }[]
 ): Promise<Map<string, readonly WeaponLike[]>> {
-  const npcIds = participants.filter((participant) => participant.kind === "NPC").map((participant) => participant.id);
-  if (npcIds.length === 0) return new Map();
+  const npcIds = new Set(
+    participants.filter((participant) => participant.kind === "NPC").map((participant) => participant.id)
+  );
+  if (npcIds.size === 0) return new Map();
   const rows = await prisma.combatParticipant.findMany({
-    where: { combatId, id: { in: npcIds } },
+    where: { combatId, isNPC: true },
     select: { id: true, npcData: true }
   });
   const output = new Map<string, readonly WeaponLike[]>();
   for (const row of rows) {
+    const data =
+      row.npcData !== null && typeof row.npcData === "object" && Array.isArray(row.npcData) === false
+        ? (row.npcData as Record<string, unknown>)
+        : {};
+    const participantId = typeof data.__participantId === "string" ? data.__participantId : row.id;
+    if (npcIds.has(participantId) === false) continue;
     const weapons = npcWeaponsFromStats(row.npcData);
-    if (weapons.length > 0) output.set(row.id, weapons);
+    if (weapons.length > 0) output.set(participantId, weapons);
   }
   return output;
 }
@@ -290,12 +374,24 @@ export function isMeleeAttackSkill(skillId: string | null | undefined): boolean 
   return skillId.startsWith("FIGHTING_");
 }
 
-/** 按本次攻击的类型过滤应对选项：远程攻击移除「反击」。 */
+/**
+ * 按本次攻击的类型过滤应对选项：
+ * - COC7 火器/投掷：不能被闪避或反击，只能不应对或寻找掩体；
+ * - 其他远程攻击：移除「反击」；
+ * - 近战：保留闪避/反击。
+ */
 export function reactionTypesForAttack(
   types: readonly CombatReactionType[],
-  attackSkill: string | null | undefined
+  attackSkill: string | null | undefined,
+  system: "COC7" | "TOUHOU" = "COC7"
 ): CombatReactionType[] {
   if (attackSkill === null || attackSkill === undefined || attackSkill.length === 0) return [...types];
+  const isRanged = attackSkill.startsWith("FIREARMS_") || attackSkill === "THROW";
+  if (system === "COC7" && isRanged) {
+    const result: CombatReactionType[] = ["PASS", "SEEK_COVER"];
+    if (types.includes("FLEE")) result.push("FLEE");
+    return result;
+  }
   if (isMeleeAttackSkill(attackSkill)) return [...types];
   return types.filter((type) => type !== "COUNTER");
 }
@@ -307,18 +403,14 @@ export function allowedReactionTypesForParticipant(
   canFlee = false,
   attackSkill: string | null = null
 ): readonly CombatReactionType[] {
-  const types: CombatReactionType[] = reactionTypesForAttack(allowedReactionTypes(pack), attackSkill);
+  const types: CombatReactionType[] = reactionTypesForAttack(allowedReactionTypes(pack), attackSkill, pack.system);
   if (types.includes("COUNTER")) {
-    if (pack.system === "COC7") {
-      const hasBrawlBase = pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
-      if (hasBrawlBase === false) {
-        return canFlee ? types.filter((type) => type !== "COUNTER").concat("FLEE") : types.filter((type) => type !== "COUNTER");
-      }
-    } else {
-      const counterSkills = attackSkills.get(participantId) ?? [];
-      if (counterSkills.length === 0) {
-        return canFlee ? types.filter((type) => type !== "COUNTER").concat("FLEE") : types.filter((type) => type !== "COUNTER");
-      }
+    const counterSkills =
+      pack.system === "COC7"
+        ? (attackSkills.get(participantId) ?? []).filter((skillId) => skillId.startsWith("FIGHTING_"))
+        : attackSkills.get(participantId) ?? [];
+    if (counterSkills.length === 0) {
+      return canFlee ? types.filter((type) => type !== "COUNTER").concat("FLEE") : types.filter((type) => type !== "COUNTER");
     }
   }
   if (canFlee && types.includes("FLEE") === false) types.push("FLEE");
@@ -360,6 +452,8 @@ export interface CombatActionContext {
       readonly faction?: string;
       readonly spells?: readonly string[];
       readonly mp?: number;
+      readonly hp?: number;
+      readonly disarmed?: boolean;
     }[];
   };
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
@@ -424,7 +518,17 @@ export function validateCombatAction(
     if (effects.length === 0) return "这个道具没有可结算效果";
     const actor = context.state.participants.find((item) => item.id === action.actorId);
     if (actor === undefined) return "使用者不在场";
-    if ((action.mpCost ?? 0) > (actor.mp ?? 0)) return "灵力不足";
+    if (context.pack.system === "COC7") {
+      const spend = spendMagicPoints(
+        actor.mp ?? 0,
+        actor.hp ?? 0,
+        action.mpCost ?? 0,
+        context.pack.pack.magicPoint
+      );
+      if (spend.allowed === false) return "灵力不足";
+    } else if ((action.mpCost ?? 0) > (actor.mp ?? 0)) {
+      return "灵力不足";
+    }
     for (const effect of effects) {
       if (effect.type === "STATUS" && context.pack.statusEffects[effect.key] === undefined) {
         return "道具使用了规则包未定义的状态 key：「" + effect.key + "」";
@@ -458,15 +562,45 @@ export function validateCombatAction(
     }
   }
   if (action.kind === "DANMAKU") {
+    const allowed = context.attackSkills.get(action.actorId) ?? [];
+    const actor = context.state.participants.find((item) => item.id === action.actorId);
+    // U-3：多目标 / 多技能 routine 逐步骤校验。
+    if (action.routine !== undefined && action.routine.length > 0) {
+      for (const step of action.routine) {
+        const target = context.state.participants.find((item) => item.id === step.targetId);
+        if (target === undefined || target.defeated) return "目标已不在场";
+        if (target.id === action.actorId) return "不能攻击自己";
+        const skill = step.skill ?? action.skill;
+        if (skill === undefined || allowed.includes(skill) === false) {
+          return "该单位不能使用这个技能攻击";
+        }
+        if (actor?.disarmed === true && skill !== "FIGHTING_BRAWL") {
+          return "该单位已被缴械，只能徒手攻击";
+        }
+      }
+      return null;
+    }
     const targetId = action.targetId ?? null;
     if (targetId === null) return "攻击需要目标";
     const target = context.state.participants.find((item) => item.id === targetId);
     if (target === undefined || target.defeated) return "目标已不在场";
     if (target.id === action.actorId) return "不能攻击自己";
-    const allowed = context.attackSkills.get(action.actorId) ?? [];
     if (action.skill === undefined || allowed.includes(action.skill) === false) {
       return "该单位不能使用这个技能攻击";
     }
+    if (actor?.disarmed === true && action.skill !== "FIGHTING_BRAWL") {
+      return "该单位已被缴械，只能徒手攻击";
+    }
+  }
+  if (action.kind === "MANEUVER") {
+    if (context.pack.system !== "COC7") return "只有 COC7 支持战技";
+    const targetId = action.targetId ?? null;
+    if (targetId === null) return "战技需要目标";
+    const target = context.state.participants.find((item) => item.id === targetId);
+    if (target === undefined || target.defeated) return "目标已不在场";
+    if (target.id === action.actorId) return "不能对自己使用战技";
+    const allowed = context.attackSkills.get(action.actorId) ?? [];
+    if (allowed.includes("FIGHTING_BRAWL") === false) return "该单位不会格斗（斗殴）";
   }
   return null;
 }

@@ -205,3 +205,74 @@ export function rollDice(expression: DiceExpression, rng: Rng): DiceRollResult {
 
   return { source: expression.source, total, min: bounds.min, max: bounds.max, details };
 }
+
+export interface PercentileRoll {
+  readonly roll: number;
+  readonly ones: number;
+  readonly tens: readonly number[];
+  readonly bonusDice: number;
+  readonly penaltyDice: number;
+  readonly detail: string;
+}
+
+/**
+ * COC7 百分骰：个位 + 十位。
+ * - 奖励骰：额外十位中取最低；
+ * - 惩罚骰：额外十位中取最高；
+ * - 奖励与惩罚先互相抵消；
+ * - 00+0 与所有十位为 0、个位为 0 的情况都读作 100。
+ */
+export function rollPercentile(
+  rng: Rng,
+  bonusDice = 0,
+  penaltyDice = 0
+): PercentileRoll {
+  const bonus = Math.max(0, Math.floor(bonusDice));
+  const penalty = Math.max(0, Math.floor(penaltyDice));
+  const cancel = Math.min(bonus, penalty);
+  const effectiveBonus = bonus - cancel;
+  const effectivePenalty = penalty - cancel;
+  const extra = Math.max(effectiveBonus, effectivePenalty);
+
+  const tensDice: number[] = [];
+  for (let i = 0; i < extra + 1; i += 1) {
+    tensDice.push((rollDie(rng, 10) - 1) * 10);
+  }
+  const ones = rollDie(rng, 10) - 1;
+
+  const selectedTens =
+    effectiveBonus > 0
+      ? Math.min(...tensDice)
+      : effectivePenalty > 0
+        ? Math.max(...tensDice)
+        : (tensDice[0] as number);
+
+  const raw = selectedTens + ones;
+  const roll = raw === 0 ? 100 : raw;
+  const modifierText =
+    effectiveBonus > 0
+      ? "奖励骰 x" + effectiveBonus
+      : effectivePenalty > 0
+        ? "惩罚骰 x" + effectivePenalty
+        : "无修正";
+  const detail =
+    "十位[" +
+    tensDice.join(", ") +
+    "]" +
+    (extra > 0 ? " " + modifierText : "") +
+    " → " +
+    String(selectedTens).padStart(2, "0") +
+    "+" +
+    ones +
+    " = " +
+    roll;
+
+  return {
+    roll,
+    ones,
+    tens: tensDice,
+    bonusDice: effectiveBonus,
+    penaltyDice: effectivePenalty,
+    detail
+  };
+}

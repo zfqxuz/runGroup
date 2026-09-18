@@ -295,6 +295,16 @@ export const AttributeMethodSchema = z.discriminatedUnion("kind", [
     kind: z.literal("MANUAL"),
     id: z.string(),
     label: z.string()
+  }),
+  z.object({
+    kind: z.literal("FIXED_ARRAY"),
+    id: z.string(),
+    label: z.string(),
+    /** 八项属性可分配值；玩家需要把这些值一一分配到八项属性上。 */
+    values: z.array(z.number().int().min(0).max(999)).length(8),
+    /** 幸运生成方式，默认 3d6×5。 */
+    luckDice: z.string().default("3d6"),
+    luckMultiplier: z.number().int().min(1).default(5)
   })
 ]);
 
@@ -359,8 +369,36 @@ export const RulePackSchema = z.object({
     fumbleSkillBelow: ExprSchema,
     fumbleRangeFrom: ExprSchema,
     allowPush: z.boolean().default(true),
-    pushCost: ExprSchema.optional()
+    pushCost: ExprSchema.optional(),
+    skillImprovement: z
+      .object({
+        /** 完整版 7e：96–100 必定成长；入门版应覆盖为 false。 */
+        autoPassFrom96: z.boolean().default(true)
+      })
+      .default({ autoPassFrom96: true })
   }),
+
+  chargen: z
+    .object({
+      mode: z.enum(["CORE_OCCUPATION", "STARTER_QUICKSTART"]).default("CORE_OCCUPATION"),
+      starter: z
+        .object({
+          attributeArray: z.array(z.number().int()).length(8).default([40, 50, 50, 50, 60, 60, 70, 80]),
+          skillValues: z.array(z.number().int()).length(9).default([70, 60, 60, 50, 50, 50, 40, 40, 40]),
+          interestCount: z.number().int().min(0).default(4),
+          interestBonus: z.number().int().min(0).default(20),
+          allowMythosAtCreation: z.boolean().default(false)
+        })
+        .optional()
+    })
+    .default({ mode: "CORE_OCCUPATION" }),
+
+  magicPoint: z
+    .object({
+      overflowToHp: z.boolean().default(true),
+      hpPerMp: z.number().int().positive().default(1)
+    })
+    .default({ overflowToHp: true, hpPerMp: 1 }),
 
   atb: z.object({
     tickMs: z.number().int().min(50).max(2000),

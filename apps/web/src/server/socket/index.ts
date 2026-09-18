@@ -1,8 +1,10 @@
 import type { Server as HttpServer } from "node:http";
 import { Server as SocketServer, type Socket } from "socket.io";
-import { cryptoRng, normalizeDiceExpression, parseDice, rollDice } from "@touhou/formula";
-import { isSuccess, resolveCheck } from "@touhou/rules";
+import { cryptoRng, normalizeDiceExpression, parseDice, rollDie, rollDice, rollPercentile } from "@touhou/formula";
+import { CHECK_DIFFICULTIES, makeCondition, meetsDifficulty, parseConditions, resolveCheck, type CheckDifficulty } from "@touhou/rules";
 import { buildEffectiveSkills } from "@/server/character/skills";
+import { resolveSanityCheck } from "@/server/sanity";
+import { MADNESS_BOUT_TABLE, MANIAS, PHOBIAS, rollMadnessBout } from "@touhou/rules";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { prisma } from "@/server/db/prisma";
 import { gameStateView } from "@/server/game/view";
@@ -12,6 +14,7 @@ import { saveCombatState } from "@/server/combat/setup";
 import { broadcastCombat } from "./combat";
 import { registerCombatHandlers } from "./combat";
 import { registerSceneHandlers } from "./scene";
+import { registerKpTools } from "./kp-tools";
 import { verifyTicket } from "./ticket";
 import { readRoomBgm } from "@/shared/bgm";
 import type {
@@ -72,6 +75,83 @@ function toChatMessage(row: MessageRow): ChatMessage {
     targetId: row.targetId,
     createdAt: row.createdAt.toISOString()
   };
+}
+
+/**
+ * 统一的骰子日志写入：供 KP 工具（医疗 / 环境伤害 / 幸运 / 孤注一掷）复用，
+ * 保证公开 / 暗骰 / 私骰的可见性与普通掷骰完全一致。
+ */
+async function emitDiceMessage(
+  io: SocketServer,
+  input: {
+    roomId: string;
+    userId: string;
+    visibility: DiceVisibility;
+    text: string;
+    view: DiceRollView;
+    results?: Record<string, unknown>;
+  }
+): Promise<void> {
+  let messageChannel: ChatChannel = "OOC";
+  let targetId: string | null = null;
+  if (input.visibility !== "PUBLIC") {
+    messageChannel = "WHISPER";
+    targetId = input.userId;
+    if (input.visibility === "DARK") {
+      const kp = await prisma.roomMember.findFirst({
+        where: { roomId: input.roomId, role: "KP" },
+        orderBy: { joinedAt: "asc" },
+        select: { userId: true }
+      });
+      if (kp !== null) targetId = kp.userId;
+    }
+  }
+  const row = await prisma.message.create({
+    data: {
+      roomId: input.roomId,
+      userId: input.userId,
+      targetId,
+      channel: messageChannel,
+      type: "DICE",
+      content: {
+        text: input.text,
+        kind: "DICE",
+        dice: { ...input.view, terms: [...input.view.terms] }
+      }
+    },
+    include: { user: { select: { username: true, displayName: true } } }
+  });
+  await prisma.diceRoll.create({
+    data: {
+      roomId: input.roomId,
+      userId: input.userId,
+      expression: input.view.expression,
+      results: { ...(input.results ?? {}), total: input.view.total, terms: [...input.view.terms] },
+      total: input.view.total,
+      visibility: input.visibility,
+      seed: "crypto"
+    }
+  });
+  const message = toChatMessage(row as MessageRow);
+  if (messageChannel === "WHISPER" && targetId !== null) {
+    io.to(userChannel(input.userId)).emit("chat:message", message);
+    if (targetId !== input.userId) io.to(userChannel(targetId)).emit("chat:message", message);
+  } else {
+    io.to(roomChannel(input.roomId)).emit("chat:message", message);
+  }
+}
+
+const CHECK_RESULT_LABELS: Record<string, string> = {
+  CRITICAL: "大成功",
+  EXTREME: "极难成功",
+  HARD: "困难成功",
+  REGULAR: "常规成功",
+  FAIL: "失败",
+  FUMBLE: "大失败"
+};
+
+function checkResultLabel(result: string): string {
+  return CHECK_RESULT_LABELS[result] ?? result;
 }
 
 const KP_ATTRIBUTE_KEYS = ["str", "con", "siz", "dex", "app", "int", "pow", "edu", "luck"] as const;
@@ -175,6 +255,11 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
 
     registerCombatHandlers(io, socket);
     registerSceneHandlers(io, socket);
+    registerKpTools(io, socket, me, {
+      loadMembership,
+      parseKpUnitRef,
+      postDice: (input) => emitDiceMessage(io, input)
+    });
 
     socket.on("room:join", async (roomId: unknown, ack: (result: JoinAck) => void) => {
       if (typeof roomId !== "string") {
@@ -464,6 +549,9 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
           characterId?: unknown;
           skillId?: unknown;
           visibility?: unknown;
+          difficulty?: unknown;
+          bonusDice?: unknown;
+          penaltyDice?: unknown;
         };
         if (
           typeof input?.roomId !== "string" ||
@@ -478,6 +566,19 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
         const skillId = input.skillId;
         const visibility: DiceVisibility =
           input.visibility === "DARK" || input.visibility === "SECRET" ? input.visibility : "PUBLIC";
+        const difficulty: CheckDifficulty =
+          typeof input.difficulty === "string" &&
+          (CHECK_DIFFICULTIES as readonly string[]).includes(input.difficulty)
+            ? (input.difficulty as CheckDifficulty)
+            : "REGULAR";
+        const bonusDice = Math.max(
+          0,
+          Math.min(5, Math.floor(Number(input.bonusDice) || 0))
+        );
+        const penaltyDice = Math.max(
+          0,
+          Math.min(5, Math.floor(Number(input.penaltyDice) || 0))
+        );
 
         const membership = await loadMembership(roomId, me.userId);
         if (membership === null) {
@@ -533,26 +634,37 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
           rulePackVersionId: room.rulePackVersionId,
           ruleOverride: room.ruleOverride
         });
-        const skill = pack.compiled.skills.find((item) => item.id === skillId);
+        const baseSkillId = skillId.includes("#") ? (skillId.split("#")[0] as string) : skillId;
+        const skill =
+          pack.compiled.skills.find((item) => item.id === skillId) ??
+          pack.compiled.skills.find((item) => item.id === baseSkillId);
         if (skill === undefined) {
           reply({ ok: false, error: "规则包中没有这个技能" });
           return;
         }
 
         const values = buildEffectiveSkills(pack.compiled, character);
-        const target = values[skillId] ?? 0;
-        const roll = rollDice(parseDice("1d100"), cryptoRng).total;
+        const target = values[skillId] ?? values[baseSkillId] ?? 0;
+        const specialty = skillId.includes("#") ? skillId.slice(skillId.indexOf("#") + 1) : "";
+        const skillLabel = specialty.length > 0 ? skill.name + "（" + specialty + "）" : skill.name;
+        const percentile = rollPercentile(cryptoRng, bonusDice, penaltyDice);
+        const roll = percentile.roll;
         const check = resolveCheck(pack.compiled, roll, target);
-        const success = isSuccess(check.result);
+        const success = meetsDifficulty(check, difficulty);
 
         const view: DiceRollView = {
           expression: "1d100",
           total: roll,
-          terms: ["1d100[" + roll + "]"],
+          terms: ["1d100[" + roll + "]", percentile.detail],
           min: 1,
           max: 100
         };
-        const label = "【技能检定】" + character.name + " · " + skill.name;
+        const difficultyLabel =
+          difficulty === "REGULAR" ? "常规" : difficulty === "HARD" ? "困难" : "极难";
+        const rollModifierText =
+          percentile.bonusDice + percentile.penaltyDice > 0 ? " · " + percentile.detail : "";
+        const label =
+          "【技能检定·" + difficultyLabel + "】" + character.name + " · " + skillLabel;
         let text =
           label +
           " 1d100 = " +
@@ -560,11 +672,12 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
           " / 目标 " +
           target +
           " → " +
-          check.result +
-          (success ? "（成功）" : "（失败）");
+          checkResultLabel(check.result) +
+          (success ? "（达到" + difficultyLabel + "要求）" : "（未达到" + difficultyLabel + "要求）") +
+          rollModifierText;
 
         if (success) {
-          const note = "技能检定成功自动标记";
+          const note = "技能检定成功自动标记（" + difficultyLabel + "）";
           const existing = await prisma.growthCheck.findUnique({
             where: { gameId_characterId_skillId: { gameId: activeGame.id, characterId, skillId } }
           });
@@ -574,7 +687,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
                 gameId: activeGame.id,
                 characterId,
                 skillId,
-                skillName: skill.name,
+                skillName: skillLabel,
                 beforeValue: target,
                 note,
                 createdBy: me.userId
@@ -586,7 +699,7 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
               where: { id: existing.id },
               data: {
                 state: "PENDING",
-                skillName: skill.name,
+                skillName: skillLabel,
                 beforeValue: target,
                 note,
                 roll: null,
@@ -636,7 +749,18 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
             roomId,
             userId: me.userId,
             expression: "1d100",
-            results: { total: view.total, terms: [...view.terms], min: view.min, max: view.max, skillId, target, success },
+            results: {
+              total: view.total,
+              terms: [...view.terms],
+              min: view.min,
+              max: view.max,
+              skillId,
+              target,
+              difficulty,
+              bonusDice: percentile.bonusDice,
+              penaltyDice: percentile.penaltyDice,
+              success
+            },
             total: view.total,
             visibility,
             seed: "crypto"
@@ -661,6 +785,517 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
       } catch (error) {
         console.error("dice:skill-check failed", error);
         reply({ ok: false, error: "技能检定失败，请重试" });
+      }
+    });
+
+    socket.on("dice:sanity-check", async (payload: unknown, ack: (result: Ack) => void) => {
+      let replied = false;
+      const reply = (result: Ack): void => {
+        if (replied) return;
+        replied = true;
+        ack(result);
+      };
+      try {
+        const input = payload as {
+          roomId?: unknown;
+          characterId?: unknown;
+          successLoss?: unknown;
+          failureLoss?: unknown;
+          visibility?: unknown;
+          reason?: unknown;
+        };
+        if (typeof input?.roomId !== "string" || typeof input.characterId !== "string") {
+          reply({ ok: false, error: "参数不合法" });
+          return;
+        }
+        const roomId = input.roomId;
+        const characterId = input.characterId;
+        const successLoss = typeof input.successLoss === "string" ? input.successLoss : "0";
+        const failureLoss = typeof input.failureLoss === "string" ? input.failureLoss : "1d6";
+        const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 120) : "";
+        const visibility: DiceVisibility =
+          input.visibility === "DARK" || input.visibility === "SECRET" ? input.visibility : "PUBLIC";
+
+        const membership = await loadMembership(roomId, me.userId);
+        if (membership === null) {
+          reply({ ok: false, error: "你不在这个房间里" });
+          return;
+        }
+        if (membership.room.status === "LOBBY" || membership.room.status === "ENDED") {
+          reply({ ok: false, error: "当前房间状态不能进行理智检定" });
+          return;
+        }
+        const activeGame = await prisma.game.findFirst({
+          where: { roomId, status: { in: ["PLAYING", "COMBAT", "PAUSED"] } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true }
+        });
+        if (activeGame === null) {
+          reply({ ok: false, error: "当前没有进行中的局" });
+          return;
+        }
+        const character = await prisma.character.findUnique({ where: { id: characterId } });
+        if (character === null) {
+          reply({ ok: false, error: "角色不存在" });
+          return;
+        }
+        if (character.userId !== me.userId && membership.role !== "KP") {
+          reply({ ok: false, error: "只能为自己的角色进行理智检定" });
+          return;
+        }
+        const gameCharacter = await prisma.gameCharacter.findUnique({
+          where: { gameId_characterId: { gameId: activeGame.id, characterId } }
+        });
+        if (gameCharacter === null) {
+          reply({ ok: false, error: "该角色不在当前局中" });
+          return;
+        }
+
+        const check = resolveSanityCheck(gameCharacter.currentSan, successLoss, failureLoss, cryptoRng);
+        let conditions = parseConditions(gameCharacter.conditions);
+        let text =
+          "【理智检定】" +
+          character.name +
+          (reason.length > 0 ? " · " + reason : "") +
+          " 1d100 = " +
+          check.roll +
+          " / 当前 SAN " +
+          check.sanBefore +
+          " → " +
+          (check.success ? "成功" : "失败") +
+          "，损失 " +
+          check.loss +
+          "（SAN " +
+          check.sanBefore +
+          "→" +
+          check.sanAfter +
+          "）";
+        if (check.massive) {
+          const intRoll = rollDie(cryptoRng, 100);
+          const intSuccess = intRoll <= character.int;
+          text +=
+            " · 单次损失≥5，INT 检定 1d100=" +
+            intRoll +
+            "/" +
+            character.int +
+            " → " +
+            (intSuccess ? "成功，进入临时疯狂" : "失败，心智封闭并暂时保持理智");
+          if (intSuccess) {
+            const hours = rollDie(cryptoRng, 10);
+            conditions = conditions.filter((condition) => condition.type !== "INSANITY");
+            conditions.push(
+              makeCondition({
+                type: "INSANITY",
+                unit: "HOUR",
+                remaining: hours,
+                visibility: "PUBLIC",
+                data: { source: "SAN", reason: reason.length > 0 ? reason : null }
+              })
+            );
+            text += "（1D10=" + hours + " 小时）";
+          }
+        }
+
+        await prisma.$transaction([
+          prisma.gameCharacter.update({
+            where: { id: gameCharacter.id },
+            data: { currentSan: check.sanAfter, conditions: conditions as never }
+          }),
+          prisma.character.update({ where: { id: character.id }, data: { san: check.sanAfter } })
+        ]);
+
+        let messageChannel: ChatChannel = "OOC";
+        let targetId: string | null = null;
+        if (visibility !== "PUBLIC") {
+          messageChannel = "WHISPER";
+          targetId = me.userId;
+          if (visibility === "DARK") {
+            const kp = await prisma.roomMember.findFirst({
+              where: { roomId, role: "KP" },
+              orderBy: { joinedAt: "asc" },
+              select: { userId: true }
+            });
+            if (kp !== null) targetId = kp.userId;
+          }
+        }
+        const view: DiceRollView = {
+          expression: "1d100",
+          total: check.roll,
+          terms: ["1d100[" + check.roll + "]", "SAN " + check.sanBefore + " → " + check.sanAfter],
+          min: 1,
+          max: 100
+        };
+        const row = await prisma.message.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            targetId,
+            channel: messageChannel,
+            type: "DICE",
+            content: { text, kind: "DICE", dice: { ...view, terms: [...view.terms] } }
+          },
+          include: { user: { select: { username: true, displayName: true } } }
+        });
+        await prisma.diceRoll.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            expression: "1d100",
+            results: { total: check.roll, sanBefore: check.sanBefore, sanAfter: check.sanAfter, loss: check.loss, success: check.success },
+            total: check.roll,
+            visibility,
+            seed: "crypto"
+          }
+        });
+        const message = toChatMessage(row as MessageRow);
+        if (messageChannel === "WHISPER" && targetId !== null) {
+          io.to(userChannel(me.userId)).emit("chat:message", message);
+          if (targetId !== me.userId) io.to(userChannel(targetId)).emit("chat:message", message);
+        } else {
+          io.to(roomChannel(roomId)).emit("chat:message", message);
+        }
+        io.to(roomChannel(roomId)).emit("room:advancement:update", {
+          roomId,
+          gameId: activeGame.id,
+          characterId
+        });
+        reply({ ok: true });
+      } catch (error) {
+        console.error("dice:sanity-check failed", error);
+        reply({ ok: false, error: "理智检定失败，请重试" });
+      }
+    });
+
+    socket.on("dice:madness-bout", async (payload: unknown, ack: (result: Ack) => void) => {
+      let replied = false;
+      const reply = (result: Ack): void => {
+        if (replied) return;
+        replied = true;
+        ack(result);
+      };
+      try {
+        const input = payload as { roomId?: unknown; characterId?: unknown; visibility?: unknown };
+        if (typeof input?.roomId !== "string" || typeof input.characterId !== "string") {
+          reply({ ok: false, error: "参数不合法" });
+          return;
+        }
+        const roomId = input.roomId;
+        const characterId = input.characterId;
+        const visibility: DiceVisibility =
+          input.visibility === "DARK" || input.visibility === "SECRET" ? input.visibility : "PUBLIC";
+        const membership = await loadMembership(roomId, me.userId);
+        if (membership === null) {
+          reply({ ok: false, error: "你不在这个房间里" });
+          return;
+        }
+        const activeGame = await prisma.game.findFirst({
+          where: { roomId, status: { in: ["PLAYING", "COMBAT", "PAUSED"] } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true }
+        });
+        if (activeGame === null) {
+          reply({ ok: false, error: "当前没有进行中的局" });
+          return;
+        }
+        const character = await prisma.character.findUnique({ where: { id: characterId } });
+        if (character === null) {
+          reply({ ok: false, error: "角色不存在" });
+          return;
+        }
+        if (character.userId !== me.userId && membership.role !== "KP") {
+          reply({ ok: false, error: "只能为自己的角色掷疯狂发作" });
+          return;
+        }
+        const gameCharacter = await prisma.gameCharacter.findUnique({
+          where: { gameId_characterId: { gameId: activeGame.id, characterId } }
+        });
+        if (gameCharacter === null) {
+          reply({ ok: false, error: "该角色不在当前局中" });
+          return;
+        }
+        const bout = rollMadnessBout(cryptoRng);
+        const conditions = parseConditions(gameCharacter.conditions).filter(
+          (condition) => condition.type !== "INSANITY"
+        );
+        let newBackgroundEntry: string | null = null;
+        if (bout.entry.id === 9 || bout.entry.id === 10) {
+          const pool = bout.entry.id === 9 ? PHOBIAS : MANIAS;
+          const label = bout.entry.id === 9 ? "恐惧症" : "躁狂症";
+          const pick = pool[Math.max(0, rollDie(cryptoRng, pool.length) - 1)] ?? pool[0] ?? "未知";
+          newBackgroundEntry = label + "：" + pick;
+          const backstoryRaw = recordOf(character.backstory);
+          const existing =
+            typeof backstoryRaw.phobias === "string" && backstoryRaw.phobias.trim().length > 0
+              ? backstoryRaw.phobias.trim()
+              : "";
+          await prisma.character.update({
+            where: { id: character.id },
+            data: {
+              backstory: {
+                ...backstoryRaw,
+                phobias: (existing.length > 0 ? existing + "\n" : "") + newBackgroundEntry
+              } as never
+            }
+          });
+        }
+        conditions.push(
+          makeCondition({
+            type: "INSANITY",
+            unit: "ROUND",
+            remaining: bout.rounds,
+            visibility: "PUBLIC",
+            data: {
+              bout: bout.entry.name,
+              description: bout.entry.description,
+              penaltyDice: bout.penaltyDice,
+              backgroundEntry: newBackgroundEntry
+            }
+          })
+        );
+        await prisma.gameCharacter.update({
+          where: { id: gameCharacter.id },
+          data: { conditions: conditions as never }
+        });
+        let text =
+          "【疯狂发作】" +
+          character.name +
+          " 1D10 = " +
+          bout.roll +
+          " → " +
+          bout.entry.name +
+          "： " +
+          bout.entry.description +
+          " 持续 1D10 = " +
+          bout.rounds +
+          " 轮" +
+          (bout.penaltyDice > 0 ? "，期间所有行动承受 1 枚惩罚骰" : "");
+        if (newBackgroundEntry !== null) {
+          text += "；" + newBackgroundEntry + "（已写入角色背景）";
+        }
+        let messageChannel: ChatChannel = "OOC";
+        let targetId: string | null = null;
+        if (visibility !== "PUBLIC") {
+          messageChannel = "WHISPER";
+          targetId = me.userId;
+          if (visibility === "DARK") {
+            const kp = await prisma.roomMember.findFirst({
+              where: { roomId, role: "KP" },
+              orderBy: { joinedAt: "asc" },
+              select: { userId: true }
+            });
+            if (kp !== null) targetId = kp.userId;
+          }
+        }
+        const row = await prisma.message.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            targetId,
+            channel: messageChannel,
+            type: "DICE",
+            content: {
+              text,
+              kind: "DICE",
+              dice: {
+                expression: "1d10",
+                total: bout.roll,
+                terms: ["1d10[" + bout.roll + "]", "持续 1d10[" + bout.rounds + "]"],
+                min: 1,
+                max: 10
+              }
+            }
+          },
+          include: { user: { select: { username: true, displayName: true } } }
+        });
+        const message = toChatMessage(row as MessageRow);
+        if (messageChannel === "WHISPER" && targetId !== null) {
+          io.to(userChannel(me.userId)).emit("chat:message", message);
+          if (targetId !== me.userId) io.to(userChannel(targetId)).emit("chat:message", message);
+        } else {
+          io.to(roomChannel(roomId)).emit("chat:message", message);
+        }
+        reply({ ok: true });
+      } catch (error) {
+        console.error("dice:madness-bout failed", error);
+        reply({ ok: false, error: "疯狂发作掷骰失败，请重试" });
+      }
+    });
+
+    socket.on("dice:reality-check", async (payload: unknown, ack: (result: Ack) => void) => {
+      let replied = false;
+      const reply = (result: Ack): void => {
+        if (replied) return;
+        replied = true;
+        ack(result);
+      };
+      try {
+        const input = payload as {
+          roomId?: unknown;
+          characterId?: unknown;
+          successLoss?: unknown;
+          failureLoss?: unknown;
+          visibility?: unknown;
+          reason?: unknown;
+        };
+        if (typeof input?.roomId !== "string" || typeof input.characterId !== "string") {
+          reply({ ok: false, error: "参数不合法" });
+          return;
+        }
+        const roomId = input.roomId;
+        const characterId = input.characterId;
+        const successLoss = typeof input.successLoss === "string" ? input.successLoss : "0";
+        const failureLoss = typeof input.failureLoss === "string" ? input.failureLoss : "1d6";
+        const reason = typeof input.reason === "string" ? input.reason.trim().slice(0, 120) : "";
+        const visibility: DiceVisibility =
+          input.visibility === "DARK" || input.visibility === "SECRET" ? input.visibility : "PUBLIC";
+        const membership = await loadMembership(roomId, me.userId);
+        if (membership === null) {
+          reply({ ok: false, error: "你不在这个房间里" });
+          return;
+        }
+        if (membership.room.status === "LOBBY" || membership.room.status === "ENDED") {
+          reply({ ok: false, error: "当前房间状态不能进行现实检定" });
+          return;
+        }
+        const activeGame = await prisma.game.findFirst({
+          where: { roomId, status: { in: ["PLAYING", "COMBAT", "PAUSED"] } },
+          orderBy: { createdAt: "desc" },
+          select: { id: true }
+        });
+        if (activeGame === null) {
+          reply({ ok: false, error: "当前没有进行中的局" });
+          return;
+        }
+        const character = await prisma.character.findUnique({ where: { id: characterId } });
+        if (character === null) {
+          reply({ ok: false, error: "角色不存在" });
+          return;
+        }
+        if (character.userId !== me.userId && membership.role !== "KP") {
+          reply({ ok: false, error: "只能为自己的角色进行现实检定" });
+          return;
+        }
+        const gameCharacter = await prisma.gameCharacter.findUnique({
+          where: { gameId_characterId: { gameId: activeGame.id, characterId } }
+        });
+        if (gameCharacter === null) {
+          reply({ ok: false, error: "该角色不在当前局中" });
+          return;
+        }
+        const check = resolveSanityCheck(gameCharacter.currentSan, successLoss, failureLoss, cryptoRng);
+        let conditions = parseConditions(gameCharacter.conditions);
+        let text =
+          "【现实检定】" +
+          character.name +
+          (reason.length > 0 ? " · " + reason : "") +
+          " 1d100 = " +
+          check.roll +
+          " / 当前 SAN " +
+          check.sanBefore +
+          " → " +
+          (check.success ? "成功，看穿幻觉" : "失败，被拖入更深疯狂") +
+          "，损失 " +
+          check.loss +
+          "（SAN " +
+          check.sanBefore +
+          "→" +
+          check.sanAfter +
+          "）";
+        if (check.success) {
+          conditions = conditions.filter((condition) => condition.type !== "HALLUCINATION");
+          text += " · 幻觉解除";
+        } else {
+          conditions = conditions.filter(
+            (condition) => condition.type !== "HALLUCINATION" && condition.type !== "INSANITY"
+          );
+          conditions.push(
+            makeCondition({
+              type: "HALLUCINATION",
+              unit: "HOUR",
+              remaining: 1,
+              visibility: "PUBLIC",
+              data: { source: reason.length > 0 ? reason : "现实检定失败" }
+            })
+          );
+          conditions.push(
+            makeCondition({
+              type: "INSANITY",
+              unit: "HOUR",
+              remaining: 1,
+              visibility: "PUBLIC",
+              data: { source: "REALITY", reason: reason.length > 0 ? reason : null }
+            })
+          );
+          text += " · 陷入幻觉，并延长临时疯狂 1 小时";
+        }
+        await prisma.$transaction([
+          prisma.gameCharacter.update({
+            where: { id: gameCharacter.id },
+            data: { currentSan: check.sanAfter, conditions: conditions as never }
+          }),
+          prisma.character.update({ where: { id: character.id }, data: { san: check.sanAfter } })
+        ]);
+        let messageChannel: ChatChannel = "OOC";
+        let targetId: string | null = null;
+        if (visibility !== "PUBLIC") {
+          messageChannel = "WHISPER";
+          targetId = me.userId;
+          if (visibility === "DARK") {
+            const kp = await prisma.roomMember.findFirst({
+              where: { roomId, role: "KP" },
+              orderBy: { joinedAt: "asc" },
+              select: { userId: true }
+            });
+            if (kp !== null) targetId = kp.userId;
+          }
+        }
+        const view: DiceRollView = {
+          expression: "1d100",
+          total: check.roll,
+          terms: ["1d100[" + check.roll + "]", "SAN " + check.sanBefore + " → " + check.sanAfter],
+          min: 1,
+          max: 100
+        };
+        const row = await prisma.message.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            targetId,
+            channel: messageChannel,
+            type: "DICE",
+            content: { text, kind: "DICE", dice: { ...view, terms: [...view.terms] } }
+          },
+          include: { user: { select: { username: true, displayName: true } } }
+        });
+        await prisma.diceRoll.create({
+          data: {
+            roomId,
+            userId: me.userId,
+            expression: "1d100",
+            results: {
+              kind: "REALITY",
+              total: check.roll,
+              sanBefore: check.sanBefore,
+              sanAfter: check.sanAfter,
+              loss: check.loss,
+              success: check.success
+            },
+            total: check.roll,
+            visibility,
+            seed: "crypto"
+          }
+        });
+        const message = toChatMessage(row as MessageRow);
+        if (messageChannel === "WHISPER" && targetId !== null) {
+          io.to(userChannel(me.userId)).emit("chat:message", message);
+          if (targetId !== me.userId) io.to(userChannel(targetId)).emit("chat:message", message);
+        } else {
+          io.to(roomChannel(roomId)).emit("chat:message", message);
+        }
+        reply({ ok: true });
+      } catch (error) {
+        console.error("dice:reality-check failed", error);
+        reply({ ok: false, error: "现实检定失败，请重试" });
       }
     });
 
@@ -710,7 +1345,15 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
               dp: participant.dp,
               maxDp: participant.maxDp,
               attributes: { ...participant.attributes },
-              skills: { ...participant.skills }
+              skills: { ...participant.skills },
+              conditions: [...(participant.conditions ?? [])],
+              flags: {
+                majorWound: participant.majorWound === true,
+                dying: participant.dying === true,
+                unconscious: participant.unconscious === true,
+                dead: participant.dead === true,
+                defeated: participant.defeated === true
+              }
             }
           });
           return;
@@ -760,7 +1403,20 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
                 edu: character.edu,
                 luck: character.luck
               },
-              skills
+              skills,
+              conditions: parseConditions(gameCharacter?.conditions),
+              flags: (() => {
+                const list = parseConditions(gameCharacter?.conditions);
+                const has = (type: string): boolean => list.some((item) => item.type === type);
+                const hp = gameCharacter?.currentHp ?? character.hp;
+                return {
+                  majorWound: has("MAJOR_WOUND"),
+                  dying: has("DYING"),
+                  unconscious: has("UNCONSCIOUS") || hp <= 0,
+                  dead: has("DEAD"),
+                  defeated: has("DEAD")
+                };
+              })()
             }
           });
           return;
@@ -797,7 +1453,20 @@ export function createSocketServer(httpServer: HttpServer): SocketServer {
             dp: finiteNumber(stats.dp, 0, 999999) ?? finiteNumber(stats.maxDp, 0, 999999) ?? 0,
             maxDp: finiteNumber(stats.maxDp, 0, 999999) ?? 0,
             attributes,
-            skills
+            skills,
+            conditions: parseConditions(stats.conditions),
+            flags: (() => {
+              const list = parseConditions(stats.conditions);
+              const has = (type: string): boolean => list.some((item) => item.type === type);
+              const hp = finiteNumber(stats.hp, 0, 999999) ?? 0;
+              return {
+                majorWound: has("MAJOR_WOUND"),
+                dying: has("DYING"),
+                unconscious: has("UNCONSCIOUS") || hp <= 0,
+                dead: has("DEAD"),
+                defeated: has("DEAD")
+              };
+            })()
           }
         });
       } catch (error) {

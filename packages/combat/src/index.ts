@@ -67,5 +67,12 @@ export {
   possessInitFromConditions
 } from "./conditions";
 export { rngFor } from "./rng";
+export {
+  isThrownOutOfRange,
+  matchRangeBand,
+  pointBlankBonusDice,
+  thrownRangeFeet
+} from "./range";
+export type { RangeBandLike, RangeMatchResult } from "./range";
 export { describeHp, filterCombatForViewer } from "./filter";
 export type { CombatView, ParticipantView, Viewer, ViewerRole } from "./filter";

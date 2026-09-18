@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import KpPrepPanel from "@/components/room/KpPrepPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
+import KpToolsPanel from "@/components/room/KpToolsPanel";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
@@ -116,6 +117,11 @@ export default async function RoomPage({
     ruleOverride: room.ruleOverride
   });
   const skillOptions = effective.compiled.skills.map((skill) => ({ id: skill.id, name: skill.name }));
+
+  // G-2：把房间实际生效的 96–100 成长规则传给成长面板展示。
+  const growthAutoPassFrom96 =
+    effective.compiled.pack.check.skillImprovement.autoPassFrom96 &&
+    room.chargenMethod !== "starter-quickstart";
 
   // 同一房间允许多场战斗同时进行：这里取全部进行中的战斗用于 tab，第一场作为默认入口。
   const activeCombats = await loadActiveCombatSummaries(room.id);
@@ -366,7 +372,20 @@ export default async function RoomPage({
             occupation === null || occupation.skillProfile === null
               ? new Set<string>()
               : profileOccupationalSkillIds(occupation.skillProfile, allocation?.slots ?? {});
-          const skills = effective.compiled.skills
+          const allocatedSkills = (item.character.skills ?? {}) as Record<string, number>;
+          const compositeSkills = Object.keys(allocatedSkills)
+            .filter((skillId) => skillId.includes("#"))
+            .map((skillId) => {
+              const [baseId, specialty] = skillId.split("#");
+              const base = effective.compiled.skills.find((skill) => skill.id === baseId);
+              return {
+                id: skillId,
+                name: (base?.name ?? baseId) + "（" + (specialty ?? "") + "）",
+                value: values[skillId] ?? allocatedSkills[skillId] ?? 0,
+                occupational: false
+              };
+            });
+          const skills = [...effective.compiled.skills
             .map((skill) => ({
               id: skill.id,
               name: skill.name,
@@ -374,7 +393,7 @@ export default async function RoomPage({
               occupational:
                 occupationalIds.has(skill.id) ||
                 (occupation !== null && occupationSkillAccess(occupation, skill.name).kind !== "NONE")
-            }))
+            })), ...compositeSkills]
             .sort((a, b) => {
               if (a.occupational !== b.occupational) return a.occupational ? -1 : 1;
               if (a.value !== b.value) return b.value - a.value;
@@ -564,6 +583,7 @@ export default async function RoomPage({
           saved={searchParams.advancement === "saved"}
           notice={searchParams.growth ?? null}
           error={searchParams.error ?? null}
+          growthAutoPassFrom96={growthAutoPassFrom96}
         />
       )}
 
@@ -741,6 +761,7 @@ export default async function RoomPage({
       ) : null}
 
       {isKP && isKpSplit === false ? <KpValueEditor roomId={room.id} units={placeableSceneUnits} /> : null}
+      {isKP && isKpSplit === false ? <KpToolsPanel roomId={room.id} units={placeableSceneUnits} /> : null}
 
       {isKpSplit ? (
         <div className="flex flex-col gap-4">

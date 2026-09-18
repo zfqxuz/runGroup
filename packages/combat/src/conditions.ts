@@ -94,7 +94,7 @@ export function participantConditions(participant: CombatParticipantState, round
  */
 export function persistableConditions(participant: CombatParticipantState, round = 1): GameCondition[] {
   const core = coreConditionsFromParticipant(participant);
-  const keepTypes = new Set(["POISON", "DISEASE", "CURSE", "INSANITY", "BOUND", "SILENCE"]);
+  const keepTypes = new Set(["POISON", "DISEASE", "CURSE", "INSANITY", "HALLUCINATION", "DOT", "BOUND", "SILENCE"]);
   const custom = (participant.conditions ?? []).filter(
     (condition) =>
       keepTypes.has(condition.type) ||

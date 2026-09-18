@@ -25,6 +25,7 @@ import {
 } from "@touhou/rules";
 import { saveCharacter, updateCharacterAction, type SaveCharacterResult } from "@/server/actions/character";
 import {
+  creditRatingLabel,
   ERA_LABELS,
   hasFreeSkillChoice,
   isActualOccupationSkill,
@@ -91,6 +92,8 @@ interface Props {
   availableCards?: readonly CharacterAvailableCard[];
   /** 卡牌创建 / 编辑完成后返回的地址。 */
   returnTo?: string;
+  /** D-5：房间维护的专精候选（作为专精名称下拉候选，仍可自由输入）。 */
+  specialtyCandidates?: readonly { readonly baseId: string; readonly name: string }[];
 }
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -236,6 +239,8 @@ export default function CharacterBuilder(props: Props) {
   const [skillCategory, setSkillCategory] = useState<string>("ALL");
   const [skillIdentityFilters, setSkillIdentityFilters] = useState<("OCCUPATION" | "INTEREST")[]>([]);
   const [skillUsageFilters, setSkillUsageFilters] = useState<("POTENTIAL" | "ALLOCATED")[]>([]);
+  const [specialtyBase, setSpecialtyBase] = useState("");
+  const [specialtyName, setSpecialtyName] = useState("");
 
   const compiled = useMemo(() => compileParsedRulePack(props.pack), [props.pack]);
   const isCoc7 = props.system === "COC7";
@@ -257,6 +262,16 @@ export default function CharacterBuilder(props: Props) {
       props.pack.attributes.methods[0],
     [props.pack, props.chargenMethod]
   );
+  const isStarterMode = method?.kind === "FIXED_ARRAY" && isEdit === false;
+  const starterSkillOptions = useMemo(
+    () => compiled.skills.filter((skill) => skill.id !== "CTHULHU_MYTHOS"),
+    [compiled.skills]
+  );
+  const [starterRows, setStarterRows] = useState<ReadonlyArray<{ skillId: string; value: string }>>(() =>
+    Array.from({ length: 8 }, () => ({ skillId: "", value: "" }))
+  );
+  const [starterCredit, setStarterCredit] = useState("40");
+  const [starterInterests, setStarterInterests] = useState<readonly string[]>(["", "", "", ""]);
 
   const baseOutcome = useMemo(
     () => computeDerived(compiled, { attributes: ageAppliedAttributes, race, skills: { CTHULHU_MYTHOS: 0 } }),
@@ -279,6 +294,61 @@ export default function CharacterBuilder(props: Props) {
     }
     return map;
   }, [compiled, effectiveVars, props.pack.const]);
+
+  // C-3：手工建卡时添加语言 / 科学 / 驾驶 / 生存 / 技艺 / 射击专精。
+  // 复合 key（如 LANGUAGE_OTHER#拉丁语）不在规则包技能表里，这里合成展示行，
+  // 让它们与普通技能一样参与职业点 / 兴趣点分配与保存。
+  const specialtySkills = useMemo(() => {
+    const keys = new Set<string>([...Object.keys(occupationAdded), ...Object.keys(interestAdded)]);
+    const output: Array<{ id: string; name: string; category: string }> = [];
+    for (const id of keys) {
+      const hash = id.indexOf("#");
+      if (hash <= 0) continue;
+      if (compiled.skills.some((skill) => skill.id === id)) continue;
+      const baseId = id.slice(0, hash);
+      const specialty = id.slice(hash + 1);
+      const baseSkill = compiled.skills.find((skill) => skill.id === baseId);
+      if (baseSkill === undefined || specialty.trim().length === 0) continue;
+      output.push({
+        id,
+        name: baseSkill.name + "（" + specialty + "）",
+        category: baseSkill.category
+      });
+    }
+    return output;
+  }, [compiled.skills, interestAdded, occupationAdded]);
+
+  const allSkills = useMemo(
+    () => [...compiled.skills, ...specialtySkills],
+    [compiled.skills, specialtySkills]
+  );
+
+  function skillBaseOf(skillId: string): number {
+    const direct = skillBases[skillId];
+    if (direct !== undefined) return direct;
+    const hash = skillId.indexOf("#");
+    if (hash > 0) return skillBases[skillId.slice(0, hash)] ?? 0;
+    return 0;
+  }
+
+  const specialtyBaseOptions = useMemo(
+    () =>
+      [
+        { label: "外语", baseId: "LANGUAGE_OTHER", placeholder: "拉丁语" },
+        { label: "科学", baseId: "SCIENCE", placeholder: "生物学" },
+        { label: "驾驶", baseId: "驾驶", placeholder: "汽车" },
+        { label: "生存", baseId: "SURVIVAL", placeholder: "沙漠" },
+        { label: "技艺", baseId: "ART_CRAFT", placeholder: "摄影" },
+        { label: "射击", baseId: "FIREARMS_BOW", placeholder: "弩" }
+      ].filter((item) => compiled.skills.some((skill) => skill.id === item.baseId)),
+    [compiled.skills]
+  );
+
+  const selectedSpecialtyBaseId =
+    specialtyBase.length > 0 ? specialtyBase : (specialtyBaseOptions[0]?.baseId ?? "");
+  const specialtyNameCandidates = (props.specialtyCandidates ?? []).filter(
+    (candidate) => candidate.baseId === selectedSpecialtyBaseId
+  );
 
   const mythosTotal = useMemo(() => {
     const base = skillBases.CTHULHU_MYTHOS ?? 0;
@@ -318,13 +388,14 @@ export default function CharacterBuilder(props: Props) {
 
   const accessBySkillId = useMemo(() => {
     const map = new Map<string, OccupationSkillAccess>();
+    const all = [...compiled.skills, ...specialtySkills];
     if (selectedOccupation === null) {
-      for (const skill of compiled.skills) map.set(skill.id, { kind: "NONE", group: null });
+      for (const skill of all) map.set(skill.id, { kind: "NONE", group: null });
       return map;
     }
     if (selectedProfile !== null) {
       const occupational = profileOccupationalSkillIds(selectedProfile, slotAssignments);
-      for (const skill of compiled.skills) {
+      for (const skill of all) {
         map.set(
           skill.id,
           occupational.has(skill.id) ? { kind: "FIXED", group: null } : { kind: "NONE", group: null }
@@ -332,11 +403,11 @@ export default function CharacterBuilder(props: Props) {
       }
       return map;
     }
-    for (const skill of compiled.skills) {
+    for (const skill of all) {
       map.set(skill.id, occupationSkillAccess(selectedOccupation, skill.name));
     }
     return map;
-  }, [compiled.skills, selectedOccupation, selectedProfile, slotAssignments]);
+  }, [compiled.skills, specialtySkills, selectedOccupation, selectedProfile, slotAssignments]);
 
   const raceInterest = useMemo(() => {
     if (race === null) return compiled.skillPoints.interest;
@@ -397,7 +468,7 @@ export default function CharacterBuilder(props: Props) {
 
   const filteredSkills = useMemo(() => {
     const query = skillQuery.trim().toLowerCase();
-    return compiled.skills.filter((skill) => {
+    return allSkills.filter((skill) => {
       if (
         query.length > 0 &&
         skill.name.toLowerCase().includes(query) === false &&
@@ -435,7 +506,7 @@ export default function CharacterBuilder(props: Props) {
     });
   }, [
     accessBySkillId,
-    compiled.skills,
+    allSkills,
     interestAdded,
     occupationAdded,
     skillCategory,
@@ -583,7 +654,7 @@ export default function CharacterBuilder(props: Props) {
       if (desired > current && canAddOccupationChoice(skillId, access, prev) === false) return prev;
       const used = Object.values(prev).reduce((sum, value) => sum + value, 0);
       const poolLimit = Math.max(0, skillPool.occupation - (used - current));
-      const capLimit = Math.max(0, skillPool.occupationMax - (skillBases[skillId] ?? 0));
+      const capLimit = Math.max(0, skillPool.occupationMax - skillBaseOf(skillId));
       const next = Math.min(desired, poolLimit, capLimit);
       const copy = { ...prev };
       if (next > 0) copy[skillId] = next;
@@ -602,7 +673,7 @@ export default function CharacterBuilder(props: Props) {
       const current = prev[skillId] ?? 0;
       const used = Object.values(prev).reduce((sum, value) => sum + value, 0);
       const poolLimit = Math.max(0, skillPool.interest - (used - current));
-      const capLimit = Math.max(0, skillPool.interestMax - (skillBases[skillId] ?? 0));
+      const capLimit = Math.max(0, skillPool.interestMax - skillBaseOf(skillId));
       const next = Math.min(desired, poolLimit, capLimit);
       const copy = { ...prev };
       if (next > 0) copy[skillId] = next;
@@ -624,6 +695,30 @@ export default function CharacterBuilder(props: Props) {
       delete copy[skillId];
       return copy;
     });
+  }
+
+  /** C-3：把「外语（X）」这类专精加入分配表，后续可按普通技能加点。 */
+  function addSpecialty(): void {
+    const base = specialtyBase.length > 0 ? specialtyBase : specialtyBaseOptions[0]?.baseId ?? "";
+    const inner = specialtyName.trim().slice(0, 40);
+    if (base.length === 0) {
+      setMessage("当前规则包没有可添加专精的基础技能。");
+      return;
+    }
+    if (inner.length === 0) {
+      setMessage("请填写专精名称，例如 拉丁语 / 生物学 / 沙漠。");
+      return;
+    }
+    const key = base + "#" + inner;
+    if (compiled.skills.some((skill) => skill.id === key)) {
+      setMessage("该专精已作为独立技能存在，无需重复添加。");
+      return;
+    }
+    if (occupationAdded[key] === undefined && interestAdded[key] === undefined) {
+      setInterestAdded((prev) => ({ ...prev, [key]: 0 }));
+    }
+    setSpecialtyName("");
+    setMessage(null);
   }
 
   function changeOccupation(nextId: string): void {
@@ -677,7 +772,44 @@ export default function CharacterBuilder(props: Props) {
     setMessage(null);
   }
 
+  function starterError(): string | null {
+    if (method?.kind !== "FIXED_ARRAY") return null;
+    if (name.trim().length === 0) return "角色名不能为空。";
+    const skillIds = starterRows.map((row) => row.skillId.trim());
+    if (skillIds.some((id) => id.length === 0)) return "请为八项本职技能选择技能。";
+    if (new Set(skillIds).size !== 8) return "八项本职技能不能重复。";
+    if (skillIds.includes("CTHULHU_MYTHOS")) return "创建角色时不能选择克苏鲁神话。";
+    const values = starterRows.map((row) => Math.floor(Number(row.value)));
+    if (values.some((value) => Number.isFinite(value) === false || value <= 0)) return "请为八项本职技能填写九值中的最终数值。";
+    const credit = Math.floor(Number(starterCredit));
+    if (Number.isFinite(credit) === false || credit <= 0) return "信用评级需要填写九值中的一个数值。";
+    const allValues = [...values, credit].sort((a, b) => a - b).join(",");
+    const starterConfig = props.pack.chargen.starter;
+    const expectedValues = starterConfig?.skillValues ?? [70, 60, 60, 50, 50, 50, 40, 40, 40];
+    if (allValues !== [...expectedValues].sort((a, b) => a - b).join(",")) {
+      return "九项技能值必须恰好是 " + expectedValues.join("/") + " 这九个数字。";
+    }
+    const interests = starterInterests.map((id) => id.trim()).filter((id) => id.length > 0);
+    const expectedInterestCount = starterConfig?.interestCount ?? 4;
+    if (interests.length !== expectedInterestCount) return "请恰好选择 " + expectedInterestCount + " 项个人兴趣技能。";
+    if (new Set(interests).size !== interests.length) return "个人兴趣技能不能重复。";
+    for (const id of interests) {
+      if (skillIds.includes(id)) return "本职技能不能同时作为个人兴趣技能：" + id;
+      if (id === "CREDIT_RATING" || id === "CTHULHU_MYTHOS") return "该技能不能作为个人兴趣技能：" + id;
+    }
+    const expectedAttributes = [...method.values].sort((a, b) => a - b).join(",");
+    const actualAttributes = (["str", "con", "siz", "dex", "app", "int", "pow", "edu"] as const)
+      .map((key) => attributes[key])
+      .sort((a, b) => a - b)
+      .join(",");
+    if (expectedAttributes !== actualAttributes) {
+      return "请把 " + method.values.join("/") + " 恰好分配到八项属性。";
+    }
+    return null;
+  }
+
   function step1Error(): string | null {
+    if (isStarterMode && isEdit === false) return starterError();
     if (isEdit) {
       if (name.trim().length === 0) return "角色名不能为空。";
       return creditIssue;
@@ -799,9 +931,38 @@ export default function CharacterBuilder(props: Props) {
     setMessage(null);
 
     const skills: Record<string, number> = {};
-    for (const skill of compiled.skills) {
-      const total = (skillBases[skill.id] ?? 0) + (occupationAdded[skill.id] ?? 0) + (interestAdded[skill.id] ?? 0);
-      if (total > 0) skills[skill.id] = total;
+    let starterSkillsPayload:
+      | { readonly values: Record<string, number>; readonly interests: readonly string[] }
+      | null = null;
+    if (isStarterMode && isEdit === false) {
+      for (const row of starterRows) {
+        const skillId = row.skillId.trim();
+        const value = Math.floor(Number(row.value));
+        if (skillId.length > 0 && Number.isFinite(value) && value > 0) skills[skillId] = value;
+      }
+      const credit = Math.floor(Number(starterCredit));
+      if (Number.isFinite(credit) && credit > 0) skills.CREDIT_RATING = credit;
+      const interests = starterInterests.map((id) => id.trim()).filter((id) => id.length > 0);
+      const interestBonus = props.pack.chargen.starter?.interestBonus ?? 20;
+      for (const skillId of interests) {
+        skills[skillId] = skillBaseOf(skillId) + interestBonus;
+      }
+      starterSkillsPayload = {
+        values: {
+          ...Object.fromEntries(
+            starterRows
+              .map((row) => [row.skillId.trim(), Math.floor(Number(row.value))] as const)
+              .filter(([skillId, value]) => skillId.length > 0 && Number.isFinite(value))
+          ),
+          ...(Number.isFinite(credit) && credit > 0 ? { CREDIT_RATING: credit } : {})
+        },
+        interests
+      };
+    } else {
+      for (const skill of allSkills) {
+        const total = skillBaseOf(skill.id) + (occupationAdded[skill.id] ?? 0) + (interestAdded[skill.id] ?? 0);
+        if (total > 0) skills[skill.id] = total;
+      }
     }
 
     const payload = {
@@ -812,13 +973,17 @@ export default function CharacterBuilder(props: Props) {
       attributes: attributes as unknown as Record<string, number>,
       skills,
       chargenMethod: method?.id ?? "",
-      occupationId: selectedOccupation?.id ?? null,
-      skillAllocation: {
-        occupation: occupationAdded,
-        interest: interestAdded,
-        slots: selectedProfile === null ? undefined : slotAssignments
-      },
-      slotAssignments: selectedProfile === null ? null : slotAssignments,
+      occupationId: isStarterMode ? null : selectedOccupation?.id ?? null,
+      skillAllocation:
+        isStarterMode && isEdit === false
+          ? null
+          : {
+              occupation: occupationAdded,
+              interest: interestAdded,
+              slots: selectedProfile === null ? undefined : slotAssignments
+            },
+      slotAssignments: isStarterMode ? null : selectedProfile === null ? null : slotAssignments,
+      starterSkills: starterSkillsPayload,
       era: props.era,
       age: isCoc7 ? age : null,
       ageAllocation: isCoc7 ? ageAllocation : null,
@@ -1041,7 +1206,9 @@ export default function CharacterBuilder(props: Props) {
                 ? "每组只能掷一次；从 5 组结果中选择 1 组，不可手动修改。"
                 : method?.kind === "POINT_BUY"
                   ? "直接填写九维属性，系统会校验总和与范围。"
-                  : "直接填写九维属性。"}
+                  : method?.kind === "FIXED_ARRAY"
+                    ? "把固定数组 " + method.values.join("/") + " 恰好分配到八项；幸运单独掷 3D6×5。"
+                    : "直接填写九维属性。"}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -1070,6 +1237,21 @@ export default function CharacterBuilder(props: Props) {
                 className="rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400 disabled:cursor-not-allowed disabled:bg-white/15 disabled:text-white/35"
               >
                 {rolled ? "已掷完（只能掷一次）" : "掷 5 组"}
+              </button>
+            ) : method?.kind === "FIXED_ARRAY" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  const next: Record<string, number> = { ...attributes };
+                  method.values.forEach((value, index) => {
+                    const key = ATTRIBUTE_KEYS[index];
+                    if (key !== undefined) next[key] = value;
+                  });
+                  setAttributes(next as unknown as AttributeSet);
+                }}
+                className="rounded-lg border border-sakura-500/40 px-3 py-2 text-xs text-sakura-300 transition hover:bg-sakura-500/10"
+              >
+                按顺序填入固定数组
               </button>
             ) : null}
           </div>
@@ -1100,6 +1282,9 @@ export default function CharacterBuilder(props: Props) {
                       {rolled && selectedSet !== null ? raw : "—"}
                     </div>
                   )}
+                  <p className="mt-1 text-center font-mono text-[10px] text-white/35">
+                    困难 {Math.floor(raw / 2)} · 极限 {Math.floor(raw / 5)}
+                  </p>
                 </div>
                 {canRoll && rolled === false ? null : effective === raw ? null : (
                   <p className="mt-1 text-[11px] text-sakura-300">年龄 / 种族修正后 {effective}</p>
@@ -1332,7 +1517,86 @@ export default function CharacterBuilder(props: Props) {
         )}
       </section>
 
-      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+      {isStarterMode ? (
+        <section className="rounded-xl border border-sakura-500/25 bg-sakura-500/5 p-5">
+          <h2 className="text-base font-semibold text-white/90">入门版固定技能分配</h2>
+          <p className="mt-1 text-[11px] text-white/45">
+            把 {props.pack.chargen.starter?.skillValues.join("/") ?? "70/60/60/50/50/50/40/40/40"} 九值分配给八项本职与信用评级；结果忽略人物卡基础值。
+          </p>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {starterRows.map((row, index) => (
+              <div key={index} className="grid grid-cols-[1fr_92px] gap-2">
+                <select
+                  value={row.skillId}
+                  onChange={(event) =>
+                    setStarterRows((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, skillId: event.target.value } : item
+                      )
+                    )
+                  }
+                  className={inputClass}
+                >
+                  <option value="">选择本职技能</option>
+                  {starterSkillOptions.map((skill) => (
+                    <option key={skill.id} value={skill.id}>{skill.name}</option>
+                  ))}
+                </select>
+                <input
+                  type="number"
+                  value={row.value}
+                  onChange={(event) =>
+                    setStarterRows((prev) =>
+                      prev.map((item, itemIndex) =>
+                        itemIndex === index ? { ...item, value: event.target.value } : item
+                      )
+                    )
+                  }
+                  placeholder="最终值"
+                  className={inputClass + " font-mono"}
+                />
+              </div>
+            ))}
+          </div>
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs text-white/55">信用评级</span>
+            <input
+              type="number"
+              value={starterCredit}
+              onChange={(event) => setStarterCredit(event.target.value)}
+              className={inputClass + " max-w-[120px] font-mono"}
+            />
+          </div>
+          <div className="mt-4">
+            <p className="text-xs text-white/55">
+              个人兴趣技能（每项基础 +{props.pack.chargen.starter?.interestBonus ?? 20}）
+            </p>
+            <div className="mt-2 grid gap-2 sm:grid-cols-2">
+              {Array.from({ length: props.pack.chargen.starter?.interestCount ?? 4 }).map((_item, index) => (
+                <select
+                  key={index}
+                  value={starterInterests[index] ?? ""}
+                  onChange={(event) =>
+                    setStarterInterests((prev) =>
+                      prev.map((item, itemIndex) => (itemIndex === index ? event.target.value : item))
+                    )
+                  }
+                  className={inputClass}
+                >
+                  <option value="">选择兴趣技能</option>
+                  {starterSkillOptions
+                    .filter((skill) => skill.id !== "CREDIT_RATING" && starterRows.every((row) => row.skillId !== skill.id))
+                    .map((skill) => (
+                      <option key={skill.id} value={skill.id}>{skill.name}</option>
+                    ))}
+                </select>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className={"rounded-xl border border-white/10 bg-ink-800/50 p-5" + (isStarterMode ? " hidden" : "")}>
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div className="min-w-[260px] flex-1">
             <h2 className="text-base font-semibold text-white/90">技能分配</h2>
@@ -1361,6 +1625,50 @@ export default function CharacterBuilder(props: Props) {
             尚未选择职业，当前只能使用兴趣点。
           </p>
         ) : null}
+
+        {specialtyBaseOptions.length === 0 ? null : (
+          <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-spirit-400/25 bg-spirit-400/5 p-3">
+            <div className="min-w-[180px]">
+              <p className="text-[11px] font-medium text-spirit-200">添加专精（外语 / 科学 / 驾驶 / 生存 / 技艺 / 射击）</p>
+              <p className="mt-0.5 text-[10px] text-white/40">以复合 key 保存，例如 外语（拉丁语）→ LANGUAGE_OTHER#拉丁语；添加后在下方按兴趣点分配。</p>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-white/35">基础技能</span>
+              <select
+                value={selectedSpecialtyBaseId}
+                onChange={(event) => setSpecialtyBase(event.target.value)}
+                className={inputClass}
+              >
+                {specialtyBaseOptions.map((option) => (
+                  <option key={option.baseId} value={option.baseId}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-white/35">专精名称</span>
+              <input
+                value={specialtyName}
+                onChange={(event) => setSpecialtyName(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter") addSpecialty(); }}
+                list={specialtyNameCandidates.length > 0 ? "specialty-name-candidates" : undefined}
+                placeholder={specialtyBaseOptions.find((option) => option.baseId === selectedSpecialtyBaseId)?.placeholder ?? "专精"}
+                className={inputClass + " w-44"}
+              />
+              <datalist id="specialty-name-candidates">
+                {specialtyNameCandidates.map((candidate) => (
+                  <option key={candidate.baseId + "#" + candidate.name} value={candidate.name} />
+                ))}
+              </datalist>
+            </label>
+            <button
+              type="button"
+              onClick={addSpecialty}
+              className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-200 transition hover:bg-spirit-400/10"
+            >
+              添加专精
+            </button>
+          </div>
+        )}
 
         <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl border border-white/10 bg-ink-900/60 p-3">
           <input
@@ -1430,7 +1738,7 @@ export default function CharacterBuilder(props: Props) {
             </button>
           )}
           <span className="ml-auto font-mono text-[11px] text-white/35">
-            {filteredSkills.length} / {compiled.skills.length} 项
+            {filteredSkills.length} / {allSkills.length} 项
           </span>
         </div>
 
@@ -1448,7 +1756,7 @@ export default function CharacterBuilder(props: Props) {
               </div>
               <div className="grid gap-2 lg:grid-cols-2">
                 {group.skills.map((skill) => {
-                  const base = skillBases[skill.id] ?? 0;
+                  const base = skillBaseOf(skill.id);
                   const occupation = occupationAdded[skill.id] ?? 0;
                   const interest = interestAdded[skill.id] ?? 0;
                   const total = base + occupation + interest;
@@ -1506,6 +1814,9 @@ export default function CharacterBuilder(props: Props) {
                         <div className="shrink-0 text-right">
                           <p className="text-[10px] text-white/40">总计</p>
                           <p className="font-mono text-xl font-semibold text-amber-300">{total}</p>
+                          {skill.id === "CREDIT_RATING" ? (
+                            <p className="text-[10px] text-amber-200/75">{creditRatingLabel(total)}</p>
+                          ) : null}
                         </div>
                       </div>
 

@@ -55,6 +55,11 @@ export interface SaveCharacterInput {
   ageAllocation?: Coc7AgeAllocation | null;
   /** COC7 Excel 职业空位分配：slotId -> 技能 id 列表。 */
   slotAssignments?: Record<string, readonly string[]> | null;
+  /** 入门版固定分配：八项本职 + 信用评级最终值，以及四项个人兴趣。 */
+  starterSkills?: {
+    readonly values: Record<string, number>;
+    readonly interests: readonly string[];
+  } | null;
   /** 角色管理：基础档案的补充字段（车卡路径不用）。 */
   profile?: {
     readonly playerName?: string | null;
@@ -196,6 +201,7 @@ export async function saveCharacter(
       occupationId: input.occupationId ?? null,
       skillAllocation: input.skillAllocation ?? null,
       slotAssignments: input.slotAssignments ?? null,
+      starterSkills: input.starterSkills ?? null,
       era,
       age: input.age ?? null,
       ageAllocation: input.ageAllocation ?? null,
@@ -351,6 +357,7 @@ export async function updateCharacterAction(
       occupationId: input.occupationId ?? null,
       skillAllocation: input.skillAllocation ?? null,
       slotAssignments: input.slotAssignments ?? null,
+      starterSkills: input.starterSkills ?? null,
       era,
       age: targetAge,
       ageAllocation: ageAllocationInput,

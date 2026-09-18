@@ -46,25 +46,49 @@ export function activeCardEffects(stats: { readonly effects: readonly MagicEffec
   return [...stats.effects];
 }
 
-/** 武器类型 → 使用技能 / 射程 / 基础伤害。伤害由系统自动带出。 */
+/** 武器伤害类型：钝击 / 贯穿 / 不可贯穿（霰弹）。 */
+export type WeaponDamageType = "BLUNT" | "IMPALING" | "NONE";
+
+export interface WeaponDamageBand {
+  readonly label: string;
+  readonly expression: string;
+  /** null=不限；"DEX"=按角色 DEX 换算（书中霰弹枪近距离、徒手投掷等）。 */
+  readonly maxFeet: number | "DEX" | null;
+}
+
+/** 武器类型 → 使用技能 / 射程 / 基础伤害与元数据。伤害由系统自动带出。 */
 export interface WeaponTypeDefinition {
   readonly id: string;
   readonly label: string;
   readonly skillId: string;
   readonly range: "MELEE" | "NEAR" | "FAR";
   readonly damage: string;
+  readonly damageType: WeaponDamageType;
+  readonly damageBands?: readonly WeaponDamageBand[];
+  /** 允许的射击次数；仅手枪等连射武器使用。 */
+  readonly shots?: readonly number[];
 }
 
 export const WEAPON_TYPES: readonly WeaponTypeDefinition[] = [
-  { id: "BRAWL", label: "斗殴 / 徒手", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d3+db" },
-  { id: "AXE", label: "斧 / 钝器", skillId: "FIGHTING_AXE", range: "MELEE", damage: "1d8+2+db" },
-  { id: "BLADE", label: "剑 / 刀", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d6+db" },
-  { id: "SPEAR", label: "矛 / 长柄", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d8+db" },
-  { id: "WHIP", label: "鞭 / 链", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d3+db" },
-  { id: "HANDGUN", label: "手枪", skillId: "FIREARMS_HANDGUN", range: "NEAR", damage: "1d10" },
-  { id: "RIFLE", label: "步枪 / 霰弹枪", skillId: "FIREARMS_RIFLE", range: "FAR", damage: "2d6" },
-  { id: "BOW", label: "弓 / 弩", skillId: "FIREARMS_BOW", range: "FAR", damage: "1d8+db" },
-  { id: "THROW", label: "投掷", skillId: "THROW", range: "NEAR", damage: "1d4+db" }
+  { id: "BRAWL", label: "徒手 / 斗殴", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d3+db", damageType: "BLUNT" },
+  { id: "KNIFE", label: "小刀 / 匕首", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d4+db", damageType: "IMPALING" },
+  { id: "MACHETE", label: "砍刀", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d8+db", damageType: "IMPALING" },
+  { id: "CLUB", label: "短棒", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d6+db", damageType: "BLUNT" },
+  { id: "BAT", label: "棒球棍", skillId: "FIGHTING_BRAWL", range: "MELEE", damage: "1d8+db", damageType: "BLUNT" },
+  { id: "SWORD", label: "剑", skillId: "格斗（剑）", range: "MELEE", damage: "1d8+db", damageType: "IMPALING" },
+  { id: "AXE", label: "斧", skillId: "FIGHTING_AXE", range: "MELEE", damage: "1d8+2+db", damageType: "IMPALING" },
+  { id: "SPEAR", label: "矛 / 长柄", skillId: "格斗（矛）", range: "MELEE", damage: "1d8+db", damageType: "IMPALING" },
+  { id: "WHIP", label: "鞭 / 链", skillId: "格斗（鞭子）", range: "MELEE", damage: "1d3+db", damageType: "BLUNT" },
+  { id: "HANDGUN", label: "手枪", skillId: "FIREARMS_HANDGUN", range: "NEAR", damage: "1d10", damageType: "IMPALING", shots: [1, 2, 3] },
+  { id: "SHOTGUN", label: "霰弹枪", skillId: "FIREARMS_RIFLE", range: "FAR", damage: "4d6",
+    damageType: "NONE",
+    damageBands: [
+      { label: "近距离", expression: "4d6", maxFeet: "DEX" },
+      { label: "普通", expression: "2d6", maxFeet: null }
+    ] },
+  { id: "RIFLE", label: "步枪", skillId: "FIREARMS_RIFLE", range: "FAR", damage: "2d6+4", damageType: "IMPALING" },
+  { id: "BOW", label: "弓 / 弩", skillId: "FIREARMS_BOW", range: "FAR", damage: "1d8+db", damageType: "IMPALING" },
+  { id: "THROW", label: "投掷", skillId: "THROW", range: "NEAR", damage: "1d4+db", damageType: "BLUNT" }
 ];
 
 export function weaponTypeDefinition(id: string): WeaponTypeDefinition {
@@ -143,6 +167,20 @@ const WeaponStatsCoreSchema = z.object({
   skillId: z.string().max(60).nullable().default(null),
   accuracyMod: z.number().int().min(-50).max(50),
   mpCost: z.number().int().min(0).max(999),
+  /** COC7 极限伤害类型：钝击 / 贯穿 / 不可贯穿（霰弹）。 */
+  damageType: z.enum(["BLUNT", "IMPALING", "NONE"]).optional(),
+  /** 多距离档伤害；未提供时由 damage 自动拆分或单档处理。 */
+  damageBands: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(20),
+        expression: z.string().min(1).max(30),
+        maxFeet: z.union([z.number().nonnegative(), z.literal("DEX"), z.null()])
+      })
+    )
+    .optional(),
+  /** 允许的射击次数；仅手枪等连射武器使用。 */
+  shots: z.array(z.number().int().positive()).optional(),
   /** 武器类型；damage / range / skillId 由它自动带出。 */
   weaponType: z.string().max(40).default("BRAWL")
 });

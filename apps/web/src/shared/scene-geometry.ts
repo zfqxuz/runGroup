@@ -107,6 +107,37 @@ export function cellCenterFromKey(grid: GridLike, key: string): GeometryPoint | 
   };
 }
 
+export function axialDistance(a: AxialCell, b: AxialCell): number {
+  const dq = a.q - b.q;
+  const dr = a.r - b.r;
+  return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+}
+
+/**
+ * 两个 Token 坐标之间的战斗距离（英尺）。
+ * - SQUARE：切比雪夫距离（横竖斜格都算 1 格）；
+ * - HEX：六边形轴向距离；
+ * - NONE：直接按像素欧氏距离换算格数。
+ * feetPerCell 默认 5 英尺，与 COC7 常用网格一致。
+ */
+export function gridDistanceFeet(
+  a: GeometryPoint,
+  b: GeometryPoint,
+  grid: GridLike,
+  feetPerCell = 5
+): number {
+  const scale = Math.max(1, feetPerCell) / Math.max(1, grid.gridSize);
+  if (grid.gridType === "HEX") {
+    return axialDistance(hexCellAt(a, grid.gridSize), hexCellAt(b, grid.gridSize)) * Math.max(1, feetPerCell);
+  }
+  if (grid.gridType === "NONE") {
+    return Math.hypot(a.x - b.x, a.y - b.y) * scale;
+  }
+  const ca = squareCellAt(a, grid);
+  const cb = squareCellAt(b, grid);
+  return Math.max(Math.abs(ca.col - cb.col), Math.abs(ca.row - cb.row)) * Math.max(1, feetPerCell);
+}
+
 export function snapPointToGrid(grid: GridLike, x: number, y: number): GeometryPoint {
   const point = { x: clamp(x, 0, grid.width), y: clamp(y, 0, grid.height) };
   const key = cellKeyAt(grid, point.x, point.y);

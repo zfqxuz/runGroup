@@ -16,6 +16,7 @@ import {
 import BackstoryPanel from "@/components/character/BackstoryPanel";
 import { unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
+import { creditRatingLabel } from "@/shared/occupation";
 import { prisma } from "@/server/db/prisma";
 import { RARITY_LABELS, cardRarityBorderClass } from "@/shared/card";
 
@@ -147,7 +148,10 @@ export default async function CharacterPage({
               className="flex items-center justify-between rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2"
             >
               <span className="text-xs text-white/50">{ATTRIBUTE_LABELS[key]}</span>
-              <span className="font-mono text-sm text-white/80">{effective[key]}</span>
+              <span className="font-mono text-sm text-white/80">
+                {effective[key] ?? 0}
+                <span className="ml-2 text-[10px] text-white/35">困难 {Math.floor((effective[key] ?? 0) / 2)} · 极限 {Math.floor((effective[key] ?? 0) / 5)}</span>
+              </span>
             </div>
           ))}
         </div>
@@ -209,6 +213,7 @@ export default async function CharacterPage({
                   <span className="block truncate text-xs text-white/60">{row.name}</span>
                   <span className="block font-mono text-[10px] text-white/30">
                     困难 {Math.floor((row.value ?? 0) / 2)} · 极限 {Math.floor((row.value ?? 0) / 5)}
+                    {row.id === "CREDIT_RATING" ? " · " + creditRatingLabel(row.value ?? 0) : ""}
                   </span>
                 </span>
                 <span className="font-mono text-sm text-white/80">{row.value}</span>

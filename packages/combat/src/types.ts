@@ -19,6 +19,7 @@ export type ActionKind =
   | "DEFEND"
   | "DODGE"
   | "COUNTER"
+  | "MANEUVER"
   | "ITEM"
   | "FLEE"
   | "PASS";
@@ -117,6 +118,16 @@ export interface CombatParticipantState {
   itemUsesLeft?: Record<string, number>;
   /** 道具冷却到期轮次：cardId -> 可再次使用的轮次。 */
   itemCooldownUntil?: Record<string, number>;
+  /** 放弃接下来 N 次行动（寻找掩体等）。 */
+  skipNextAction?: number;
+  /** 被擒抱者 id；非空时承受擒抱惩罚。 */
+  grappledBy?: string | null;
+  /** 已被缴械：服务端攻击选项会被过滤。 */
+  disarmed?: boolean;
+  /** 本轮已经进行过的应对次数（寡不敌众）。 */
+  reactionsThisRound?: number;
+  /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
+  initiativeMod?: number;
 }
 /**
  * 召唤模板。服务端从房间内独立 NPC 卡解析后塞进 ActionSubmission，
@@ -134,14 +145,43 @@ export interface SummonTemplate {
   readonly armorExpression?: string;
 }
 
+/** U-3：一次行动内的单步攻击（可换技能 / 换目标 / 连射）。 */
+export interface RoutineAttackStep {
+  readonly targetId: string;
+  readonly skill?: string;
+  readonly damage?: string;
+  readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
+  readonly shots?: number;
+  readonly accuracyMod?: number;
+  readonly bonusDice?: number;
+  readonly bonusDiceSource?: string;
+  readonly penaltyDice?: number;
+}
+
 export interface ActionSubmission {
   readonly actorId: string;
   readonly kind: ActionKind;
   readonly targetId?: string | null;
+  /** U-3：多目标 / 多技能攻击 routine；存在时按顺序逐条结算。 */
+  readonly routine?: readonly RoutineAttackStep[];
   /** 攻击技能名，用于查表得到目标值。 */
   readonly skill?: string;
   /** 伤害骰，如 "2d6+3"。 */
   readonly damage?: string;
+  /** COC7 武器伤害类型：极限成功时决定是否额外掷武器骰。 */
+  readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
+  /** COC7 手枪连射：同一动作内的射击次数（1–3）。 */
+  readonly shots?: number;
+  /** COC7 战技：缴械 / 踢倒 / 擒拿。 */
+  readonly maneuver?: "DISARM" | "TRIP" | "GRAPPLE";
+  /** 连射时的当前发数与总发数；用于日志与逐发结算。 */
+  readonly shotIndex?: number;
+  readonly shotCount?: number;
+  /** 本次检定奖励骰 / 惩罚骰（由服务端或引擎规则推导，客户端不可直接篡改）。 */
+  readonly bonusDice?: number;
+  readonly penaltyDice?: number;
+  /** 奖励骰来源标签（如“近距离点射”）；仅用于日志展示。 */
+  readonly bonusDiceSource?: string;
   readonly accuracyMod?: number;
   /** 本次行动消耗的 ATB 进度（微计数）。 */
   readonly atbCost?: number;

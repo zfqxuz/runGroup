@@ -37,12 +37,30 @@ const SKILL_ALIASES: Record<string, string> = {
   "学问": "学问"
 };
 
+const COMPOSITE_SKILL_BASES: Record<string, string> = {
+  "外语": "LANGUAGE_OTHER",
+  "其他语言": "LANGUAGE_OTHER",
+  "语言": "LANGUAGE_OTHER",
+  "科学": "SCIENCE",
+  "驾驶": "驾驶",
+  "生存": "SURVIVAL",
+  "技艺": "ART_CRAFT",
+  "学问": "学问"
+};
+
 function packSkillId(packSkills: readonly { readonly id: string; readonly name: string }[], label: string): string {
   const trimmed = label.trim();
   const exact = packSkills.find((skill) => skill.name === trimmed || skill.id === trimmed);
   if (exact !== undefined) return exact.id;
   const base = trimmed.replace(/[（(].*?[)）]/g, "").trim();
   const inner = /[（(](.*?)[)）]/.exec(trimmed)?.[1]?.trim() ?? "";
+  if (inner.length > 0) {
+    if (base === "射击" && /弩/.test(inner)) return "FIREARMS_BOW#弩";
+    const compositeBase = COMPOSITE_SKILL_BASES[base];
+    if (compositeBase !== undefined && packSkills.some((skill) => skill.id === compositeBase)) {
+      return compositeBase + "#" + inner;
+    }
+  }
   for (const key of [trimmed, base, inner]) {
     const alias = SKILL_ALIASES[key];
     if (alias !== undefined) {

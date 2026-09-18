@@ -13,6 +13,7 @@ import {
   toMicro,
   schedule,
   resolveActionCost,
+  meetsDifficulty,
   resolveCheck,
   resolveOpposed,
   resolveRulePack,
@@ -294,5 +295,20 @@ describe("ATB 全局计数器", () => {
     expect(speedMultiplierOf(touhou, [{ key: "STOP", stacks: 1, remainingTicks: 1 }], {})).toBe(0);
     expect(speedMultiplierOf(touhou, [haste, slow], {})).toBe(0.75);
     expect(speedMultiplierOf(touhou, [slow, haste], {})).toBe(0.75);
+  });
+});
+
+describe("检定难度", () => {
+  it("常规 / 困难 / 极难分别按目标值、半值、五分之一值判定", () => {
+    const target = 60;
+    const regular = resolveCheck(coc7, 40, target);
+    const hard = resolveCheck(coc7, 30, target);
+    const extreme = resolveCheck(coc7, 12, target);
+    expect(meetsDifficulty(regular, "REGULAR")).toBe(true);
+    expect(meetsDifficulty(regular, "HARD")).toBe(false);
+    expect(meetsDifficulty(regular, "EXTREME")).toBe(false);
+    expect(meetsDifficulty(hard, "HARD")).toBe(true);
+    expect(meetsDifficulty(hard, "EXTREME")).toBe(false);
+    expect(meetsDifficulty(extreme, "EXTREME")).toBe(true);
   });
 });

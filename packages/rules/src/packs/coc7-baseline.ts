@@ -8,6 +8,17 @@ export const COC7_BASELINE: RulePackInput = {
   system: "COC7",
   version: "1.1.0",
   const: {},
+  chargen: {
+    mode: "CORE_OCCUPATION",
+    starter: {
+      attributeArray: [40, 50, 50, 50, 60, 60, 70, 80],
+      skillValues: [70, 60, 60, 50, 50, 50, 40, 40, 40],
+      interestCount: 4,
+      interestBonus: 20,
+      allowMythosAtCreation: false
+    }
+  },
+  magicPoint: { overflowToHp: true, hpPerMp: 1 },
   attributes: {
     min: 15,
     max: 90,
@@ -28,7 +39,15 @@ export const COC7_BASELINE: RulePackInput = {
         perAttributeMin: 15,
         perAttributeMax: 90
       },
-      { kind: "MANUAL", id: "manual", label: "手动填写" }
+      { kind: "MANUAL", id: "manual", label: "手动填写" },
+      {
+        kind: "FIXED_ARRAY",
+        id: "starter-quickstart",
+        label: "入门版固定数组 + 固定技能分配（本书快速开始）",
+        values: [40, 50, 50, 50, 60, 60, 70, 80],
+        luckDice: "3d6",
+        luckMultiplier: 5
+      }
     ]
   },
   derived: {

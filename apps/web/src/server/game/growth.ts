@@ -30,9 +30,9 @@ export interface ResolveGrowthOutcome {
   readonly results: readonly ResolvedGrowthCheck[];
 }
 
-function growthNote(roll: number, beforeValue: number, gain: number): string {
-  if (roll >= 96 && roll <= beforeValue) {
-    return "成长检定：d100=" + roll + " 位于大成功区间，技能 +" + gain;
+function growthNote(roll: number, beforeValue: number, gain: number, autoPassFrom96: boolean): string {
+  if (autoPassFrom96 && roll >= 96 && roll <= beforeValue) {
+    return "成长检定：d100=" + roll + " 位于 96–100 必成长区间，技能 +" + gain;
   }
   return "成长检定：d100=" + roll + " > 原技能值 " + beforeValue + "，技能 +" + gain;
 }
@@ -64,7 +64,13 @@ export async function resolveGameGrowthChecks(
     select: {
       id: true,
       room: {
-        select: { id: true, system: true, rulePackVersionId: true, ruleOverride: true }
+        select: {
+          id: true,
+          system: true,
+          rulePackVersionId: true,
+          ruleOverride: true,
+          chargenMethod: true
+        }
       }
     }
   });
@@ -95,7 +101,11 @@ export async function resolveGameGrowthChecks(
   }));
 
   const rng = options.rng ?? createSeededRng(options.seed ?? randomSeed());
-  const rolled = resolveGrowthChecks(inputs, rng);
+  const rolled = resolveGrowthChecks(inputs, rng, {
+    autoPassFrom96:
+      pack.compiled.pack.check.skillImprovement.autoPassFrom96 &&
+      game.room.chargenMethod !== "starter-quickstart"
+  });
   const now = new Date();
   const results: ResolvedGrowthCheck[] = [];
   let passedCount = 0;
@@ -134,7 +144,13 @@ export async function resolveGameGrowthChecks(
     passedCount += 1;
     const fresh = await tx.character.findUnique({ where: { id: check.characterId } });
     if (fresh === null) continue;
-    const note = growthNote(result.roll, result.beforeValue, result.gain);
+    const note = growthNote(
+      result.roll,
+      result.beforeValue,
+      result.gain,
+      pack.compiled.pack.check.skillImprovement.autoPassFrom96 &&
+        game.room.chargenMethod !== "starter-quickstart"
+    );
     const advancement = await applyAdvancement(
       tx,
       options.gameId,

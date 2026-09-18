@@ -50,6 +50,33 @@ export default function RulePackConfigEditor(props: Props) {
   const skills = Array.isArray(parsed?.skills) ? parsed.skills : [];
   const spells = Array.isArray(magic.spells) ? magic.spells : [];
 
+  const SKILL_CATEGORIES = ["COMBAT", "PHYSICAL", "KNOWLEDGE", "SOCIAL", "TECH", "MAGIC", "OTHER"] as const;
+
+  function updateSkill(index: number, key: "id" | "name" | "category" | "base", value: string): void {
+    patch((draft) => {
+      const list = Array.isArray(draft.skills) ? [...draft.skills] : [];
+      const current = recordOf(list[index]);
+      list[index] = { ...current, [key]: value };
+      draft.skills = list;
+    });
+  }
+
+  function addSkill(): void {
+    patch((draft) => {
+      const list = Array.isArray(draft.skills) ? [...draft.skills] : [];
+      list.push({ id: "NEW_SKILL_" + String(list.length + 1), name: "新技能", category: "OTHER", base: "0" });
+      draft.skills = list;
+    });
+  }
+
+  function removeSkill(index: number): void {
+    patch((draft) => {
+      const list = Array.isArray(draft.skills) ? [...draft.skills] : [];
+      list.splice(index, 1);
+      draft.skills = list;
+    });
+  }
+
   const inputClass =
     "w-full rounded-lg border border-white/15 bg-ink-900 px-3 py-2 text-xs outline-none focus:border-sakura-500";
 
@@ -145,8 +172,93 @@ export default function RulePackConfigEditor(props: Props) {
             />
             启用魔法规则
           </label>
+          <div className="overflow-hidden rounded-lg border border-white/10">
+            <div className="flex items-center justify-between border-b border-white/10 bg-ink-900/60 px-3 py-2">
+              <span className="text-[11px] text-white/55">技能表（{skills.length}）</span>
+              <button
+                type="button"
+                onClick={addSkill}
+                className="rounded border border-spirit-400/40 px-2 py-1 text-[10px] text-spirit-200 transition hover:bg-spirit-400/10"
+              >
+                添加技能
+              </button>
+            </div>
+            <div className="max-h-80 overflow-auto">
+              <table className="w-full min-w-[640px] text-left text-[11px]">
+                <thead className="bg-white/5 text-white/40">
+                  <tr>
+                    <th className="px-2 py-1.5">id</th>
+                    <th className="px-2 py-1.5">名称</th>
+                    <th className="px-2 py-1.5">类别</th>
+                    <th className="px-2 py-1.5">基础值表达式</th>
+                    <th className="px-2 py-1.5 text-right">操作</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {skills.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="px-3 py-4 text-center text-white/35">当前规则包没有技能；点击“添加技能”。</td>
+                    </tr>
+                  ) : (
+                    skills.map((skill, index) => {
+                      const record = recordOf(skill);
+                      return (
+                        <tr key={index} className="border-t border-white/5" data-testid={"skill-row-" + index}>
+                          <td className="px-2 py-1">
+                            <input
+                              data-testid={"skill-id-" + index}
+                              value={typeof record.id === "string" ? record.id : ""}
+                              onChange={(event) => updateSkill(index, "id", event.target.value)}
+                              className="w-36 rounded border border-white/15 bg-ink-900 px-2 py-1 font-mono text-[11px] outline-none focus:border-sakura-500"
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              data-testid={"skill-name-" + index}
+                              value={typeof record.name === "string" ? record.name : ""}
+                              onChange={(event) => updateSkill(index, "name", event.target.value)}
+                              className="w-40 rounded border border-white/15 bg-ink-900 px-2 py-1 text-[11px] outline-none focus:border-sakura-500"
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <select
+                              data-testid={"skill-category-" + index}
+                              value={typeof record.category === "string" ? record.category : "OTHER"}
+                              onChange={(event) => updateSkill(index, "category", event.target.value)}
+                              className="rounded border border-white/15 bg-ink-900 px-2 py-1 text-[11px] outline-none focus:border-sakura-500"
+                            >
+                              {SKILL_CATEGORIES.map((category) => (
+                                <option key={category} value={category}>{category}</option>
+                              ))}
+                            </select>
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              data-testid={"skill-base-" + index}
+                              value={typeof record.base === "string" ? record.base : String(record.base ?? "")}
+                              onChange={(event) => updateSkill(index, "base", event.target.value)}
+                              className="w-28 rounded border border-white/15 bg-ink-900 px-2 py-1 font-mono text-[11px] outline-none focus:border-sakura-500"
+                            />
+                          </td>
+                          <td className="px-2 py-1 text-right">
+                            <button
+                              type="button"
+                              onClick={() => removeSkill(index)}
+                              className="rounded border border-red-400/30 px-2 py-1 text-[10px] text-red-300 transition hover:bg-red-400/10"
+                            >
+                              删除
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
           <p className="text-[11px] text-white/35">
-            技能、种族、战斗、法术等复杂配置请使用「高级编辑」。
+            种族、战斗、法术等复杂配置可继续使用「JSON 编辑」。
           </p>
         </>
       )}

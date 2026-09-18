@@ -19,6 +19,7 @@ import { characterEquipmentOf } from "@/shared/character-equipment";
 import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { revertAdvancementAction, updateAdvancementAction } from "@/server/actions/advancement";
 import { auth } from "@/server/auth";
+import { creditRatingLabel } from "@/shared/occupation";
 import { prisma } from "@/server/db/prisma";
 import { ADVANCEMENT_SOURCE_LABELS, summarizeAdvancements } from "@/server/game/advancement";
 import { advancementView } from "@/server/game/view";
@@ -349,6 +350,7 @@ export default async function CharacterDetailPage({
                     <span className="block truncate text-sm text-white/75">{row.name}</span>
                     <span className="mt-0.5 block font-mono text-sm text-white/55">
                       普通 {row.value} · 困难 {Math.floor(row.value / 2)} · 极限 {Math.floor(row.value / 5)}
+                      {row.id === "CREDIT_RATING" ? " · " + creditRatingLabel(row.value) : ""}
                     </span>
                   </span>
                   <span className="flex shrink-0 items-center gap-2">

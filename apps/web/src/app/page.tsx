@@ -144,6 +144,7 @@ export default async function HomePage(props: { searchParams: { error?: string; 
             <select name="chargenMethod" className={inputClass} defaultValue="destiny5">
               <option value="destiny5">天命 5 · 掷 5 组选 1 组</option>
               <option value="point480">总点数 480 · 单项 15~90</option>
+              <option value="starter-quickstart">入门版固定数组 + 固定技能分配</option>
             </select>
           </label>
           <button

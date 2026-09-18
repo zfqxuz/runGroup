@@ -7,6 +7,7 @@ import {
   parseDice,
   rollDie,
   rollDice,
+  rollPercentile,
   type FormulaErrorCode,
   type Rng
 } from "../index";
@@ -148,5 +149,46 @@ describe("随机源可复现", () => {
       expect(count).toBeGreaterThan(rolls / 6 * 0.95);
       expect(count).toBeLessThan(rolls / 6 * 1.05);
     }
+  });
+});
+
+
+describe("COC7 百分骰奖励/惩罚骰", () => {
+  it("无修正时读取十位与个位，00+0 记为 100", () => {
+    const zeros: Rng = { nextUint32: () => 0 };
+    expect(rollPercentile(zeros).roll).toBe(100);
+
+    const rng: Rng = { nextUint32: (() => { const q = [7, 2]; return () => q.shift() ?? 0; })() };
+    const result = rollPercentile(rng);
+    expect(result.tens[0]).toBe(70);
+    expect(result.ones).toBe(2);
+    expect(result.roll).toBe(72);
+  });
+
+  it("奖励骰取较低十位", () => {
+    const queue = [7, 2, 3]; // 十位 70/20，个位 3
+    const rng: Rng = { nextUint32: () => queue.shift() ?? 0 };
+    const result = rollPercentile(rng, 1, 0);
+    expect(result.tens).toEqual([70, 20]);
+    expect(result.roll).toBe(23);
+    expect(result.bonusDice).toBe(1);
+  });
+
+  it("惩罚骰取较高十位", () => {
+    const queue = [7, 2, 3];
+    const rng: Rng = { nextUint32: () => queue.shift() ?? 0 };
+    const result = rollPercentile(rng, 0, 1);
+    expect(result.roll).toBe(73);
+    expect(result.penaltyDice).toBe(1);
+  });
+
+  it("奖励骰与惩罚骰先互相抵消", () => {
+    const queue = [7, 2];
+    const rng: Rng = { nextUint32: () => queue.shift() ?? 0 };
+    const result = rollPercentile(rng, 1, 1);
+    expect(result.tens).toEqual([70]);
+    expect(result.bonusDice).toBe(0);
+    expect(result.penaltyDice).toBe(0);
+    expect(result.roll).toBe(72);
   });
 });

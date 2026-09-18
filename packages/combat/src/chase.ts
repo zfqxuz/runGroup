@@ -305,6 +305,9 @@ export interface ChaseAttackInput {
   readonly skill?: string;
   readonly damage?: string;
   readonly accuracyMod?: number;
+  /** U-6：地图距离近距离点射等奖励骰。 */
+  readonly bonusDice?: number;
+  readonly bonusDiceSource?: string;
 }
 
 export interface ChaseAttackResolution {
@@ -366,7 +369,9 @@ export function resolveChaseAttack(
       targetId: attack.targetId,
       skill: attack.skill,
       damage: attack.damage,
-      accuracyMod: attack.accuracyMod
+      accuracyMod: attack.accuracyMod,
+      bonusDice: attack.bonusDice,
+      bonusDiceSource: attack.bonusDiceSource
     },
     reactions
   );

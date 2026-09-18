@@ -17,6 +17,8 @@ interface Props {
   readonly saved: boolean;
   readonly notice: string | null;
   readonly error: string | null;
+  /** G-2：当前房间实际生效的 96–100 成长规则。 */
+  readonly growthAutoPassFrom96: boolean;
 }
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -79,9 +81,24 @@ export default function RoomAdvancementPanel(props: Props) {
             属性、技能与 SAN 变动会同步到角色卡。
           </p>
         </div>
-        <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">
-          {props.advancements.length} 条成长 · {props.growthChecks.length} 个成长点
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span
+            className={
+              "rounded-full border px-2 py-0.5 text-[10px] " +
+              (props.growthAutoPassFrom96
+                ? "border-emerald-400/40 text-emerald-300"
+                : "border-sky-400/40 text-sky-200")
+            }
+            data-testid="growth-rule-badge"
+          >
+            {props.growthAutoPassFrom96
+              ? "成长规则：完整版（> 技能值，或 96–100）"
+              : "成长规则：入门版（仅 > 技能值，96–100 不自动成长）"}
+          </span>
+          <span className="rounded-full border border-amber-400/40 px-2 py-0.5 text-[10px] text-amber-300">
+            {props.advancements.length} 条成长 · {props.growthChecks.length} 个成长点
+          </span>
+        </div>
       </div>
 
       {noticeText === null ? null : (
@@ -98,7 +115,7 @@ export default function RoomAdvancementPanel(props: Props) {
       {props.growthChecks.length > 0 ? (
         <div className="mt-4 rounded-lg border border-amber-400/25 bg-amber-400/5 p-3">
           <p className="text-[11px] font-medium text-amber-200">
-            待检定成长点（1d100 大于技能值或掷出 96–100 时 +1d10）
+            待检定成长点（完整版：1d100 大于技能值或掷出 96–100 时 +1d10；入门版：仅大于技能值时成长）
           </p>
           <ul className="mt-2 flex flex-col divide-y divide-white/5">
             {props.growthChecks.map((check) => (

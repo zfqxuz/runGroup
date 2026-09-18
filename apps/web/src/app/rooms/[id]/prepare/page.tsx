@@ -5,6 +5,7 @@ import RoomNpcPanel from "@/components/room/RoomNpcPanel";
 import AutoSubmitCharacterSelect from "@/components/room/AutoSubmitCharacterSelect";
 import SceneBoard from "@/components/room/SceneBoard";
 import KpValueEditor from "@/components/room/KpValueEditor";
+import KpToolsPanel from "@/components/room/KpToolsPanel";
 import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import {
@@ -979,6 +980,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
       <RoomNpcPanel roomId={room.id} isKP={isKP} />
 
       {isKP ? <KpValueEditor roomId={room.id} units={sceneUnitsForPrepare} /> : null}
+      {isKP ? <KpToolsPanel roomId={room.id} units={sceneUnitsForPrepare} /> : null}
 
       {activeSceneForPrepare === null ? (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">

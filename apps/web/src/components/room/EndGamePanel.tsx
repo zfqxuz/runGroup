@@ -88,7 +88,7 @@ export default function EndGamePanel({ roomId, gameId, characters, pendingGrowth
         <label className="flex items-start gap-2 rounded-lg border border-amber-400/25 bg-amber-400/5 px-3 py-2 text-xs text-amber-100">
           <input type="checkbox" name="resolveGrowth" value="1" defaultChecked className="mt-0.5" />
           <span>
-            结束前自动进行 {pendingGrowthCount} 个待检定成长点（CoC 幕间：d100 大于技能值或 96-100 时 +1d10）。
+            结束前自动进行 {pendingGrowthCount} 个待检定成长点（完整版：d100 大于技能值或 96–100 时 +1d10；入门版：仅大于技能值时成长）。
           </span>
         </label>
       )}

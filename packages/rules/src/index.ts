@@ -85,6 +85,7 @@ export {
   DERIVED_KEYS,
   CHECK_RESULTS,
   CHECK_RANK,
+  CHECK_DIFFICULTIES,
   DEFENSE_TYPES
 } from "./types";
 
@@ -94,6 +95,7 @@ export type {
   DerivedKey,
   DerivedStats,
   CheckResult,
+  CheckDifficulty,
   DefenseType
 } from "./types";
 
@@ -106,7 +108,7 @@ export type {
   CompiledStatusEffect
 } from "./compile";
 
-export { computeDerived, isSuccess, resolveCheck, resolveOpposed } from "./engine";
+export { computeDerived, isSuccess, meetsDifficulty, resolveCheck, resolveOpposed, REQUIRED_CHECK_RANK } from "./engine";
 export type { CheckOutcome, DerivedInput, DerivedOutcome } from "./engine";
 
 export { applyDamagePipeline } from "./damage";
@@ -141,9 +143,20 @@ export { attributeTotal, checkPointBuy, rollAttributeSets } from "./attributes";
 export type { AttributeSetOption, PointBuyCheck } from "./attributes";
 
 export { isGrowthCheckPassed, resolveGrowthChecks } from "./growth";
-export type { GrowthCheckInput, GrowthCheckResult } from "./growth";
+export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./growth";
 
 export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";
+export { spendMagicPoints } from "./resources";
+export { MADNESS_BOUT_TABLE, MANIAS, PHOBIAS, rollMadnessBout, rollSanityLoss, resolveSanityCheck } from "./sanity";
+export type { MadnessBoutEntry, MadnessBoutResult, SanityCheckResult } from "./sanity";
+export {
+  resolveFirstAid,
+  resolveMedicine,
+  resolveNaturalHealing,
+  resolveWeeklyMajorWoundRecovery
+} from "./medical";
+export type { MedicalAction, MedicalDifficulty, MedicalOutcome } from "./medical";
+export type { MagicPointRules, MagicPointSpendResult } from "./resources";
 export { MAGIC_TARGETINGS, MAGIC_EFFECT_TYPES } from "./schema";
 export type { MagicEffect, MagicTargeting } from "./schema";
 export {

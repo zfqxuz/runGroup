@@ -554,7 +554,14 @@ export async function createCombatRecord(
       const defaultNpcSpells = pack.pack.magic?.spells.map((spell) => spell.id) ?? [];
       const init = buildNpcInit(pack, card, selection.faction, defaultNpcSpells);
       if (typeof init === "string") return { ok: false, error: init };
-      npcDataById.set(card.id, card.stats);
+      // 战斗运行时的 participant.id 是 NPC 卡 id，而 DB CombatParticipant.id 是独立 cuid。
+      // 把 participant id 一并写进 npcData，供 loadNpcWeaponsByParticipant 在重载时反查武器。
+      npcDataById.set(
+        card.id,
+        card.stats !== null && typeof card.stats === "object" && Array.isArray(card.stats) === false
+          ? { ...(card.stats as Record<string, unknown>), __participantId: card.id }
+          : { __participantId: card.id }
+      );
       const participant = addParticipant(state, init);
       const armorExpression = armorExpressionFromValue(card.stats);
       if (armorExpression !== null) {

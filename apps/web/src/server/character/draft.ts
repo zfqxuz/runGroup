@@ -23,11 +23,20 @@ import {
   type OccupationSkillAccess
 } from "@/shared/occupation";
 
+export interface StarterSkillAllocationInput {
+  /** 八项本职技能 + 信用评级的最终值（忽略基础值的入门版分配）。 */
+  readonly values: Record<string, number>;
+  /** 四项个人兴趣技能；最终值 = 基础值 + interestBonus。 */
+  readonly interests: readonly string[];
+}
+
 export interface SkillAllocationInput {
   readonly occupation: Record<string, number>;
   readonly interest: Record<string, number>;
   /** COC7 Excel 空位分配：slotId -> 选中的技能 id 列表。 */
   readonly slots?: Record<string, readonly string[]>;
+  /** 入门版固定分配：用于角色管理页回显。 */
+  readonly starter?: StarterSkillAllocationInput;
 }
 
 export interface CharacterDraftInput {
@@ -42,6 +51,8 @@ export interface CharacterDraftInput {
   readonly era: string | null;
   readonly age: number | null;
   readonly ageAllocation: Coc7AgeAllocation | null;
+  /** 入门版固定数组 / 固定技能分配数据。 */
+  readonly starterSkills?: StarterSkillAllocationInput | null;
   /** 新建（车卡）时为 true，走原车卡点数法校验；角色管理直接改属性时为 false。 */
   readonly enforceAttributeMethod: boolean;
   /** 是否套用 COC7 年龄补正。导入卡（ageAdjusted=false）在年龄不变时跳过，避免重复扣减。 */
@@ -119,6 +130,118 @@ function skillBasesOf(compiled: CompiledRulePack, pack: RulePack, attributes: At
   return bases;
 }
 
+function validateStarterCharacterDraft(
+  input: CharacterDraftInput,
+  context: CharacterDraftContext,
+  name: string,
+  attributes: AttributeSet,
+  method: Extract<RulePack["attributes"]["methods"][number], { kind: "FIXED_ARRAY" }>
+): CharacterDraftResult {
+  const { pack, compiled, occupation } = context;
+  const starterConfig = pack.chargen.starter;
+  const expectedSkillValues = starterConfig?.skillValues ?? [70, 60, 60, 50, 50, 50, 40, 40, 40];
+  const interestCount = starterConfig?.interestCount ?? 4;
+  const interestBonus = starterConfig?.interestBonus ?? 20;
+
+  const normalizedAge = input.age === undefined || input.age === null ? 30 : Math.floor(Number(input.age));
+  if (Number.isFinite(normalizedAge) === false || normalizedAge < 15 || normalizedAge > 90) {
+    return { ok: false, error: "年龄必须在 15~90 之间" };
+  }
+
+  const attributeKeys = (["str", "con", "siz", "dex", "app", "int", "pow", "edu"] as const);
+  const expectedAttributes = [...method.values].sort((a, b) => a - b).join(",");
+  const actualAttributes = attributeKeys.map((key) => attributes[key]).sort((a, b) => a - b).join(",");
+  if (actualAttributes !== expectedAttributes) {
+    return {
+      ok: false,
+      error:
+        "入门版固定数组需要把 " +
+        method.values.join("/") +
+        " 恰好分配给八项属性（幸运另掷）"
+    };
+  }
+  if (attributes.luck < 15 || attributes.luck > 90 || attributes.luck % method.luckMultiplier !== 0) {
+    return { ok: false, error: "幸运必须是 3D6×5 的结果（15~90，且为 5 的倍数）" };
+  }
+
+  const starter = input.starterSkills;
+  if (starter === undefined || starter === null) {
+    return { ok: false, error: "入门版固定分配缺少技能数据" };
+  }
+  const knownSkillIds = new Set(compiled.skills.map((skill) => skill.id));
+  const entries = Object.entries(starter.values)
+    .map(([skillId, value]) => [skillId, Math.floor(Number(value))] as const)
+    .filter(([, value]) => Number.isFinite(value));
+  if (entries.length !== 9) {
+    return { ok: false, error: "入门版技能分配需要恰好九项：八项本职 + 信用评级" };
+  }
+  const keys = entries.map(([skillId]) => skillId);
+  if (new Set(keys).size !== keys.length) return { ok: false, error: "同一技能不能重复分配" };
+  if (keys.includes("CTHULHU_MYTHOS")) {
+    return { ok: false, error: "入门版创建角色时不能为克苏鲁神话分配点数" };
+  }
+  if (keys.includes("CREDIT_RATING") === false) {
+    return { ok: false, error: "入门版九项分配中必须包含信用评级" };
+  }
+  for (const skillId of keys) {
+    if (knownSkillIds.has(skillId) === false) return { ok: false, error: "存在不属于当前规则包的技能：" + skillId };
+  }
+  const actualSkillValues = entries.map(([, value]) => value).sort((a, b) => a - b).join(",");
+  const expectedSortedValues = [...expectedSkillValues].sort((a, b) => a - b).join(",");
+  if (actualSkillValues !== expectedSortedValues) {
+    return {
+      ok: false,
+      error: "入门版技能值需要恰好使用 " + expectedSkillValues.join("/") + " 这九个数字"
+    };
+  }
+
+  const occupationSkillIds = new Set(keys);
+  const interestIds = [...new Set(starter.interests)];
+  if (interestIds.length !== interestCount) {
+    return { ok: false, error: "入门版个人兴趣技能需要恰好 " + interestCount + " 项" };
+  }
+  const skills: Record<string, number> = {};
+  for (const [skillId, value] of entries) {
+    if (value > 0) skills[skillId] = value;
+  }
+  const baseVars = computeDerived(compiled, { attributes, race: null }).attributes as unknown as Record<string, number>;
+  const skillBases = new Map<string, number>();
+  for (const skill of compiled.skills) {
+    skillBases.set(skill.id, Math.floor(evaluate(skill.base, { vars: baseVars, consts: pack.const })));
+  }
+  for (const skillId of interestIds) {
+    if (skillId === "CREDIT_RATING" || skillId === "CTHULHU_MYTHOS") {
+      return { ok: false, error: "信用评级与克苏鲁神话不能作为个人兴趣技能" };
+    }
+    if (occupationSkillIds.has(skillId)) {
+      return { ok: false, error: "本职技能不能同时作为个人兴趣技能：" + skillId };
+    }
+    if (knownSkillIds.has(skillId) === false) {
+      return { ok: false, error: "存在不属于当前规则包的技能：" + skillId };
+    }
+    const base = skillBases.get(skillId) ?? 0;
+    skills[skillId] = base + interestBonus;
+  }
+
+  const outcome = computeDerived(compiled, { attributes, race: input.race, skills });
+  const san = Math.max(0, Math.min(attributes.pow, outcome.derived.maxSan));
+  return {
+    ok: true,
+    name,
+    attributes,
+    skills,
+    skillAllocation: { occupation: {}, interest: {}, starter: { values: { ...starter.values }, interests: interestIds } },
+    occupation,
+    era: input.era,
+    age: normalizedAge,
+    ageAllocation: {},
+    race: input.race,
+    raceFlags: [...outcome.flags],
+    derived: outcome.derived,
+    san
+  };
+}
+
 /**
  * 角色草稿的统一校验：车卡（新建）与角色管理（编辑）共用同一份 COC7 规则。
  *
@@ -148,6 +271,9 @@ export function validateCharacterDraft(
   }
 
   const method = pack.attributes.methods.find((item) => item.id === input.chargenMethod);
+  if (method?.kind === "FIXED_ARRAY" && context.existing === null) {
+    return validateStarterCharacterDraft(input, context, name, attributes, method);
+  }
   if (input.enforceAttributeMethod) {
     if (method === undefined) return { ok: false, error: "本房的车卡方式不合法" };
     if (method.kind === "POINT_BUY") {
@@ -367,9 +493,40 @@ export function validateCharacterDraft(
     if (total > 0) skills[skill.id] = total;
   }
 
+  // 手工建卡：语言 / 科学 / 驾驶 / 生存 / 技艺 / 射击专精以复合 key 保存。
+  // 复合 key 不在规则包技能表里，基础值取基础技能（如 LANGUAGE_OTHER）的求值结果。
+  const knownSkillIdSet = new Set(compiled.skills.map((skill) => skill.id));
+  for (const skillId of [...new Set([...Object.keys(occupationAdded), ...Object.keys(interestAdded)])]) {
+    const hash = skillId.indexOf("#");
+    if (hash <= 0 || knownSkillIdSet.has(skillId)) continue;
+    const baseSkillId = skillId.slice(0, hash);
+    const base = skillBases[baseSkillId];
+    if (base === undefined) continue;
+    const occ = occupationAdded[skillId] ?? 0;
+    const interest = interestAdded[skillId] ?? 0;
+    const total = base + occ + interest;
+    if (total > 0) skills[skillId] = total;
+  }
+
+  // 专精 / 复合 key（如 LANGUAGE_OTHER#西班牙语）不在规则包 skill 表里，
+  // 编辑角色时原样保留，避免被重整掉。
+  if (old !== null) {
+    const knownSkillIds = new Set(compiled.skills.map((skill) => skill.id));
+    for (const [skillId, value] of Object.entries((old.skills ?? {}) as Record<string, unknown>)) {
+      if (knownSkillIds.has(skillId)) continue;
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        skills[skillId] = Math.floor(value);
+      }
+    }
+  }
+
   if (context.canEditSkills || old === null) {
     for (const skillId of [...Object.keys(occupationAdded), ...Object.keys(interestAdded)]) {
-      if (skillBases[skillId] === undefined) return { ok: false, error: "存在不属于当前规则包的技能：" + skillId };
+      // 专精 / 复合 key（如 LANGUAGE_OTHER#拉丁语）按基础技能校验。
+      const baseSkillId = skillId.includes("#") ? skillId.slice(0, skillId.indexOf("#")) : skillId;
+      if (skillBases[baseSkillId] === undefined) {
+        return { ok: false, error: "存在不属于当前规则包的技能：" + skillId };
+      }
     }
   }
 

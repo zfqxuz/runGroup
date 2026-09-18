@@ -64,7 +64,13 @@ export default function RoomPlay(props: Props) {
   const [channel, setChannel] = useState<ChatChannel>("OOC");
   const [whisperTargetId, setWhisperTargetId] = useState("");
   const [text, setText] = useState("");
-  const [diceMode, setDiceMode] = useState<"CHECK" | "FREE">("CHECK");
+  const [diceMode, setDiceMode] = useState<"CHECK" | "FREE" | "SANITY">("CHECK");
+  const [sanitySuccessLoss, setSanitySuccessLoss] = useState("0");
+  const [sanityFailureLoss, setSanityFailureLoss] = useState("1d6");
+  const [sanityReason, setSanityReason] = useState("");
+  const [checkDifficulty, setCheckDifficulty] = useState<"REGULAR" | "HARD" | "EXTREME">("REGULAR");
+  const [checkBonusDice, setCheckBonusDice] = useState(0);
+  const [checkPenaltyDice, setCheckPenaltyDice] = useState(0);
   const [diceExpr, setDiceExpr] = useState("1d100");
   const [checkCharacterId, setCheckCharacterId] = useState(props.skillCheckCharacters[0]?.id ?? "");
   const [skillQuery, setSkillQuery] = useState("");
@@ -271,7 +277,10 @@ export default function RoomPlay(props: Props) {
         roomId: props.roomId,
         characterId: selectedCheckCharacter.id,
         skillId: effectiveSkillId,
-        visibility: diceVisibility
+        visibility: diceVisibility,
+        difficulty: checkDifficulty,
+        bonusDice: checkBonusDice,
+        penaltyDice: checkPenaltyDice
       },
       (result: Ack) => {
         if (result.ok === false) {
@@ -279,6 +288,80 @@ export default function RoomPlay(props: Props) {
         } else {
           setError(null);
         }
+      }
+    );
+  }
+
+  function rollSanityCheck(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新后重试。");
+      return;
+    }
+    if (selectedCheckCharacter === null) {
+      setError("请先选择角色");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "dice:sanity-check",
+      {
+        roomId: props.roomId,
+        characterId: selectedCheckCharacter.id,
+        successLoss: sanitySuccessLoss.trim() || "0",
+        failureLoss: sanityFailureLoss.trim() || "1d6",
+        reason: sanityReason.trim(),
+        visibility: diceVisibility
+      },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "理智检定失败");
+      }
+    );
+  }
+
+  function rollMadnessBout(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新后重试。");
+      return;
+    }
+    if (selectedCheckCharacter === null) {
+      setError("请先选择角色");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "dice:madness-bout",
+      { roomId: props.roomId, characterId: selectedCheckCharacter.id, visibility: diceVisibility },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "疯狂发作掷骰失败");
+      }
+    );
+  }
+
+  function rollRealityCheck(): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新后重试。");
+      return;
+    }
+    if (selectedCheckCharacter === null) {
+      setError("请先选择角色");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "dice:reality-check",
+      {
+        roomId: props.roomId,
+        characterId: selectedCheckCharacter.id,
+        successLoss: sanitySuccessLoss.trim() || "0",
+        failureLoss: sanityFailureLoss.trim() || "1d6",
+        reason: sanityReason.trim(),
+        visibility: diceVisibility
+      },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "现实检定失败");
       }
     );
   }
@@ -478,12 +561,19 @@ export default function RoomPlay(props: Props) {
           <select
             value={diceMode}
             onChange={(event) => {
-              setDiceMode(event.target.value === "FREE" ? "FREE" : "CHECK");
+              setDiceMode(
+                event.target.value === "FREE"
+                  ? "FREE"
+                  : event.target.value === "SANITY"
+                    ? "SANITY"
+                    : "CHECK"
+              );
               if (error !== null) setError(null);
             }}
             className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
           >
             <option value="CHECK">技能检定</option>
+            <option value="SANITY">理智检定</option>
             <option value="FREE">自由掷骰</option>
           </select>
 
@@ -570,8 +660,86 @@ export default function RoomPlay(props: Props) {
                     ) : null}
                   </div>
                   <span className="rounded border border-white/15 px-2 py-1 font-mono text-[11px] text-white/50">1d100</span>
+                  <select
+                    value={checkDifficulty}
+                    onChange={(event) =>
+                      setCheckDifficulty(event.target.value === "HARD" || event.target.value === "EXTREME" ? event.target.value : "REGULAR")
+                    }
+                    className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+                    title="检定难度"
+                  >
+                    <option value="REGULAR">常规</option>
+                    <option value="HARD">困难</option>
+                    <option value="EXTREME">极难</option>
+                  </select>
+                  <select
+                    value={checkBonusDice}
+                    onChange={(event) => setCheckBonusDice(Number(event.target.value))}
+                    className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+                    title="奖励骰"
+                  >
+                    {[0, 1, 2].map((value) => <option key={value} value={value}>奖励骰 {value}</option>)}
+                  </select>
+                  <select
+                    value={checkPenaltyDice}
+                    onChange={(event) => setCheckPenaltyDice(Number(event.target.value))}
+                    className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+                    title="惩罚骰"
+                  >
+                    {[0, 1, 2].map((value) => <option key={value} value={value}>惩罚骰 {value}</option>)}
+                  </select>
                 </>
               )}
+            </>
+          ) : diceMode === "SANITY" ? (
+            <>
+              {props.skillCheckCharacters.length > 1 ? (
+                <select
+                  value={selectedCheckCharacter?.id ?? ""}
+                  onChange={(event) => setCheckCharacterId(event.target.value)}
+                  className="rounded-lg border border-white/15 bg-ink-800 px-2 py-2 text-xs outline-none"
+                >
+                  {props.skillCheckCharacters.map((character) => (
+                    <option key={character.id} value={character.id}>{character.name}</option>
+                  ))}
+                </select>
+              ) : null}
+              <label className="flex items-center gap-1 text-[11px] text-white/55">
+                成功损失
+                <input
+                  value={sanitySuccessLoss}
+                  onChange={(event) => setSanitySuccessLoss(event.target.value)}
+                  className="w-20 rounded-lg border border-white/15 bg-ink-800 px-2 py-2 font-mono text-xs outline-none"
+                />
+              </label>
+              <label className="flex items-center gap-1 text-[11px] text-white/55">
+                失败损失
+                <input
+                  value={sanityFailureLoss}
+                  onChange={(event) => setSanityFailureLoss(event.target.value)}
+                  className="w-20 rounded-lg border border-white/15 bg-ink-800 px-2 py-2 font-mono text-xs outline-none"
+                />
+              </label>
+              <input
+                value={sanityReason}
+                onChange={(event) => setSanityReason(event.target.value)}
+                placeholder="事由（可选）"
+                className="min-w-[160px] flex-1 rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-xs outline-none placeholder:text-white/25"
+              />
+              <button
+                type="button"
+                onClick={rollMadnessBout}
+                className="rounded-lg border border-fuchsia-400/40 px-3 py-2 text-xs text-fuchsia-200 transition hover:bg-fuchsia-400/10"
+              >
+                疯狂发作 1D10
+              </button>
+              <button
+                type="button"
+                onClick={rollRealityCheck}
+                className="rounded-lg border border-cyan-400/40 px-3 py-2 text-xs text-cyan-200 transition hover:bg-cyan-400/10"
+              >
+                现实检定
+              </button>
             </>
           ) : (
             <input
@@ -597,11 +765,22 @@ export default function RoomPlay(props: Props) {
           </select>
           <button
             type="button"
-            onClick={roll}
-            disabled={conn !== "online" || (diceMode === "CHECK" && (selectedCheckCharacter === null || effectiveSkillId.length === 0))}
+            onClick={() => {
+              if (diceMode === "SANITY") rollSanityCheck();
+              else roll();
+            }}
+            disabled={
+              conn !== "online" ||
+              (diceMode === "CHECK" && (selectedCheckCharacter === null || effectiveSkillId.length === 0)) ||
+              (diceMode === "SANITY" && selectedCheckCharacter === null)
+            }
             className="rounded-lg border border-spirit-400/40 px-4 py-2 text-xs text-spirit-400 transition hover:bg-spirit-400/10 disabled:cursor-not-allowed disabled:opacity-40"
           >
-            {diceMode === "CHECK" && effectiveSkill !== null ? "检定 " + effectiveSkill.name : "掷骰"}
+            {diceMode === "SANITY"
+              ? "理智检定"
+              : diceMode === "CHECK" && effectiveSkill !== null
+                ? "检定 " + effectiveSkill.name
+                : "掷骰"}
           </button>
         </div>
       </div>

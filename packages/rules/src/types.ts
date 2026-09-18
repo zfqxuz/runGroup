@@ -38,6 +38,9 @@ export const CHECK_RESULTS = [
 
 export type CheckResult = (typeof CHECK_RESULTS)[number];
 
+export const CHECK_DIFFICULTIES = ["REGULAR", "HARD", "EXTREME"] as const;
+export type CheckDifficulty = (typeof CHECK_DIFFICULTIES)[number];
+
 /** 成功等级。用于对抗检定时比较，数值越大越好。 */
 export const CHECK_RANK: Readonly<Record<CheckResult, number>> = {
   FUMBLE: 0,
@@ -48,5 +51,5 @@ export const CHECK_RANK: Readonly<Record<CheckResult, number>> = {
   CRITICAL: 5
 };
 
-export const DEFENSE_TYPES = ["PASS", "DEFEND", "DODGE", "COUNTER"] as const;
+export const DEFENSE_TYPES = ["PASS", "DEFEND", "DODGE", "COUNTER", "SEEK_COVER"] as const;
 export type DefenseType = (typeof DEFENSE_TYPES)[number];

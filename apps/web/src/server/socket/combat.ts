@@ -2,6 +2,7 @@ import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
   applyForcedSkips,
+  buildInitiativeOrder,
   findParticipant,
   chaseAttackIssue,
   chaseCurrentActorId,
@@ -11,12 +12,17 @@ import {
   currentActorId,
   endCombat,
   endTurn,
+  isThrownOutOfRange,
+  matchRangeBand,
+  pointBlankBonusDice,
   pushLog,
   reactionTargetIdsForAction,
   readyParticipants,
   resolveChaseAttack,
+  thrownRangeFeet,
   resolveInitiativeTurn,
   resolvePending,
+  setInitiativeOrder,
   startChase,
   submitAction,
   type ActionSubmission,
@@ -33,6 +39,8 @@ import {
 import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, reactionTypesForAttack, validateCombatAction, type WeaponLike } from "@/server/combat/options";
 import { consumeItemUse, prepareItemAction, type CombatItemOption } from "@/server/combat/items";
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
+import { loadCombatDistance } from "@/server/combat/range";
+import type { RoutineAttackStep } from "@touhou/combat";
 import { saveCombatState } from "@/server/combat/setup";
 import { findSummonCard, summonTemplateFromCard } from "@/server/combat/summon";
 import { createPersistentSummonCard, removeSummonCardById, type SummonOrigin } from "@/server/magic/summons";
@@ -40,7 +48,9 @@ import { prisma } from "@/server/db/prisma";
 import type {
   Ack,
   CombatActionPayload,
+  CombatInitiativeOrderPayload,
   CombatJoinAck,
+  CombatReadyWeaponPayload,
   CombatReactionPayload,
   CombatReactionRequest,
   CombatUpdate
@@ -58,6 +68,7 @@ const ACTION_KINDS: readonly string[] = [
   "DEFEND",
   "DODGE",
   "COUNTER",
+  "MANEUVER",
   "ITEM",
   "FLEE",
   "PASS",
@@ -348,13 +359,32 @@ async function handleAction(
     kind === "DANMAKU"
       ? runtime.attackOptions.get(requestedActor)?.find((option) => option.skillId === requestedSkill)
       : undefined;
+  const requestedRangeBand = Math.max(0, Math.floor(asNumber(raw.rangeBand) ?? 0));
+  const selectedDamageBand =
+    actualAttack?.damageBands[requestedRangeBand] ?? actualAttack?.damageBands[0];
+  const requestedShots = Math.max(1, Math.min(3, Math.floor(asNumber(raw.shots) ?? 1)));
+  const shots =
+    actualAttack?.shots !== undefined && actualAttack.shots.includes(requestedShots)
+      ? requestedShots
+      : 1;
+  const rawTargetId = asString(raw.targetId) ?? null;
+  const manualPointBlank =
+    raw.pointBlank === true && actualAttack?.skillId.startsWith("FIREARMS_") === true;
   let action: ActionSubmission = {
     actorId: requestedActor,
     kind: kind as ActionSubmission["kind"],
-    targetId: asString(raw.targetId) ?? null,
+    targetId: rawTargetId,
     skill: requestedSkill,
     // 伤害不由客户端决定：服务端按角色实际装备 / 规则包覆盖客户端传来的表达式。
-    damage: actualAttack?.damage ?? asString(raw.damage),
+    damage: selectedDamageBand?.expression ?? actualAttack?.damage ?? asString(raw.damage),
+    damageType: actualAttack?.damageType,
+    shots,
+    maneuver:
+      raw.maneuver === "DISARM" || raw.maneuver === "TRIP" || raw.maneuver === "GRAPPLE"
+        ? raw.maneuver
+        : undefined,
+    bonusDice: manualPointBlank ? 1 : 0,
+    bonusDiceSource: manualPointBlank ? "近距离点射" : undefined,
     accuracyMod: asNumber(raw.accuracyMod),
     atbCost: asNumber(raw.atbCost),
     name: asString(raw.name),
@@ -367,6 +397,125 @@ async function handleAction(
     declarationDurationTicks: asNumber(raw.declarationDurationTicks),
     itemCardId: asString(raw.itemCardId)
   };
+
+  // U-6：地图上有双方 Token 时，由服务端按实际英尺距离覆盖距离档与近距离奖励。
+  if (
+    runtime.pack.system === "COC7" &&
+    actualAttack !== undefined &&
+    rawTargetId !== null &&
+    action.kind === "DANMAKU"
+  ) {
+    const actorParticipant = findParticipant(runtime.state, requestedActor);
+    const targetParticipant = findParticipant(runtime.state, rawTargetId);
+    if (actorParticipant !== undefined && targetParticipant !== undefined) {
+      const distance = await loadCombatDistance(runtime.combatId, actorParticipant.id, targetParticipant.id);
+      if (distance !== null) {
+        if (actualAttack.skillId === "THROW" && isThrownOutOfRange(actorParticipant.attributes.str, distance.feet)) {
+          ack({
+            ok: false,
+            error:
+              "超出投掷最大射程（STR/5 = " +
+              Math.floor(actorParticipant.attributes.str / 5) +
+              " 码 / " +
+              thrownRangeFeet(actorParticipant.attributes.str) +
+              " 英尺）"
+          });
+          return;
+        }
+        const match = matchRangeBand(
+          distance.feet,
+          actorParticipant.attributes.dex,
+          actualAttack.damageBands
+        );
+        if (match.bandIndex !== null) {
+          const band = actualAttack.damageBands[match.bandIndex];
+          if (band !== undefined) action = { ...action, damage: band.expression };
+        }
+        const autoBonus = pointBlankBonusDice(
+          actualAttack.skillId,
+          distance.feet,
+          actorParticipant.attributes.dex
+        );
+        action = {
+          ...action,
+          bonusDice: autoBonus,
+          bonusDiceSource: autoBonus > 0 ? "近距离点射（地图距离）" : undefined
+        };
+      }
+    }
+  }
+  // U-3：多目标 / 多技能 routine。客户端只提交技能 + 目标 + 意图，
+  // 伤害 / 距离档 / 奖励骰仍由服务端按角色实际装备与地图距离推导。
+  if (kind === "DANMAKU" && Array.isArray(raw.routine) && raw.routine.length > 0) {
+    const actorParticipant = findParticipant(runtime.state, requestedActor);
+    const routineSteps: RoutineAttackStep[] = [];
+    for (const item of raw.routine.slice(0, 8)) {
+      const step = (item ?? {}) as Record<string, unknown>;
+      const targetId = asString(step.targetId);
+      if (targetId === undefined) continue;
+      const stepSkill = asString(step.skill) ?? requestedSkill;
+      if (stepSkill === undefined) continue;
+      const stepAttack = runtime.attackOptions
+        .get(requestedActor)
+        ?.find((option) => option.skillId === stepSkill);
+      const requestedStepBand = Math.max(0, Math.floor(asNumber(step.rangeBand) ?? 0));
+      let stepBand = requestedStepBand;
+      const manualStepPointBlank =
+        step.pointBlank === true && stepAttack?.skillId.startsWith("FIREARMS_") === true;
+      let stepBonus = manualStepPointBlank ? 1 : 0;
+      let stepBonusSource = manualStepPointBlank ? "近距离点射" : undefined;
+      if (runtime.pack.system === "COC7" && stepAttack !== undefined && actorParticipant !== undefined) {
+        const distance = await loadCombatDistance(runtime.combatId, requestedActor, targetId);
+        if (distance !== null) {
+          const match = matchRangeBand(distance.feet, actorParticipant.attributes.dex, stepAttack.damageBands);
+          if (match.bandIndex !== null) stepBand = match.bandIndex;
+          const autoBonus = pointBlankBonusDice(
+            stepAttack.skillId,
+            distance.feet,
+            actorParticipant.attributes.dex
+          );
+          if (autoBonus > 0) {
+            stepBonus = autoBonus;
+            stepBonusSource = "近距离点射（地图距离）";
+          }
+        }
+      }
+      const selectedStepBand =
+        stepAttack?.damageBands[stepBand] ?? stepAttack?.damageBands[0];
+      const requestedStepShots = Math.max(1, Math.min(3, Math.floor(asNumber(step.shots) ?? 1)));
+      const stepShots =
+        stepAttack?.shots !== undefined && stepAttack.shots.includes(requestedStepShots)
+          ? requestedStepShots
+          : 1;
+      routineSteps.push({
+        targetId,
+        skill: stepSkill,
+        damage: selectedStepBand?.expression ?? stepAttack?.damage,
+        damageType: stepAttack?.damageType,
+        shots: stepShots,
+        accuracyMod: asNumber(step.accuracyMod),
+        bonusDice: stepBonus,
+        bonusDiceSource: stepBonusSource,
+        penaltyDice: Math.max(0, Math.floor(asNumber(step.penaltyDice) ?? 0))
+      });
+    }
+    if (routineSteps.length === 0) {
+      ack({ ok: false, error: "多目标 routine 没有合法的攻击步骤" });
+      return;
+    }
+    action = {
+      ...action,
+      targetId: routineSteps[0]?.targetId ?? null,
+      skill: routineSteps[0]?.skill,
+      damage: routineSteps[0]?.damage,
+      damageType: routineSteps[0]?.damageType,
+      shots: undefined,
+      bonusDice: 0,
+      bonusDiceSource: undefined,
+      routine: routineSteps
+    };
+  }
+
   if (action.kind === "MAGIC") {
     const spell = runtime.pack.pack.magic?.spells.find(
       (item) => item.id === action.spellId || item.name === action.name
@@ -557,8 +706,23 @@ async function handleReaction(
     pendingActorId !== undefined &&
     (pendingAction?.kind === "DANMAKU" || pendingAction?.kind === "MAGIC" || pendingAction?.kind === "ITEM") &&
     runtime.pendingReactions.size === 1;
+  const pendingStepSkill =
+    pendingAction?.routine?.find((step) => step.targetId === input.targetId)?.skill ??
+    pendingAction?.skill ??
+    null;
+  const pendingAttackSkill = pendingStepSkill;
+  const pendingIsCoc7Ranged =
+    runtime.pack.system === "COC7" &&
+    pendingAttackSkill !== null &&
+    (pendingAttackSkill.startsWith("FIREARMS_") || pendingAttackSkill === "THROW");
+  const seekCoverAllowed = pendingIsCoc7Ranged && pendingAction?.kind === "DANMAKU";
   const allowedTypes = allowedReactionTypes(runtime.pack);
-  if (canFleeReaction === false && allowedTypes.includes(raw.type) === false) {
+  if (raw.type === "SEEK_COVER") {
+    if (seekCoverAllowed === false) {
+      ack({ ok: false, error: "本次攻击不能寻找掩体" });
+      return;
+    }
+  } else if (canFleeReaction === false && allowedTypes.includes(raw.type) === false) {
     ack({ ok: false, error: "本规则包不支持该应对" });
     return;
   }
@@ -566,7 +730,7 @@ async function handleReaction(
   if (fleeAfterResolution) {
     runtime.pendingFlee = { targetId: input.targetId, actorId: pendingActorId ?? "" };
   }
-  let reactionType: "PASS" | "DEFEND" | "DODGE" | "COUNTER" =
+  let reactionType: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" =
     raw.type === "FLEE" ? "PASS" : raw.type;
   let reactionSkill = asString(raw.skill);
   if (fleeAfterResolution) {
@@ -588,13 +752,32 @@ async function handleReaction(
     }
     reactionSkill = candidate;
   }
+  let counterDamage: string | undefined;
+  let counterWeaponName: string | undefined;
   if (reactionType === "COUNTER") {
-    const hasCoc7BrawlBase =
-      runtime.pack.system === "COC7" &&
-      runtime.pack.skills.some((skill) => skill.id === "FIGHTING_BRAWL");
-    if (hasCoc7BrawlBase) {
-      // COC7 标准：反击使用格斗（斗殴）检定；卡面没写也按基础值 25 计算。
-      reactionSkill = "FIGHTING_BRAWL";
+    if (runtime.pack.system === "COC7") {
+      const allowed = (runtime.attackSkills.get(input.targetId) ?? []).filter((skillId) =>
+        skillId.startsWith("FIGHTING_")
+      );
+      const candidate = reactionSkill !== undefined && allowed.includes(reactionSkill) ? reactionSkill : allowed[0];
+      if (candidate === undefined) {
+        reactionType = "PASS";
+        reactionSkill = undefined;
+        pushLog(runtime.state, {
+          kind: "SYSTEM",
+          actorId: target.id,
+          targetId: null,
+          text: target.name + " 没有可用的格斗专精，本次按未应对处理",
+          data: { rollType: "COUNTER_FALLBACK" }
+        });
+      } else {
+        reactionSkill = candidate;
+        const option = (runtime.attackOptions.get(input.targetId) ?? []).find(
+          (item) => item.skillId === candidate
+        );
+        counterDamage = option?.damage;
+        counterWeaponName = option?.weaponName ?? (option?.source === "UNARMED" ? "徒手" : undefined);
+      }
     } else {
       const allowed = runtime.attackSkills.get(input.targetId) ?? [];
       const candidate = reactionSkill ?? allowed[0];
@@ -615,7 +798,12 @@ async function handleReaction(
     }
   }
   runtime.pendingReactions.delete(input.targetId);
-  runtime.reactions[input.targetId] = { type: reactionType, skill: reactionSkill };
+  runtime.reactions[input.targetId] = {
+    type: reactionType,
+    skill: reactionSkill,
+    ...(counterDamage === undefined ? {} : { damage: counterDamage }),
+    ...(counterWeaponName === undefined ? {} : { weaponName: counterWeaponName })
+  };
   const resolvedChase = await tryResolveChaseAttack(io, runtime);
   const resolved = resolvedChase ? true : await tryResolveCombat(io, runtime);
   if (resolved === false) {
@@ -760,6 +948,8 @@ async function handleChaseAttack(
     targetId?: unknown;
     skill?: unknown;
     damage?: unknown;
+    rangeBand?: unknown;
+    shots?: unknown;
     accuracyMod?: unknown;
   };
   if (
@@ -799,7 +989,37 @@ async function handleChaseAttack(
   const actualAttack = runtime.attackOptions
     .get(actorId)
     ?.find((option) => option.skillId === skill);
-  const damage = actualAttack?.damage ?? "1d6";
+  const requestedRangeBand = Math.max(0, Math.floor(asNumber(input.rangeBand) ?? 0));
+  // U-6：追逐攻击同样按双方 Token 的实际英尺距离覆盖伤害档与近距离奖励骰。
+  let effectiveRangeBand = requestedRangeBand;
+  let bonusDice = 0;
+  let bonusDiceSource: string | undefined;
+  const actorParticipant = findParticipant(runtime.state, actorId);
+  if (runtime.pack.system === "COC7" && actualAttack !== undefined && actorParticipant !== undefined) {
+    const distance = await loadCombatDistance(runtime.combatId, actorId, input.targetId);
+    if (distance !== null) {
+      const match = matchRangeBand(distance.feet, actorParticipant.attributes.dex, actualAttack.damageBands);
+      if (match.bandIndex !== null) effectiveRangeBand = match.bandIndex;
+      const autoBonus = pointBlankBonusDice(
+        actualAttack.skillId,
+        distance.feet,
+        actorParticipant.attributes.dex
+      );
+      if (autoBonus > 0) {
+        bonusDice = autoBonus;
+        bonusDiceSource = "近距离点射（地图距离）";
+      }
+    }
+  }
+  const selectedDamageBand =
+    actualAttack?.damageBands[effectiveRangeBand] ?? actualAttack?.damageBands[0];
+  const requestedShots = Math.max(1, Math.min(3, Math.floor(asNumber(input.shots) ?? 1)));
+  const shots =
+    actualAttack?.shots !== undefined && actualAttack.shots.includes(requestedShots)
+      ? requestedShots
+      : 1;
+  const damage = selectedDamageBand?.expression ?? actualAttack?.damage ?? "1d6";
+  const damageType = actualAttack?.damageType;
   const accuracyMod = asNumber(input.accuracyMod);
   const action: ActionSubmission = {
     actorId,
@@ -807,6 +1027,8 @@ async function handleChaseAttack(
     targetId: input.targetId,
     skill,
     damage,
+    damageType,
+    shots,
     accuracyMod
   };
   const actionError = validateCombatAction(
@@ -817,7 +1039,7 @@ async function handleChaseAttack(
     ack({ ok: false, error: actionError });
     return;
   }
-  runtime.chaseAttack = { actorId, targetId: input.targetId, skill, damage, accuracyMod };
+  runtime.chaseAttack = { actorId, targetId: input.targetId, skill, damage, accuracyMod, bonusDice, bonusDiceSource };
   runtime.reactions = {};
   runtime.pendingReactions.clear();
   runtime.pendingReactions.set(input.targetId, actorId);
@@ -826,7 +1048,7 @@ async function handleChaseAttack(
     runtime,
     actorId,
     input.targetId,
-    reactionTypesForAttack(allowedReactionTypes(runtime.pack), skill)
+    reactionTypesForAttack(allowedReactionTypes(runtime.pack), skill, runtime.pack.system)
   );
   await broadcastCombat(io, runtime);
   ack({ ok: true });
@@ -929,6 +1151,105 @@ async function handleForceResolve(
   ack({ ok: true });
 }
 
+async function handleInitiativeOrder(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as Partial<CombatInitiativeOrderPayload>;
+  if (userId === null || typeof input.combatId !== "string" || Array.isArray(input.order) === false) {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.roles.get(userId) !== "KP") {
+    ack({ ok: false, error: "只有 KP 可以调整先攻顺序" });
+    return;
+  }
+  if (runtime.pack.combat.mode !== "INITIATIVE" || runtime.pack.combat.kpAdjustsOrder === false) {
+    ack({ ok: false, error: "当前战斗不支持调整先攻顺序" });
+    return;
+  }
+  const order = input.order.filter((id): id is string => typeof id === "string");
+  const previousOrder = [...runtime.state.initiativeOrder];
+  const previousActive = currentActorId(runtime.state);
+  if (setInitiativeOrder(runtime.pack, runtime.state, order) === false) {
+    ack({ ok: false, error: "先攻顺序必须包含全部存活单位且不能重复" });
+    return;
+  }
+  if (previousActive !== null) {
+    const index = runtime.state.initiativeOrder.indexOf(previousActive);
+    runtime.state.activeIndex = index >= 0 ? index : runtime.state.activeIndex;
+  } else {
+    runtime.state.initiativeOrder = previousOrder;
+  }
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
+async function handleReadyWeapon(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as Partial<CombatReadyWeaponPayload>;
+  if (userId === null || typeof input.combatId !== "string" || typeof input.actorId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  const canAdjust = runtime.roles.get(userId) === "KP" || canControl(runtime, userId, input.actorId);
+  if (canAdjust === false) {
+    ack({ ok: false, error: "你不能操作这个单位" });
+    return;
+  }
+  const participant = findParticipant(runtime.state, input.actorId);
+  if (participant === undefined || participant.defeated) {
+    ack({ ok: false, error: "单位不在场" });
+    return;
+  }
+  if (runtime.pack.combat.mode !== "INITIATIVE") {
+    ack({ ok: false, error: "准备火器只影响顺序制战斗的先攻" });
+    return;
+  }
+  const hasFirearm = (runtime.attackOptions.get(input.actorId) ?? []).some((option) =>
+    option.skillId.startsWith("FIREARMS_")
+  );
+  if (hasFirearm === false) {
+    ack({ ok: false, error: "该单位没有可准备的火器" });
+    return;
+  }
+  const ready = input.ready !== false;
+  participant.initiativeMod = ready ? 50 : 0;
+  const previousActive = currentActorId(runtime.state);
+  runtime.state.initiativeOrder = buildInitiativeOrder(runtime.pack, runtime.state);
+  if (previousActive !== null) {
+    const index = runtime.state.initiativeOrder.indexOf(previousActive);
+    runtime.state.activeIndex = index >= 0 ? index : 0;
+  }
+  pushLog(runtime.state, {
+    kind: "SYSTEM",
+    actorId: participant.id,
+    targetId: null,
+    text: participant.name + (ready ? " 已准备火器，决定先攻时视为 +50 DEX" : " 已收起火器，取消 +50 DEX 先攻修正"),
+    data: { rollType: "READY_WEAPON", ready, initiativeMod: participant.initiativeMod }
+  });
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
 export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   socket.on("combat:join", (combatId: unknown, ack: AckCallback<CombatJoinAck>) => {
     void handleJoin(socket, combatId, ack);
@@ -956,5 +1277,11 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:abort", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleAbort(io, socket, payload, ack);
+  });
+  socket.on("combat:initiative-order", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleInitiativeOrder(io, socket, payload, ack);
+  });
+  socket.on("combat:ready-weapon", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleReadyWeapon(io, socket, payload, ack);
   });
 }

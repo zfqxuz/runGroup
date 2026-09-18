@@ -5,6 +5,7 @@ import { spellTargeting } from "@touhou/rules";
 import CombatBoard from "@/components/room/CombatBoard";
 import KpBgmPanel from "@/components/room/KpBgmPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
+import KpToolsPanel from "@/components/room/KpToolsPanel";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import { auth } from "@/server/auth";
 import { combatFeatureFlags, loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "@/server/combat/options";
@@ -98,13 +99,26 @@ export default async function CombatDetailPage({
 
   const participants = await prisma.combatParticipant.findMany({
     where: { combatId: combat.id },
-    select: { id: true, name: true, isNPC: true, characterId: true }
+    select: { id: true, name: true, isNPC: true, characterId: true, npcData: true }
   });
-  const valueUnits = participants.map((participant) => ({
-    ref: participant.isNPC ? "npc:" + participant.id : "character:" + (participant.characterId ?? participant.id),
-    name: participant.name,
-    kind: participant.isNPC ? ("NPC" as const) : ("PLAYER" as const)
-  }));
+  // NPC 的运行时 participant.id 是卡牌 id（npcData.__participantId），
+  // 不是 CombatParticipant 行的 cuid；KP 数值/工具引用必须使用运行时 id，
+  // 否则房间实时数值、环境伤害、状态编辑都会查不到单位。
+  const valueUnits = participants.map((participant) => {
+    const npcData =
+      participant.npcData !== null && typeof participant.npcData === "object" && Array.isArray(participant.npcData) === false
+        ? (participant.npcData as Record<string, unknown>)
+        : {};
+    const runtimeId =
+      participant.isNPC && typeof npcData.__participantId === "string"
+        ? npcData.__participantId
+        : participant.id;
+    return {
+      ref: participant.isNPC ? "npc:" + runtimeId : "character:" + (participant.characterId ?? participant.id),
+      name: participant.name,
+      kind: participant.isNPC ? ("NPC" as const) : ("PLAYER" as const)
+    };
+  });
   const characterIds = participants
     .map((participant) => participant.characterId)
     .filter((id): id is string => id !== null);
@@ -212,6 +226,7 @@ export default async function CombatDetailPage({
       ) : null}
 
       {isKP ? <KpValueEditor roomId={room.id} units={valueUnits} /> : null}
+      {isKP ? <KpToolsPanel roomId={room.id} units={valueUnits} /> : null}
 
       <CombatBoard
         roomId={room.id}

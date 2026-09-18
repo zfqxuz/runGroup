@@ -58,6 +58,12 @@ export interface ParticipantView {
   readonly statusEffects: readonly string[];
   readonly stunActions: number;
   readonly controlActions: number;
+  /** 被擒抱者 id；null 表示未被擒抱。 */
+  readonly grappledBy: string | null;
+  /** 是否已被缴械。 */
+  readonly disarmed: boolean;
+  /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
+  readonly initiativeMod: number;
   readonly hasDeclaration: boolean;
   readonly declarationHp: number | null;
   /** 当前展开符卡的名字；未识别时隐藏。 */
@@ -108,6 +114,15 @@ export interface CombatView {
   readonly pendingReactions: readonly { readonly actorId: string; readonly targetId: string }[];
   /** 追逐状态；null 表示当前不在追逐中。 */
   readonly chase: ChaseView | null;
+  /** U-6：战斗绑定场景的网格信息；由服务端 viewForUser 附加。 */
+  readonly sceneGrid?: {
+    readonly width: number;
+    readonly height: number;
+    readonly gridSize: number;
+    readonly gridType: string;
+  } | null;
+  /** U-6：participant.id → 当前场景 Token 坐标；由服务端 viewForUser 附加。 */
+  readonly tokens?: Readonly<Record<string, { readonly x: number; readonly y: number }>>;
 }
 
 /** 把精确 HP 转成文字描述，供 PL 视角使用。 */
@@ -198,6 +213,9 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
         : [],
       stunActions: isKP || isSelf ? participant.stunActions ?? 0 : 0,
       controlActions: isKP || isSelf ? participant.controlActions ?? 0 : 0,
+      grappledBy: participant.grappledBy ?? null,
+      disarmed: participant.disarmed === true,
+      initiativeMod: isKP ? participant.initiativeMod ?? 0 : 0,
       hasDeclaration: declaration !== null,
       declarationHp: showNumbers ? (declaration?.hp ?? null) : null,
       declarationName: visibleDeclaration?.name ?? null,

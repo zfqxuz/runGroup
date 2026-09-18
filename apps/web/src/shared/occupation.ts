@@ -127,6 +127,17 @@ export function validateOccupationSlotAssignments(
   return { ok: errors.length === 0, errors, assignedSkillIds: assigned };
 }
 
+/** COC7 信用评级阶级标签（入门书 p10）。 */
+export function creditRatingLabel(value: number): string {
+  const score = Math.max(0, Math.floor(value));
+  if (score <= 0) return "身无分文";
+  if (score <= 9) return "贫困";
+  if (score <= 49) return "普通";
+  if (score <= 89) return "小康";
+  if (score <= 98) return "富裕";
+  return "豪富";
+}
+
 export const ERA_LABELS: Record<string, string> = {
   MODERN: "现代",
   CLASSIC: "1920 年代",

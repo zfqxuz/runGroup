@@ -9,10 +9,16 @@ describe("isGrowthCheckPassed", () => {
     expect(isGrowthCheckPassed(1, 0)).toBe(true);
   });
 
-  it("96-100 必定成功", () => {
+  it("96-100 必定成功（完整版默认）", () => {
     expect(isGrowthCheckPassed(96, 99)).toBe(true);
     expect(isGrowthCheckPassed(100, 100)).toBe(true);
     expect(isGrowthCheckPassed(95, 99)).toBe(false);
+  });
+
+  it("入门版模式关闭 96-100 必成长", () => {
+    expect(isGrowthCheckPassed(96, 99, false)).toBe(false);
+    expect(isGrowthCheckPassed(100, 100, false)).toBe(false);
+    expect(isGrowthCheckPassed(100, 99, false)).toBe(true);
   });
 });
 
@@ -51,6 +57,20 @@ describe("resolveGrowthChecks", () => {
       } else {
         expect(result.gain).toBe(0);
       }
+    }
+  });
+});
+
+describe("resolveGrowthChecks 规则模式", () => {
+  it("autoPassFrom96=false 时 96-100 不再必成长", () => {
+    const result = resolveGrowthChecks(
+      [{ id: "a", skillId: "DODGE", beforeValue: 100 }],
+      createSeededRng("starter-growth"),
+      { autoPassFrom96: false }
+    )[0];
+    if (result === undefined) throw new Error("缺少结果");
+    if (result.roll <= 100) {
+      expect(result.passed).toBe(result.roll > 100);
     }
   });
 });

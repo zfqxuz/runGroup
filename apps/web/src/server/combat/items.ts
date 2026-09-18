@@ -1,5 +1,5 @@
 import type { ActionSubmission, CombatParticipantState } from "@touhou/combat";
-import type { CompiledRulePack } from "@touhou/rules";
+import { spendMagicPoints, type CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 import { ItemStatsSchema, activeCardEffects } from "@/shared/card";
 import type { CombatItemOption } from "@/shared/combat-items";
@@ -108,7 +108,12 @@ export function prepareItemAction(
   if (cooldownUntil > round) {
     return { ok: false, error: "「" + item.name + "」冷却中，第 " + cooldownUntil + " 轮后才能再次使用" };
   }
-  if (item.cost.mp > actor.mp) {
+  if (pack.system === "COC7") {
+    const spend = spendMagicPoints(actor.mp, actor.hp, item.cost.mp, pack.pack.magicPoint);
+    if (spend.allowed === false) {
+      return { ok: false, error: "灵力不足，无法使用「" + item.name + "」" };
+    }
+  } else if (item.cost.mp > actor.mp) {
     return { ok: false, error: "灵力不足，无法使用「" + item.name + "」" };
   }
 

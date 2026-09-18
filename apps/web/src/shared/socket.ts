@@ -104,6 +104,18 @@ export interface CombatActionPayload {
   readonly targetId?: string | null;
   readonly skill?: string;
   readonly damage?: string;
+  readonly rangeBand?: number;
+  readonly shots?: number;
+  readonly pointBlank?: boolean;
+  /** U-3：多目标 / 多技能攻击 routine。 */
+  readonly routine?: readonly {
+    readonly targetId: string;
+    readonly skill?: string;
+    readonly rangeBand?: number;
+    readonly shots?: number;
+    readonly pointBlank?: boolean;
+  }[];
+  readonly maneuver?: "DISARM" | "TRIP" | "GRAPPLE";
   readonly accuracyMod?: number;
   readonly name?: string;
   readonly spellId?: string;
@@ -119,7 +131,7 @@ export interface CombatActionPayload {
 }
 
 export interface CombatReactionPayload {
-  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "FLEE";
+  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "FLEE";
   readonly skill?: string;
 }
 
@@ -146,7 +158,20 @@ export interface CombatChaseAttackPayload {
   readonly targetId: string;
   readonly skill?: string;
   readonly damage?: string;
+  readonly rangeBand?: number;
+  readonly shots?: number;
   readonly accuracyMod?: number;
+}
+
+export interface CombatInitiativeOrderPayload {
+  readonly combatId: string;
+  readonly order: readonly string[];
+}
+
+export interface CombatReadyWeaponPayload {
+  readonly combatId: string;
+  readonly actorId: string;
+  readonly ready: boolean;
 }
 
 export interface CombatReactionRequest {
