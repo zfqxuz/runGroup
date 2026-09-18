@@ -11,6 +11,7 @@
     "verify:bgm": "tsx --env-file=.env scripts/verify-bgm.ts",
     "verify:npc-extract": "tsx --env-file=.env scripts/verify-npc-extract.ts",
     "verify:combat": "tsx --env-file=.env scripts/verify-combat.ts",
+    "verify:combat-late-join": "tsx --env-file=.env scripts/verify-combat-late-join.ts",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

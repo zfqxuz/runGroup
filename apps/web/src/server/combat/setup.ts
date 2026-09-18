@@ -527,6 +527,14 @@ export async function createCombatRecord(
     string,
     { readonly conditions: unknown; readonly vitals: NonNullable<ParticipantInit["vitals"]> }
   >();
+  const missingGameCharacters: {
+    readonly characterId: string;
+    readonly userId: string;
+    readonly currentHp: number;
+    readonly currentMp: number;
+    readonly currentSan: number;
+    readonly currentDp: number;
+  }[] = [];
   if (activeGame !== null && characterIds.length > 0) {
     const rows = await prisma.gameCharacter.findMany({
       where: { gameId: activeGame.id, characterId: { in: [...new Set(characterIds)] } },
@@ -539,6 +547,7 @@ export async function createCombatRecord(
         currentDp: true
       }
     });
+    const existingIds = new Set(rows.map((row) => row.characterId));
     for (const row of rows) {
       gameCharacterState.set(row.characterId, {
         conditions: row.conditions,
@@ -548,6 +557,28 @@ export async function createCombatRecord(
           san: row.currentSan,
           dp: row.currentDp
         }
+      });
+    }
+    // 开局后才通过审核的角色可能没有 GameCharacter；进入战斗时补一条，
+    // 否则战斗结束 / 中止时没有局内行可写，房间看板会回退成基础卡的满血值。
+    for (const character of characters) {
+      if (existingIds.has(character.id)) continue;
+      gameCharacterState.set(character.id, {
+        conditions: [],
+        vitals: {
+          hp: character.hp,
+          mp: character.mp,
+          san: character.san,
+          dp: character.dp
+        }
+      });
+      missingGameCharacters.push({
+        characterId: character.id,
+        userId: character.userId,
+        currentHp: character.hp,
+        currentMp: character.mp,
+        currentSan: character.san,
+        currentDp: character.dp
       });
     }
   }
@@ -648,6 +679,22 @@ export async function createCombatRecord(
           isPublic: participant.isPublic,
           spellState: (participant.declaration ?? {}) as never
         }
+      });
+    }
+    if (activeGame !== null && missingGameCharacters.length > 0) {
+      await tx.gameCharacter.createMany({
+        data: missingGameCharacters.map((entry) => ({
+          gameId: activeGame.id,
+          characterId: entry.characterId,
+          userId: entry.userId,
+          currentHp: entry.currentHp,
+          currentMp: entry.currentMp,
+          currentSan: entry.currentSan,
+          currentDp: entry.currentDp,
+          status: entry.currentHp > 0 ? "ALIVE" : "DEAD",
+          conditions: [] as never
+        })),
+        skipDuplicates: true
       });
     }
     return combat;
