@@ -257,6 +257,40 @@ export async function importCharacterAction(formData: FormData): Promise<void> {
     });
   }
 
+  // 「随身物品」同样落成一般物品卡：即使用户没有填结构化效果，也保留为可编辑 / 可携带的 ITEM 卡。
+  // 默认只勾选「战斗外」，避免“背包 / 圣经”这类无结构化效果的普通物品混进战斗道具栏。
+  for (const item of parsed.items) {
+    const subtitleParts = [item.status, item.location].filter(
+      (part): part is string => typeof part === "string" && part.trim().length > 0
+    );
+    await prisma.card.create({
+      data: {
+        scope: "CHARACTER",
+        ownerId: session.user.id,
+        characterId: character.id,
+        type: "ITEM",
+        name: item.name,
+        subtitle: subtitleParts.length === 0 ? null : subtitleParts.join(" · "),
+        description: item.note === null ? "由 xlsx 人物卡导入" : item.note,
+        system,
+        isEquipped: true,
+        stats: {
+          effects: [],
+          targeting: "SELF",
+          targetScope: "SELF",
+          cost: { mp: 0, san: null, uses: null, cooldownRounds: 0 },
+          usableIn: ["FIELD"],
+          effect: item.note ?? "",
+          uses: null,
+          sanCost: null,
+          source: "XLSX",
+          status: item.status,
+          location: item.location
+        } as never
+      }
+    });
+  }
+
   revalidatePath("/characters");
   // 导入后直接进新的统一编辑页（两页：属性技能 / 故事财产物品），不再落旧的详情页。
   redirect("/characters/" + character.id + "/edit?imported=1");

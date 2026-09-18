@@ -46,6 +46,10 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
     await page.getByRole("button", { name: "下一步" }).click();
     await expect(page.getByText("人物故事 / 财产 / 持有物")).toBeVisible();
 
+    // 3.1 Excel「随身物品」也必须落成可编辑 / 可携带的 ITEM 卡。
+    await expect(page.getByTestId("item-card").filter({ hasText: "银十字架" })).toBeVisible();
+    await expect(page.getByTestId("item-card").filter({ hasText: "圣水" })).toBeVisible();
+
     // 4. 统一卡牌编辑页：创建一张卡并从角色编辑页加入（卡编辑收敛到一个页面）
     const libraryCard = await prisma.card.create({
       data: {
@@ -102,6 +106,15 @@ test("一套角色编辑页：导入真实 Excel → 两页编辑（属性/技�
     expect(item.type).toBe("ITEM");
     expect(item.characterId).toBe(characterId);
     expect((item.stats as Record<string, unknown>).effects).toEqual([{ type: "HEAL", amount: "1d6" }]);
+
+    const importedItems = await prisma.card.findMany({
+      where: { characterId, type: "ITEM", name: { in: ["银十字架", "圣水"] } },
+      orderBy: { name: "asc" }
+    });
+    expect(importedItems.map((card) => card.name).sort()).toEqual(["圣水", "银十字架"]);
+    const importedHolyWater = importedItems.find((card) => card.name === "圣水");
+    expect(importedHolyWater?.description).toBe("有一定消炎杀菌作用");
+    expect((importedHolyWater?.stats as Record<string, unknown>).usableIn).toEqual(["FIELD"]);
 
     // 6. 建真实房间 / 局 / 场景 / 地图 / Token / 战斗
     const room = await prisma.room.create({

@@ -149,6 +149,12 @@ function buildWorkbookBuffer(): Buffer {
   put("AG54", "7");
   put("AJ54", "100");
 
+  // 随身物品：普通物品（F 列）+ 背包格物品（N 列，带备注）
+  put("B79", "显露");
+  put("D79", "颈部");
+  put("F79", "E2E 护身符");
+  put("N79", "E2E 圣水，备用");
+
   // 背景故事 9 项（标题在 W 列、内容在 AA 列）
   put("W61", "个人描述\n角色外貌");
   put("AA61", "E2E 外貌");
@@ -240,6 +246,17 @@ async function main(): Promise<void> {
     expectEqual(weapons.length, 1, "武器数量");
     expectEqual(weapons[0]?.name, "E2E 猎枪", "武器名称");
 
+    const itemCards = await prisma.card.findMany({
+      where: { characterId: character.id, type: "ITEM" },
+      orderBy: { createdAt: "asc" }
+    });
+    expectEqual(itemCards.length, 2, "随身物品卡数量");
+    expectEqual(itemCards[0]?.name, "E2E 护身符", "随身物品-普通物品名");
+    expectEqual(itemCards[0]?.subtitle, "显露 · 颈部", "随身物品-携带部位");
+    expectEqual(itemCards[0]?.description, "由 xlsx 人物卡导入", "随身物品-无备注描述");
+    expectEqual(itemCards[1]?.name, "E2E 圣水", "随身物品-背包格物品名");
+    expectEqual(itemCards[1]?.description, "备用", "随身物品-背包备注");
+
     const backstory = (character.backstory ?? {}) as Record<string, unknown>;
     expectEqual(backstory.appearance, "E2E 外貌", "背景故事-角色外貌");
     expectEqual(backstory.beliefs, "E2E 信念", "背景故事-思想与信念");
@@ -273,8 +290,10 @@ async function main(): Promise<void> {
     ensure(detail.text.includes("E2E 模组"), "详情页应显示调查员经历区块");
     ensure(detail.text.includes("E2E 法术"), "详情页应显示法术一览");
     ensure(detail.text.includes("E2E 伙伴"), "详情页应显示调查员伙伴");
+    ensure(detail.text.includes("E2E 护身符"), "详情页应显示随身物品");
+    ensure(detail.text.includes("E2E 圣水"), "详情页应显示背包格物品");
 
-    console.log("PASS 人物卡导入 E2E：属性 / 职业 / 技能 / 武器 / 背景故事与经历落库并在角色页展示");
+    console.log("PASS 人物卡导入 E2E：属性 / 职业 / 技能 / 武器 / 随身物品卡 / 背景故事与经历落库并在角色页展示");
     console.log("  角色 " + character.id + "，武器 " + (weapons[0]?.id ?? "无"));
   } finally {
     await prisma.card.deleteMany({ where: { ownerId: player.id, name: "E2E 猎枪" } });
