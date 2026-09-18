@@ -268,11 +268,11 @@ export default async function KpPrepPanel(props: Props) {
       </KpDrawerSection>
 
       <KpDrawerSection id="bgm" label="背景音乐" description="房间 BGM 与播放状态">
-        <KpBgmPanel roomId={props.roomId} gameId={props.gameId} bgm={props.bgm} status={props.bgmStatus} />
+        <KpBgmPanel roomId={props.roomId} gameId={props.gameId} bgm={props.bgm} status={props.bgmStatus} embedded />
       </KpDrawerSection>
 
       <KpDrawerSection id="values" label="数值调整" description="HP / MP / SAN / DP、属性与技能">
-        <KpValueEditor roomId={props.roomId} units={props.units} />
+        <KpValueEditor roomId={props.roomId} units={props.units} embedded />
       </KpDrawerSection>
 
       <KpDrawerSection id="clues" label="线索公布" description="发布线索、公开状态与定向分享">

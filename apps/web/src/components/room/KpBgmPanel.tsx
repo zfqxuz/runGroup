@@ -8,6 +8,8 @@ interface Props {
   readonly status: string | null;
   /** 表单提交后返回的页面；战斗页可用它让 KP 留在战斗页。 */
   readonly returnTo?: string;
+  /** 嵌入抽屉/其它容器时去掉最外层卡片样式，只保留表单。 */
+  readonly embedded?: boolean;
 }
 
 const inputClass =
@@ -24,25 +26,38 @@ function statusText(status: string | null): string | null {
 }
 
 export default function KpBgmPanel(props: Props) {
+  const embedded = props.embedded === true;
   const notice = statusText(props.status);
   const baseReturnTo = props.returnTo ?? "/rooms/" + props.roomId;
   const playReturnTo = baseReturnTo + "?bgm=saved#kp-bgm";
   const stopReturnTo = baseReturnTo + "?bgm=cleared#kp-bgm";
   return (
-    <section id="kp-bgm" className="scroll-mt-6 rounded-xl border border-spirit-400/30 bg-spirit-400/5 p-5">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-medium text-spirit-200">BGM 播放</h2>
-          <p className="mt-1 text-[11px] text-white/40">
-            粘贴网易云音乐或 QQ 音乐链接，房间内同步播放。
-          </p>
+    <section
+      id="kp-bgm"
+      className={
+        embedded ? "flex scroll-mt-6 flex-col gap-4" : "scroll-mt-6 rounded-xl border border-spirit-400/30 bg-spirit-400/5 p-5"
+      }
+    >
+      {embedded ? (
+        <p className="text-[11px] text-white/40">粘贴网易云音乐或 QQ 音乐链接，房间内同步播放。</p>
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-medium text-spirit-200">BGM 播放</h2>
+            <p className="mt-1 text-[11px] text-white/40">
+              粘贴网易云音乐或 QQ 音乐链接，房间内同步播放。
+            </p>
+          </div>
+          <span className="rounded-full border border-spirit-400/30 px-2 py-0.5 text-[10px] text-spirit-200">
+            全房间同步
+          </span>
         </div>
-        <span className="rounded-full border border-spirit-400/30 px-2 py-0.5 text-[10px] text-spirit-200">
-          全房间同步
-        </span>
-      </div>
+      )}
 
-      <form action={setRoomBgmAction} className="mt-4 flex flex-col gap-2 border-t border-white/10 pt-4">
+      <form
+        action={setRoomBgmAction}
+        className={embedded ? "flex flex-col gap-2" : "mt-4 flex flex-col gap-2 border-t border-white/10 pt-4"}
+      >
         <input type="hidden" name="roomId" value={props.roomId} />
         <input type="hidden" name="gameId" value={props.gameId} />
         <input type="hidden" name="returnTo" value={playReturnTo} />
@@ -63,12 +78,12 @@ export default function KpBgmPanel(props: Props) {
       </form>
 
       {notice === null ? null : (
-        <p className="mt-3 rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2 text-[11px] text-white/55">
+        <p className={embedded ? "text-[11px] text-white/55" : "mt-3 rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2 text-[11px] text-white/55"}>
           {notice}
         </p>
       )}
 
-      <div className="mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-3">
+      <div className={embedded ? "flex flex-col gap-1" : "mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-3"}>
         <p className="text-[10px] text-white/35">当前 BGM</p>
         {props.bgm === null ? (
           <p className="mt-0.5 text-xs text-white/45">未播放</p>

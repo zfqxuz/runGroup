@@ -13,6 +13,8 @@ interface UnitOption {
 interface Props {
   readonly roomId: string;
   readonly units: readonly UnitOption[];
+  /** 嵌入抽屉/其它容器时去掉最外层卡片样式，只保留表单。 */
+  readonly embedded?: boolean;
 }
 
 interface UnitValuesAck extends Ack {
@@ -72,6 +74,7 @@ function optionalNumber(value: string): number | undefined {
 }
 
 export default function KpValueEditor(props: Props) {
+  const embedded = props.embedded === true;
   const [unitRef, setUnitRef] = useState(props.units[0]?.ref ?? "");
   const [vitals, setVitals] = useState<Record<string, string>>({});
   const [attributes, setAttributes] = useState<Record<string, string>>({});
@@ -213,17 +216,19 @@ export default function KpValueEditor(props: Props) {
   if (props.units.length === 0) return null;
 
   return (
-    <section className="rounded-xl border border-purple-400/30 bg-purple-400/5 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div>
-          <h2 className="text-sm font-medium text-purple-200">KP 数值调整（玩家 / NPC）</h2>
-          <p className="mt-0.5 text-[10px] text-white/45">
-            可调整 HP、MP、SAN、DP、属性与技能；留空表示不修改。
-          </p>
+    <section className={embedded ? "flex flex-col gap-3" : "rounded-xl border border-purple-400/30 bg-purple-400/5 p-4"}>
+      {embedded ? null : (
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <h2 className="text-sm font-medium text-purple-200">KP 数值调整（玩家 / NPC）</h2>
+            <p className="mt-0.5 text-[10px] text-white/45">
+              可调整 HP、MP、SAN、DP、属性与技能；留空表示不修改。
+            </p>
+          </div>
         </div>
-      </div>
+      )}
 
-      <label className="mt-3 flex flex-col gap-1">
+      <label className={embedded ? "flex flex-col gap-1" : "mt-3 flex flex-col gap-1"}>
         <span className="text-[10px] text-white/35">目标单位</span>
         <select value={unitRef} onChange={(event) => setUnitRef(event.target.value)} className={inputClass}>
           {props.units.map((unit) => (
@@ -234,7 +239,7 @@ export default function KpValueEditor(props: Props) {
         </select>
       </label>
 
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className={embedded ? "grid grid-cols-2 gap-2 sm:grid-cols-4" : "mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4"}>
         {VITALS.map(([key, label]) => (
           <label key={key} className="flex flex-col gap-1">
             <span className="text-[10px] text-white/35">{label}</span>
@@ -248,7 +253,7 @@ export default function KpValueEditor(props: Props) {
         ))}
       </div>
 
-      <details open className="mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-2">
+      <details open className={embedded ? "" : "mt-3 rounded-lg border border-white/10 bg-ink-900/40 p-2"}>
         <summary className="cursor-pointer text-[11px] text-white/50">属性（留空不改）</summary>
         <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-3">
           {ATTRIBUTES.map(([key, label]) => (
@@ -265,7 +270,7 @@ export default function KpValueEditor(props: Props) {
         </div>
       </details>
 
-      <details className="mt-2 rounded-lg border border-white/10 bg-ink-900/40 p-2">
+      <details className={embedded ? "" : "mt-2 rounded-lg border border-white/10 bg-ink-900/40 p-2"}>
         <summary className="cursor-pointer text-[11px] text-white/50">技能（每行一项，如 格斗:60）</summary>
         <textarea
           value={skillsText}
@@ -276,7 +281,7 @@ export default function KpValueEditor(props: Props) {
         />
       </details>
 
-      <div className="mt-3 flex flex-wrap items-center gap-2">
+      <div className={embedded ? "flex flex-wrap items-center gap-2" : "mt-3 flex flex-wrap items-center gap-2"}>
         <button
           type="button"
           onClick={submit}

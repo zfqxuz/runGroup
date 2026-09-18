@@ -79,6 +79,19 @@ test("KP 准备区：抽屉层级 / 时间场景可编辑 / 战斗与申请合�
     const hpCard = page.getByText("HP", { exact: true }).locator("xpath=ancestor::div[contains(@class,'rounded-lg')][1]");
     await expect(hpCard.getByText("11", { exact: true })).toBeVisible();
 
+    // 不再显示“选择一个操作区…”占位提示。
+    await expect(page.getByText("选择一个操作区，右侧滑出对应表单。", { exact: true })).toHaveCount(0);
+
+    // 「背景音乐」抽屉：嵌入模式，不应再套卡片。
+    await page.getByRole("button", { name: /背景音乐/ }).click();
+    await expect(page.getByPlaceholder(/music\.163\.com/)).toBeVisible();
+    await expect(page.locator("[data-kp-drawer-overlay] section.rounded-xl")).toHaveCount(0);
+
+    // 「数值调整」抽屉：嵌入模式，不应再套卡片。
+    await page.getByRole("button", { name: /数值调整/ }).click();
+    await expect(page.getByText("目标单位", { exact: true })).toBeVisible();
+    await expect(page.locator("[data-kp-drawer-overlay] section.rounded-xl")).toHaveCount(0);
+
     // 切到「场景与地图」：时间 / 章节 / 场景 / 遭遇 都应该是可编辑控件。
     await page.getByRole("button", { name: /场景与地图/ }).click();
     const gameTime = page.getByLabel("团内时间");

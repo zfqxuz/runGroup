@@ -138,12 +138,6 @@ export default function KpDrawer({ title = "KP 准备区", children }: KpDrawerP
         </nav>
       </div>
 
-      {active === null ? (
-        <p className="rounded-xl border border-dashed border-white/10 bg-ink-800/30 px-4 py-6 text-center text-xs text-white/35">
-          选择一个操作区，右侧滑出对应表单。
-        </p>
-      ) : null}
-
       {mounted ? createPortal(overlay, document.body) : null}
     </div>
   );
