@@ -186,3 +186,62 @@ jobs:
             cd "${{ env.DEPLOY_DIR }}"
             docker compose -f docker-compose.prod.yml exec -T app \
               npx prisma migrate deploy --schema apps/web/prisma/schema.prisma
+
+  # ---------- 4. 邮件通知（成功 / 失败） ----------
+  # 需要仓库 Secrets：MAIL_USERNAME（邮箱）、MAIL_PASSWORD（SMTP 授权码）、MAIL_TO（收件人）
+  # 可选 Variables：MAIL_SERVER（默认 smtp.qq.com）、MAIL_PORT（默认 465）、MAIL_FROM
+  notify:
+    needs: [build-and-push, deploy]
+    if: ${{ always() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send success email
+        if: ${{ needs.deploy.result == 'success' }}
+        continue-on-error: true
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ vars.MAIL_SERVER || 'smtp.qq.com' }}
+          server_port: ${{ vars.MAIL_PORT || 465 }}
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: ${{ vars.MAIL_FROM || secrets.MAIL_USERNAME }}
+          to: ${{ secrets.MAIL_TO }}
+          subject: "✅ 部署成功 · runGroup · ${{ github.sha }}"
+          convert_markdown: true
+          body: |
+            ## ✅ runGroup 部署成功
+
+            - **仓库**：[${{ github.repository }}](https://github.com/${{ github.repository }})
+            - **分支**：`${{ github.ref_name }}`
+            - **提交**：`${{ github.sha }}`
+            - **提交说明**：${{ github.event.head_commit.message }}
+            - **镜像**：`${{ needs.build-and-push.outputs.image }}`
+            - **运行记录**：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            生产 app 健康检查已通过。
+
+      - name: Send failure email
+        if: ${{ needs.deploy.result != 'success' }}
+        continue-on-error: true
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: ${{ vars.MAIL_SERVER || 'smtp.qq.com' }}
+          server_port: ${{ vars.MAIL_PORT || 465 }}
+          secure: true
+          username: ${{ secrets.MAIL_USERNAME }}
+          password: ${{ secrets.MAIL_PASSWORD }}
+          from: ${{ vars.MAIL_FROM || secrets.MAIL_USERNAME }}
+          to: ${{ secrets.MAIL_TO }}
+          subject: "❌ 部署失败 · runGroup · ${{ github.sha }}"
+          convert_markdown: true
+          body: |
+            ## ❌ runGroup 部署失败
+
+            - **仓库**：[${{ github.repository }}](https://github.com/${{ github.repository }})
+            - **分支**：`${{ github.ref_name }}`
+            - **提交**：`${{ github.sha }}`
+            - **提交说明**：${{ github.event.head_commit.message }}
+            - **运行记录**：${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+            请打开运行记录查看失败步骤与日志。
