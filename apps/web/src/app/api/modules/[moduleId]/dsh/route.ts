@@ -25,7 +25,7 @@ function parseHistory(value: unknown): DshHistoryMessage[] {
 export async function POST(
   request: Request,
   context: { readonly params: { readonly moduleId: string } }
-): Promise<NextResponse> {
+): Promise<Response> {
   const session = await auth();
   if (session === null) return NextResponse.json({ ok: false, error: "请先登录" }, { status: 401 });
 
@@ -64,11 +64,44 @@ export async function POST(
   const message = typeof body.message === "string" ? body.message.trim().slice(0, 4000) : "";
   if (message.length === 0) return NextResponse.json({ ok: false, error: "请输入修改意见" }, { status: 400 });
 
-  const result = await runModuleDshTurn({
-    moduleId: moduleRecord.id,
-    userId: session.user.id,
-    message,
-    history: parseHistory(body.history)
+  const history = parseHistory(body.history);
+  const encoder = new TextEncoder();
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: unknown): void => {
+        try {
+          controller.enqueue(encoder.encode(JSON.stringify(event) + "\n"));
+        } catch {
+          // 客户端断开时忽略后续事件。
+        }
+      };
+      try {
+        const result = await runModuleDshTurn(
+          { moduleId: moduleRecord.id, userId: session.user.id, message, history },
+          { onEvent: send }
+        );
+        if (result.ok) {
+          send({ type: "final", reply: result.reply, version: result.version ?? null });
+        } else {
+          send({ type: "error", error: result.error ?? "团本助手执行失败" });
+        }
+      } catch (error) {
+        send({ type: "error", error: error instanceof Error ? error.message : "团本助手执行失败" });
+      } finally {
+        try {
+          controller.close();
+        } catch {
+          // 流可能已被客户端取消。
+        }
+      }
+    }
   });
-  return NextResponse.json(result, { status: result.ok ? 200 : 400 });
+  return new Response(stream, {
+    status: 200,
+    headers: {
+      "Content-Type": "application/x-ndjson; charset=utf-8",
+      "Cache-Control": "no-cache, no-transform",
+      "X-Accel-Buffering": "no"
+    }
+  });
 }

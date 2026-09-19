@@ -71,6 +71,9 @@ test("ai团本助手：悬浮球 → 对话框 → 修改团本并小版本 +1",
     await page.getByPlaceholder(/描述你想修改的内容/).fill("把标题改成「E2E dsh 团本（已改）」，并给老周补一句背景描述。");
     await page.getByRole("button", { name: "发送", exact: true }).click();
 
+    // 思考过程气泡应在最终回复前出现，让用户看到 ai 在推进。
+    await expect(page.locator('[data-role="thinking"]').last()).toBeVisible();
+
     // dsh 一轮通常 10~60 秒；等待助手气泡出现，再核对数据库版本。
     const assistantBubble = page.locator('[data-role="assistant"]').last();
     await expect(assistantBubble).toBeVisible({ timeout: 180_000 });

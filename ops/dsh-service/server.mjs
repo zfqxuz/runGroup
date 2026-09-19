@@ -1,7 +1,11 @@
 // dsh 极简模式（headless）旁车服务：
 //   GET  /health -> { ok: true }
-//   POST /run    { task, files, timeoutMs } -> { exitCode, stdout, stderr, result }
-// 思维链只在 stderr，不会返回给业务前端。
+//   POST /run         { task, files, timeoutMs } -> { exitCode, stdout, stderr, result }
+//   POST /run/stream  同上，但以 NDJSON 流式返回：
+//     {"type":"progress","text":"..."}  阶段状态
+//     {"type":"thinking","text":"..."}  dsh reasoning；工具调用细节不展开
+//     {"type":"result","exitCode":0,"stdout":"...","stderr":"...","result":{...}}
+//     {"type":"error","message":"..."}
 import { createServer } from "node:http";
 import { spawn } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -36,7 +40,24 @@ function readBody(request) {
   });
 }
 
-async function runTask(input) {
+/**
+ * dsh headless 的思考内容是 stderr 上的 "dsh: reasoning:" 分段。
+ * 工具调用等其它 dsh 内部通道不展开给前端；没有前缀的内容按思考内容兜底。
+ */
+function reasoningTextFromLine(line) {
+  const trimmed = line.replace(/\r$/, "").trim();
+  if (trimmed.length === 0) return null;
+  const marker = /^dsh:\s*reasoning:\s*/i.exec(trimmed);
+  if (marker !== null) {
+    const text = trimmed.slice(marker[0].length).trim();
+    return text.length > 0 ? text : null;
+  }
+  if (/^dsh:/i.test(trimmed)) return null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return null;
+  return trimmed;
+}
+
+async function runTask(input, onStderrLine) {
   await mkdir(ROOT, { recursive: true });
   const workspace = await mkdtemp(join(ROOT, "turn-"));
   try {
@@ -62,12 +83,27 @@ async function runTask(input) {
       });
       let stdout = "";
       let stderr = "";
+      let stderrBuffer = "";
       const timer = setTimeout(() => child.kill("SIGKILL"), timeoutMs);
+      const handleStderrLine = (line) => {
+        if (onStderrLine !== undefined) onStderrLine(line);
+      };
       child.stdout.on("data", (chunk) => { stdout += chunk.toString("utf8"); });
-      child.stderr.on("data", (chunk) => { stderr += chunk.toString("utf8"); });
+      child.stderr.on("data", (chunk) => {
+        const text = chunk.toString("utf8");
+        stderr += text;
+        stderrBuffer += text;
+        let index;
+        while ((index = stderrBuffer.indexOf("\n")) >= 0) {
+          const line = stderrBuffer.slice(0, index);
+          stderrBuffer = stderrBuffer.slice(index + 1);
+          handleStderrLine(line);
+        }
+      });
       child.on("error", reject);
       child.on("close", (code) => {
         clearTimeout(timer);
+        if (stderrBuffer.length > 0) handleStderrLine(stderrBuffer);
         resolve({ exitCode: code ?? 1, stdout, stderr });
       });
     });
@@ -89,7 +125,9 @@ const server = createServer(async (request, response) => {
     response.end(JSON.stringify({ ok: true, service: "dsh-headless", activeTasks, maxConcurrent: MAX_CONCURRENT }));
     return;
   }
-  if (request.method !== "POST" || request.url !== "/run") {
+
+  const isRun = request.method === "POST" && (request.url === "/run" || request.url === "/run/stream");
+  if (isRun === false) {
     response.writeHead(404, { "Content-Type": "application/json" });
     response.end(JSON.stringify({ error: "not found" }));
     return;
@@ -99,15 +137,51 @@ const server = createServer(async (request, response) => {
     response.end(JSON.stringify({ error: "dsh service busy" }));
     return;
   }
+
   activeTasks += 1;
   try {
+    if (request.url === "/run/stream") {
+      response.writeHead(200, {
+        "Content-Type": "application/x-ndjson; charset=utf-8",
+        "Cache-Control": "no-cache, no-transform",
+        "X-Accel-Buffering": "no"
+      });
+      if (typeof response.flushHeaders === "function") response.flushHeaders();
+      const send = (event) => {
+        try {
+          if (response.writableEnded === false) response.write(JSON.stringify(event) + "\n");
+        } catch {
+          // 客户端断开时忽略后续事件。
+        }
+      };
+      try {
+        const body = JSON.parse((await readBody(request)) || "{}");
+        send({ type: "progress", text: "ai 正在阅读团本并思考…" });
+        const output = await runTask(body, (line) => {
+          const text = reasoningTextFromLine(line);
+          if (text !== null) send({ type: "thinking", text });
+        });
+        send({ type: "progress", text: "正在整理修改结果…" });
+        send({ type: "result", exitCode: output.exitCode, stdout: output.stdout, stderr: output.stderr, result: output.result });
+      } catch (error) {
+        send({ type: "error", message: error instanceof Error ? error.message : "dsh failed" });
+      } finally {
+        response.end();
+      }
+      return;
+    }
+
     const body = JSON.parse((await readBody(request)) || "{}");
     const output = await runTask(body);
     response.writeHead(200, { "Content-Type": "application/json" });
     response.end(JSON.stringify(output));
   } catch (error) {
-    response.writeHead(500, { "Content-Type": "application/json" });
-    response.end(JSON.stringify({ error: error instanceof Error ? error.message : "dsh failed" }));
+    if (response.headersSent === false) {
+      response.writeHead(500, { "Content-Type": "application/json" });
+      response.end(JSON.stringify({ error: error instanceof Error ? error.message : "dsh failed" }));
+    } else {
+      response.end(JSON.stringify({ type: "error", message: error instanceof Error ? error.message : "dsh failed" }) + "\n");
+    }
   } finally {
     activeTasks -= 1;
   }

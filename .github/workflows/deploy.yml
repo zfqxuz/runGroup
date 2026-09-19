@@ -185,8 +185,9 @@ jobs:
             # 关键：只处理 db / app / dsh，不动 n8n / n8n-proxy。
             # db 是独立数据卷，仅在停掉时拉起；n8n 是独立 deploy-n8n.yml 的职责。
             docker compose -f docker-compose.prod.yml up -d --no-deps db
-            docker compose -f docker-compose.prod.yml up -d --no-deps app
+            # 先起 dsh 旁车，避免刚更新的 app 短时间打到旧 sidecar。
             docker compose -f docker-compose.prod.yml up -d --no-deps dsh
+            docker compose -f docker-compose.prod.yml up -d --no-deps app
             docker compose -f docker-compose.prod.yml ps
 
             # dsh sidecar health check：只打 /health，不触发真实 dsh 任务。

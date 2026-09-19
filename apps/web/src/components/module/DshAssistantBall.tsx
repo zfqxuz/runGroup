@@ -11,9 +11,19 @@ interface Props {
   readonly roomId?: string;
 }
 
+type MessageRole = "user" | "assistant" | "thinking";
+
 interface Message {
-  readonly role: "user" | "assistant";
+  readonly role: MessageRole;
   readonly content: string;
+}
+
+interface StreamEvent {
+  readonly type?: string;
+  readonly text?: string;
+  readonly reply?: string;
+  readonly version?: string;
+  readonly error?: string;
 }
 
 export default function DshAssistantBall(props: Props) {
@@ -22,6 +32,7 @@ export default function DshAssistantBall(props: Props) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [version, setVersion] = useState(props.initialVersion);
   const scrollRef = useRef<HTMLDivElement | null>(null);
@@ -35,34 +46,98 @@ export default function DshAssistantBall(props: Props) {
     if (message.length === 0 || sending) return;
     setSending(true);
     setError(null);
+    setStatus("ai 正在准备…");
+    setInput("");
+
+    const history = messages.flatMap((item) =>
+      item.role === "user" || item.role === "assistant"
+        ? [{ role: item.role, content: item.content }]
+        : []
+    );
+    setMessages((current) => [...current, { role: "user", content: message }]);
+
     try {
       const response = await fetch("/api/modules/" + props.moduleId + "/dsh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, history: messages })
+        body: JSON.stringify({ message, history })
       });
-      const payload = (await response.json()) as {
-        readonly ok?: boolean;
-        readonly reply?: string;
-        readonly version?: string;
-        readonly error?: string;
-      };
-      if (payload.ok !== true) {
-        setError(payload.error ?? "团本助手执行失败");
+      if (response.ok === false) {
+        const payload = (await response.json().catch(() => null)) as { readonly error?: string } | null;
+        setError(payload?.error ?? "团本助手请求失败");
         return;
       }
-      setMessages((current) => [
-        ...current,
-        { role: "user", content: message },
-        { role: "assistant", content: payload.reply ?? "团本已修改。" }
-      ]);
-      if (typeof payload.version === "string") setVersion(payload.version);
-      setInput("");
+      if (response.body === null) throw new Error("服务器没有返回流");
+
+      setMessages((current) => [...current, { role: "thinking", content: "" }]);
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let reply = "";
+      let nextVersion: string | null = null;
+
+      const handleEvent = (event: StreamEvent): void => {
+        if ((event.type === "thinking" || event.type === "progress") && typeof event.text === "string") {
+          if (event.type === "progress") {
+            setStatus(event.text);
+            return;
+          }
+          const text = event.text;
+          setMessages((current) => {
+            const next = [...current];
+            for (let index = next.length - 1; index >= 0; index -= 1) {
+              const item = next[index];
+              if (item !== undefined && item.role === "thinking") {
+                next[index] = { role: "thinking", content: item.content.length > 0 ? item.content + "\n" + text : text };
+                break;
+              }
+            }
+            return next;
+          });
+          return;
+        }
+        if (event.type === "final") {
+          reply = typeof event.reply === "string" ? event.reply : "";
+          if (typeof event.version === "string") nextVersion = event.version;
+          return;
+        }
+        if (event.type === "error") {
+          throw new Error(typeof event.error === "string" ? event.error : "团本助手执行失败");
+        }
+      };
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        let index: number;
+        while ((index = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, index).trim();
+          buffer = buffer.slice(index + 1);
+          if (line.length === 0) continue;
+          let event: StreamEvent;
+          try {
+            event = JSON.parse(line) as StreamEvent;
+          } catch {
+            continue;
+          }
+          handleEvent(event);
+        }
+      }
+      buffer += decoder.decode();
+      if (buffer.trim().length > 0) {
+        handleEvent(JSON.parse(buffer.trim()) as StreamEvent);
+      }
+
+      if (reply.length === 0) reply = "团本已修改。";
+      setMessages((current) => [...current, { role: "assistant", content: reply }]);
+      if (nextVersion !== null) setVersion(nextVersion);
       router.refresh();
-    } catch {
-      setError("网络异常，请稍后重试");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "网络异常，请稍后重试");
     } finally {
       setSending(false);
+      setStatus(null);
     }
   }
 
@@ -110,28 +185,47 @@ export default function DshAssistantBall(props: Props) {
               </div>
             ) : (
               <div className="flex flex-col gap-2">
-                {messages.map((item, index) => (
-                  <div
-                    key={index}
-                    data-role={item.role}
-                    className={
-                      "max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-xs leading-relaxed " +
-                      (item.role === "user"
-                        ? "self-end bg-sakura-500/20 text-white/85"
-                        : "self-start border border-white/10 bg-ink-800/70 text-white/75")
-                    }
-                  >
-                    {item.content}
-                  </div>
-                ))}
+                {messages.map((item, index) => {
+                  if (item.role === "thinking") {
+                    const isLast = index === messages.length - 1;
+                    return (
+                      <div
+                        key={index}
+                        data-role="thinking"
+                        className="max-w-[92%] self-start rounded-2xl border border-spirit-500/20 bg-spirit-500/5 px-3 py-2 text-[11px] leading-relaxed text-white/55"
+                      >
+                        <p className="mb-1 flex items-center gap-1.5 text-[10px] font-medium text-spirit-300/80">
+                          {sending && isLast ? (
+                            <span className="inline-block h-2.5 w-2.5 animate-spin rounded-full border border-spirit-300/40 border-t-spirit-300" />
+                          ) : null}
+                          思考过程
+                        </p>
+                        <p className="whitespace-pre-wrap">
+                          {item.content.length > 0 ? item.content : "ai 正在思考…"}
+                        </p>
+                        {sending && isLast && status !== null ? (
+                          <p className="mt-1 text-[10px] text-spirit-300/70">{status}</p>
+                        ) : null}
+                      </div>
+                    );
+                  }
+                  return (
+                    <div
+                      key={index}
+                      data-role={item.role}
+                      className={
+                        "max-w-[92%] whitespace-pre-wrap rounded-2xl px-3 py-2 text-xs leading-relaxed " +
+                        (item.role === "user"
+                          ? "self-end bg-sakura-500/20 text-white/85"
+                          : "self-start border border-white/10 bg-ink-800/70 text-white/75")
+                      }
+                    >
+                      {item.content}
+                    </div>
+                  );
+                })}
               </div>
             )}
-            {sending ? (
-              <p className="mt-3 flex items-center gap-2 text-[11px] text-spirit-300">
-                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-spirit-300/40 border-t-spirit-300" />
-                ai 正在阅读团本并修改，通常需要 10~60 秒…
-              </p>
-            ) : null}
             {error === null ? null : (
               <p className="mt-3 rounded-lg border border-red-400/30 bg-red-400/10 px-3 py-2 text-[11px] text-red-200">{error}</p>
             )}

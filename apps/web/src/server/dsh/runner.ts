@@ -7,11 +7,11 @@ import { join } from "node:path";
  * dsh 极简模式（headless）调用桥。
  *
  * 两种部署形态：
- * 1. `DSH_SERVICE_URL`：外部/旁车 dsh 服务，POST /run { task, files }；
+ * 1. `DSH_SERVICE_URL`：外部/旁车 dsh 服务，POST /run / /run/stream；
  * 2. 否则本地拉起 `DSH_HEADLESS_COMMAND`（默认 dsh --profile headless）。
  *
  * 约定：任务说明与 module.json 写入临时工作目录，dsh 完成后读取同目录 result.json。
- * 思维链只出现在 dsh 的 stderr，调用方不会展示。
+ * dsh 的 reasoning 在 stderr；通过 `onEvent` 实时上报，工具调用细节由 sidecar 过滤。
  */
 export interface DshRunnerInput {
   readonly task: string;
@@ -24,6 +24,25 @@ export interface DshRunnerOutput {
   readonly stdout: string;
   readonly stderr: string;
   readonly result: unknown | null;
+}
+
+export interface DshStreamEvent {
+  readonly type: "thinking" | "progress";
+  readonly text: string;
+}
+
+export interface DshRunnerOptions {
+  readonly onEvent?: (event: DshStreamEvent) => void;
+}
+
+interface DshStreamPayload {
+  readonly type?: string;
+  readonly text?: string;
+  readonly message?: string;
+  readonly exitCode?: number;
+  readonly stdout?: string;
+  readonly stderr?: string;
+  readonly result?: unknown;
 }
 
 const DEFAULT_TIMEOUT_MS = 300_000;
@@ -72,7 +91,27 @@ function parseMaybeJson(text: string): unknown | null {
   }
 }
 
-async function runDshCli(input: DshRunnerInput): Promise<DshRunnerOutput> {
+/** 与 sidecar 保持同一套 reasoning 解析规则。 */
+function reasoningTextFromLine(line: string): string | null {
+  const trimmed = line.replace(/\r$/, "").trim();
+  if (trimmed.length === 0) return null;
+  const marker = /^dsh:\s*reasoning:\s*/i.exec(trimmed);
+  if (marker !== null) {
+    const text = trimmed.slice(marker[0].length).trim();
+    return text.length > 0 ? text : null;
+  }
+  if (/^dsh:/i.test(trimmed)) return null;
+  if (trimmed.startsWith("{") || trimmed.startsWith("[")) return null;
+  return trimmed;
+}
+
+function emitStderrLine(line: string, onEvent?: (event: DshStreamEvent) => void): void {
+  if (onEvent === undefined) return;
+  const text = reasoningTextFromLine(line);
+  if (text !== null) onEvent({ type: "thinking", text });
+}
+
+async function runDshCli(input: DshRunnerInput, options: DshRunnerOptions = {}): Promise<DshRunnerOutput> {
   const root = (process.env.DSH_WORKSPACE_ROOT ?? join(tmpdir(), "touhou-dsh")).trim();
   await mkdir(root, { recursive: true });
   const workspace = await mkdtemp(join(root, "turn-"));
@@ -96,6 +135,7 @@ async function runDshCli(input: DshRunnerInput): Promise<DshRunnerOutput> {
       });
       let stdout = "";
       let stderr = "";
+      let stderrBuffer = "";
       let finished = false;
       const timer = setTimeout(() => {
         if (finished === false) {
@@ -109,7 +149,15 @@ async function runDshCli(input: DshRunnerInput): Promise<DshRunnerOutput> {
         if (stdout.length < MAX_OUTPUT_CHARS) stdout += chunk.toString("utf8");
       });
       child.stderr.on("data", (chunk: Buffer) => {
-        if (stderr.length < MAX_OUTPUT_CHARS) stderr += chunk.toString("utf8");
+        const text = chunk.toString("utf8");
+        if (stderr.length < MAX_OUTPUT_CHARS) stderr += text;
+        stderrBuffer += text;
+        let index;
+        while ((index = stderrBuffer.indexOf("\n")) >= 0) {
+          const line = stderrBuffer.slice(0, index);
+          stderrBuffer = stderrBuffer.slice(index + 1);
+          emitStderrLine(line, options.onEvent);
+        }
       });
       child.on("error", (error) => {
         finished = true;
@@ -119,6 +167,7 @@ async function runDshCli(input: DshRunnerInput): Promise<DshRunnerOutput> {
       child.on("close", (code) => {
         finished = true;
         clearTimeout(timer);
+        if (stderrBuffer.length > 0) emitStderrLine(stderrBuffer, options.onEvent);
         resolve({ exitCode: code ?? 1, stdout, stderr, result: null });
       });
     });
@@ -169,8 +218,85 @@ async function runDshService(url: string, input: DshRunnerInput): Promise<DshRun
   }
 }
 
-export async function runDshTask(input: DshRunnerInput): Promise<DshRunnerOutput> {
+async function runDshServiceStream(
+  url: string,
+  input: DshRunnerInput,
+  onEvent: (event: DshStreamEvent) => void
+): Promise<DshRunnerOutput> {
+  const controller = new AbortController();
+  const timeoutMs = input.timeoutMs ?? dshTimeoutMs();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  timer.unref();
+  try {
+    const response = await fetch(url + "/run/stream", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ task: input.task, files: input.files, timeoutMs }),
+      signal: controller.signal
+    });
+    if (response.ok === false) {
+      const detail = await response.text().catch(() => "");
+      throw new Error("dsh 服务返回 " + String(response.status) + (detail.trim().length > 0 ? "：" + detail.trim().slice(0, 200) : ""));
+    }
+    if (response.body === null) throw new Error("dsh 服务没有返回流");
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    const state: { output: DshRunnerOutput | null } = { output: null };
+    let buffer = "";
+
+    const handleLine = (line: string): void => {
+      const trimmed = line.trim();
+      if (trimmed.length === 0) return;
+      let event: DshStreamPayload;
+      try {
+        event = JSON.parse(trimmed) as DshStreamPayload;
+      } catch {
+        return;
+      }
+      if ((event.type === "thinking" || event.type === "progress") && typeof event.text === "string") {
+        onEvent({ type: event.type, text: event.text });
+        return;
+      }
+      if (event.type === "result") {
+        state.output = {
+          exitCode: typeof event.exitCode === "number" ? event.exitCode : 1,
+          stdout: typeof event.stdout === "string" ? event.stdout : "",
+          stderr: typeof event.stderr === "string" ? event.stderr : "",
+          result: event.result ?? null
+        };
+        return;
+      }
+      if (event.type === "error") {
+        throw new Error(typeof event.message === "string" ? event.message : "dsh 服务执行失败");
+      }
+    };
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let index;
+      while ((index = buffer.indexOf("\n")) >= 0) {
+        const line = buffer.slice(0, index);
+        buffer = buffer.slice(index + 1);
+        handleLine(line);
+      }
+    }
+    buffer += decoder.decode();
+    if (buffer.trim().length > 0) handleLine(buffer);
+    if (state.output === null) throw new Error("dsh 服务没有返回最终结果");
+    return state.output;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+export async function runDshTask(input: DshRunnerInput, options: DshRunnerOptions = {}): Promise<DshRunnerOutput> {
   const service = dshServiceUrl();
-  if (service.length > 0) return runDshService(service, input);
-  return runDshCli(input);
+  if (service.length > 0) {
+    if (options.onEvent !== undefined) return runDshServiceStream(service, input, options.onEvent);
+    return runDshService(service, input);
+  }
+  return runDshCli(input, options);
 }

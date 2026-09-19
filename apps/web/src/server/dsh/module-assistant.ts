@@ -3,7 +3,7 @@ import { parseStructuredBlocks } from "@/server/modules/structure";
 import { syncModuleTemplatesFromModule } from "@/server/modules/templates";
 import { ensureModuleRevision } from "@/server/modules/revision";
 import { prisma } from "@/server/db/prisma";
-import { runDshTask } from "@/server/dsh/runner";
+import { runDshTask, type DshStreamEvent } from "@/server/dsh/runner";
 
 export interface DshHistoryMessage {
   readonly role: "user" | "assistant";
@@ -22,6 +22,10 @@ export interface ModuleDshTurnResult {
   readonly reply: string;
   readonly version?: string;
   readonly error?: string;
+}
+
+export interface ModuleDshTurnOptions {
+  readonly onEvent?: (event: DshStreamEvent) => void;
 }
 
 function cleanText(value: unknown, maxLength: number): string {
@@ -154,7 +158,7 @@ function moduleSnapshot(module: {
   };
 }
 
-export async function runModuleDshTurn(input: ModuleDshTurnInput): Promise<ModuleDshTurnResult> {
+export async function runModuleDshTurn(input: ModuleDshTurnInput, options: ModuleDshTurnOptions = {}): Promise<ModuleDshTurnResult> {
   const moduleRecord = await prisma.module.findUnique({ where: { id: input.moduleId } });
   if (moduleRecord === null) return { ok: false, reply: "", error: "团本不存在" };
 
@@ -173,20 +177,21 @@ export async function runModuleDshTurn(input: ModuleDshTurnInput): Promise<Modul
     history: input.history
   });
 
+  options.onEvent?.({ type: "progress", text: "ai 正在阅读团本并思考…" });
   const run = await runDshTask({
     task: "读取当前目录的 task.md，严格按照其中的要求执行，完成后只输出一句话结论。",
     files: {
       "module.json": JSON.stringify(snapshot, null, 2),
       "task.md": task
     }
-  });
+  }, { onEvent: options.onEvent });
 
   if (run.exitCode !== 0) {
-    // stderr 里可能包含思维链，只记服务端，不返回给前端。
     console.error("[module-dsh] dsh 执行失败", run.exitCode, run.stderr.slice(0, 2000));
     return { ok: false, reply: "", error: "dsh 执行失败（退出码 " + String(run.exitCode) + "），请稍后重试" };
   }
 
+  options.onEvent?.({ type: "progress", text: "正在校验修改结果…" });
   const validated = validateResult(run.result, moduleRecord.id, existingContent);
   if ("error" in validated) {
     console.error("[module-dsh] 结果校验失败", validated.error, run.stdout.slice(0, 1000));
@@ -195,6 +200,7 @@ export async function runModuleDshTurn(input: ModuleDshTurnInput): Promise<Modul
   const reply = cleanText(recordOf(run.result)?.reply, 4000) || "团本已按你的意见修改。";
   const newVersion = bumpMinorVersion(moduleRecord.version);
 
+  options.onEvent?.({ type: "progress", text: "正在保存新版本…" });
   await prisma.module.update({
     where: { id: moduleRecord.id },
     data: {
