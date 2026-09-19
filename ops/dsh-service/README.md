@@ -5,7 +5,13 @@
 - `GET /health`：轻量健康检查，返回 `{ ok: true, service: "dsh-headless", activeTasks, maxConcurrent }`；
 - `POST /run`：接收 `{ task, files, timeoutMs }`，在临时目录写入 files，调用
   `dsh --profile headless <task>`，返回 `{ exitCode, stdout, stderr, result }`。
-  `result` 来自工作目录里的 `result.json`。思维链只出现在 stderr，业务前端不会展示。
+  `result` 来自工作目录里的 `result.json`。
+- `POST /run/stream`：与 `/run` 相同的入参，但以 NDJSON 流式返回：
+  - `{"type":"progress","text":"..."}`：阶段进度；
+  - `{"type":"thinking","text":"..."}`：dsh 的 reasoning，供前端实时显示“思考过程”；
+    工具调用等 `dsh:` 内部通道不会逐条展开；
+  - `{"type":"result", ...}`：最终结果；
+  - `{"type":"error","message":"..."}`：执行失败。
 
 默认一次只执行一个 dsh 任务（`DSH_MAX_CONCURRENT=1`），避免单机内存被打满。
 

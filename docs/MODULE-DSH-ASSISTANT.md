@@ -3,7 +3,7 @@
 ## 用户侧
 
 - 团本编辑页（`/rooms/[id]/modules/[moduleId]`、`/modules/[moduleId]`）右下角会出现 `DSH` 悬浮球。
-- 点击弹出对话框，用户用自然语言提出修改意见；dsh 修改完成后返回一段结论，**不展示思维链**。
+- 点击弹出对话框，用户用自然语言提出修改意见；对话框会实时显示「思考过程」和阶段进度，完成后返回最终结论。工具调用细节不逐条展开，但用户能感受到 ai 在推进。
 - 每成功修改一轮，团本小版本号 +1（例如 `1.0.0 → 1.1.0`），并保存一个版本快照。
 - 只有管理员在 `/admin/system` 的「dsh 团本助手白名单」里配置的用户（用户名或用户 id）才能看到悬浮球。
 
@@ -21,7 +21,7 @@
 
 `apps/web/src/server/dsh/`：
 
-- `runner.ts`：优先 `DSH_SERVICE_URL`（旁车 HTTP），否则本地拉起 `DSH_HEADLESS_COMMAND`（默认 `dsh --profile headless`）。
+- `runner.ts`：优先 `DSH_SERVICE_URL`（旁车 HTTP，`/run/stream` 流式，回退 `/run`），否则本地拉起 `DSH_HEADLESS_COMMAND`（默认 `dsh --profile headless`）；通过 `onEvent` 把 reasoning/进度交给 API 层。
 - `module-assistant.ts`：拼系统提示词、写工作目录、校验结果、写回数据库、小版本 +1、同步模板、保存版本快照、审计。
 - `access.ts`：白名单读取与判断。
 
@@ -46,6 +46,8 @@ dsh 旁车默认 `DSH_MAX_CONCURRENT=1`，compose 还给容器加了 `512m / 1 C
 DSH_SERVICE_URL=http://dsh:8790
 DSH_TASK_TIMEOUT_MS=300000
 ```
+
+应用调用 `POST /api/modules/[moduleId]/dsh` 时返回 NDJSON 流：前端边接收 `progress` / `thinking` 边渲染思考过程，收到 `final` 后再落最终回复并刷新版本号。
 
 注意：**文件导入时的“团本解析”走 n8n 工作流（`N8N_MODULE_PARSE_URL`），n8n 直接调 DeepSeek API，
 不经过 dsh 旁车**；dsh 负责的是编辑页悬浮球里“解析当前 module.json 并按自然语言修改”。
