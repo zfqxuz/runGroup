@@ -4,7 +4,13 @@ on:
   push:
     branches: [main]
     paths:
-      - "n8n/**"
+      # 只监听真正会被部署的文件；v2 副本（module-import-v2.json / workflow-src-v2）不触发重启
+      - "n8n/workflows/module-import.json"
+      - "n8n/workflow-src/**"
+      - "n8n/build-workflows.mjs"
+      - "n8n/vendor/**"
+      - "n8n/Caddyfile"
+      - "docker-compose.prod.yml"
       - ".github/workflows/deploy-n8n.yml"
   workflow_dispatch:
 
