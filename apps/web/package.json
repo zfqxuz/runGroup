@@ -59,7 +59,8 @@
     "test:e2e": "bash scripts/run-e2e-web.sh",
     "verify:coc7-starter": "tsx scripts/verify-coc7-starter.ts",
     "test:module-parse": "tsx --env-file=.env scripts/evaluate-module-parse.ts",
-    "test:module-parse:generate": "node scripts/module-parse-eval/generate-fixtures.mjs && node scripts/module-parse-eval/generate-regression-fixtures.mjs"
+    "test:module-parse:generate": "node scripts/module-parse-eval/generate-fixtures.mjs && node scripts/module-parse-eval/generate-regression-fixtures.mjs",
+    "test": "vitest run"
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.9",

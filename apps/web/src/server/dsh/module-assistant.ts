@@ -4,6 +4,7 @@ import { syncModuleTemplatesFromModule } from "@/server/modules/templates";
 import { ensureModuleRevision } from "@/server/modules/revision";
 import { prisma } from "@/server/db/prisma";
 import { runDshTask, type DshStreamEvent } from "@/server/dsh/runner";
+import { syncNpcStatsFromText } from "@/server/dsh/npc-text-sync";
 
 export interface DshHistoryMessage {
   readonly role: "user" | "assistant";
@@ -74,6 +75,8 @@ export function buildModuleDshTask(input: {
     "- 只允许读取当前工作目录下的 module.json 与 task.md。",
     "- 禁止访问网络、数据库、其它团本，以及工作目录以外的任何文件。",
     "- 不要执行与本次团本修改无关的命令。",
+    "- NPC 的数值必须来自 content.text 里明确出现的数值行或 yaml module-npc 块；",
+    "- 用户指出某些 NPC 缺失时，从 content.text 中按名字找回并补全，禁止自行编造，禁止复制其它 NPC 的属性。",
     "",
     "# 可以改动",
     "- content.text：团本正文 Markdown。",
@@ -105,7 +108,7 @@ interface AppliedModule {
   readonly content: Record<string, unknown>;
 }
 
-function validateResult(raw: unknown, moduleId: string, existingContent: Record<string, unknown>): AppliedModule | { error: string } {
+function validateResult(raw: unknown, moduleId: string, existingContent: Record<string, unknown>, recoverMissing: boolean): AppliedModule | { error: string } {
   const result = recordOf(raw);
   if (result === null) return { error: "dsh 没有返回合法的 result.json" };
   const content = recordOf(result.content);
@@ -116,7 +119,13 @@ function validateResult(raw: unknown, moduleId: string, existingContent: Record<
   const id = cleanText(result.id, 120);
   if (id.length > 0 && id !== moduleId) return { error: "dsh 试图修改团本 id，已拒绝" };
 
-  const structured = recordOf(content.structured) ?? (parseStructuredBlocks(text) as unknown as Record<string, unknown>);
+  const rawStructured = recordOf(content.structured) ?? (parseStructuredBlocks(text) as unknown as Record<string, unknown>);
+  const structured = syncNpcStatsFromText({
+    newText: text,
+    fallbackText: typeof existingContent.text === "string" ? existingContent.text : "",
+    structured: rawStructured,
+    recoverMissing
+  });
   const nextContent: Record<string, unknown> = {
     ...existingContent,
     format: cleanText(content.format, 40) || (typeof existingContent.format === "string" ? existingContent.format : "markdown"),
@@ -192,7 +201,8 @@ export async function runModuleDshTurn(input: ModuleDshTurnInput, options: Modul
   }
 
   options.onEvent?.({ type: "progress", text: "正在校验修改结果…" });
-  const validated = validateResult(run.result, moduleRecord.id, existingContent);
+  const recoverMissing = /(缺失|补回|补上|补全|重新解析|重新识别|重新提取|漏掉|找回来)/.test(input.message);
+  const validated = validateResult(run.result, moduleRecord.id, existingContent, recoverMissing);
   if ("error" in validated) {
     console.error("[module-dsh] 结果校验失败", validated.error, run.stdout.slice(0, 1000));
     return { ok: false, reply: "", error: validated.error };
