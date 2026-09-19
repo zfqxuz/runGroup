@@ -1,0 +1,38 @@
+{
+  "npcs": [
+    {
+      "name": "老周",
+      "attributes": {
+        "str": 70,
+        "con": 65,
+        "siz": 75,
+        "dex": 45,
+        "app": 50,
+        "int": 55,
+        "pow": 60,
+        "edu": 40,
+        "luck": 35
+      },
+      "hp": 14,
+      "mp": 12,
+      "san": 65
+    },
+    {
+      "name": "野狗",
+      "attributes": {
+        "str": 40,
+        "con": 45,
+        "siz": 35,
+        "dex": 70,
+        "app": 5,
+        "int": 5,
+        "pow": 40,
+        "edu": 5,
+        "luck": 15
+      },
+      "hp": 8,
+      "mp": 8,
+      "san": 40
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "npcs": [
+    {
+      "name": "自动人偶",
+      "attributes": {
+        "str": 50,
+        "con": 60,
+        "siz": 55,
+        "dex": 45,
+        "app": 30,
+        "int": 40,
+        "pow": 50,
+        "edu": 20,
+        "luck": 25
+      },
+      "hp": 11,
+      "mp": 10
+    },
+    {
+      "name": "发条犬",
+      "attributes": {
+        "str": 45,
+        "con": 50,
+        "siz": 40,
+        "dex": 70,
+        "app": 5,
+        "int": 10,
+        "pow": 40,
+        "edu": 5,
+        "luck": 15
+      },
+      "hp": 9,
+      "mp": 8
+    }
+  ]
+}

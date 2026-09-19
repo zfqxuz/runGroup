@@ -1,0 +1,5 @@
+# 夜枭
+夜枭（暗影）是屋顶的刺客。
+夜枭（暗影）
+STR 50 CON 55 SIZ 50 DEX 85 APP 45 INT 60 POW 50 EDU 40 LUCK 30
+HP 10 MP 10

@@ -1,0 +1,324 @@
+{
+  "npcs": [
+    {
+      "name": "守卫A",
+      "attributes": {
+        "str": 40,
+        "con": 50,
+        "siz": 55,
+        "dex": 40,
+        "app": 20,
+        "int": 30,
+        "pow": 45,
+        "edu": 25,
+        "luck": 20
+      },
+      "hp": 10,
+      "mp": 9
+    },
+    {
+      "name": "守卫B",
+      "attributes": {
+        "str": 48,
+        "con": 60,
+        "siz": 60,
+        "dex": 45,
+        "app": 25,
+        "int": 36,
+        "pow": 50,
+        "edu": 35,
+        "luck": 25
+      },
+      "hp": 12,
+      "mp": 10
+    },
+    {
+      "name": "守卫C",
+      "attributes": {
+        "str": 56,
+        "con": 70,
+        "siz": 65,
+        "dex": 50,
+        "app": 30,
+        "int": 42,
+        "pow": 55,
+        "edu": 45,
+        "luck": 30
+      },
+      "hp": 13,
+      "mp": 11
+    },
+    {
+      "name": "守卫D",
+      "attributes": {
+        "str": 64,
+        "con": 80,
+        "siz": 55,
+        "dex": 55,
+        "app": 35,
+        "int": 48,
+        "pow": 60,
+        "edu": 55,
+        "luck": 35
+      },
+      "hp": 13,
+      "mp": 12
+    },
+    {
+      "name": "守卫E",
+      "attributes": {
+        "str": 72,
+        "con": 50,
+        "siz": 60,
+        "dex": 60,
+        "app": 40,
+        "int": 54,
+        "pow": 65,
+        "edu": 25,
+        "luck": 40
+      },
+      "hp": 11,
+      "mp": 13
+    },
+    {
+      "name": "守卫F",
+      "attributes": {
+        "str": 40,
+        "con": 60,
+        "siz": 65,
+        "dex": 65,
+        "app": 45,
+        "int": 30,
+        "pow": 70,
+        "edu": 35,
+        "luck": 45
+      },
+      "hp": 12,
+      "mp": 14
+    },
+    {
+      "name": "守卫G",
+      "attributes": {
+        "str": 48,
+        "con": 70,
+        "siz": 55,
+        "dex": 40,
+        "app": 50,
+        "int": 36,
+        "pow": 45,
+        "edu": 45,
+        "luck": 50
+      },
+      "hp": 12,
+      "mp": 9
+    },
+    {
+      "name": "守卫H",
+      "attributes": {
+        "str": 56,
+        "con": 80,
+        "siz": 60,
+        "dex": 45,
+        "app": 20,
+        "int": 42,
+        "pow": 50,
+        "edu": 55,
+        "luck": 55
+      },
+      "hp": 14,
+      "mp": 10
+    },
+    {
+      "name": "守卫I",
+      "attributes": {
+        "str": 64,
+        "con": 50,
+        "siz": 65,
+        "dex": 50,
+        "app": 25,
+        "int": 48,
+        "pow": 55,
+        "edu": 25,
+        "luck": 20
+      },
+      "hp": 11,
+      "mp": 11
+    },
+    {
+      "name": "守卫J",
+      "attributes": {
+        "str": 72,
+        "con": 60,
+        "siz": 55,
+        "dex": 55,
+        "app": 30,
+        "int": 54,
+        "pow": 60,
+        "edu": 35,
+        "luck": 25
+      },
+      "hp": 11,
+      "mp": 12
+    },
+    {
+      "name": "守卫K",
+      "attributes": {
+        "str": 40,
+        "con": 70,
+        "siz": 60,
+        "dex": 60,
+        "app": 35,
+        "int": 30,
+        "pow": 65,
+        "edu": 45,
+        "luck": 30
+      },
+      "hp": 13,
+      "mp": 13
+    },
+    {
+      "name": "守卫L",
+      "attributes": {
+        "str": 48,
+        "con": 80,
+        "siz": 65,
+        "dex": 65,
+        "app": 40,
+        "int": 36,
+        "pow": 70,
+        "edu": 55,
+        "luck": 35
+      },
+      "hp": 14,
+      "mp": 14
+    },
+    {
+      "name": "守卫M",
+      "attributes": {
+        "str": 56,
+        "con": 50,
+        "siz": 55,
+        "dex": 40,
+        "app": 45,
+        "int": 42,
+        "pow": 45,
+        "edu": 25,
+        "luck": 40
+      },
+      "hp": 10,
+      "mp": 9
+    },
+    {
+      "name": "守卫N",
+      "attributes": {
+        "str": 64,
+        "con": 60,
+        "siz": 60,
+        "dex": 45,
+        "app": 50,
+        "int": 48,
+        "pow": 50,
+        "edu": 35,
+        "luck": 45
+      },
+      "hp": 12,
+      "mp": 10
+    },
+    {
+      "name": "守卫O",
+      "attributes": {
+        "str": 72,
+        "con": 70,
+        "siz": 65,
+        "dex": 50,
+        "app": 20,
+        "int": 54,
+        "pow": 55,
+        "edu": 45,
+        "luck": 50
+      },
+      "hp": 13,
+      "mp": 11
+    },
+    {
+      "name": "守卫P",
+      "attributes": {
+        "str": 40,
+        "con": 80,
+        "siz": 55,
+        "dex": 55,
+        "app": 25,
+        "int": 30,
+        "pow": 60,
+        "edu": 55,
+        "luck": 55
+      },
+      "hp": 13,
+      "mp": 12
+    },
+    {
+      "name": "守卫Q",
+      "attributes": {
+        "str": 48,
+        "con": 50,
+        "siz": 60,
+        "dex": 60,
+        "app": 30,
+        "int": 36,
+        "pow": 65,
+        "edu": 25,
+        "luck": 20
+      },
+      "hp": 11,
+      "mp": 13
+    },
+    {
+      "name": "守卫R",
+      "attributes": {
+        "str": 56,
+        "con": 60,
+        "siz": 65,
+        "dex": 65,
+        "app": 35,
+        "int": 42,
+        "pow": 70,
+        "edu": 35,
+        "luck": 25
+      },
+      "hp": 12,
+      "mp": 14
+    },
+    {
+      "name": "守卫S",
+      "attributes": {
+        "str": 64,
+        "con": 70,
+        "siz": 55,
+        "dex": 40,
+        "app": 40,
+        "int": 48,
+        "pow": 45,
+        "edu": 45,
+        "luck": 30
+      },
+      "hp": 12,
+      "mp": 9
+    },
+    {
+      "name": "守卫T",
+      "attributes": {
+        "str": 72,
+        "con": 80,
+        "siz": 60,
+        "dex": 45,
+        "app": 45,
+        "int": 54,
+        "pow": 50,
+        "edu": 55,
+        "luck": 35
+      },
+      "hp": 14,
+      "mp": 10
+    }
+  ]
+}

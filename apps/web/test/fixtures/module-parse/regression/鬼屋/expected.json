@@ -1,0 +1,70 @@
+{
+  "entriesOnly": true,
+  "npcs": [
+    {
+      "name": "鼠群",
+      "attributes": {
+        "str": 35,
+        "con": 55,
+        "siz": 35,
+        "pow": 50,
+        "dex": 70,
+        "luck": 0
+      },
+      "hp": 9,
+      "mp": 10,
+      "statText": "name: 鼠群\naliases:\n  - 鼠群\nstatText: >-\n  STR 35   CON 55   SIZ 35   POW 50   DEX 70\n\n  HP: 9\n\n  平均攻击加值: -1\n\n  平均体格: -1\n\n  移动: 9\n\n  攻击\n\n  每回合攻击次数: 1\n\n  肉搏攻击:  老鼠用尖牙利齿攻击。\n\n  蜂拥而上 (战技 fighting maneuver):\n  鼠群可以作为一个群体攻击并且淹没一个目标。这种攻击属于战技。因为它们的数量庞大，所以他们可以获得一个攻击加值骰。这种攻击可以把目标淹没，对目标啃咬、抓挠。\nskills:\n  - skill: FIGHTING_BRAWL\n    value: 40\n  - skill: DODGE\n    value: 42\n  - skill: SPOT_HIDDEN\n    value: 25\n  - skill: LISTEN\n    value: 20\n  - skill: STEALTH\n    value: 20\n  - skill: LIBRARY_USE\n    value: 20\n  - skill: FIRST_AID\n    value: 30\n  - skill: PSYCHOLOGY\n    value: 10\n  - skill: OCCULT\n    value: 5\n  - skill: FIGHTING_BRAWL\n    value: 25\n  - skill: DODGE\n    value: 35\nweapons:\n  - name: 肉搏攻击\n    damage: 1D3\n    range: MELEE\n    skillId: FIGHTING_BRAWL\n    attacks: 1\n    notes: \"\"\n  - name: 蜂拥而上\n    damage: 2D6\n    range: MELEE\n    skillId: FIGHTING_BRAWL\n    attacks: 1\n    notes: 战技\nid: npc-鼠群\ndescription: 盘踞在地窖墙壁夹层中的十只左右老鼠，被堵死去路或有人试图探索该空间时会蜂拥而上攻击。\ntags:\n  - 鼠群\n  - 地窖\n  - 动物\nattributes:\n  str: 35\n  con: 55\n  siz: 35\n  pow: 50\n  dex: 70\n  luck: 0\ndb: \"-1\"\nbuild: -1\nmove: 9\nmaxHp: 9\ntier: MINION\nrarity: COMMON\nmaxSan: 8\nskillsFromText:\n  - skill: 肉搏攻击\n    value: 40\n  - skill: 闪避\n    value: 42\n  - skill: 技能增加\n    value: 5\n"
+    },
+    {
+      "name": "沃尔特·科比特，不死的恶魔",
+      "attributes": {
+        "dex": 35,
+        "str": 90,
+        "con": 115,
+        "siz": 55,
+        "int": 80,
+        "pow": 90,
+        "app": 5,
+        "edu": 80,
+        "luck": 0
+      },
+      "hp": 17,
+      "mp": 18,
+      "statText": "aliases:\n  - Walter Corbitt\n  - 老科比特\n  - 科比特\n  - 不死的恶魔\n  - 沃尔特·科比特，不死的恶魔\n  - 沃尔特·科比特\nname: 沃尔特·科比特，不死的恶魔\ntier: ELITE\nrarity: COMMON\ntags:\n  - 神话法术\n  - 幽灵\n  - 神话力量\n  - 飞刀\n  - 地下室\n  - 不死\n  - 巫师\n  - 恶魔\n  - 非人类转化中\n  - 历史人物\ndescription: 躯体葬于科比特家地下室，意志仍存于世并关注房内一切，懂得使用神话法术保存躯体使其死后仍能活动，会吸食房内人的鲜血并赶走或杀死知道他秘密的人。\nid: npc-walter-corbitt\nskills:\n  - skill: FIGHTING_BRAWL\n    value: 25\n  - skill: DODGE\n    value: 25\n  - skill: SPOT_HIDDEN\n    value: 25\n  - skill: LISTEN\n    value: 20\n  - skill: STEALTH\n    value: 20\n  - skill: LIBRARY_USE\n    value: 20\n  - skill: FIRST_AID\n    value: 30\n  - skill: PSYCHOLOGY\n    value: 10\n  - skill: OCCULT\n    value: 5\n  - skill: DODGE\n    value: 17\n  - skill: CTHULHU_MYTHOS\n    value: 17\n  - skill: INTIMIDATE\n    value: 64\n  - skill: LISTEN\n    value: 60\n  - skill: SLEIGHT_OF_HAND\n    value: 30\n  - skill: STEALTH\n    value: 72\n  - skill: FIGHTING_BRAWL\n    value: 50\nweapons:\n  - name: 肉搏攻击\n    damage: 1D3+db\n    range: MELEE\n    skillId: FIGHTING_BRAWL\n    attacks: 1\n    notes: 被尖锐指甲伤到需幸运检定，失败则感染\nstatText: 鉴于科比特的敏捷是 35；除非科比特施放支配咒语，这种情况下他的敏捷值 +50\n  来判定行动顺序（在科比特还没有施放咒语的时候你应当继续使用它的原始敏捷值\n  35）；如果一名调查员使用斗殴技能攻击科比特，科比特会使用斗殴技能进行反击，科比特也会对这一轮中所有接下来的攻击使用斗殴进行反击\nattributes:\n  dex: 35\n  str: 90\n  con: 115\n  siz: 55\n  int: 80\n  pow: 90\n  app: 5\n  edu: 80\n  luck: 0\ndb: +1D4\nbuild: 1\nmove: 8\nmaxHp: 16\nmaxMp: 18\nmaxSan: 0\nskillsFromText:\n  - skill: 战斗\n    value: 50\n  - skill: 闪避\n    value: 17\n  - skill: 克苏鲁神话知识\n    value: 17\n  - skill: 恐吓\n    value: 64\n  - skill: 聆听\n    value: 60\n  - skill: 妙手\n    value: 30\n  - skill: 潜行\n    value: 72\narmor: 2D6\n"
+    },
+    {
+      "name": "史蒂芬·诺特先生",
+      "attributes": {
+        "str": 90,
+        "con": 115,
+        "siz": 55,
+        "dex": 35,
+        "app": 5,
+        "int": 80,
+        "pow": 90,
+        "edu": 80,
+        "luck": 0
+      },
+      "hp": 17,
+      "mp": 18,
+      "statText": "aliases:\n  - 诺特先生\n  - Mr. Knott\n  - Steven Knott\n  - 房东\n  - 屋主\nname: 史蒂芬·诺特先生\ndescription: 波士顿房东，委托调查员调查科比特的老房子并为其恢复名誉，将钥匙、地址和25美元现金交给调查员。\nid: npc-steven-knott\nskills:\n  - skill: FIGHTING_BRAWL\n    value: 25\n  - skill: DODGE\n    value: 25\n  - skill: SPOT_HIDDEN\n    value: 25\n  - skill: LISTEN\n    value: 20\n  - skill: STEALTH\n    value: 20\n  - skill: LIBRARY_USE\n    value: 20\n  - skill: FIRST_AID\n    value: 30\n  - skill: PSYCHOLOGY\n    value: 10\n  - skill: OCCULT\n    value: 5\nweapons: []\ntier: STANDARD\nrarity: COMMON\ntags:\n  - 雇主\n  - 委托人\nattributes:\n  str: 90\n  con: 115\n  siz: 55\n  dex: 35\n  app: 5\n  int: 80\n  pow: 90\n  edu: 80\n  luck: 0\nmaxHp: 16\nmaxMp: 18\nmaxSan: 0\nskillsFromText:\n  - skill: 战斗\n    value: 50\n  - skill: 闪避\n    value: 17\n  - skill: 克苏鲁神话知识\n    value: 17\n  - skill: 恐吓\n    value: 64\n  - skill: 聆听\n    value: 60\n  - skill: 妙手\n    value: 30\n  - skill: 潜行\n    value: 72\narmor: 2D6\n"
+    },
+    {
+      "name": "特蕾莎·马卡里奥，可悲的小女孩",
+      "attributes": {
+        "str": 50,
+        "con": 50,
+        "siz": 45,
+        "dex": 105,
+        "app": 5,
+        "int": 90,
+        "pow": 25,
+        "edu": 50,
+        "luck": 0
+      },
+      "hp": 9,
+      "mp": 5,
+      "statText": "aliases:\n  - 复活的小女孩\n  - 妹妹\n  - 特蕾莎·马卡里奥，可悲的小女孩\n  - 特蕾莎·马卡里奥\nname: 特蕾莎·马卡里奥，可悲的小女孩\ntier: ELITE\nrarity: COMMON\nrace: null\ntags:\n  - 不死\n  - 双胞胎\n  - 活尸\ndescription: 被科比特强化过的可怜小女孩尸体，速度十分敏捷，会以非人类方式行动。\nportrait: \"\"\nstatText: 力量 50 敏捷 105 体质 50 外表 5 意志 25 智力 90 体型 45 教育 50 hp：10 san：0 伤害加值：0\n  体格：0 移动速度：9 护甲：如果科比特给她释放了血肉防护，她获得1d6护甲。\nattributes:\n  str: 50\n  con: 50\n  siz: 45\n  dex: 105\n  app: 5\n  int: 90\n  pow: 25\n  edu: 50\n  luck: 0\ndb: \"0\"\nbuild: 0\nmove: 9\nskills:\n  - skill: FIGHTING_BRAWL\n    value: 25\n  - skill: DODGE\n    value: 52\n  - skill: SPOT_HIDDEN\n    value: 25\n  - skill: LISTEN\n    value: 20\n  - skill: STEALTH\n    value: 20\n  - skill: LIBRARY_USE\n    value: 20\n  - skill: FIRST_AID\n    value: 30\n  - skill: PSYCHOLOGY\n    value: 10\n  - skill: OCCULT\n    value: 5\n  - skill: CLIMB\n    value: 60\n  - skill: LISTEN\n    value: 60\n  - skill: SPOT_HIDDEN\n    value: 60\n  - skill: STEALTH\n    value: 90\n  - skill: FIGHTING_BRAWL\n    value: 80\nweapons: []\nmaxHp: 10\nmaxMp: 0\nmaxSan: 0\nmaxDp: 0\nid: npc-特蕾莎-马卡里奥\nskillsFromText:\n  - skill: 攀爬\n    value: 60\n  - skill: 聆听\n    value: 60\n  - skill: 侦查\n    value: 60\n  - skill: 潜行\n    value: 90\n  - skill: 闪避\n    value: 52\n  - skill: 撕咬\n    value: 80\narmor: 1D6\n"
+    }
+  ]
+}

@@ -1,0 +1,243 @@
+{
+  "entriesOnly": true,
+  "npcs": [
+    {
+      "name": "庄晓梦（梦中仙）",
+      "attributes": {
+        "str": 50,
+        "con": 40,
+        "siz": 45,
+        "dex": 50,
+        "app": 50,
+        "int": 60,
+        "pow": 70,
+        "edu": 40,
+        "luck": 15
+      },
+      "hp": 8,
+      "mp": 14,
+      "statText": "id: npc_zxm\nname: 庄晓梦（梦中仙）\ntier: BOSS\nrarity: COMMON\nrace: 人类（灵魂滞留幻梦境）\ntags:\n  - 黑幕\n  - 可交涉\n  - 可说服\ndescription: 13岁，栖梧中学初三（6）班。平凡的、普通的女生，成绩很差，身无长技，家门不幸。母亲早逝，父亲赌狗家暴，靠捡废品和摆摊维生，被教师带头霸凌。她将死亡视为唯一的安全出口，出于朴素的善意不断梦引不幸之人。\nportrait: assets/images/image-9ff91f.png\nattributes:\n  str: 50\n  con: 40\n  siz: 45\n  dex: 50\n  app: 50\n  int: 60\n  pow: 70\n  edu: 40\n  luck: 15\nskills:\n  造梦: 99\n  LISTEN: 40\n  SPOT_HIDDEN: 40\n  STEALTH: 40\n  LIBRARY_USE: 40\n  SLEIGHT_OF_HAND: 30\n  HISTORY: 30\n  NATURAL_WORLD: 30\n  LANGUAGE_OTHER: 20\n  CTHULHU_MYTHOS: 5\n  CREDIT_RATING: 1\nmaxHp: 8\nmaxMp: 14\nmaxSan: 95\nmaxDp: 0\n"
+    },
+    {
+      "name": "三太子（张国栋）",
+      "attributes": {
+        "str": 90,
+        "con": 90,
+        "siz": 75,
+        "dex": 70,
+        "app": 45,
+        "int": 40,
+        "pow": 50,
+        "edu": 30,
+        "luck": 80
+      },
+      "hp": 16,
+      "mp": 10,
+      "statText": "id: npc_santaizi\nname: 三太子（张国栋）\ntier: ELITE\nrarity: COMMON\nrace: 人类\ntags:\n  - 不良少年\n  - 可交涉\n  - 助力\ndescription: 15岁，初三（6）班，庄晓梦同桌、梁家豪好友。脾气暴躁的富二代，家中行三，二姐张国强为家族继承人，他因智商低被放养。擅长的事只有打架，本质热情真诚，唯对女生态度恶劣，唯独能容庄晓梦。\nportrait: \"\"\nattributes:\n  str: 90\n  con: 90\n  siz: 75\n  dex: 70\n  app: 45\n  int: 40\n  pow: 50\n  edu: 30\n  luck: 80\nskills:\n  FIGHTING_BRAWL: 70\n  DODGE: 60\n  LISTEN: 50\n  LANGUAGE_OTHER: 50\n  SPOT_HIDDEN: 50\n  THROW: 50\n  CREDIT_RATING: 50\n  INTIMIDATE: 45\n  TRACK: 30\nmaxHp: 16\nmaxMp: 10\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "梁家豪",
+      "attributes": {
+        "str": 35,
+        "con": 35,
+        "siz": 65,
+        "dex": 90,
+        "app": 80,
+        "int": 90,
+        "pow": 30,
+        "edu": 60,
+        "luck": 20
+      },
+      "hp": 10,
+      "mp": 6,
+      "statText": "id: npc_ljh\nname: 梁家豪\ntier: ELITE\nrarity: COMMON\nrace: 人类（昏睡中）\ntags:\n  - 昏迷者\n  - 反社会人格\n  - 可交涉\ndescription: 14岁，初三（1）班，美术社成员。孤儿，被殡葬店老板何有乡收养。抽象派艺术家，什么都能做得很好但没有兴趣就不做。情感淡薄、无法共情，接受梦引纯粹是为了给社会添乱并玩弄好友的感情。\nportrait: \"\"\nattributes:\n  str: 35\n  con: 35\n  siz: 65\n  dex: 90\n  app: 80\n  int: 90\n  pow: 30\n  edu: 60\n  luck: 20\nskills:\n  ART_PAINTING: 80\n  OCCULT: 60\n  FIGHTING_BRAWL: 50\n  ART_CRAFT: 50\n  NATURAL_WORLD: 45\n  CRAFT: 30\n  CREDIT_RATING: 20\nmaxHp: 10\nmaxMp: 6\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "林志文",
+      "attributes": {
+        "str": 40,
+        "con": 40,
+        "siz": 45,
+        "dex": 80,
+        "app": 45,
+        "int": 65,
+        "pow": 40,
+        "edu": 50,
+        "luck": 30
+      },
+      "hp": 8,
+      "mp": 8,
+      "statText": "id: npc_lzw\nname: 林志文\ntier: STANDARD\nrarity: COMMON\nrace: 人类（昏睡中）\ntags:\n  - 昏迷者\n  - 抑郁症\n  - 关键抉择\ndescription: 13岁，初三（2）班。胆小懦弱的男生，成绩中上，唯绘画有才。家人控制欲畸形，禁止他做任何与学习无关的事，长期被驯化后走向极端，渴望以死亡拿回生命所有权。\nportrait: \"\"\nattributes:\n  str: 40\n  con: 40\n  siz: 45\n  dex: 80\n  app: 45\n  int: 65\n  pow: 40\n  edu: 50\n  luck: 30\nskills:\n  LIBRARY_USE: 60\n  ART_PAINTING: 60\n  LITERATURE: 40\n  HISTORY: 40\n  CHEMISTRY: 40\n  SLEIGHT_OF_HAND: 30\n  STEALTH: 30\n  CREDIT_RATING: 5\nmaxHp: 8\nmaxMp: 8\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "赵伟正",
+      "attributes": {
+        "str": 65,
+        "con": 60,
+        "siz": 60,
+        "dex": 40,
+        "app": 55,
+        "int": 65,
+        "pow": 45,
+        "edu": 40,
+        "luck": 40
+      },
+      "hp": 12,
+      "mp": 9,
+      "statText": "id: npc_zwz\nname: 赵伟正\ntier: STANDARD\nrarity: COMMON\nrace: 人类\ntags:\n  - 被梦引者\n  - 助力\n  - 支线\ndescription: 14岁，初三（2）班，美术社成员，林志文室友。被梦引但未昏迷，睡着即可入梦。心结是家庭中的局外人处境、对林志文遗作的承诺、与青梅竹马乔勇先疏远的友情。\nportrait: \"\"\nattributes:\n  str: 65\n  con: 60\n  siz: 60\n  dex: 40\n  app: 55\n  int: 65\n  pow: 45\n  edu: 40\n  luck: 40\nskills:\n  PSYCHOLOGY: 50\n  LIBRARY_USE: 50\n  ART_PAINTING: 50\n  LITERATURE: 40\n  OCCULT: 40\n  LISTEN: 40\n  SPOT_HIDDEN: 40\n  COMPUTER_USE: 40\n  CREDIT_RATING: 10\nmaxHp: 12\nmaxMp: 9\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "黄思颖",
+      "attributes": {
+        "str": 60,
+        "con": 50,
+        "siz": 65,
+        "dex": 40,
+        "app": 40,
+        "int": 60,
+        "pow": 50,
+        "edu": 35,
+        "luck": 40
+      },
+      "hp": 11,
+      "mp": 10,
+      "statText": "id: npc_hsy\nname: 黄思颖\ntier: STANDARD\nrarity: COMMON\nrace: 人类（昏睡中）\ntags:\n  - 昏迷者\n  - 可交涉\ndescription: 15岁，高一（4）班。单亲家庭，母亲黄蕾常驻海外，以金钱替代监护。因肥胖与性格被排斥、被室友整蛊、被堵在厕所泼水。渴望自我实现，只要听说调查员需要帮助就会兴高采烈地配合。\nportrait: \"\"\nattributes:\n  str: 60\n  con: 50\n  siz: 65\n  dex: 40\n  app: 40\n  int: 60\n  pow: 50\n  edu: 35\n  luck: 40\nskills:\n  LITERATURE: 60\n  PHOTOGRAPHY: 40\n  CREDIT_RATING: 40\n  APPRAISE: 30\n  LANGUAGE_OTHER: 30\n  ACCOUNTING: 30\nmaxHp: 11\nmaxMp: 10\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "杜春心",
+      "attributes": {
+        "str": 60,
+        "con": 70,
+        "siz": 60,
+        "dex": 70,
+        "app": 55,
+        "int": 75,
+        "pow": 70,
+        "edu": 75,
+        "luck": 30
+      },
+      "hp": 13,
+      "mp": 14,
+      "statText": "id: npc_dcx\nname: 杜春心\ntier: STANDARD\nrarity: COMMON\nrace: 人类（昏睡中）\ntags:\n  - 昏迷者\n  - 大学霸\n  - 可交涉\ndescription: 17岁，高三（1）班。曾用名杜贱妹。城中村拆迁户家庭，重男轻女，母亲癫痫无自理能力，姐姐们层层托举。以状元之约换取读书权利，是唯一一个得知入梦有害就会立刻返回现实的人——她只是在幻梦境抢时间刷题。\nportrait: \"\"\nattributes:\n  str: 60\n  con: 70\n  siz: 60\n  dex: 70\n  app: 55\n  int: 75\n  pow: 70\n  edu: 75\n  luck: 30\nskills:\n  高考: 99\n  LIBRARY_USE: 70\n  LITERATURE: 60\n  HISTORY: 60\n  ANTHROPOLOGY: 60\n  NATURAL_WORLD: 60\n  STEALTH: 50\n  LANGUAGE_OTHER: 50\n  CREDIT_RATING: 5\nmaxHp: 13\nmaxMp: 14\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "梅寒香",
+      "attributes": {
+        "str": 65,
+        "con": 50,
+        "siz": 50,
+        "dex": 40,
+        "app": 60,
+        "int": 85,
+        "pow": 90,
+        "edu": 80,
+        "luck": 60
+      },
+      "hp": 10,
+      "mp": 18,
+      "statText": "id: npc_mhx\nname: 梅寒香\ntier: ELITE\nrarity: COMMON\nrace: 人类\ntags:\n  - 学神\n  - 助力\n  - 信息源\ndescription: 18岁，高三（1）班，杜春心室友与挚友。生于冬日，出生即被遗弃，在孤儿院长大。冷静睿智温柔，有远超年龄的成熟，会一直包容并引导调查员。掌握杜春心、黄思颖、庄晓梦的全部信息。\nportrait: \"\"\nattributes:\n  str: 65\n  con: 50\n  siz: 50\n  dex: 40\n  app: 60\n  int: 85\n  pow: 90\n  edu: 80\n  luck: 60\nskills:\n  高考: 99\n  LIBRARY_USE: 80\n  物理: 60\n  化学: 60\n  生物: 60\n  NATURAL_WORLD: 60\n  LISTEN: 50\n  SPOT_HIDDEN: 50\n  LANGUAGE_OTHER: 50\n  CREDIT_RATING: 5\nmaxHp: 10\nmaxMp: 18\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "黄蕾（黄思颖母亲）",
+      "attributes": {
+        "str": 35,
+        "con": 70,
+        "siz": 60,
+        "dex": 80,
+        "app": 70,
+        "int": 70,
+        "pow": 70,
+        "edu": 65,
+        "luck": 50
+      },
+      "hp": 13,
+      "mp": 14,
+      "statText": "id: npc_hl\nname: 黄蕾（黄思颖母亲）\ntier: STANDARD\nrarity: COMMON\nrace: 人类\ntags:\n  - 家长\n  - 剧情关键\ndescription: 32岁，成功的服装外贸商人。面容年轻、气质成熟，眉间带挥之不去的沧桑。原名黄夭女，少时饱受虐待，被黄毛骗走南下打工，孕晚期遭出轨，未婚生育。她将对命运的恨意转移到女儿身上，把女儿丢给保姆。与她的对话是唤醒黄思颖的关键。\nportrait: \"\"\nattributes:\n  str: 35\n  con: 70\n  siz: 60\n  dex: 80\n  app: 70\n  int: 70\n  pow: 70\n  edu: 65\n  luck: 50\nskills:\n  ACCOUNTING: 80\n  PSYCHOLOGY: 70\n  CREDIT_RATING: 65\n  PERSUADE: 60\n  APPRAISE: 60\n  FIGHTING_BRAWL: 50\n  DODGE: 50\n  CRAFT: 40\n  LISTEN: 40\n  SPOT_HIDDEN: 40\n  COMPUTER_USE: 30\nmaxHp: 13\nmaxMp: 14\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "何有乡",
+      "attributes": {
+        "str": 35,
+        "con": 25,
+        "siz": 75,
+        "dex": 30,
+        "app": 65,
+        "int": 90,
+        "pow": 90,
+        "edu": 70,
+        "luck": 50
+      },
+      "hp": 10,
+      "mp": 18,
+      "statText": "id: npc_hyx\nname: 何有乡\ntier: ELITE\nrarity: COMMON\nrace: 人类\ntags:\n  - 监护人\n  - 殡葬从业者\n  - 知情者\ndescription: 外表三十出头，长发，缺少左臂。长风陵园附近「古柏亭」殡葬公司老板，梁家豪的师父与监护人。因梁家豪命格特殊适合殡葬行业而收其为徒。温和可靠，不会被冒犯，没有脾气。掌握【送魂术】及其他KP认为合适的法术。\nportrait: \"\"\nattributes:\n  str: 35\n  con: 25\n  siz: 75\n  dex: 30\n  app: 65\n  int: 90\n  pow: 90\n  edu: 70\n  luck: 50\nskills:\n  OCCULT: 80\n  ART_CRAFT: 70\n  LISTEN: 50\n  SPOT_HIDDEN: 50\n  DISGUISE: 50\n  CREDIT_RATING: 50\n  ANTHROPOLOGY: 40\n  MEDICINE: 25\n  PHARMACY: 25\nmaxHp: 10\nmaxMp: 18\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "王伍（名誉校长）",
+      "attributes": {
+        "str": 65,
+        "con": 55,
+        "siz": 70,
+        "dex": 45,
+        "app": 50,
+        "int": 65,
+        "pow": 60,
+        "edu": 35,
+        "luck": 65
+      },
+      "hp": 12,
+      "mp": 12,
+      "statText": "id: npc_ww\nname: 王伍（名誉校长）\ntier: STANDARD\nrarity: COMMON\nrace: 人类\ntags:\n  - 委托人\n  - 施压\n  - 危险\ndescription: 年过五十，面相精明，暴发户气质浓重。上数八代贫农，乘改革开放之风靠捞偏门与入赘发家，惯于豢养打手、与黑社会勾结。唯利是图却也出手大方，只要事件平息就爽快付酬；若调查员支持庄晓梦或消极处理，将迎来他的怒火乃至灭口。\nportrait: \"\"\nattributes:\n  str: 65\n  con: 55\n  siz: 70\n  dex: 45\n  app: 50\n  int: 65\n  pow: 60\n  edu: 35\n  luck: 65\nskills:\n  PERSUADE: 70\n  INTIMIDATE: 70\n  CREDIT_RATING: 85\n  PSYCHOLOGY: 50\n  LISTEN: 40\n  SPOT_HIDDEN: 40\n  FIGHTING_BRAWL: 40\n  DODGE: 30\nmaxHp: 12\nmaxMp: 12\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "孙猛（班主任）",
+      "attributes": {
+        "str": 60,
+        "con": 50,
+        "siz": 65,
+        "dex": 45,
+        "app": 40,
+        "int": 55,
+        "pow": 45,
+        "edu": 60,
+        "luck": 35
+      },
+      "hp": 11,
+      "mp": 9,
+      "statText": "id: npc_sm\nname: 孙猛（班主任）\ntier: MINION\nrarity: COMMON\nrace: 人类\ntags:\n  - 师德败坏\n  - 信息源\ndescription: 面相刻薄的中年男性，典型凤凰男。自私虚荣、媚上欺下，带头孤立霸凌不合心意者。庄晓梦死后毫无愧疚，只憎恨她毁了自己的前程。他掌握「睡神」传闻与坠楼当天细节。\nportrait: \"\"\nattributes:\n  str: 60\n  con: 50\n  siz: 65\n  dex: 45\n  app: 40\n  int: 55\n  pow: 45\n  edu: 60\n  luck: 35\nskills:\n  PERSUADE: 55\n  INTIMIDATE: 45\n  PSYCHOLOGY: 40\n  LISTEN: 40\n  SPOT_HIDDEN: 40\n  FIGHTING_BRAWL: 40\n  DODGE: 35\n  CREDIT_RATING: 30\nmaxHp: 11\nmaxMp: 9\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "庄帆（庄晓梦之父）",
+      "attributes": {
+        "str": 55,
+        "con": 45,
+        "siz": 55,
+        "dex": 50,
+        "app": 45,
+        "int": 45,
+        "pow": 35,
+        "edu": 40,
+        "luck": 10
+      },
+      "hp": 10,
+      "mp": 7,
+      "statText": "id: npc_zf\nname: 庄帆（庄晓梦之父）\ntier: MINION\nrarity: COMMON\nrace: 人类\ntags:\n  - 赌狗\n  - 剧情道具\ndescription: 年轻时靠APP80的脸骗取庄母芳心，烂泥扶不上墙，赌到一无所有。身上没有任何有用信息。部分结局中他会死于三太子之手。\nportrait: \"\"\nattributes:\n  str: 55\n  con: 45\n  siz: 55\n  dex: 50\n  app: 45\n  int: 45\n  pow: 35\n  edu: 40\n  luck: 10\nskills:\n  PERSUADE: 40\n  FAST_TALK: 40\n  DODGE: 40\n  FIGHTING_BRAWL: 35\n  CREDIT_RATING: 5\nmaxHp: 10\nmaxMp: 7\nmaxSan: 99\nmaxDp: 0\n"
+    },
+    {
+      "name": "食尸鬼（秘境使者）",
+      "attributes": {
+        "str": 75,
+        "con": 65,
+        "siz": 65,
+        "dex": 65,
+        "app": 0,
+        "int": 65,
+        "pow": 65,
+        "edu": 0,
+        "luck": 50
+      },
+      "hp": 13,
+      "mp": 13,
+      "statText": "id: npc_ghoul\nname: 食尸鬼（秘境使者）\ntier: ELITE\nrarity: UNCOMMON\nrace: 神话生物\ntags:\n  - 召唤\n  - 可交涉\n  - 以尸体为食\ndescription: 人形怪物，橡胶质感皮肤，双足如兽蹄，形似狼犬，手生利爪，口齿不清的言语好似呜咽。潜藏城市地道，以墓园与古陵墓为中心，与女巫、殡葬从业者及寻求难言愉悦者往来。与庄晓梦订约：引其灵魂入幻梦境，事成后吃掉她的尸体。\nportrait: \"\"\nattributes:\n  str: 75\n  con: 65\n  siz: 65\n  dex: 65\n  app: 0\n  int: 65\n  pow: 65\n  edu: 0\n  luck: 50\nskills:\n  CLIMB: 85\n  STEALTH: 70\n  JUMP: 75\n  LISTEN: 70\n  SPOT_HIDDEN: 50\n  FIGHTING_BRAWL: 40\n  DODGE: 40\nmaxHp: 13\nmaxMp: 13\nmaxSan: 0\nmaxDp: 0\n"
+    }
+  ]
+}

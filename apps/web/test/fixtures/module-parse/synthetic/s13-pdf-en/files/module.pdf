@@ -1,0 +1,38 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 415 >>
+stream
+BT /F1 12 Tf 72 760 Td (Cursed Lighthouse) Tj ET
+BT /F1 12 Tf 72 742 Td (Keeper Alden) Tj ET
+BT /F1 12 Tf 72 724 Td (STR 60 CON 70 SIZ 65 DEX 50 APP 40 INT 55 POW 65 EDU 50 LUCK 35) Tj ET
+BT /F1 12 Tf 72 706 Td (HP 13 MP 13 SAN 70) Tj ET
+BT /F1 12 Tf 72 688 Td (Deep One) Tj ET
+BT /F1 12 Tf 72 670 Td (STR 80 CON 80 SIZ 70 DEX 50 APP 10 INT 60 POW 75 EDU 20 LUCK 25) Tj ET
+BT /F1 12 Tf 72 652 Td (HP 15 MP 15) Tj ET
+endstream
+endobj
+5 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+endobj
+xref
+0 6
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000241 00000 n 
+0000000707 00000 n 
+trailer
+<< /Size 6 /Root 1 0 R >>
+startxref
+777
+%%EOF

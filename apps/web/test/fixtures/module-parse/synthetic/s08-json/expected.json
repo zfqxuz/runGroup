@@ -1,0 +1,37 @@
+{
+  "npcs": [
+    {
+      "name": "数据幽灵",
+      "attributes": {
+        "str": 45,
+        "con": 55,
+        "siz": 50,
+        "dex": 70,
+        "app": 20,
+        "int": 80,
+        "pow": 65,
+        "edu": 75,
+        "luck": 40
+      },
+      "hp": 10,
+      "mp": 13
+    },
+    {
+      "name": "防火墙",
+      "attributes": {
+        "str": 90,
+        "con": 95,
+        "siz": 85,
+        "dex": 15,
+        "app": 1,
+        "int": 5,
+        "pow": 70,
+        "edu": 1,
+        "luck": 1
+      },
+      "hp": 18,
+      "mp": 14,
+      "armor": "4"
+    }
+  ]
+}

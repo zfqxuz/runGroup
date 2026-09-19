@@ -1,0 +1,31 @@
+{
+  "npcs": [
+    {
+      "name": "石像守卫",
+      "attributes": {
+        "str": 80,
+        "con": 80,
+        "siz": 65,
+        "dex": 35,
+        "app": 50,
+        "pow": 5
+      },
+      "hp": 14,
+      "mp": 1
+    },
+    {
+      "name": "腐化仆从",
+      "attributes": {
+        "str": 45,
+        "con": 70,
+        "siz": 60,
+        "dex": 20,
+        "app": 30,
+        "int": 10,
+        "pow": 40
+      },
+      "hp": 13,
+      "mp": 8
+    }
+  ]
+}

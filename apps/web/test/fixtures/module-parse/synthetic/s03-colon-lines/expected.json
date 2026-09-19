@@ -1,0 +1,36 @@
+{
+  "npcs": [
+    {
+      "name": "老陈",
+      "attributes": {
+        "str": 60,
+        "con": 70,
+        "siz": 65,
+        "dex": 45,
+        "app": 40,
+        "int": 55,
+        "pow": 65,
+        "edu": 50,
+        "luck": 30
+      },
+      "hp": 13,
+      "mp": 13
+    },
+    {
+      "name": "幽影",
+      "attributes": {
+        "str": 30,
+        "con": 40,
+        "siz": 35,
+        "dex": 90,
+        "app": 1,
+        "int": 25,
+        "pow": 70,
+        "edu": 1,
+        "luck": 10
+      },
+      "hp": 7,
+      "mp": 14
+    }
+  ]
+}

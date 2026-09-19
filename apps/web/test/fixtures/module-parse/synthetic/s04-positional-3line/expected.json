@@ -1,0 +1,36 @@
+{
+  "npcs": [
+    {
+      "name": "黑风",
+      "attributes": {
+        "str": 70,
+        "con": 60,
+        "siz": 55,
+        "dex": 65,
+        "app": 40,
+        "int": 45,
+        "pow": 55,
+        "edu": 50,
+        "luck": 0
+      },
+      "hp": 11,
+      "mp": 11
+    },
+    {
+      "name": "赤影",
+      "attributes": {
+        "str": 50,
+        "con": 80,
+        "siz": 70,
+        "dex": 45,
+        "app": 35,
+        "int": 60,
+        "pow": 70,
+        "edu": 65,
+        "luck": 40
+      },
+      "hp": 15,
+      "mp": 14
+    }
+  ]
+}

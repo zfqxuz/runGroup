@@ -1,0 +1,28 @@
+title: 风暴祭坛
+npcs:
+  - name: 风暴祭司
+    attributes:
+      str: 65
+      con: 60
+      siz: 70
+      dex: 55
+      app: 40
+      int: 70
+      pow: 80
+      edu: 65
+      luck: 45
+    hp: 13
+    mp: 16
+  - name: 风元素
+    attributes:
+      str: 40
+      con: 45
+      siz: 60
+      dex: 95
+      app: 1
+      int: 15
+      pow: 75
+      edu: 1
+      luck: 10
+    hp: 10
+    mp: 15

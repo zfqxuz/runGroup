@@ -1,0 +1,36 @@
+{
+  "npcs": [
+    {
+      "name": "沼泽巨蛙",
+      "attributes": {
+        "str": 60,
+        "con": 70,
+        "siz": 65,
+        "dex": 40,
+        "app": 10,
+        "int": 20,
+        "pow": 50,
+        "edu": 10,
+        "luck": 30
+      },
+      "hp": 13,
+      "mp": 10
+    },
+    {
+      "name": "泥怪",
+      "attributes": {
+        "str": 40,
+        "con": 90,
+        "siz": 80,
+        "dex": 20,
+        "app": 1,
+        "int": 5,
+        "pow": 60,
+        "edu": 1,
+        "luck": 5
+      },
+      "hp": 17,
+      "mp": 12
+    }
+  ]
+}

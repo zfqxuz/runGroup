@@ -1,0 +1,37 @@
+{
+  "npcs": [
+    {
+      "name": "山田",
+      "attributes": {
+        "str": 65,
+        "con": 60,
+        "siz": 70,
+        "dex": 55,
+        "app": 45,
+        "int": 50,
+        "pow": 55,
+        "edu": 60,
+        "luck": 40
+      },
+      "hp": 13,
+      "mp": 11
+    },
+    {
+      "name": "铃",
+      "attributes": {
+        "str": 40,
+        "con": 50,
+        "siz": 45,
+        "dex": 75,
+        "app": 80,
+        "int": 70,
+        "pow": 85,
+        "edu": 65,
+        "luck": 60
+      },
+      "hp": 9,
+      "mp": 17,
+      "san": 85
+    }
+  ]
+}

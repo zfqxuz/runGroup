@@ -1,0 +1,37 @@
+{
+  "npcs": [
+    {
+      "name": "林芳",
+      "attributes": {
+        "str": 45,
+        "con": 55,
+        "siz": 50,
+        "dex": 60,
+        "app": 70,
+        "int": 65,
+        "pow": 60,
+        "edu": 75,
+        "luck": 55
+      },
+      "hp": 10,
+      "mp": 12,
+      "san": 60
+    },
+    {
+      "name": "病人 甲",
+      "attributes": {
+        "str": 80,
+        "con": 85,
+        "siz": 90,
+        "dex": 25,
+        "app": 5,
+        "int": 10,
+        "pow": 30,
+        "edu": 5,
+        "luck": 5
+      },
+      "hp": 17,
+      "mp": 6
+    }
+  ]
+}

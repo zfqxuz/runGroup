@@ -13,7 +13,9 @@
     "dev": "npm run dev --workspace @touhou/web",
     "build": "npm run build --workspace @touhou/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
-    "test": "npm run test --workspaces --if-present"
+    "test": "npm run test --workspaces --if-present",
+    "test:module-parse": "npm run test:module-parse --workspace @touhou/web",
+    "test:module-parse:generate": "npm run test:module-parse:generate --workspace @touhou/web"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

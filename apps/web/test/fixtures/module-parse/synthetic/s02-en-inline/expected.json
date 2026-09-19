@@ -1,0 +1,37 @@
+{
+  "npcs": [
+    {
+      "name": "Miller Hob",
+      "attributes": {
+        "str": 70,
+        "con": 65,
+        "siz": 75,
+        "dex": 45,
+        "app": 50,
+        "int": 55,
+        "pow": 60,
+        "edu": 40,
+        "luck": 35
+      },
+      "hp": 14,
+      "mp": 12
+    },
+    {
+      "name": "Hound",
+      "attributes": {
+        "str": 55,
+        "con": 50,
+        "siz": 40,
+        "dex": 80,
+        "app": 5,
+        "int": 10,
+        "pow": 45,
+        "edu": 5,
+        "luck": 20
+      },
+      "hp": 9,
+      "mp": 9,
+      "san": 45
+    }
+  ]
+}

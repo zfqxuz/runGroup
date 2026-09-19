@@ -1,0 +1,36 @@
+{
+  "npcs": [
+    {
+      "name": "矿工甲",
+      "attributes": {
+        "str": 60,
+        "con": 65,
+        "siz": 70,
+        "dex": 45,
+        "app": 40,
+        "int": 35,
+        "pow": 50,
+        "edu": 30,
+        "luck": 25
+      },
+      "hp": 13,
+      "mp": 10
+    },
+    {
+      "name": "矿工乙",
+      "attributes": {
+        "str": 55,
+        "con": 60,
+        "siz": 60,
+        "dex": 50,
+        "app": 45,
+        "int": 40,
+        "pow": 45,
+        "edu": 35,
+        "luck": 20
+      },
+      "hp": 12,
+      "mp": 9
+    }
+  ]
+}
