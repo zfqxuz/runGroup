@@ -91,17 +91,17 @@ export default async function AdminSystemPage({
         const dsh = parseModuleDshSetting(settingByKey.get(MODULE_DSH_SETTING_KEY)?.value ?? null);
         return (
           <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
-            <h2 className="text-sm font-medium text-white/80">dsh 团本助手白名单</h2>
+            <h2 className="text-sm font-medium text-white/80">ai团本助手白名单</h2>
             <p className="mt-1 text-[11px] text-white/35">
-              只有名单内的用户能在团本编辑页看到 dsh 悬浮球，并用自然语言提出修改意见。支持用户名或用户 id，每行一个（也支持逗号分隔）。
+              只有名单内的用户能在团本编辑页看到 ai团本助手悬浮球，并用自然语言提出修改意见。支持用户名或用户 id，每行一个（也支持逗号分隔）。
             </p>
             <p className="mt-1 text-[11px] text-white/30">
-              服务器 dsh 客户端：{isDshConfigured() ? "已配置" : "未配置（需要设置 DSH_HEADLESS_COMMAND 或 DSH_SERVICE_URL）"}
+              服务器 ai 团本助手：{isDshConfigured() ? "已配置" : "未配置（需要设置 DSH_HEADLESS_COMMAND 或 DSH_SERVICE_URL）"}
             </p>
             <form action={updateModuleDshWhitelistAction} className="mt-3 flex flex-col gap-3">
               <label className="flex items-center gap-2 text-xs text-white/60">
                 <input type="checkbox" name="enabled" value="1" defaultChecked={dsh.enabled} />
-                启用 dsh 团本助手
+                启用 ai团本助手
               </label>
               <textarea
                 name="entries"

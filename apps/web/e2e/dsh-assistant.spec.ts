@@ -6,8 +6,8 @@ import { MODULE_DSH_SETTING_KEY } from "../src/server/dsh/access";
 const USERNAME = "e2edshassistant";
 const PASSWORD = "e2epass123";
 
-test("dsh 团本助手：悬浮球 → 对话框 → 修改团本并小版本 +1", async ({ page }) => {
-  test.skip(process.env.DSH_E2E !== "1", "需要 DSH_E2E=1，且服务器已配置 dsh 客户端");
+test("ai团本助手：悬浮球 → 对话框 → 修改团本并小版本 +1", async ({ page }) => {
+  test.skip(process.env.DSH_E2E !== "1", "需要 DSH_E2E=1，且服务器已配置 ai团本助手服务");
   await prisma.user.deleteMany({ where: { username: USERNAME } });
   const user = await prisma.user.create({
     data: { username: USERNAME, displayName: USERNAME, passwordHash: await bcrypt.hash(PASSWORD, 10), role: "USER" }
@@ -63,11 +63,11 @@ test("dsh 团本助手：悬浮球 → 对话框 → 修改团本并小版本 +1
     await page.waitForURL("**/");
 
     await page.goto("/rooms/" + room.id + "/modules/" + module.id);
-    const ball = page.getByRole("button", { name: "打开 dsh 团本助手" });
+    const ball = page.getByRole("button", { name: "打开 ai团本助手" });
     await expect(ball).toBeVisible();
     await ball.click();
 
-    await expect(page.getByText("dsh 团本助手", { exact: true })).toBeVisible();
+    await expect(page.getByText("ai团本助手", { exact: true })).toBeVisible();
     await page.getByPlaceholder(/描述你想修改的内容/).fill("把标题改成「E2E dsh 团本（已改）」，并给老周补一句背景描述。");
     await page.getByRole("button", { name: "发送", exact: true }).click();
 
@@ -108,8 +108,8 @@ test("dsh 白名单：管理员在系统设置里配置", async ({ page }) => {
     await page.waitForURL("**/");
 
     await page.goto("/admin/system");
-    await expect(page.getByRole("heading", { name: "dsh 团本助手白名单" })).toBeVisible();
-    await page.getByLabel("启用 dsh 团本助手").check();
+    await expect(page.getByRole("heading", { name: "ai团本助手白名单" })).toBeVisible();
+    await page.getByLabel("启用 ai团本助手").check();
     await page.locator('textarea[name="entries"]').fill(username);
     await page.getByRole("button", { name: "保存白名单" }).click();
     await page.waitForURL("**/admin/system?saved=dsh");

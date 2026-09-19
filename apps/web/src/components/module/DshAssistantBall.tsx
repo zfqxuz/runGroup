@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import Image from "next/image";
 
 interface Props {
   readonly moduleId: string;
@@ -70,20 +71,23 @@ export default function DshAssistantBall(props: Props) {
       <button
         type="button"
         onClick={() => setOpen((current) => !current)}
-        aria-label="打开 dsh 团本助手"
-        className="fixed bottom-6 right-6 z-[120] flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-sakura-500 to-spirit-500 text-sm font-semibold text-white shadow-2xl transition hover:scale-105"
+        aria-label="打开 ai团本助手"
+        className="fixed bottom-6 right-6 z-[120] flex h-16 w-16 items-center justify-center overflow-hidden rounded-full border border-white/15 bg-ink-900/90 shadow-2xl ring-2 ring-sakura-500/35 transition hover:scale-105"
       >
-        DSH
+        <Image src="/ai-module-assistant.png" alt="" width={64} height={64} className="h-full w-full object-contain" priority />
       </button>
 
       {open ? (
         <section className="fixed bottom-24 right-6 z-[130] flex h-[540px] w-[380px] max-w-[calc(100vw-3rem)] flex-col overflow-hidden rounded-2xl border border-white/15 bg-ink-900 shadow-2xl">
           <header className="flex items-center justify-between gap-2 border-b border-white/10 px-4 py-3">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-white/85">dsh 团本助手</p>
-              <p className="mt-0.5 truncate text-[11px] text-white/35">
-                {props.moduleTitle} · v{version}
-              </p>
+            <div className="flex min-w-0 items-center gap-2">
+              <Image src="/ai-module-assistant.png" alt="" width={32} height={32} className="h-8 w-8 shrink-0 rounded-full object-contain" />
+              <div className="min-w-0">
+                <p className="truncate text-sm font-medium text-white/85">ai团本助手</p>
+                <p className="mt-0.5 truncate text-[11px] text-white/35">
+                  {props.moduleTitle} · v{version}
+                </p>
+              </div>
             </div>
             <button
               type="button"
@@ -125,7 +129,7 @@ export default function DshAssistantBall(props: Props) {
             {sending ? (
               <p className="mt-3 flex items-center gap-2 text-[11px] text-spirit-300">
                 <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-spirit-300/40 border-t-spirit-300" />
-                dsh 正在阅读团本并修改，通常需要 10~60 秒…
+                ai 正在阅读团本并修改，通常需要 10~60 秒…
               </p>
             ) : null}
             {error === null ? null : (
@@ -147,8 +151,7 @@ export default function DshAssistantBall(props: Props) {
               placeholder="描述你想修改的内容…（Ctrl + Enter 发送）"
               className="w-full resize-none rounded-lg border border-white/15 bg-ink-800 px-3 py-2 text-xs leading-relaxed text-white/85 outline-none focus:border-sakura-500"
             />
-            <div className="mt-2 flex items-center justify-between gap-2">
-              <span className="text-[10px] text-white/30">dsh 只会改团本内容，不会展示思考过程</span>
+            <div className="mt-2 flex items-center justify-end gap-2">
               <button
                 type="button"
                 onClick={() => void send()}

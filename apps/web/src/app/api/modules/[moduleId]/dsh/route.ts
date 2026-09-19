@@ -34,7 +34,7 @@ export async function POST(
     return NextResponse.json({ ok: false, error: "当前账号没有使用团本助手的权限" }, { status: 403 });
   }
   if (isDshConfigured() === false) {
-    return NextResponse.json({ ok: false, error: "服务器未配置 dsh 客户端" }, { status: 503 });
+    return NextResponse.json({ ok: false, error: "服务器未配置 ai团本助手服务" }, { status: 503 });
   }
 
   const moduleRecord = await prisma.module.findUnique({
