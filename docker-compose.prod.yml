@@ -92,6 +92,27 @@ services:
       - caddy_data:/data
       - caddy_config:/config
 
+  # dsh 团本助手：headless 无浏览器客户端（旁车），只服务 app 的悬浮球编辑。
+  # 镜像由 CI（deploy.yml）构建并推送到 ACR，ECS 只 pull；
+  # 禁止在这里加 build：生产是 1.6G 内存单机，npm install 会直接把主机打满。
+  dsh:
+    image: ${DSH_IMAGE:-touhou-dsh-headless:latest}
+    container_name: touhou-trpg-dsh
+    restart: unless-stopped
+    # 限制运行时资源，避免 dsh 任务异常时拖垮同机的 app / db / n8n。
+    mem_limit: 512m
+    cpus: "1.0"
+    pids_limit: 512
+    stop_grace_period: 15s
+    environment:
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:?请在 .env 中设置 DEEPSEEK_API_KEY}
+      DEEPSEEK_BASE_URL: ${DEEPSEEK_BASE_URL:-https://api.deepseek.com}
+      DEEPSEEK_MODEL: ${DEEPSEEK_MODEL:-deepseek-flash}
+      # 默认串行执行，避免多个用户同时触发 dsh 造成内存尖峰。
+      DSH_MAX_CONCURRENT: ${DSH_MAX_CONCURRENT:-1}
+    expose:
+      - "8790"
+
   app:
     image: ${APP_IMAGE:?请在 .env 中设置 APP_IMAGE}
     container_name: touhou-trpg-app
@@ -113,6 +134,9 @@ services:
       DATABASE_URL: postgresql://${POSTGRES_USER:-touhou}:${POSTGRES_PASSWORD:?}@db:5432/${POSTGRES_DB:-touhou_trpg}?schema=public
       N8N_MODULE_PARSE_URL: ${N8N_MODULE_PARSE_URL:-http://n8n:5678/webhook/module-parse}
       N8N_REQUEST_TIMEOUT_MS: ${N8N_REQUEST_TIMEOUT_MS:-1800000}
+      # 团本 dsh 助手旁车；不配置时应用会自动隐藏悬浮球
+      DSH_SERVICE_URL: ${DSH_SERVICE_URL:-http://dsh:8790}
+      DSH_TASK_TIMEOUT_MS: ${DSH_TASK_TIMEOUT_MS:-300000}
     ports:
       # 首次切换先直出公网 IP:3000，方便验证；后续挂 Nginx / HTTPS 后
       # 建议改成 "127.0.0.1:3000:3000" 并只在安全组放行 80/443。

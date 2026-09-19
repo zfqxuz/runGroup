@@ -52,6 +52,7 @@ jobs:
     outputs:
       image: ${{ steps.meta.outputs.image }}
       pull_image: ${{ steps.meta.outputs.pull_image }}
+      dsh_image: ${{ steps.meta.outputs.dsh_image }}
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -62,6 +63,10 @@ jobs:
           echo "image=${IMAGE}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           echo "pull_image=${PULL_IMAGE}:${{ github.sha }}" >> "$GITHUB_OUTPUT"
           echo "latest=${IMAGE}:latest" >> "$GITHUB_OUTPUT"
+          # dsh sidecar 复用同一个 ACR 仓库，用 dsh-* tag 区分 app 镜像。
+          echo "dsh_push_image=${IMAGE}:dsh-${{ github.sha }}" >> "$GITHUB_OUTPUT"
+          echo "dsh_push_latest=${IMAGE}:dsh-latest" >> "$GITHUB_OUTPUT"
+          echo "dsh_image=${PULL_IMAGE}:dsh-${{ github.sha }}" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@v3
         with:
           registry: ${{ env.ACR_REGISTRY }}
@@ -81,6 +86,20 @@ jobs:
             ${{ steps.meta.outputs.latest }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      # dsh sidecar：在 CI 构建并推 ACR；ECS 只 pull，禁止在生产主机上 npm install。
+      - uses: docker/build-push-action@v6
+        with:
+          context: ops/dsh-service
+          file: ops/dsh-service/Dockerfile
+          push: true
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ steps.meta.outputs.dsh_push_image }}
+            ${{ steps.meta.outputs.dsh_push_latest }}
+          cache-from: type=gha,scope=dsh
+          cache-to: type=gha,mode=max,scope=dsh
 
   # ---------- 3. 只部署 app + db，不碰 n8n ----------
   # n8n 工作流和容器由独立 workflow deploy-n8n.yml 负责。
@@ -110,6 +129,7 @@ jobs:
         uses: appleboy/ssh-action@v1.2.0
         env:
           APP_IMAGE: ${{ needs.build-and-push.outputs.pull_image }}
+          DSH_IMAGE: ${{ needs.build-and-push.outputs.dsh_image }}
           ACR_PULL_REGISTRY: ${{ env.ACR_PULL_REGISTRY }}
           ACR_USERNAME: ${{ secrets.ACR_USERNAME }}
           ACR_PASSWORD: ${{ secrets.ACR_PASSWORD }}
@@ -121,7 +141,7 @@ jobs:
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
           command_timeout: 30m
-          envs: APP_IMAGE,ACR_PULL_REGISTRY,ACR_USERNAME,ACR_PASSWORD,DEEPSEEK_API_KEY,DEPLOY_DIR
+          envs: APP_IMAGE,DSH_IMAGE,ACR_PULL_REGISTRY,ACR_USERNAME,ACR_PASSWORD,DEEPSEEK_API_KEY,DEPLOY_DIR
           script: |
             set -euo pipefail
             cd "$DEPLOY_DIR"
@@ -139,6 +159,14 @@ jobs:
               echo "APP_IMAGE=$APP_IMAGE" >> .env
             fi
 
+            if [ -n "${DSH_IMAGE:-}" ]; then
+              if grep -q '^DSH_IMAGE=' .env; then
+                sed -i "s|^DSH_IMAGE=.*|DSH_IMAGE=$DSH_IMAGE|" .env
+              else
+                echo "DSH_IMAGE=$DSH_IMAGE" >> .env
+              fi
+            fi
+
             if [ -n "${DEEPSEEK_API_KEY:-}" ]; then
               if grep -q '^DEEPSEEK_API_KEY=' .env; then
                 sed -i "s|^DEEPSEEK_API_KEY=.*|DEEPSEEK_API_KEY=$DEEPSEEK_API_KEY|" .env
@@ -148,12 +176,33 @@ jobs:
             fi
 
             docker compose -f docker-compose.prod.yml pull app
+            # dsh 旁车镜像由本 workflow 构建推送；ECS 只 pull，绝不 build。
+            docker compose -f docker-compose.prod.yml pull dsh
 
-            # 关键：只处理 db 和 app，不动 n8n / n8n-proxy。
+            # 关键：只处理 db / app / dsh，不动 n8n / n8n-proxy。
             # db 是独立数据卷，仅在停掉时拉起；n8n 是独立 deploy-n8n.yml 的职责。
             docker compose -f docker-compose.prod.yml up -d --no-deps db
             docker compose -f docker-compose.prod.yml up -d --no-deps app
+            docker compose -f docker-compose.prod.yml up -d --no-deps dsh
             docker compose -f docker-compose.prod.yml ps
+
+            # dsh sidecar health check：只打 /health，不触发真实 dsh 任务。
+            dsh_ready=0
+            for i in $(seq 1 20); do
+              if docker compose -f docker-compose.prod.yml exec -T dsh \
+                node -e "fetch('http://127.0.0.1:8790/health').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"; then
+                dsh_ready=1
+                break
+              fi
+              echo "waiting for dsh sidecar... ($i/20)"
+              sleep 3
+            done
+            if [ "$dsh_ready" != "1" ]; then
+              echo "dsh sidecar health check failed"
+              docker compose -f docker-compose.prod.yml logs --tail=100 dsh || true
+              exit 1
+            fi
+            echo "dsh sidecar health check passed"
 
             for i in $(seq 1 36); do
               if docker compose -f docker-compose.prod.yml exec -T app \
