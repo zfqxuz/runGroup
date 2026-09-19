@@ -40,9 +40,11 @@ npm run test:module-parse        # 27 个团本（24 合成 + 3 回归），要�
 
 ## 部署
 
-确认评测通过后，用 v2 产物覆盖线上工作流：
+v2 已经是线上版本，由 `.github/workflows/deploy-n8n.yml` 自动同步并挂载：
 
-```bash
-# 需要管理员权限；会替换同 webhook path 的工作流
-# 备份原工作流 JSON 后，将 module-import-v2.json 导入 n8n 即可
-```
+- compose 启动时执行 `n8n import:workflow --input=/workflows/module-import-v2.json`；
+- push 改动 `n8n/workflows/module-import-v2.json`、`n8n/workflow-src-v2/**` 或
+  `n8n/build-workflows-v2.mjs` 会触发 n8n 重新导入并发布；
+- v1（`module-import.json` / `workflow-src/`）保留在工作区，仅用于回滚。
+
+回滚时把 `docker-compose.prod.yml` 里的输入路径改回 `/workflows/module-import.json` 并触发部署即可。

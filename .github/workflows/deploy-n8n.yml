@@ -4,10 +4,10 @@ on:
   push:
     branches: [main]
     paths:
-      # 只监听真正会被部署的文件；v2 副本（module-import-v2.json / workflow-src-v2）不触发重启
-      - "n8n/workflows/module-import.json"
-      - "n8n/workflow-src/**"
-      - "n8n/build-workflows.mjs"
+      # v2 是当前线上工作流；v1（module-import.json / workflow-src）保留用于回滚，不再触发部署。
+      - "n8n/workflows/module-import-v2.json"
+      - "n8n/workflow-src-v2/**"
+      - "n8n/build-workflows-v2.mjs"
       - "n8n/vendor/**"
       - "n8n/Caddyfile"
       - "docker-compose.prod.yml"
@@ -39,7 +39,7 @@ jobs:
           username: ${{ secrets.ECS_USER }}
           key: ${{ secrets.ECS_SSH_KEY }}
           port: ${{ secrets.ECS_PORT || '22' }}
-          source: "docker-compose.prod.yml,n8n/workflows/module-import.json,n8n/Caddyfile"
+          source: "docker-compose.prod.yml,n8n/workflows/module-import-v2.json,n8n/Caddyfile"
           target: ${{ env.DEPLOY_DIR }}
           overwrite: true
           strip_components: 0

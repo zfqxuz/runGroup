@@ -62,11 +62,11 @@ services:
     volumes:
       - n8n_data:/home/node/.n8n
       - ./n8n/workflows:/workflows:ro
-    # 每次启动先导入并发布工作流，再启动 n8n。webhook 路径固定为 /webhook/module-parse。
+    # 每次启动先导入并发布 v2 工作流，再启动 n8n。webhook 路径固定为 /webhook/module-parse。
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
-        n8n import:workflow --input=/workflows/module-import.json || true;
+        n8n import:workflow --input=/workflows/module-import-v2.json || true;
         n8n publish:workflow --id=touhou-module-import || true;
         exec n8n
     healthcheck:
