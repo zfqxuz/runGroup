@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { updateSystemSettingAction } from "@/server/actions/admin";
+import { updateModuleDshWhitelistAction, updateSystemSettingAction } from "@/server/actions/admin";
 import { prisma } from "@/server/db/prisma";
 import { isN8nConfigured, n8nModuleParseUrl } from "@/server/ai/n8n";
+import { MODULE_DSH_SETTING_KEY, parseModuleDshSetting } from "@/server/dsh/access";
+import { isDshConfigured } from "@/server/dsh/runner";
 
 export const dynamic = "force-dynamic";
 
@@ -84,6 +86,37 @@ export default async function AdminSystemPage({
           </section>
         );
       })}
+
+      {(() => {
+        const dsh = parseModuleDshSetting(settingByKey.get(MODULE_DSH_SETTING_KEY)?.value ?? null);
+        return (
+          <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+            <h2 className="text-sm font-medium text-white/80">dsh 团本助手白名单</h2>
+            <p className="mt-1 text-[11px] text-white/35">
+              只有名单内的用户能在团本编辑页看到 dsh 悬浮球，并用自然语言提出修改意见。支持用户名或用户 id，每行一个（也支持逗号分隔）。
+            </p>
+            <p className="mt-1 text-[11px] text-white/30">
+              服务器 dsh 客户端：{isDshConfigured() ? "已配置" : "未配置（需要设置 DSH_HEADLESS_COMMAND 或 DSH_SERVICE_URL）"}
+            </p>
+            <form action={updateModuleDshWhitelistAction} className="mt-3 flex flex-col gap-3">
+              <label className="flex items-center gap-2 text-xs text-white/60">
+                <input type="checkbox" name="enabled" value="1" defaultChecked={dsh.enabled} />
+                启用 dsh 团本助手
+              </label>
+              <textarea
+                name="entries"
+                rows={4}
+                defaultValue={dsh.entries.join("\n")}
+                placeholder="用户名或用户 id，每行一个"
+                className="rounded-lg border border-white/15 bg-ink-900 px-3 py-2 font-mono text-[11px] outline-none focus:border-sakura-500"
+              />
+              <button type="submit" className="self-start rounded-lg bg-sakura-500 px-4 py-2 text-xs font-medium text-white transition hover:bg-sakura-400">
+                保存白名单
+              </button>
+            </form>
+          </section>
+        );
+      })()}
 
       <section className="overflow-hidden rounded-xl border border-white/10 bg-ink-800/50">
         <div className="border-b border-white/10 px-5 py-3">

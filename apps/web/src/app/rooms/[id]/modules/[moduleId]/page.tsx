@@ -1,10 +1,13 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ModuleActions from "@/components/module/ModuleActions";
+import DshAssistantBall from "@/components/module/DshAssistantBall";
 import RoomPresetContentPanel from "@/components/module/RoomPresetContentPanel";
 import ModuleAssetActions from "@/components/module/ModuleAssetActions";
 import ModuleMarkdown from "@/components/module/ModuleMarkdown";
 import { saveModuleAction } from "@/server/actions/module";
+import { getModuleDshSetting, isUserInModuleDshWhitelist } from "@/server/dsh/access";
+import { isDshConfigured } from "@/server/dsh/runner";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -56,6 +59,8 @@ export default async function ModuleDetailPage({
   const isKP = membership.role === "KP";
   const canEdit = moduleRecord.ownerId === session.user.id;
   const canViewFull = canEdit || isKP;
+  const dshSetting = await getModuleDshSetting();
+  const dshAllowed = isDshConfigured() && isUserInModuleDshWhitelist(session.user, dshSetting);
   const content = (moduleRecord.content ?? {}) as ModuleContent;
   const text = content.text ?? "";
 
@@ -257,6 +262,15 @@ export default async function ModuleDetailPage({
           </div>
         )}
       </section>
+
+      {canEdit && dshAllowed ? (
+        <DshAssistantBall
+          moduleId={moduleRecord.id}
+          moduleTitle={moduleRecord.title}
+          initialVersion={moduleRecord.version}
+          roomId={params.id}
+        />
+      ) : null}
     </main>
   );
 }

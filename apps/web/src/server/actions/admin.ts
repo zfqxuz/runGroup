@@ -659,3 +659,24 @@ export async function updateSystemSettingAction(formData: FormData): Promise<voi
   revalidatePath("/admin/system");
   redirect("/admin/system?saved=1");
 }
+
+export async function updateModuleDshWhitelistAction(formData: FormData): Promise<void> {
+  const actor = await requireAdminActor();
+  const enabled = String(formData.get("enabled") ?? "") === "1";
+  const raw = clean(formData.get("entries"), 20000);
+  const entries = raw
+    .split(/[\n,，;；]+/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0)
+    .slice(0, 500);
+  const key = "ai.moduleDsh.whitelist";
+  const value = { enabled, entries } as never;
+  await prisma.systemSetting.upsert({
+    where: { key },
+    update: { value, updatedBy: actor.id },
+    create: { key, value, updatedBy: actor.id }
+  });
+  await audit({ actor, action: "system.setting", targetType: "SystemSetting", targetId: key, detail: { enabled, count: entries.length } });
+  revalidatePath("/admin/system");
+  redirect("/admin/system?saved=dsh");
+}

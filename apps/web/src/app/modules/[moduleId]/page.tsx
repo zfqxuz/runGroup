@@ -1,11 +1,14 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import ConfirmModuleDeleteButton from "@/components/module/ConfirmModuleDeleteButton";
+import DshAssistantBall from "@/components/module/DshAssistantBall";
 import ModuleAssetActions from "@/components/module/ModuleAssetActions";
 import ModuleEntityEditors from "@/components/module/ModuleEntityEditors";
 import ModulePublicCard from "@/components/module/ModulePublicCard";
 import ModuleMarkdown from "@/components/module/ModuleMarkdown";
 import { saveModuleAction, setModulePublishedAction } from "@/server/actions/module";
+import { getModuleDshSetting, isUserInModuleDshWhitelist } from "@/server/dsh/access";
+import { isDshConfigured } from "@/server/dsh/runner";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 
@@ -39,6 +42,8 @@ export default async function ModuleDetailPage({
 
   const canEdit = moduleRecord.ownerId === session.user.id;
   let canViewFull = canEdit;
+  const dshSetting = await getModuleDshSetting();
+  const dshAllowed = isDshConfigured() && isUserInModuleDshWhitelist(session.user, dshSetting);
   if (canViewFull === false && moduleRecord.roomId !== null) {
     const membership = await prisma.roomMember.findUnique({
       where: { roomId_userId: { roomId: moduleRecord.roomId, userId: session.user.id } },
@@ -214,6 +219,13 @@ export default async function ModuleDetailPage({
           </div>
         )}
       </section>
+      {canEdit && dshAllowed ? (
+        <DshAssistantBall
+          moduleId={moduleRecord.id}
+          moduleTitle={moduleRecord.title}
+          initialVersion={moduleRecord.version}
+        />
+      ) : null}
     </main>
   );
 }
