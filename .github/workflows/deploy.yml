@@ -6,6 +6,9 @@ on:
     paths-ignore:
       - "n8n/**"
       - ".github/workflows/deploy-n8n.yml"
+      # 纯文档/示例改动不重新构建部署。
+      - "**/*.md"
+      - "**/*.example"
   workflow_dispatch:
     inputs:
       run_migrations:

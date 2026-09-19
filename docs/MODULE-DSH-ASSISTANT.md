@@ -29,21 +29,27 @@
 
 ## 旁车
 
-`ops/dsh-service/` 提供一个 headless dsh 的 HTTP 包装：
+`ops/dsh-service/` 提供一个 headless dsh 的 HTTP 包装，实现 `GET /health` 与 `POST /run`。
 
-```bash
-docker build -t touhou-dsh-headless ops/dsh-service
-docker run -d --name touhou-trpg-dsh --restart unless-stopped \
-  -e DEEPSEEK_API_KEY=... -e DEEPSEEK_BASE_URL=https://api.deepseek.com \
-  touhou-dsh-headless
-```
+生产部署由 `.github/workflows/deploy.yml` 负责：在 GitHub Runner 上构建镜像并推送到阿里云 ACR
+（与 app 共用同一个 ACR 仓库，标签为 `dsh-<commit-sha>` / `dsh-latest`），
+ECS 只 `pull` 并 `up -d --no-deps dsh`。`docker-compose.prod.yml` 里 dsh 服务**没有 `build:`**。
 
-应用侧：
+> 生产 ECS 是 1.6G 内存单机，绝不要在 ECS 上执行 `docker compose up -d --build dsh`：
+> 那会重新 `npm i -g @deepseek-ai/dsh`，把 app / PostgreSQL / n8n 一起拖垮。
+
+dsh 旁车默认 `DSH_MAX_CONCURRENT=1`，compose 还给容器加了 `512m / 1 CPU` 限制。
+
+应用侧生产环境默认：
 
 ```env
-DSH_SERVICE_URL=http://touhou-trpg-dsh:8790
+DSH_SERVICE_URL=http://dsh:8790
 DSH_TASK_TIMEOUT_MS=300000
 ```
+
+注意：**文件导入时的“团本解析”走 n8n 工作流（`N8N_MODULE_PARSE_URL`），n8n 直接调 DeepSeek API，
+不经过 dsh 旁车**；dsh 负责的是编辑页悬浮球里“解析当前 module.json 并按自然语言修改”。
+两条链路相互独立，只共用 `DEEPSEEK_API_KEY` 等模型配置。
 
 ## 验证
 
