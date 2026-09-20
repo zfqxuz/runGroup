@@ -48,6 +48,9 @@ export type {
   StatusEffectRule,
   DamageRules,
   SpellCardRules,
+  BarrierSize,
+  BarrierLevel,
+  BarrierRules,
   ActionCostKey,
   PipelineStep,
   CombatMode,
@@ -180,6 +183,21 @@ export type {
   TouhouNaturalHealingInput,
   TouhouNaturalHealingOutcome
 } from "./touhou";
+
+export {
+  barrierDispelSuccess,
+  barrierLevelEntry,
+  barrierRestackOutcome,
+  resizeBarrierHp,
+  resolveBarrierStats
+} from "./barrier";
+export type {
+  BarrierDispelInput,
+  BarrierResizeInput,
+  BarrierResizeResult,
+  BarrierStats,
+  BarrierStatsInput
+} from "./barrier";
 
 export {
   TOUHOU_LSC_DP_RECOVERY_MINUTES,

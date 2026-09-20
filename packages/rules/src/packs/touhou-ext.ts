@@ -401,6 +401,20 @@ TOUHOU_EXT.abilities = {
     }
   }
 };
+/**
+ * 7.5 结界系法术通用规则。
+ *
+ * 引擎已支持大小 / 等级 / 目标值 / 灵力消耗查表、持续、解除对抗、扩大缩小
+ * 与结界内战斗惩罚；具体数值表（大小档位、每级 HP / MP / 目标值）属于 wiki
+ * 内容，待补齐后在模组 / 规则包覆盖这里。当前只启用结构，法术卡仍用 effect.hp。
+ */
+TOUHOU_EXT.barrier = {
+  enabled: true,
+  sizes: {},
+  levels: [],
+  restack: "REPLACE",
+  dispelNeedsContest: false
+};
 TOUHOU_EXT.statusEffects = {
   // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。
   SUNLIGHT: { stack: "REFRESH", durationTicks: "240" },

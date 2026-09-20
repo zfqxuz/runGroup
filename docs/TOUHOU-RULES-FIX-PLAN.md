@@ -353,9 +353,12 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      `collectAbilityPassiveMods` 在战斗准备时求值；DP 战斗的伤害、回避 / 防御 / 掩护 / 抵抗、命中与追逐移动已接入。
      具体妖力 / 特技条目仍待 wiki 列表补入 `abilities.definitions`。
    - ⏳ 属性使具体法术表（9.2）、术式版神术 / 妖弹化妖术的完整法术清单仍待 wiki 数据。
-   - `BARRIER` 结界（部分已实现）：`MagicEffect BARRIER` 建立独立 HP 结界，
-     伤害优先由结界吸收、击破溢出无效，支持到期轮次；战斗视图显示结界 HP。
-     7.5 的「大小 / 等级 / 目标值 / 灵力消耗表、范围与位置、扩大缩小、结界内战斗惩罚」仍需范围模型与 wiki 数据。
+   - ✅ `BARRIER` 结界结构：`RulePack.barrier`（sizes / levels / restack / dispelNeedsContest）；
+     `MagicEffect BARRIER` 支持 size / level / anchor，查表得到 HP / 目标值 / 灵力消耗 / 持续 / 结界内惩罚；
+     伤害优先由结界吸收、击破溢出无效；DISPEL 可解除结界（记录目标值）；
+     重复展开支持 REPLACE / REFRESH / STACK；扩大缩小按 HP 比例迁移；战斗视图显示等级 / 大小 / 惩罚。
+     ⏳ 具体大小 / 等级数值表与位置（AREA 范围）仍待 wiki 数据与范围模型；touhou-ext 目前只启用结构，
+     法术卡继续使用 `effect.hp`，模组可通过 ruleOverride 提供 `barrier.levels`。
 2. **DP 机制 · 剩余**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
    - 回合 / 宣言 / DP 回复核心已完成；剩余行动结算与 socket 接线（见 2.7 里程碑 1–2）。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）

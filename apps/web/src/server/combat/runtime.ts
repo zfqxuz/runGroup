@@ -120,7 +120,26 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
             expiresAtRound:
               typeof participant.barrier.expiresAtRound === "number"
                 ? Math.max(0, Math.floor(participant.barrier.expiresAtRound))
-                : null
+                : null,
+            sizeId:
+              typeof participant.barrier.sizeId === "string" ? participant.barrier.sizeId : null,
+            level:
+              typeof participant.barrier.level === "number"
+                ? Math.max(1, Math.floor(participant.barrier.level))
+                : null,
+            targetValue:
+              typeof participant.barrier.targetValue === "number"
+                ? Math.max(0, Math.floor(participant.barrier.targetValue))
+                : 0,
+            penalty:
+              typeof participant.barrier.penalty === "number"
+                ? Math.max(0, Math.floor(participant.barrier.penalty))
+                : 0,
+            anchor: participant.barrier.anchor === "AREA" ? "AREA" : "SELF",
+            scopeMeters:
+              typeof participant.barrier.scopeMeters === "number"
+                ? Math.max(0, participant.barrier.scopeMeters)
+                : 0
           }
         : null;
     participant.lscUsed = participant.lscUsed === true;

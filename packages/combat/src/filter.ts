@@ -82,6 +82,10 @@ export interface ParticipantView {
   readonly barrierHp: number | null;
   readonly barrierMaxHp: number | null;
   readonly barrierName: string | null;
+  /** 7.5 结界等级 / 大小 / 战斗惩罚；无结界时为 null。 */
+  readonly barrierLevel: number | null;
+  readonly barrierSizeId: string | null;
+  readonly barrierPenalty: number | null;
   /** 是否已使用 LSC（不能再使用符卡）。 */
   readonly lscUsed: boolean;
   /** LSC 是否已被击破（气绝 / DP 上限 0）。 */
@@ -262,6 +266,9 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       barrierHp: showNumbers ? (participant.barrier?.hp ?? null) : null,
       barrierMaxHp: showNumbers ? (participant.barrier?.maxHp ?? null) : null,
       barrierName: showNumbers ? (participant.barrier?.name ?? null) : null,
+      barrierLevel: showNumbers ? (participant.barrier?.level ?? null) : null,
+      barrierSizeId: showNumbers ? (participant.barrier?.sizeId ?? null) : null,
+      barrierPenalty: showNumbers ? (participant.barrier?.penalty ?? null) : null,
       lscUsed: showNumbers ? participant.lscUsed === true : false,
       lscBroken: showNumbers ? participant.lscBroken === true : false
     };

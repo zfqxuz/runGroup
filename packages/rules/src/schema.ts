@@ -261,12 +261,18 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("BARRIER"),
-    /** 结界 HP，按骰式 / 表达式结算；吸收伤害直到击破。 */
+    /** 结界 HP，按骰式 / 表达式结算；吸收伤害直到击破。规则包启用 barrier 表且给了 level 时优先查表。 */
     hp: DiceExprSchema,
     /** 结界名称，用于日志与战斗视图。 */
     name: z.string().default("结界"),
     /** 持续行动轮次；0 表示直到被击破或战斗结束。 */
-    durationTicks: ExprSchema.default("0")
+    durationTicks: ExprSchema.default("0"),
+    /** 结界大小 id（对应 barrier.sizes）；用于查表与范围描述。 */
+    size: z.string().optional(),
+    /** 结界等级（对应 barrier.levels）；用于查表。 */
+    level: z.number().int().min(1).optional(),
+    /** 锚定方式：SELF 贴在目标身上，AREA 占据一片区域（需要位置模型）。 */
+    anchor: z.enum(["SELF", "AREA"]).default("SELF")
   }),
   z.object({
     type: z.literal("DISPEL"),
@@ -448,6 +454,49 @@ export const AbilityRulesSchema = z.object({
   growthRanks: z.record(z.string(), GrowthRankSchema).default({}),
   /** 具体能力条目：id -> 定义（妖力 / 特技 / 常时常在能力）。 */
   definitions: z.record(z.string(), AbilityDefinitionSchema).default({})
+});
+
+/** 7.5 结界大小：范围、容量、HP / MP 系数与结界内战斗惩罚。 */
+export const BarrierSizeSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** 影响范围（米）；AREA 锚定用于描述。 */
+  scopeMeters: ExprSchema.default("1"),
+  /** 可容纳单位数；0 表示不限。 */
+  capacity: z.number().int().nonnegative().default(0),
+  /** HP 系数（乘在等级基础 HP 上）。 */
+  hpMultiplier: ExprSchema.default("1"),
+  /** 灵力消耗系数。 */
+  mpMultiplier: ExprSchema.default("1"),
+  /** 结界内战斗惩罚（达成值减值）。 */
+  penalty: ExprSchema.default("0")
+});
+
+/** 7.5 结界等级：基础 HP / 目标值 / 灵力消耗 / 持续。 */
+export const BarrierLevelSchema = z.object({
+  level: z.number().int().min(1),
+  /** 基础 HP。 */
+  hp: ExprSchema,
+  /** 解除 / 抵抗对抗的目标值。 */
+  targetValue: ExprSchema,
+  /** 基础灵力消耗。 */
+  mpCost: ExprSchema,
+  /** 基础持续行动轮次；0 表示直到击破 / 战斗结束。 */
+  durationTicks: ExprSchema.default("0")
+});
+
+/** 7.5 结界系法术通用规则；数值表由规则包 / 模组提供。 */
+export const BarrierRulesSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** 大小 id -> 定义。 */
+  sizes: z.record(z.string(), BarrierSizeSchema).default({}),
+  /** 等级表，按 level 升序；查表时取 <= 请求等级的最高档。 */
+  levels: z.array(BarrierLevelSchema).default([]),
+  /** 同一目标重复展开时的处理。 */
+  restack: z.enum(["REPLACE", "REFRESH", "STACK"]).default("REPLACE"),
+  /** DISPEL 解除结界时是否需要对抗目标值。 */
+  dispelNeedsContest: z.boolean().default(false)
 });
 
 export const SpellCardRulesSchema = z.object({
@@ -705,6 +754,7 @@ export const RulePackSchema = z.object({
     .default({ occupation: "edu * 4", interest: "int * 2", maxAtCreation: "70", occupationMax: "80", interestMax: "70" }),
   statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
   spellcard: SpellCardRulesSchema.optional(),
+  barrier: BarrierRulesSchema.default({}),
   magic: MagicRulesSchema.optional(),
 
   cardBudget: z
@@ -730,6 +780,9 @@ export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;
 export type DamageRules = z.output<typeof DamageRulesSchema>;
 export type SpellCardRules = z.output<typeof SpellCardRulesSchema>;
+export type BarrierSize = z.output<typeof BarrierSizeSchema>;
+export type BarrierLevel = z.output<typeof BarrierLevelSchema>;
+export type BarrierRules = z.output<typeof BarrierRulesSchema>;
 export type MagicSpell = z.output<typeof MagicSpellSchema>;
 export type MagicRules = z.output<typeof MagicRulesSchema>;
 export type MagicEffect = z.output<typeof MagicEffectSchema>;

@@ -28,8 +28,10 @@ import {
   speedMultiplierOf,
   spellEffectsOf,
   spellTargeting,
+  barrierRestackOutcome,
   clampTouhouDpDice,
   resolveAbilityCategory,
+  resolveBarrierStats,
   touhouChaseDamage,
   touhouLscRecoveryDue,
   touhouMeleeDamage,
@@ -3193,17 +3195,74 @@ function applyMagicEffect(
   }
 
   if (effect.type === "BARRIER") {
-    const hp = Math.max(0, rollEffectDice(effect.hp, state, "magic-barrier:" + actor.id + ":" + spell.id + ":" + target.id));
-    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    const fallbackHp = Math.max(0, rollEffectDice(effect.hp, state, "magic-barrier:" + actor.id + ":" + spell.id + ":" + target.id));
+    // 7.5：规则包有结界表且 effect.level 指定时优先查表；否则回退到卡面 hp。
+    const stats = resolveBarrierStats(ctx.pack.pack.barrier, {
+      level: Math.max(1, Math.floor(effect.level ?? 1)),
+      sizeId: effect.size ?? null,
+      fallbackHp,
+      vars: actor.vars,
+      consts: ctx.pack.pack.const
+    });
+    const hp = stats === null ? fallbackHp : stats.hp;
+    const tableDuration = stats?.durationTicks ?? 0;
+    const duration =
+      tableDuration > 0
+        ? tableDuration
+        : Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    // 重复展开：按规则包 restack 决定替换 / 刷新 / 叠加。
+    let finalHp = hp;
+    let finalMaxHp = hp;
+    if (target.barrier !== null && target.barrier !== undefined) {
+      const outcome = barrierRestackOutcome(ctx.pack.pack.barrier.restack, target.barrier.hp, target.barrier.maxHp, hp);
+      finalHp = outcome.hp;
+      finalMaxHp = outcome.maxHp;
+    }
+    // 7.5 灵力消耗表：表驱动结界在这里支付；使用卡面 hp 的旧数据 mpCost=0，不会重复扣。
+    const barrierMpCost = stats?.mpCost ?? 0;
+    if (barrierMpCost > 0 && spendCombatMagicPoints(ctx, actor, barrierMpCost, "结界「" + (effect.name || "结界") + "」") === false) {
+      return;
+    }
     target.barrier = {
-      hp,
-      maxHp: hp,
+      hp: finalHp,
+      maxHp: finalMaxHp,
       name: effect.name.length > 0 ? effect.name : "结界",
-      expiresAtRound: duration > 0 ? state.round + duration : null
+      expiresAtRound: duration > 0 ? state.round + duration : null,
+      sizeId: stats?.sizeId ?? null,
+      level: stats?.level ?? null,
+      targetValue: stats?.targetValue ?? 0,
+      penalty: stats?.penalty ?? 0,
+      anchor: effect.anchor,
+      scopeMeters: stats?.scopeMeters ?? 0
     };
     log(
-      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 展开「" + target.barrier.name + "」（HP " + hp + "）",
-      { rollType: "BARRIER_APPLIED", barrierHp: hp, barrierMaxHp: hp, expiresAtRound: target.barrier.expiresAtRound ?? 0 }
+      actor.name +
+        " " +
+        verb +
+        "「" +
+        spell.name +
+        "」 → " +
+        target.name +
+        " 展开「" +
+        target.barrier.name +
+        "」（HP " +
+        finalHp +
+        (stats?.sizeName === null || stats?.sizeName === undefined ? "" : "，" + stats.sizeName) +
+        (stats?.level === null || stats?.level === undefined ? "" : " Lv" + stats.level) +
+        (stats !== null && stats.targetValue > 0 ? "，目标值 " + stats.targetValue : "") +
+        (barrierMpCost > 0 ? "，灵力 " + barrierMpCost : "") +
+        "）",
+      {
+        rollType: "BARRIER_APPLIED",
+        barrierHp: finalHp,
+        barrierMaxHp: finalMaxHp,
+        expiresAtRound: target.barrier.expiresAtRound ?? 0,
+        barrierLevel: stats?.level ?? null,
+        barrierSize: stats?.sizeId ?? null,
+        barrierTargetValue: stats?.targetValue ?? 0,
+        barrierPenalty: stats?.penalty ?? 0,
+        barrierMpCost
+      }
     );
     return;
   }
@@ -3337,6 +3396,20 @@ function applyMagicEffect(
       breakDeclaration(ctx, target, actor);
       brokeDeclaration = true;
     }
+    // 7.5 解除：keys 为空或包含 BARRIER / 结界名时驱散结界。
+    let brokeBarrier = false;
+    let barrierTargetValue = 0;
+    if (target.barrier !== null && target.barrier !== undefined) {
+      const wantsBarrier =
+        effect.keys.length === 0 ||
+        effect.keys.includes("BARRIER") ||
+        effect.keys.includes(target.barrier.name);
+      if (wantsBarrier) {
+        barrierTargetValue = target.barrier.targetValue ?? 0;
+        target.barrier = null;
+        brokeBarrier = true;
+      }
+    }
     log(
       actor.name +
         " " +
@@ -3351,8 +3424,9 @@ function applyMagicEffect(
         removedStatuses +
         " 个" +
         (brokeDeclaration ? "，并击破其展开中的符卡" : "") +
+        (brokeBarrier ? "，并解除结界" + (barrierTargetValue > 0 ? "（目标值 " + barrierTargetValue + "）" : "") : "") +
         "）",
-      { dispel: true, removedStatuses, brokeDeclaration }
+      { dispel: true, removedStatuses, brokeDeclaration, brokeBarrier, barrierTargetValue }
     );
   }
 }
@@ -3495,7 +3569,7 @@ function rollAbilityResist(
     ? dpSkillLevel(ctx.pack, target, resist.skill)
     : skillValueOf(ctx.pack, target, resist.skill, attributeValue);
   const base = attributeValue + skill;
-  const reactionBonus = passiveBonus(target, "reactionBonus");
+  const reactionBonus = passiveBonus(target, "reactionBonus") - barrierPenalty(target);
   const targetValue = touhouResistTargetValue(casterLevel, casterAchievement);
   const rng = nextRollRng(ctx.state, `ability-resist:${caster.id}:${target.id}:${spell.id}`);
   let roll = 0;
@@ -3636,7 +3710,7 @@ function resolveAbility(
     modifier = 0;
   }
   const base = attributeValue + level + modifier;
-  const accuracyBonus = passiveBonus(actor, "accuracyBonus");
+  const accuracyBonus = passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
   const rng = nextRollRng(state, `ability:${actor.id}:${spell.id}`);
   let roll = 0;
   let target = base;
@@ -4060,6 +4134,12 @@ function passiveBonus(
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/** 7.5 结界内战斗惩罚（缺省 0）。 */
+function barrierPenalty(participant: CombatParticipantState): number {
+  const value = participant.barrier?.penalty;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 /** 消耗 DP；不足时记录日志并返回 false。 */
 function spendDp(
   ctx: ResolveContext,
@@ -4105,7 +4185,7 @@ function resolveDpDefense(
       return { success: false, reduction: 0 };
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
-    const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus");
+    const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender);
     const success = reactionAchievement >= attackAchievement;
     const reduction = success ? 0 : dpSkillLevel(ctx.pack, defender, reaction.skill ?? "MELEE") * 2;
     pushLog(ctx.state, {
@@ -4179,7 +4259,7 @@ function resolveDpCover(
     if (spendDp(ctx, coverer, perDie * dice, "掩护 " + dice + "D") === false) continue;
     coverer.coverUsedThisRound = true;
     const roll = dpRoll(ctx.pack, state, coverer, "dex", reaction.skill ?? "DODGE", dice, salt + ":" + coverer.id);
-    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus");
+    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus") - barrierPenalty(coverer);
     const success = reactionAchievement >= attackAchievement;
     pushLog(state, {
       kind: "CHECK",
@@ -4221,7 +4301,7 @@ function resolveDpRangedAttack(
   const attributeKey = submission.dpAttribute ?? "dex";
   const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged:" + actor.id + ":" + defender.id);
   const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
-  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus");
+  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
@@ -4408,7 +4488,7 @@ function resolveDpMelee(
 
   const meleeEnhance = spellcardEnhanceForAttack(ctx.pack, actor, submission.skill ?? "MELEE");
   const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);
-  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus");
+  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
   const defenderAvoid = dpSkillLevel(ctx.pack, defender, "DODGE");
   const defenderDanmaku = dpSkillLevel(ctx.pack, defender, "DANMAKU");
   const approachTarget = dpAttribute(ctx.pack, defender, "str") + Math.max(defenderAvoid, defenderDanmaku + 15);
@@ -4425,7 +4505,7 @@ function resolveDpMelee(
   if (approachAchievement < approachTarget) return;
 
   const hit = dpRoll(ctx.pack, state, actor, "str", submission.skill ?? "MELEE", hitDice, "dp-melee-hit:" + actor.id + ":" + defender.id);
-  const hitAchievement = hit.achievement + passiveBonus(actor, "accuracyBonus");
+  const hitAchievement = hit.achievement + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
