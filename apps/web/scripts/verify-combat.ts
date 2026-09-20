@@ -141,6 +141,9 @@ async function main(): Promise<void> {
       data: {
         name: "E2E战斗房" + Date.now().toString(36),
         system: "TOUHOU",
+        // 东方扩展已切到 DP；本脚本覆盖的是历史 ATB / 战斗伤害管线，
+        // 因此用房间覆盖把模式固定回 ATB。DP 端到端见 verify-dp-combat-e2e.ts。
+        ruleOverride: { combat: { mode: "ATB" } },
         ownerId: userId,
         inviteCode: "CE" + Date.now().toString(36).slice(-5).toUpperCase(),
         chargenMethod: "destiny5",

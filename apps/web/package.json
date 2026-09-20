@@ -13,6 +13,7 @@
     "verify:combat": "tsx --env-file=.env scripts/verify-combat.ts",
     "verify:combat-late-join": "tsx --env-file=.env scripts/verify-combat-late-join.ts",
     "verify:dp-combat": "tsx --env-file=.env scripts/verify-dp-combat.ts",
+    "verify:dp-combat-e2e": "tsx --env-file=.env scripts/verify-dp-combat-e2e.ts",
     "lint": "next lint",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",

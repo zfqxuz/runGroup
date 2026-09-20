@@ -84,4 +84,8 @@ DP 行动消耗全部放在规则包 `dp.actionCosts`，支持「基线包 → t
 东方扩展 `combat.mode` 现为 `"DP"`：创建战斗即进入宣言阶段，所有单位通过 `combat:dp-declare`
 声明本轮 DP；随后按声明值从高到低逐个行动，行动结算后自动轮转，全部行动完进入下一轮回复 + 宣言。
 `CombatBoard` 提供宣言面板、DP 行动面板与应对窗口（回避 / 防御 / 掩护 / 抵抗）。
-回归脚本：`npm run --workspace @touhou/web verify:dp-combat`。
+回归脚本：
+- 纯函数 / 引擎：`npm run --workspace @touhou/web verify:dp-combat`；
+- 端到端（需先启动 dev server）：`npm run --workspace @touhou/web verify:dp-combat-e2e`，
+  覆盖「创建 DP 战斗 → 双方宣言 → 弹幕 → 应对 → 结算 → 快照恢复」。
+历史 ATB 战斗管线仍由 `verify:combat`（房间覆盖回 ATB）覆盖。

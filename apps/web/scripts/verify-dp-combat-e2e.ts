@@ -1,0 +1,316 @@
+/**
+ * 千幻抄 DP 战斗端到端：
+ * 创建 DP 战斗 → 双方声明 DP → 当前行动者打弹幕 → 目标应对 → 结算 → 快照恢复。
+ *
+ * 运行前需先启动 dev server（默认 http://localhost:3100）。
+ * 运行：npx tsx --env-file=.env scripts/verify-dp-combat-e2e.ts
+ */
+import { io, type Socket } from "socket.io-client";
+import { characterRef, createCombatRecord, npcRef } from "../src/server/combat/setup";
+import { clearCombatRuntime, loadCombatRuntime } from "../src/server/combat/runtime";
+import { prisma } from "../src/server/db/prisma";
+import { loadEffectivePack } from "../src/server/rules/loader";
+import { NpcStatsSchema } from "../src/shared/npc";
+import type { Ack, CombatJoinAck, CombatReactionRequest, CombatUpdate } from "../src/shared/socket";
+
+const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
+const jar = new Map<string, string>();
+
+function absorbCookies(response: Response): void {
+  const headers = response.headers as Headers & { getSetCookie?: () => string[] };
+  for (const cookie of headers.getSetCookie?.() ?? []) {
+    const first = cookie.split(";")[0];
+    if (first === undefined) continue;
+    const equals = first.indexOf("=");
+    if (equals <= 0) continue;
+    jar.set(first.slice(0, equals), first.slice(equals + 1));
+  }
+}
+
+function cookieHeader(): string {
+  return Array.from(jar).map(([key, value]) => key + "=" + value).join("; ");
+}
+
+async function call(path: string, init: RequestInit = {}): Promise<{ status: number; text: string }> {
+  const response = await fetch(BASE + path, {
+    ...init,
+    headers: { ...(init.headers ?? {}), cookie: cookieHeader() },
+    redirect: "manual"
+  });
+  absorbCookies(response);
+  return { status: response.status, text: await response.text() };
+}
+
+function assert(condition: boolean, message: string): asserts condition {
+  if (condition === false) throw new Error("DP E2E FAILED: " + message);
+}
+
+function emitAck<T>(socket: Socket, event: string, payload: unknown): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("socket ack timeout: " + event)), 8000);
+    socket.emit(event, payload, (result: T) => {
+      clearTimeout(timer);
+      resolve(result);
+    });
+  });
+}
+
+function waitEvent<T>(socket: Socket, event: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off(event, handler);
+      reject(new Error("socket event timeout: " + event));
+    }, 8000);
+    function handler(value: T): void {
+      clearTimeout(timer);
+      resolve(value);
+    }
+    socket.once(event, handler);
+  });
+}
+
+function waitForView(
+  socket: Socket,
+  combatId: string,
+  predicate: (update: CombatUpdate) => boolean
+): Promise<CombatUpdate> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      socket.off("combat:update", handler);
+      reject(new Error("combat update timeout"));
+    }, 8000);
+    function handler(update: CombatUpdate): void {
+      if (update.combatId !== combatId) return;
+      if (predicate(update) === false) return;
+      clearTimeout(timer);
+      socket.off("combat:update", handler);
+      resolve(update);
+    }
+    socket.on("combat:update", handler);
+  });
+}
+
+function connectSocket(ticket: string): Promise<Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = io(BASE, { path: "/api/socket", autoConnect: false, transports: ["websocket"] });
+    socket.auth = { ticket };
+    const timer = setTimeout(() => {
+      socket.close();
+      reject(new Error("socket connect timeout"));
+    }, 8000);
+    socket.once("connect", () => {
+      clearTimeout(timer);
+      resolve(socket);
+    });
+    socket.once("connect_error", (error: Error) => {
+      clearTimeout(timer);
+      reject(error);
+    });
+    socket.connect();
+  });
+}
+
+async function main(): Promise<void> {
+  const username = "e2e_dp_" + Date.now().toString(36);
+  const password = "test-password-123";
+  let roomId: string | null = null;
+  let socket: Socket | null = null;
+  try {
+    const register = await call("/api/register", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username, displayName: "DP验证", password })
+    });
+    assert(register.status === 201, "注册状态 " + register.status);
+    const registerBody = JSON.parse(register.text) as { user?: { id?: string } };
+    const userId = registerBody.user?.id;
+    assert(typeof userId === "string" && userId.length > 0, "缺少 userId");
+
+    const csrf = await call("/api/auth/csrf");
+    const csrfToken = (JSON.parse(csrf.text) as { csrfToken?: string }).csrfToken;
+    assert(typeof csrfToken === "string" && csrfToken.length > 0, "缺少 csrfToken");
+    const login = await call("/api/auth/callback/credentials", {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        csrfToken,
+        username,
+        password,
+        callbackUrl: BASE + "/",
+        json: "true"
+      }).toString()
+    });
+    assert(login.status === 302, "登录状态 " + login.status);
+
+    const room = await prisma.room.create({
+      data: {
+        name: "DP战斗房" + Date.now().toString(36),
+        system: "TOUHOU",
+        ownerId: userId,
+        inviteCode: "DP" + Date.now().toString(36).slice(-5).toUpperCase(),
+        chargenMethod: "destiny5",
+        members: { create: { userId, role: "KP" } }
+      }
+    });
+    roomId = room.id;
+    await prisma.room.update({ where: { id: room.id }, data: { status: "PLAYING" } });
+
+    const character = await prisma.character.create({
+      data: {
+        userId,
+        system: "TOUHOU",
+        name: "DP灵梦",
+        race: "HUMAN",
+        str: 50, con: 50, siz: 50, dex: 70, app: 60, int: 55, pow: 70, edu: 55, luck: 50,
+        skills: { DANMAKU: 80, DODGE: 60, MELEE: 55 }
+      }
+    });
+    await prisma.roomCharacterEntry.create({
+      data: { roomId: room.id, characterId: character.id, status: "APPROVED" }
+    });
+    const game = await prisma.game.create({
+      data: { roomId: room.id, status: "PLAYING", title: "DP E2E", createdBy: userId },
+      select: { id: true }
+    });
+    await prisma.gameCharacter.create({
+      data: {
+        gameId: game.id,
+        characterId: character.id,
+        userId,
+        currentHp: Math.max(1, character.hp),
+        currentMp: character.mp,
+        currentSan: character.san,
+        currentDp: character.dp
+      }
+    });
+
+    const npcStats = NpcStatsSchema.parse({
+      presetId: "FAIRY",
+      tier: "MINION",
+      rarity: "UNCOMMON",
+      race: "FAIRY",
+      attributes: { str: 20, con: 25, siz: 20, dex: 65, app: 45, int: 25, pow: 55, edu: 5, luck: 60 },
+      skills: { DANMAKU: 60, DODGE: 45, FLIGHT: 60 },
+      maxHp: 50,
+      maxMp: 220,
+      maxSan: 55,
+      maxDp: 100,
+      tags: ["FAIRY"]
+    });
+    const npc = await prisma.card.create({
+      data: {
+        scope: "ROOM",
+        roomId: room.id,
+        ownerId: userId,
+        type: "NPC",
+        name: "DP妖精",
+        rarity: "UNCOMMON",
+        system: "TOUHOU",
+        stats: npcStats as never
+      }
+    });
+
+    const effective = await loadEffectivePack({
+      id: room.id,
+      system: room.system,
+      rulePackVersionId: room.rulePackVersionId,
+      ruleOverride: room.ruleOverride
+    });
+    assert(effective.compiled.combat.mode === "DP", "东方房间应为 DP 模式");
+    const created = await createCombatRecord(room.id, effective, [characterRef(character.id)], [npcRef(npc.id)]);
+    assert(created.ok === true && created.combatId !== undefined, created.error ?? "创建战斗失败");
+    const combatId = created.combatId as string;
+
+    clearCombatRuntime(combatId);
+    const runtime = await loadCombatRuntime(combatId);
+    assert(runtime !== null, "战斗 runtime 缺失");
+    assert(runtime.state.mode === "DP", "战斗状态应为 DP 模式");
+    assert(runtime.state.phase === "DP_DECLARATION", "创建后应处于宣言阶段，实际 " + runtime.state.phase);
+    const pc = runtime.state.participants.find((item) => item.characterId === character.id);
+    const enemy = runtime.state.participants.find((item) => item.characterId === null);
+    assert(pc !== undefined && enemy !== undefined, "战斗单位缺失");
+    assert(pc.dp > 0, "PC 回合开始应有 DP（dp=" + pc.dp + " maxDp=" + pc.maxDp + "）");
+
+    const ticketResponse = await call("/api/socket-ticket", { method: "POST" });
+    const ticket = (JSON.parse(ticketResponse.text) as { ticket?: string }).ticket;
+    assert(typeof ticket === "string" && ticket.length > 0, "缺少 socket ticket");
+
+    const connected = await connectSocket(ticket);
+    socket = connected;
+    const join = await emitAck<CombatJoinAck>(connected, "combat:join", combatId);
+    assert(join.ok === true && join.view !== undefined, join.error ?? "加入战斗失败");
+    assert(join.view?.mode === "DP", "视图应为 DP 模式");
+    assert(join.view?.dp !== null && join.view?.dp.currentActorId === null, "宣言阶段不应有当前行动者");
+
+    // 双方声明：PC 声明全部 DP，NPC 声明 0 → PC 先手。
+    const declarePc = await emitAck<Ack>(connected, "combat:dp-declare", {
+      combatId,
+      participantId: pc.id,
+      value: pc.dp
+    });
+    assert(declarePc.ok === true, declarePc.error ?? "PC 声明失败");
+    const actionPhase = waitForView(connected, combatId, (update) => update.view.phase === "AWAITING_ACTION");
+    const declareNpc = await emitAck<Ack>(connected, "combat:dp-declare", {
+      combatId,
+      participantId: enemy.id,
+      value: 0
+    });
+    assert(declareNpc.ok === true, declareNpc.error ?? "NPC 声明失败");
+    const phaseUpdate = await actionPhase;
+    assert(phaseUpdate.view.dp?.currentActorId === pc.id, "PC 应以高 DP 先行动");
+    const dpBefore = pc.dp;
+    const enemyHpBefore = enemy.hp;
+
+    // PC 打弹幕：固定 3 DP、无判定、全体；NPC 目标需回应。
+    const reactionRequest = waitEvent<CombatReactionRequest>(connected, "combat:reaction-request");
+    const actionAck = await emitAck<Ack>(connected, "combat:action", {
+      combatId,
+      actorId: pc.id,
+      action: { kind: "DANMAKU", dpAction: "DANMAKU", danmakuDpReduction: 1, danmakuBaseDamage: 5 }
+    });
+    assert(actionAck.ok === true, actionAck.error ?? "弹幕提交失败");
+    const request = await reactionRequest;
+    assert(request.targetId === enemy.id, "应对目标应为敌方");
+    const afterResolve = waitForView(
+      connected,
+      combatId,
+      (update) => update.view.pendingReactions.length === 0 && update.view.phase !== "AWAITING_ACTION"
+        ? true
+        : update.view.pendingReactions.length === 0 && update.view.dp?.currentActorId !== pc.id
+    );
+    const reactionAck = await emitAck<Ack>(connected, "combat:reaction", {
+      combatId,
+      targetId: enemy.id,
+      reaction: { type: "PASS" }
+    });
+    assert(reactionAck.ok === true, reactionAck.error ?? "应对提交失败");
+    const resolved = await afterResolve;
+
+    // 脚本进程里的 createCombatRecord 会缓存创建时的状态；清掉缓存强制从 DB 读最新快照。
+    clearCombatRuntime(combatId);
+    const persisted = await loadCombatRuntime(combatId);
+    assert(persisted !== null, "结算后 runtime 缺失");
+    const persistedEnemy = persisted.state.participants.find((item) => item.id === enemy.id);
+    const persistedPc = persisted.state.participants.find((item) => item.id === pc.id);
+    assert(persistedEnemy !== undefined && persistedPc !== undefined, "结算后单位缺失");
+    assert(persistedEnemy.hp === enemyHpBefore - 5, "弹幕应造成 5 点固定伤害，实际 " + persistedEnemy.hp + " / 原 " + enemyHpBefore);
+    assert(persistedPc.dp === dpBefore - 3, "PC 应消耗 3 DP，实际 " + persistedPc.dp + " / 原 " + dpBefore);
+    assert(resolved.view.participants.find((item) => item.id === pc.id)?.dp === dpBefore - 3, "视图 DP 未同步");
+
+    console.log(
+      "PASS DP 战斗 E2E：宣言 → 行动 → 应对 → 弹幕结算 → 快照恢复（战斗 " + combatId + "）"
+    );
+  } finally {
+    if (socket !== null) socket.close();
+    if (roomId !== null) {
+      const combats = await prisma.combat.findMany({ where: { roomId }, select: { id: true } });
+      for (const combat of combats) clearCombatRuntime(combat.id);
+      await prisma.room.delete({ where: { id: roomId } }).catch(() => undefined);
+    }
+  }
+}
+
+void main().catch((error: unknown) => {
+  console.error(error);
+  process.exitCode = 1;
+});
