@@ -4,7 +4,7 @@ import { spellEffectsOf, spellTargeting, spendMagicPoints, type CompiledRulePack
 import { prisma } from "@/server/db/prisma";
 import type { WeaponDamageBand, WeaponDamageType } from "@/shared/card";
 
-export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "FLEE";
+export type CombatReactionType = "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "RESIST" | "COVER" | "FLEE";
 
 export interface CombatOptionParticipant {
   readonly id: string;
@@ -357,6 +357,16 @@ export async function loadAttackSkillsByParticipant(
   );
 }
 
+/**
+ * DP（千幻抄）应对选项：不应对 / 回避 / 防御 / 掩护队友；
+ * 能力 / 法术目标额外得到抵抗选项（抵抗由引擎按 DP 骰消耗结算）。
+ */
+export function dpReactionTypesForParticipant(includeResist = false): readonly CombatReactionType[] {
+  return includeResist
+    ? ["PASS", "DODGE", "DEFEND", "RESIST", "COVER"]
+    : ["PASS", "DODGE", "DEFEND", "COVER"];
+}
+
 export function allowedReactionTypes(pack: CompiledRulePack): readonly CombatReactionType[] {
   const counter = pack.combat.events.COUNTER;
   if (pack.system === "COC7") {
@@ -480,6 +490,28 @@ export function validateCombatAction(
     const actor = context.state.participants.find((item) => item.id === action.actorId);
     if (actor === undefined) return "行动单位不在场";
     if ((actor.grazePoints ?? 0) <= 0) return "没有擦弹点数可以消费";
+  }
+  // DP（千幻抄）：行动种类由 dpAction 决定，弹幕无目标、无技能；射击 / 追击 / 近战需要敌方目标。
+  if (action.kind === "DANMAKU" && action.dpAction !== undefined) {
+    const actor = context.state.participants.find((item) => item.id === action.actorId);
+    if (actor === undefined) return "行动单位不在场";
+    if (action.dpAction === "DANMAKU") return null;
+    const targetIds =
+      action.dpAction === "CHASE"
+        ? [...(action.dpTargetIds ?? [])]
+        : action.targetId === undefined || action.targetId === null
+          ? []
+          : [action.targetId];
+    if (targetIds.length === 0) return "行动需要目标";
+    for (const id of targetIds) {
+      const target = context.state.participants.find((item) => item.id === id);
+      if (target === undefined || target.defeated) return "目标已不在场";
+      if (target.id === actor.id) return "不能攻击自己";
+      if (target.faction !== undefined && actor.faction !== undefined && target.faction === actor.faction) {
+        return "只能攻击敌方";
+      }
+    }
+    return null;
   }
   if (action.kind === "SPELLCARD") {
     if (context.pack.system !== "TOUHOU") return "只有東方拓展房间可以使用符卡";

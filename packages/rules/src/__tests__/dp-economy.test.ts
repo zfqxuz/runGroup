@@ -8,7 +8,14 @@ import { compileParsedRulePack,
   type RulePack } from "../index";
 import { builtinRegistry } from "../packs";
 
-const costs = resolveRulePack("touhou-ext", builtinRegistry()).dp.actionCosts;
+const touhouPack = resolveRulePack("touhou-ext", builtinRegistry());
+const costs = touhouPack.dp.actionCosts;
+
+describe("东方扩展只用 DP 模式", () => {
+  it("touhou-ext 的 combat.mode 为 DP", () => {
+    expect(touhouPack.combat.mode).toBe("DP");
+  });
+});
 
 describe("DP 行动消耗配置", () => {
   it("千幻抄默认值：弹幕 3、判定 1/骰、追击 2/目标、近战 1+1/骰、抵抗最多 3D", () => {

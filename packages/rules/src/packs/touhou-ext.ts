@@ -473,7 +473,8 @@ TOUHOU_EXT.dp = {
 };
 
 TOUHOU_EXT.combat = {
-  mode: "ATB",
+  // 千幻抄：东方扩展只使用 DP 模式（回合 → 宣言 → 逐个行动）。
+  mode: "DP",
   initiative: { key: "dex", tieBreak: "KEY_DESC", kpAdjustsOrder: false },
   events: {
     GRAZE: {

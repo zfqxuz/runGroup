@@ -72,11 +72,20 @@ const REACTION_LABELS: Record<CombatReactionPayload["type"], string> = {
   DODGE: "闪避",
   COUNTER: "反击",
   SEEK_COVER: "寻找掩体",
+  RESIST: "抵抗",
+  COVER: "掩护队友",
   FLEE: "逃跑"
 };
 
 type ConnState = "connecting" | "online" | "offline";
-type ReactionDraft = { type: CombatReactionPayload["type"]; skill: string };
+type ReactionDraft = {
+  type: CombatReactionPayload["type"];
+  skill: string;
+  /** DP 模式：本次应对 / 抵抗 / 掩护消费的骰数。 */
+  dpDice: number;
+  /** DP 掩护：本次掩护的队友 id。 */
+  coverTargetId: string;
+};
 
 function percent(value: number, max: number): number {
   if (max <= 0) return 0;
@@ -115,6 +124,16 @@ export default function CombatBoard(props: Props) {
   const [chaseSkill, setChaseSkill] = useState("");
   const [reactionOptions, setReactionOptions] = useState<Record<string, readonly CombatReactionPayload["type"][]>>({});
   const [reactionDrafts, setReactionDrafts] = useState<Record<string, ReactionDraft>>({});
+  // DP（千幻抄）：宣言草稿与行动控件。
+  const [dpDeclareDraft, setDpDeclareDraft] = useState<Record<string, number>>({});
+  const [dpAction, setDpAction] = useState<"DANMAKU" | "RANGED" | "CHASE" | "MELEE">("DANMAKU");
+  const [dpDice, setDpDice] = useState(3);
+  const [dpSecondaryDice, setDpSecondaryDice] = useState(3);
+  const [dpEscalation, setDpEscalation] = useState(0);
+  const [dpAbilityId, setDpAbilityId] = useState("");
+  const [dpTrainingId, setDpTrainingId] = useState("FEAT");
+  const [dpDanmakuReduction, setDpDanmakuReduction] = useState(1);
+  const [dpDanmakuDamage, setDpDanmakuDamage] = useState(3);
   const router = useRouter();
   const socketRef = useRef<Socket | null>(null);
 
@@ -161,7 +180,10 @@ export default function CombatBoard(props: Props) {
       setReactionOptions((prev) => ({ ...prev, [request.targetId]: request.options }));
       setReactionDrafts((prev) => {
         if (prev[request.targetId] !== undefined) return prev;
-        return { ...prev, [request.targetId]: { type: "PASS", skill: "" } };
+        return {
+          ...prev,
+          [request.targetId]: { type: "PASS", skill: "", dpDice: 1, coverTargetId: "" }
+        };
       });
     });
     socket.on("combat:aborted", () => {
@@ -323,6 +345,18 @@ export default function CombatBoard(props: Props) {
   const activeAttackSourceLabel =
     activeAttackOption?.weaponName ?? (activeAttackOption?.source === "UNARMED" ? "徒手" : "默认攻击");
   const targetOptions = alive.filter((item) => item.id !== selectedActorId);
+
+  // DP：待宣言的可操控单位、当前行动者可用的能力 / 锻炼等级。
+  const dpPhase = view?.mode === "DP" ? view.phase : null;
+  const dpDeclared = view?.dp?.declared ?? {};
+  const dpDeclarers = alive.filter(
+    (item) => isControlled(item) && dpDeclared[item.id] === undefined
+  );
+  const dpAbilityOptions = Object.entries(selectedActor?.abilityLevels ?? {})
+    .filter((entry): entry is [string, number] => typeof entry[1] === "number")
+    .sort((a, b) => b[1] - a[1]);
+  const dpCurrentActorId = view?.dp?.currentActorId ?? null;
+  const dpCurrentActor = participants.find((item) => item.id === dpCurrentActorId) ?? null;
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
   const activeDistanceFeet = participantDistance(selectedActorId, activeTargetId);
   const allowedSpellIds =
@@ -460,6 +494,9 @@ export default function CombatBoard(props: Props) {
   }
 
   function defaultReactionOptions(): readonly CombatReactionPayload["type"][] {
+    if (view?.mode === "DP") {
+      return ["PASS", "DEFEND", "DODGE", "COVER"];
+    }
     if (props.system === "COC7") {
       return props.canCounter ? ["PASS", "DODGE", "COUNTER"] : ["PASS", "DODGE"];
     }
@@ -478,7 +515,7 @@ export default function CombatBoard(props: Props) {
     const options = reactionOptionsFor(targetIdValue);
     const existing = reactionDrafts[targetIdValue];
     if (existing !== undefined && options.includes(existing.type)) return existing;
-    return { type: options[0] ?? "PASS", skill: "" };
+    return { type: options[0] ?? "PASS", skill: "", dpDice: 1, coverTargetId: "" };
   }
 
   function reactionSkillOptionsFor(targetIdValue: string, type: CombatReactionPayload["type"]): readonly SkillOption[] {
@@ -486,6 +523,8 @@ export default function CombatBoard(props: Props) {
       const ids = props.system === "TOUHOU" ? ["DODGE", "GRAZE"] : ["DODGE"];
       return props.skillOptions.filter((option) => ids.includes(option.id));
     }
+    if (type === "COVER") return props.skillOptions.filter((option) => option.id === "DODGE");
+    if (type === "RESIST") return props.skillOptions.filter((option) => option.id === "RESIST");
     if (type === "COUNTER") {
       const ids =
         props.system === "COC7"
@@ -535,13 +574,78 @@ export default function CombatBoard(props: Props) {
       setError("当前没有可操作单位");
       return;
     }
-    if (action.kind === "DANMAKU" && (action.targetId ?? "").length === 0) {
+    if (
+      action.kind === "DANMAKU" &&
+      action.dpAction !== "DANMAKU" &&
+      (action.targetId ?? "").length === 0
+    ) {
       setError("请先选择攻击目标");
       return;
     }
     setError(null);
     socket.emit("combat:action", { combatId: props.combatId, actorId: selectedActor.id, action }, (result: Ack) => {
       if (result.ok === false) setError(result.error ?? "行动失败");
+    });
+  }
+
+  function emitDpDeclare(participantIdValue: string, value: number): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新后重试。");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "combat:dp-declare",
+      { combatId: props.combatId, participantId: participantIdValue, value },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "声明 DP 失败");
+      }
+    );
+  }
+
+  function emitDpAction(): void {
+    if (selectedActor === null) return;
+    if (dpAction === "DANMAKU") {
+      emitAction({
+        kind: "DANMAKU",
+        dpAction: "DANMAKU",
+        danmakuDpReduction: dpDanmakuReduction,
+        danmakuBaseDamage: dpDanmakuDamage
+      });
+      return;
+    }
+    if (dpAction === "RANGED") {
+      emitAction({
+        kind: "DANMAKU",
+        dpAction: "RANGED",
+        targetId: activeTargetId,
+        skill: "DANMAKU",
+        dpDice,
+        damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined
+      });
+      return;
+    }
+    if (dpAction === "CHASE") {
+      emitAction({
+        kind: "DANMAKU",
+        dpAction: "CHASE",
+        targetId: activeTargetId,
+        dpTargetIds: activeTargetId.length > 0 ? [activeTargetId] : [],
+        skill: "DANMAKU",
+        dpEscalation,
+        damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined
+      });
+      return;
+    }
+    emitAction({
+      kind: "DANMAKU",
+      dpAction: "MELEE",
+      targetId: activeTargetId,
+      skill: "MELEE",
+      dpDice,
+      dpSecondaryDice,
+      damageTrainingId: dpTrainingId.length > 0 ? dpTrainingId : "FEAT"
     });
   }
 
@@ -647,6 +751,15 @@ export default function CombatBoard(props: Props) {
     const draft = reactionDraftFor(targetIdValue);
     let skillValue = draft.skill;
     if (draft.type === "DODGE" && skillValue.length === 0) skillValue = "DODGE";
+    if (draft.type === "COVER" && skillValue.length === 0) skillValue = "DODGE";
+    if ((draft.type === "DEFEND" || draft.type === "DODGE") && skillValue.length === 0) {
+      skillValue = draft.type === "DEFEND" ? "MELEE" : "DODGE";
+    }
+    if (draft.type === "RESIST" && skillValue.length === 0) skillValue = "RESIST";
+    if (draft.type === "COVER" && draft.coverTargetId.length === 0) {
+      setError("掩护需要选择队友");
+      return;
+    }
     if (draft.type === "COUNTER") {
       const options = reactionSkillOptionsFor(targetIdValue, "COUNTER");
       if (skillValue.length === 0) skillValue = options[0]?.id ?? "";
@@ -661,7 +774,13 @@ export default function CombatBoard(props: Props) {
       {
         combatId: props.combatId,
         targetId: targetIdValue,
-        reaction: { type: draft.type, skill: skillValue.length > 0 ? skillValue : undefined }
+        reaction: {
+          type: draft.type,
+          skill: skillValue.length > 0 ? skillValue : undefined,
+          dpDice: view?.mode === "DP" ? Math.max(1, Math.floor(draft.dpDice) || 1) : undefined,
+          coverTargetId:
+            draft.type === "COVER" && draft.coverTargetId.length > 0 ? draft.coverTargetId : undefined
+        }
       },
       (result: Ack) => {
         if (result.ok === false) {
@@ -1190,6 +1309,47 @@ export default function CombatBoard(props: Props) {
                           ))}
                         </select>
                       )}
+                      {view?.mode === "DP" &&
+                      (draft.type === "DODGE" || draft.type === "DEFEND" || draft.type === "RESIST") ? (
+                        <label className="flex items-center gap-1.5 text-[11px] text-white/60">
+                          骰数
+                          <input
+                            type="number"
+                            min={1}
+                            max={3}
+                            value={draft.dpDice}
+                            onChange={(event) =>
+                              setReactionDraft(pending.targetId, {
+                                dpDice: Math.max(1, Math.min(3, Math.floor(Number(event.target.value) || 1)))
+                              })
+                            }
+                            className={inputClass + " w-16"}
+                          />
+                        </label>
+                      ) : null}
+                      {view?.mode === "DP" && draft.type === "COVER" ? (
+                        <select
+                          value={draft.coverTargetId}
+                          onChange={(event) =>
+                            setReactionDraft(pending.targetId, { coverTargetId: event.target.value })
+                          }
+                          className={inputClass}
+                        >
+                          <option value="">选择要掩护的队友</option>
+                          {participants
+                            .filter(
+                              (item) =>
+                                item.defeated === false &&
+                                item.id !== pending.targetId &&
+                                item.id !== pending.actorId
+                            )
+                            .map((item) => (
+                              <option key={item.id} value={item.id}>
+                                {item.name}
+                              </option>
+                            ))}
+                        </select>
+                      ) : null}
                       <button
                         type="button"
                         onClick={() => submitReaction(pending.targetId)}
@@ -1214,6 +1374,66 @@ export default function CombatBoard(props: Props) {
             }).join("；")}
           </p>
         )}
+
+        {view?.mode === "DP" && view.phase === "DP_DECLARATION" ? (
+          <section className="rounded-xl border border-sakura-500/30 bg-sakura-500/5 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h3 className="text-sm font-medium text-sakura-200">DP 宣言 · 第 {view.round} 轮</h3>
+              <span className="text-[11px] text-white/45">声明值越高越先行动；不得超过当前 DP</span>
+            </div>
+            <div className="mt-3 flex flex-col gap-2">
+              {alive.map((item) => {
+                const declared = dpDeclared[item.id];
+                const canDeclare = isControlled(item) && declared === undefined;
+                return (
+                  <div
+                    key={item.id}
+                    className="flex flex-wrap items-center gap-2 rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2"
+                  >
+                    <span className="text-xs text-white/75">{item.name}</span>
+                    <span className="font-mono text-[11px] text-white/45">DP {item.dp ?? 0}</span>
+                    {declared !== undefined ? (
+                      <span className="ml-auto rounded bg-emerald-400/15 px-2 py-0.5 text-[11px] text-emerald-200">
+                        已声明 {declared}
+                      </span>
+                    ) : canDeclare ? (
+                      <span className="ml-auto flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={item.dp ?? 0}
+                          value={dpDeclareDraft[item.id] ?? item.dp ?? 0}
+                          onChange={(event) =>
+                            setDpDeclareDraft((prev) => ({
+                              ...prev,
+                              [item.id]: Math.max(
+                                0,
+                                Math.min(item.dp ?? 0, Math.floor(Number(event.target.value) || 0))
+                              )
+                            }))
+                          }
+                          className={inputClass + " w-24"}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => emitDpDeclare(item.id, dpDeclareDraft[item.id] ?? item.dp ?? 0)}
+                          className="rounded-lg bg-sakura-500 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-sakura-400"
+                        >
+                          声明
+                        </button>
+                      </span>
+                    ) : (
+                      <span className="ml-auto text-[11px] text-white/35">等待对方声明</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            {dpCurrentActor === null && dpDeclarers.length === 0 ? (
+              <p className="mt-2 text-[11px] text-white/40">全部单位已声明，正在进入行动阶段…</p>
+            ) : null}
+          </section>
+        ) : null}
 
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
           <h3 className="text-sm font-medium text-white/80">行动</h3>
@@ -1250,7 +1470,145 @@ export default function CombatBoard(props: Props) {
                   </select>
                 ) : null}
               </div>
-              <div className="grid gap-2 sm:grid-cols-3">
+              {view?.mode === "DP" ? (
+                <div className="rounded-lg border border-sakura-500/30 bg-sakura-500/5 p-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-[11px] text-sakura-200">DP 行动（1 骰 = 1 DP × 规则包单价）</span>
+                    <span className="font-mono text-[11px] text-white/50">DP {selectedActor.dp ?? 0}</span>
+                  </div>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-4">
+                    <label className="flex flex-col gap-1.5">
+                      <span className="text-[11px] text-white/40">行动</span>
+                      <select
+                        value={dpAction}
+                        onChange={(event) =>
+                          setDpAction(event.target.value as "DANMAKU" | "RANGED" | "CHASE" | "MELEE")
+                        }
+                        className={inputClass}
+                      >
+                        <option value="DANMAKU">弹幕（全体，固定 DP）</option>
+                        <option value="RANGED">射击</option>
+                        <option value="CHASE">追击</option>
+                        <option value="MELEE">近战</option>
+                      </select>
+                    </label>
+                    {dpAction === "DANMAKU" ? (
+                      <>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">回避消耗 DP</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={dpDanmakuReduction}
+                            onChange={(event) => setDpDanmakuReduction(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">未回避固定伤害</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={dpDanmakuDamage}
+                            onChange={(event) => setDpDanmakuDamage(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+                            className={inputClass}
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">目标</span>
+                        <select
+                          value={activeTargetId}
+                          onChange={(event) => setTargetId(event.target.value)}
+                          className={inputClass}
+                        >
+                          {targetOptions.map((item) => (
+                            <option key={item.id} value={item.id}>{item.name}</option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    {dpAction === "RANGED" || dpAction === "MELEE" ? (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">
+                          {dpAction === "MELEE" ? "接近判定骰数" : "判定骰数"}
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={dpDice}
+                          onChange={(event) => setDpDice(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                          className={inputClass}
+                        />
+                      </label>
+                    ) : null}
+                    {dpAction === "MELEE" ? (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">命中判定骰数</span>
+                        <input
+                          type="number"
+                          min={1}
+                          max={99}
+                          value={dpSecondaryDice}
+                          onChange={(event) => setDpSecondaryDice(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                          className={inputClass}
+                        />
+                      </label>
+                    ) : null}
+                    {dpAction === "CHASE" ? (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">追击强化（每 +2 DP 达成 +10）</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={dpEscalation}
+                          onChange={(event) => setDpEscalation(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+                          className={inputClass}
+                        />
+                      </label>
+                    ) : null}
+                    {dpAction === "RANGED" || dpAction === "CHASE" ? (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">能力（LvD 伤害）</span>
+                        <select value={dpAbilityId} onChange={(event) => setDpAbilityId(event.target.value)} className={inputClass}>
+                          <option value="">使用卡面伤害</option>
+                          {dpAbilityOptions.map(([id, level]) => (
+                            <option key={id} value={id}>{id} Lv{level}</option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
+                    {dpAction === "MELEE" ? (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">锻炼（LvD 伤害）</span>
+                        <select value={dpTrainingId} onChange={(event) => setDpTrainingId(event.target.value)} className={inputClass}>
+                          <option value="FEAT">FEAT（特技·锻炼）</option>
+                          {dpAbilityOptions
+                            .filter(([id]) => id !== "FEAT")
+                            .map(([id, level]) => (
+                              <option key={id} value={id}>{id} Lv{level}</option>
+                            ))}
+                        </select>
+                      </label>
+                    ) : null}
+                  </div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={emitDpAction}
+                      className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400"
+                    >
+                      发动 DP 行动
+                    </button>
+                    <span className="text-[11px] text-white/40">
+                      弹幕无判定打全体；射击 / 追击 / 近战由目标选择回避或防御。
+                    </span>
+                  </div>
+                </div>
+              ) : null}
+              <div className={"grid gap-2 sm:grid-cols-3" + (view?.mode === "DP" ? " hidden" : "")}>
                 <label className="flex flex-col gap-1.5 sm:col-span-2">
                   <span className="text-[11px] text-white/40">目标</span>
                   <select value={activeTargetId} onChange={(event) => setTargetId(event.target.value)} className={inputClass}>
@@ -1333,24 +1691,26 @@ export default function CombatBoard(props: Props) {
                 ) : null}
               </div>
               <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  disabled={attackSkills.length === 0}
-                  onClick={() =>
-                    emitAction({
-                      kind: "DANMAKU",
-                      targetId: activeTargetId,
-                      skill: activeSkill,
-                      damage: activeAttackDamage,
-                      rangeBand: activeAttackBandIndex,
-                      shots: activeAttackShotCount,
-                      pointBlank
-                    })
-                  }
-                  className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
-                >
-                  攻击
-                </button>
+                {view?.mode === "DP" ? null : (
+                  <button
+                    type="button"
+                    disabled={attackSkills.length === 0}
+                    onClick={() =>
+                      emitAction({
+                        kind: "DANMAKU",
+                        targetId: activeTargetId,
+                        skill: activeSkill,
+                        damage: activeAttackDamage,
+                        rangeBand: activeAttackBandIndex,
+                        shots: activeAttackShotCount,
+                        pointBlank
+                      })
+                    }
+                    className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
+                  >
+                    攻击
+                  </button>
+                )}
                 {props.system === "COC7" && selectedActorHasBrawl ? (
                   <>
                     <select

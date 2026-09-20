@@ -2668,6 +2668,26 @@ function resolveMagicTargets(
  * - 普通攻击：单个目标；
  * - 敌对法术：单体目标；群体法术（target=ALL）返回全部命中目标，保证 AOE 每个人都要应对。
  */
+/** DP 掩护候选：目标 + 目标的同阵营存活队友（队友可声明 COVER 代替承受伤害）。 */
+function withDpCoverAllies(
+  state: CombatState,
+  actor: CombatParticipantState,
+  targetIds: readonly string[]
+): string[] {
+  const result = new Set<string>();
+  for (const id of targetIds) {
+    const target = findParticipant(state, id);
+    if (target === undefined || target.defeated) continue;
+    result.add(target.id);
+    if (target.faction === undefined) continue;
+    for (const participant of state.participants) {
+      if (participant.defeated || participant.id === actor.id) continue;
+      if (participant.faction === target.faction) result.add(participant.id);
+    }
+  }
+  return [...result];
+}
+
 export function reactionTargetIdsForAction(
   pack: CompiledRulePack,
   state: CombatState,
@@ -2678,6 +2698,25 @@ export function reactionTargetIdsForAction(
   const requestedTargetId = action.targetId ?? null;
 
   if (action.kind === "DANMAKU") {
+    // DP 弹幕：无判定打全体，所有敌对单位都要决定是否消耗 DP 回避。
+    if (action.dpAction === "DANMAKU") {
+      return state.participants
+        .filter((participant) => participant.defeated === false && participant.faction !== actor.faction)
+        .map((participant) => participant.id);
+    }
+    // DP 追击：每个目标都要决定应对；目标队友可声明掩护。
+    if (action.dpAction === "CHASE") {
+      const ids = (action.dpTargetIds ?? (requestedTargetId === null ? [] : [requestedTargetId])).filter((id) => {
+        const target = findParticipant(state, id);
+        return target !== undefined && target.defeated === false && target.id !== actor.id;
+      });
+      return withDpCoverAllies(state, actor, ids);
+    }
+    // DP 射击 / 近战：目标 + 目标队友的掩护窗口。
+    if (action.dpAction === "RANGED" || action.dpAction === "MELEE") {
+      if (requestedTargetId === null || requestedTargetId === actor.id) return [];
+      return withDpCoverAllies(state, actor, [requestedTargetId]);
+    }
     if (action.routine !== undefined && action.routine.length > 0) {
       const ids = new Set<string>();
       for (const step of action.routine) {

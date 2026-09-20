@@ -273,8 +273,19 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
      对抗攻击达成值；成功由掩护者代替承受伤害，失败原目标无减伤承受；同一掩护者一轮一次
      （`coverUsedThisRound`，`beginDpRound` 重置）。作用于射击 / 追击 / 近战；能力伤害走抵抗流程。
      前卫位置暂由 KP / 后续位置模型约束。
-2. ⏳ 接线：`setup.ts` / `socket/combat.ts` 增加 DP 分支（回合一 → 宣言 → 逐个行动 →
-   反应窗口 → 轮转），并把 TOUHOU 的 `combat.mode` 切到 `"DP"`、迁移现有东方战斗测试。
+2. ✅ 接线：`setup.ts` / `socket/combat.ts` 增加 DP 分支（回合 → 宣言 → 逐个行动 → 反应窗口 → 轮转），
+   TOUHOU 的 `combat.mode` 已切到 `"DP"`：
+   - 规则包 `touhou-ext.combat.mode = "DP"`（`dp-economy.test.ts` 锁定）。
+   - `setup.ts` 创建 DP 战斗时调用 `beginDpRound`，`dbPhase` 把 `DP_DECLARATION` 映射为 DB 的 `ACTION`。
+   - socket 新增 `combat:dp-declare`（KP 可代任意单位声明）；`tryResolveCombat` 在 DP 下每次只结算
+     当前行动者并调用 `resolveDpTurn` 轮转；`combat:action` 支持 `dpAction` / `dpDice` /
+     `dpSecondaryDice` / `dpTargetIds` / `dpEscalation` / 伤害公式字段。
+   - `reactionTargetIdsForAction` 对 DP 射击 / 追击 / 近战额外返回目标队友，作为掩护窗口；
+     `combat:reaction` 支持 `dpDice` 与 `coverTargetId`；应对选项 `PASS/DEFEND/DODGE/COVER`（能力另加 `RESIST`）。
+   - `CombatView` 新增 `dp`（已声明 / 顺序 / 当前行动者）与 `participant.abilityLevels`。
+   - `CombatBoard` 新增 DP 宣言面板、DP 行动面板（弹幕 / 射击 / 追击 / 近战 + 骰数 + 能力 / 锻炼）、
+     应对窗口 DP 骰数与掩护目标选择。
+   - 新增 web 回归脚本 `verify:dp-combat`。
 3. SC 宣言流程：DB 记录「章节内可用 / 已用 SC」，战斗创建时双方提交选牌，服务端按人数校验上限。
 4. SC 完整规则：LSC、任意时机展开、符卡战胜负条件。
 

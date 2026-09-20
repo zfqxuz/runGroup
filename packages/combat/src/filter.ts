@@ -76,6 +76,8 @@ export interface ParticipantView {
   readonly atbMax: number;
   readonly speed: number;
   readonly skills: Readonly<Record<string, number>> | null;
+  /** 千幻抄能力等级（类别 id -> Lv）；仅对可见单位下发，DP 伤害公式需要。 */
+  readonly abilityLevels: Readonly<Record<string, number>> | null;
 }
 
 export interface ChaseParticipantView {
@@ -100,6 +102,15 @@ export interface ChaseView {
   readonly ending: string | null;
 }
 
+export interface DpView {
+  /** participantId -> 本轮声明的 DP。 */
+  readonly declared: Readonly<Record<string, number>>;
+  /** 本轮行动顺序（按声明 DP 从高到低）。 */
+  readonly order: readonly string[];
+  /** 当前正在行动的 participantId；宣言阶段为 null。 */
+  readonly currentActorId: string | null;
+}
+
 export interface CombatView {
   readonly id: string;
   readonly tick: number;
@@ -109,6 +120,8 @@ export interface CombatView {
   readonly mode: CombatState["mode"];
   readonly initiativeOrder: readonly string[];
   readonly activeActorId: string | null;
+  /** DP 模式的一轮状态；其他模式为 null。 */
+  readonly dp: DpView | null;
   readonly participants: readonly ParticipantView[];
   readonly log: readonly LogEntry[];
   readonly pendingIds: readonly string[];
@@ -226,7 +239,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       atbValue: participant.atbValue,
       atbMax: participant.atbMax,
       speed: participant.speed,
-      skills: showNumbers ? participant.skills : null
+      skills: showNumbers ? participant.skills : null,
+      abilityLevels: showNumbers ? { ...(participant.abilityLevels ?? {}) } : null
     };
   });
 
@@ -240,6 +254,11 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
     return { ...entry, text };
   });
 
+  const dpCurrentActorId =
+    state.mode === "DP" && state.phase === "AWAITING_ACTION"
+      ? state.initiativeOrder[state.activeIndex] ?? null
+      : null;
+
   return {
     id: state.id,
     tick: state.tick,
@@ -248,7 +267,18 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
 
     mode: state.mode,
     initiativeOrder: [...state.initiativeOrder],
-    activeActorId: state.mode === "INITIATIVE" ? state.initiativeOrder[state.activeIndex] ?? null : null,
+    activeActorId:
+      state.mode === "INITIATIVE"
+        ? state.initiativeOrder[state.activeIndex] ?? null
+        : dpCurrentActorId,
+    dp:
+      state.mode === "DP"
+        ? {
+            declared: { ...(state.dp?.declared ?? {}) },
+            order: [...state.initiativeOrder],
+            currentActorId: dpCurrentActorId
+          }
+        : null,
     participants,
     log,
     pendingIds: Object.keys(state.pending),

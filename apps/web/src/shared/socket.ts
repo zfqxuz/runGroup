@@ -130,11 +130,33 @@ export interface CombatActionPayload {
   readonly status?: { readonly key: string; readonly stacks: number };
   /** 擦弹点消费：随 PASS 行动提交。 */
   readonly grazeSpend?: "MP" | "MELEE_DAMAGE" | "RANGED_DAMAGE";
+  /** DP（千幻抄）行动种类：弹幕 / 射击 / 追击 / 近战。 */
+  readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE";
+  readonly dpDice?: number;
+  readonly dpSecondaryDice?: number;
+  readonly dpTargetIds?: readonly string[];
+  readonly dpEscalation?: number;
+  readonly danmakuDpReduction?: number;
+  readonly danmakuBaseDamage?: number;
+  readonly damageAbilityId?: string;
+  readonly damageTrainingId?: string;
+  readonly damageWeaponSkill?: string;
 }
 
 export interface CombatReactionPayload {
-  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "FLEE";
+  readonly type: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "RESIST" | "COVER" | "FLEE";
   readonly skill?: string;
+  /** DP 模式：本次应对 / 抵抗 / 掩护消费的骰数。 */
+  readonly dpDice?: number;
+  /** DP 掩护：本次掩护的队友 id。 */
+  readonly coverTargetId?: string;
+}
+
+export interface CombatDpDeclarePayload {
+  readonly combatId: string;
+  readonly participantId?: string;
+  /** 本轮声明的 DP；不得超过当前 DP。 */
+  readonly value: number;
 }
 
 export interface CombatChaseMovePayload {

@@ -2,7 +2,10 @@ import type { Server as SocketServer, Socket } from "socket.io";
 import {
   advanceToNextEvent,
   applyForcedSkips,
+  beginDpRound,
   buildInitiativeOrder,
+  currentDpActorId,
+  declareDp,
   findParticipant,
   chaseAttackIssue,
   chaseCurrentActorId,
@@ -20,6 +23,7 @@ import {
   readyParticipants,
   resolveChaseAttack,
   thrownRangeFeet,
+  resolveDpTurn,
   resolveInitiativeTurn,
   resolvePending,
   setInitiativeOrder,
@@ -36,7 +40,7 @@ import {
   viewForUser,
   type CombatRuntime
 } from "@/server/combat/runtime";
-import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, reactionTypesForAttack, validateCombatAction, type WeaponLike } from "@/server/combat/options";
+import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, dpReactionTypesForParticipant, reactionTypesForAttack, validateCombatAction, type WeaponLike } from "@/server/combat/options";
 import { consumeItemUse, prepareItemAction, type CombatItemOption } from "@/server/combat/items";
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
 import { loadCombatDistance } from "@/server/combat/range";
@@ -217,6 +221,18 @@ export async function tryResolveCombat(
   if (runtime.state.chase !== null && runtime.state.chase.status === "ACTIVE") return false;
   if (runtime.pendingReactions.size > 0) return false;
   applyForcedSkips(runtime.state);
+
+  if (runtime.pack.combat.mode === "DP") {
+    // DP：宣言阶段等待所有单位声明；行动阶段每次只结算当前行动者的一项行动。
+    if (runtime.state.phase !== "AWAITING_ACTION") return false;
+    const dpActorId = currentDpActorId(runtime.state);
+    if (dpActorId === null) return false;
+    if (runtime.state.pending[dpActorId] === undefined) return false;
+    resolveDpTurn(runtime.pack, runtime.state, runtime.reactions);
+    runtime.reactions = {};
+    await persistAndBroadcast(io, runtime);
+    return true;
+  }
 
   if (runtime.pack.combat.mode === "INITIATIVE") {
     const actorId = currentActorId(runtime.state);
@@ -400,7 +416,23 @@ async function handleAction(
     grazeSpend:
       raw.grazeSpend === "MP" || raw.grazeSpend === "MELEE_DAMAGE" || raw.grazeSpend === "RANGED_DAMAGE"
         ? raw.grazeSpend
-        : undefined
+        : undefined,
+    // DP（千幻抄）：行动种类、骰数与目标由客户端声明，服务端仍会夹取骰数上限。
+    dpAction:
+      raw.dpAction === "DANMAKU" || raw.dpAction === "RANGED" || raw.dpAction === "CHASE" || raw.dpAction === "MELEE"
+        ? raw.dpAction
+        : undefined,
+    dpDice: asNumber(raw.dpDice),
+    dpSecondaryDice: asNumber(raw.dpSecondaryDice),
+    dpTargetIds: Array.isArray(raw.dpTargetIds)
+      ? raw.dpTargetIds.filter((id): id is string => typeof id === "string")
+      : undefined,
+    dpEscalation: asNumber(raw.dpEscalation),
+    danmakuDpReduction: asNumber(raw.danmakuDpReduction),
+    danmakuBaseDamage: asNumber(raw.danmakuBaseDamage),
+    damageAbilityId: asString(raw.damageAbilityId),
+    damageTrainingId: asString(raw.damageTrainingId),
+    damageWeaponSkill: asString(raw.damageWeaponSkill)
   };
 
   // U-6：地图上有双方 Token 时，由服务端按实际英尺距离覆盖距离档与近距离奖励。
@@ -658,9 +690,14 @@ async function handleAction(
           ? ["PASS", "DODGE", "FLEE"]
           : ["PASS", "DODGE"]
         : undefined;
+    const dpOptions =
+      runtime.pack.combat.mode === "DP"
+        ? dpReactionTypesForParticipant(action.kind === "MAGIC" || action.kind === "ITEM")
+        : undefined;
     for (const targetId of reactionTargetIds) {
       runtime.pendingReactions.set(targetId, action.actorId);
       const options =
+        dpOptions ??
         magicOptions ??
         allowedReactionTypesForParticipant(runtime.pack, runtime.attackSkills, targetId, canFlee, action.skill);
       await emitReactionRequest(io, runtime, action.actorId, targetId, options);
@@ -723,10 +760,23 @@ async function handleReaction(
     (pendingAttackSkill.startsWith("FIREARMS_") || pendingAttackSkill === "THROW");
   const seekCoverAllowed = pendingIsCoc7Ranged && pendingAction?.kind === "DANMAKU";
   const allowedTypes = allowedReactionTypes(runtime.pack);
+  const isDpReaction = runtime.pack.combat.mode === "DP";
   if (raw.type === "SEEK_COVER") {
     if (seekCoverAllowed === false) {
       ack({ ok: false, error: "本次攻击不能寻找掩体" });
       return;
+    }
+  } else if (raw.type === "RESIST" || raw.type === "COVER") {
+    if (isDpReaction === false) {
+      ack({ ok: false, error: "本规则包不支持该应对" });
+      return;
+    }
+    if (raw.type === "COVER") {
+      const coverTargetId = asString(raw.coverTargetId);
+      if (coverTargetId === undefined || coverTargetId === input.targetId) {
+        ack({ ok: false, error: "掩护需要指定队友" });
+        return;
+      }
     }
   } else if (canFleeReaction === false && allowedTypes.includes(raw.type) === false) {
     ack({ ok: false, error: "本规则包不支持该应对" });
@@ -736,7 +786,7 @@ async function handleReaction(
   if (fleeAfterResolution) {
     runtime.pendingFlee = { targetId: input.targetId, actorId: pendingActorId ?? "" };
   }
-  let reactionType: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" =
+  let reactionType: "PASS" | "DEFEND" | "DODGE" | "COUNTER" | "SEEK_COVER" | "RESIST" | "COVER" =
     raw.type === "FLEE" ? "PASS" : raw.type;
   let reactionSkill = asString(raw.skill);
   if (fleeAfterResolution) {
@@ -804,9 +854,14 @@ async function handleReaction(
     }
   }
   runtime.pendingReactions.delete(input.targetId);
+  const dpDice = asNumber(raw.dpDice);
   runtime.reactions[input.targetId] = {
     type: reactionType,
     skill: reactionSkill,
+    ...(dpDice === undefined ? {} : { dpDice: Math.max(1, Math.floor(dpDice)) }),
+    ...(reactionType === "COVER" && asString(raw.coverTargetId) !== undefined
+      ? { coverTargetId: asString(raw.coverTargetId) as string }
+      : {}),
     ...(counterDamage === undefined ? {} : { damage: counterDamage }),
     ...(counterWeaponName === undefined ? {} : { weaponName: counterWeaponName })
   };
@@ -1256,6 +1311,56 @@ async function handleReadyWeapon(
   ack({ ok: true });
 }
 
+/** DP 宣言阶段：找出该用户还能声明的单位；KP 可代任意未声明单位操作。 */
+function controlledDpDeclarerId(runtime: CombatRuntime, userId: string): string | null {
+  const isKp = runtime.roles.get(userId) === "KP";
+  for (const participant of runtime.state.participants) {
+    if (participant.defeated) continue;
+    if (runtime.state.dp?.declared[participant.id] !== undefined) continue;
+    if (isKp || canControl(runtime, userId, participant.id)) return participant.id;
+  }
+  return null;
+}
+
+async function handleDpDeclare(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as { combatId?: unknown; participantId?: unknown; value?: unknown };
+  if (userId === null || typeof input.combatId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.pack.combat.mode !== "DP") {
+    ack({ ok: false, error: "当前战斗不是 DP 模式" });
+    return;
+  }
+  const isKp = runtime.roles.get(userId) === "KP";
+  const participantId =
+    typeof input.participantId === "string"
+      ? input.participantId
+      : controlledDpDeclarerId(runtime, userId);
+  if (participantId === null || (isKp === false && canControl(runtime, userId, participantId) === false)) {
+    ack({ ok: false, error: "你不能操控这个单位" });
+    return;
+  }
+  const value = typeof input.value === "number" && Number.isFinite(input.value) ? Math.floor(input.value) : 0;
+  if (declareDp(runtime.state, participantId, value) === false) {
+    ack({ ok: false, error: "现在不能声明 DP（阶段或单位不合法）" });
+    return;
+  }
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
 export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   socket.on("combat:join", (combatId: unknown, ack: AckCallback<CombatJoinAck>) => {
     void handleJoin(socket, combatId, ack);
@@ -1265,6 +1370,9 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:reaction", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleReaction(io, socket, payload, ack);
+  });
+  socket.on("combat:dp-declare", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleDpDeclare(io, socket, payload, ack);
   });
   socket.on("combat:chase-move", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleChaseMove(io, socket, payload, ack);

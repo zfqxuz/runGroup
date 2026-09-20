@@ -4,6 +4,7 @@ import {
   addParticipant,
   persistableConditions,
   advanceToNextEvent,
+  beginDpRound,
   beginInitiativeRound,
   createCombat,
   nextRollRng,
@@ -323,7 +324,7 @@ function buildNpcInit(
 
 function dbPhase(state: CombatState): "ATB_CHARGING" | "ACTION" | "RESOLUTION" | "ENDED" {
   if (state.phase === "ENDED") return "ENDED";
-  if (state.phase === "AWAITING_ACTION") return "ACTION";
+  if (state.phase === "AWAITING_ACTION" || state.phase === "DP_DECLARATION") return "ACTION";
   return "ATB_CHARGING";
 }
 
@@ -668,6 +669,7 @@ export async function createCombatRecord(
     }
   }
   if (pack.combat.mode === "INITIATIVE") beginInitiativeRound(pack, state);
+  else if (pack.combat.mode === "DP") beginDpRound(pack, state);
   else advanceToNextEvent(pack, state);
   const created = await prisma.$transaction(async (tx) => {
     const combat = await tx.combat.create({
