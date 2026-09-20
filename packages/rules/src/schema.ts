@@ -114,6 +114,10 @@ export const RaceSchema = z.object({
   abilities: z.array(RaceAbilitySchema).default([]),
   /** 先天元素亲和 / 抗性；用于属性相克判定。 */
   elements: z.array(z.string()).default([]),
+  /** 种族免费获得的能力等级：categoryId -> Lv（如妖怪免费 3 级妖术）。 */
+  freeAbilityLevels: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** 种族禁止习得的能力类别（如人类不能学妖力 / 妖术，属性使组合例外）。 */
+  disallowedAbilityCategories: z.array(z.string()).default([]),
   /** 旧字段：仍被 UI/其他逻辑读取的扁平 flag 列表。 */
   flags: z.array(z.string()).default([])
 });
@@ -354,6 +358,17 @@ export const ElementRulesSchema = z.object({
   sameElementResistMod: ExprSchema.default("3")
 });
 
+/** 能力变体：同一能力类别的替代习得路径（如神术的术式版、妖术的妖弹化）。 */
+export const AbilityVariantSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** 逐级习得消费点；语义与类别 costTable 相同（超出取最后一档）。 */
+  costTable: z.array(z.number().int().nonnegative()).min(1),
+  /** 不可用于的攻击种类（如术式版不能射击 / 追击 / 弹幕）。 */
+  restrictedAttackKinds: z.array(z.enum(["DANMAKU", "RANGED", "CHASE", "MELEE"])).default([])
+});
+
 /** 千幻抄能力类别：神术·阴阳术 / 魔法 / 属性使 / 妖力与妖术 / 特技。 */
 export const AbilityCategorySchema = z.object({
   id: z.string(),
@@ -364,7 +379,53 @@ export const AbilityCategorySchema = z.object({
   /** 逐级习得消费点：第 n 级取 costTable[n-1]，超出取最后一档。 */
   costTable: z.array(z.number().int().nonnegative()).min(1),
   /** 每级可习得法术数；0 表示不限。 */
-  spellsPerLevel: z.number().int().nonnegative().default(0)
+  spellsPerLevel: z.number().int().nonnegative().default(0),
+  /** 替代习得路径；key 为 variant id（如 UTSUSHI / YOUJUTSU_DANMAKU）。 */
+  variants: z.record(z.string(), AbilityVariantSchema).default({})
+});
+
+/**
+ * 常时被动效果（妖力 / 常时特技 / 种族常时能力）。
+ *
+ * 表达式可引用变量 `abilityLv`（所属能力等级），由规则层在战斗准备时求值。
+ * 属性 / 技能修正直接累加到参战单位；衍生值与战斗加值由战斗层读取。
+ */
+export const AbilityPassiveSchema = z.object({
+  id: z.string().optional(),
+  name: z.string().optional(),
+  description: z.string().optional(),
+  /** 常时属性修正：属性 key -> 表达式。 */
+  attributeMods: z.record(z.string(), ExprSchema).default({}),
+  /** 常时技能修正：技能 id -> 表达式。 */
+  skillMods: z.record(z.string(), ExprSchema).default({}),
+  /** 衍生值修正：maxHp / maxMp / maxDp / maxSan 等。 */
+  derivedMods: z.record(z.string(), ExprSchema).default({}),
+  /** 攻击伤害加值（作用于 DP 伤害结算）。 */
+  damageBonus: ExprSchema.default("0"),
+  /** 应对检定（回避 / 防御 / 掩护 / 抵抗）达成值加值。 */
+  reactionBonus: ExprSchema.default("0"),
+  /** 攻击（射击 / 近战 / 能力）达成值加值。 */
+  accuracyBonus: ExprSchema.default("0"),
+  /** 移动速度加值（m/s）。 */
+  movementBonus: ExprSchema.default("0")
+});
+
+/** 具体能力条目（妖力 / 特技 / 常时种族能力等），由规则包 / 模组登记。 */
+export const AbilityDefinitionSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** 所属能力类别 id（如 YOURIKI / FEAT）。 */
+  categoryId: z.string(),
+  /** PASSIVE 常时生效；ACTIVE 需主动发动；FREE 由种族 / 剧情免费获得。 */
+  kind: z.enum(["PASSIVE", "ACTIVE", "FREE"]).default("PASSIVE"),
+  /** 习得该条目所需的最低能力等级。 */
+  minLevel: z.number().int().min(1).default(1),
+  description: z.string().optional(),
+  tags: z.array(z.string()).default([]),
+  /** 常时效果；多条按顺序累加。 */
+  passives: z.array(AbilityPassiveSchema).default([]),
+  /** 可学习的法术 id（可选）。 */
+  spellIds: z.array(z.string()).default([])
 });
 
 /** 成长等级表的一行：分配给某分类后获得的成长量。 */
@@ -384,7 +445,9 @@ export const AbilityRulesSchema = z.object({
   /** 车卡能力点预算：grade（A-D）-> 能力点。千幻抄为 30/25/20/15。 */
   pointBudgets: z.record(z.string(), z.number().int().nonnegative()).default({}),
   /** 成长等级表：A-F -> 四类成长量。 */
-  growthRanks: z.record(z.string(), GrowthRankSchema).default({})
+  growthRanks: z.record(z.string(), GrowthRankSchema).default({}),
+  /** 具体能力条目：id -> 定义（妖力 / 特技 / 常时常在能力）。 */
+  definitions: z.record(z.string(), AbilityDefinitionSchema).default({})
 });
 
 export const SpellCardRulesSchema = z.object({
@@ -656,7 +719,10 @@ export type RulePack = z.output<typeof RulePackSchema>;
 export type RulePackInput = z.input<typeof RulePackSchema>;
 export type Element = z.output<typeof ElementSchema>;
 export type ElementRules = z.output<typeof ElementRulesSchema>;
+export type AbilityVariant = z.output<typeof AbilityVariantSchema>;
 export type AbilityCategory = z.output<typeof AbilityCategorySchema>;
+export type AbilityPassive = z.output<typeof AbilityPassiveSchema>;
+export type AbilityDefinition = z.output<typeof AbilityDefinitionSchema>;
 export type AbilityRules = z.output<typeof AbilityRulesSchema>;
 export type GrowthRank = z.output<typeof GrowthRankSchema>;
 export type RaceAbility = z.output<typeof RaceAbilitySchema>;

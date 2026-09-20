@@ -47,6 +47,10 @@ export interface CharacterBackstory {
   readonly companions: readonly BackstoryCompanion[];
   /** 千幻抄能力等级：类别 id -> Lv。 */
   readonly abilities: Readonly<Record<string, number>>;
+  /** 千幻抄能力实例的发动特性值覆盖（如属性使 {知性}/{感觉}）。 */
+  readonly abilityAttributes: Readonly<Record<string, string>>;
+  /** 已习得的常时能力条目 id（妖力 / 特技）。 */
+  readonly abilityDefinitions: readonly string[];
   /** 千幻抄车卡能力等级 A-D。 */
   readonly abilityTier: string | null;
 }
@@ -140,6 +144,15 @@ export function characterBackstoryOf(value: unknown): CharacterBackstory | null 
       }
       return output;
     })(),
+    abilityAttributes: (() => {
+      const raw = recordOf(record.abilityAttributes);
+      const output: Record<string, string> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === "string" && value.trim().length > 0) output[key] = value.trim();
+      }
+      return output;
+    })(),
+    abilityDefinitions: namesOf(record.abilityDefinitions),
     abilityTier: stringOrNull(record.abilityTier),
     spellDetails: arrayOf(record.spellDetails)
       .map((item) => {
@@ -175,6 +188,8 @@ export function characterBackstoryOf(value: unknown): CharacterBackstory | null 
     backstory.spells.length > 0 ||
     backstory.companions.length > 0 ||
     Object.keys(backstory.abilities).length > 0 ||
+    Object.keys(backstory.abilityAttributes).length > 0 ||
+    backstory.abilityDefinitions.length > 0 ||
     backstory.abilityTier !== null;
   return hasAny ? backstory : null;
 }

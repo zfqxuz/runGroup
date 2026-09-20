@@ -51,6 +51,7 @@ import type {
   ActionSubmission,
   CombatMode,
   CombatParticipantState,
+  CombatPassiveMods,
   CombatState,
   LogEntry,
   SummonTemplate
@@ -133,6 +134,8 @@ export interface ParticipantInit {
   readonly abilityLevels?: Readonly<Record<string, number>>;
   /** 能力实例的发动特性值覆盖，例如 { "ELEMENTALIST:FIRE": "dex" }。 */
   readonly abilityAttributes?: Readonly<Record<string, string>>;
+  /** 常时被动加值；由规则层在战斗准备阶段算出。 */
+  readonly passiveMods?: CombatPassiveMods;
   readonly skills?: Record<string, number>;
   /** 该单位允许施放的法术 id。 */
   readonly spells?: readonly string[];
@@ -260,6 +263,12 @@ export function addParticipant(
     abilityLevels: { ...(init.abilityLevels ?? {}) },
     barrier: null,
     abilityAttributes: { ...(init.abilityAttributes ?? {}) },
+    passiveMods: {
+      damageBonus: init.passiveMods?.damageBonus ?? 0,
+      reactionBonus: init.passiveMods?.reactionBonus ?? 0,
+      accuracyBonus: init.passiveMods?.accuracyBonus ?? 0,
+      movementBonus: init.passiveMods?.movementBonus ?? 0
+    },
     mpExhausted: false,
     skills: init.skills ?? {},
     spells: [...(init.spells ?? [])],
@@ -3486,6 +3495,7 @@ function rollAbilityResist(
     ? dpSkillLevel(ctx.pack, target, resist.skill)
     : skillValueOf(ctx.pack, target, resist.skill, attributeValue);
   const base = attributeValue + skill;
+  const reactionBonus = passiveBonus(target, "reactionBonus");
   const targetValue = touhouResistTargetValue(casterLevel, casterAchievement);
   const rng = nextRollRng(ctx.state, `ability-resist:${caster.id}:${target.id}:${spell.id}`);
   let roll = 0;
@@ -3497,17 +3507,17 @@ function rollAbilityResist(
     success = false;
   } else if (resist.dice === "1D100") {
     roll = rollDie(rng, 100);
-    total = base;
-    success = roll <= base;
-    diceText = "1d100=" + roll + " / 目标 " + base;
+    total = base + reactionBonus;
+    success = roll <= total;
+    diceText = "1d100=" + roll + " / 目标 " + total;
   } else if (isDp) {
     roll = dpDice > 0 ? rollDice(parseDice(dpDice + "d6"), rng).total : 0;
-    total = base + roll;
+    total = base + roll + reactionBonus;
     success = total >= targetValue;
     diceText = dpDice + "d6=" + roll + " + " + base + " = " + total + " / 目标 " + targetValue;
   } else {
     roll = rollDice(parseDice("3d6"), rng).total;
-    total = base + roll;
+    total = base + roll + reactionBonus;
     success = total >= targetValue;
     diceText = "3d6=" + roll + " + " + base + " = " + total + " / 目标 " + targetValue;
   }
@@ -3626,6 +3636,7 @@ function resolveAbility(
     modifier = 0;
   }
   const base = attributeValue + level + modifier;
+  const accuracyBonus = passiveBonus(actor, "accuracyBonus");
   const rng = nextRollRng(state, `ability:${actor.id}:${spell.id}`);
   let roll = 0;
   let target = base;
@@ -3634,11 +3645,11 @@ function resolveAbility(
   let diceText = "";
   if (usePercentile) {
     roll = rollDie(rng, 100);
-    success = roll <= base;
-    diceText = "1d100=" + roll + " / 目标 " + base;
+    success = roll <= base + accuracyBonus;
+    diceText = "1d100=" + roll + " / 目标 " + (base + accuracyBonus);
   } else if (isDp) {
     roll = dpDice > 0 ? rollDice(parseDice(dpDice + "d6"), rng).total : 0;
-    achievement = base + roll;
+    achievement = base + roll + accuracyBonus;
     try {
       target = Math.floor(evaluateSource(ctx.pack, activation?.target ?? "12", actor.vars));
     } catch {
@@ -3648,7 +3659,7 @@ function resolveAbility(
     diceText = dpDice + "d6=" + roll + " + " + base + " = " + achievement + " / 目标 " + target;
   } else {
     roll = rollDice(parseDice("3d6"), rng).total;
-    achievement = base + roll;
+    achievement = base + roll + accuracyBonus;
     try {
       target = Math.floor(evaluateSource(ctx.pack, activation?.target ?? "12", actor.vars));
     } catch {
@@ -4040,6 +4051,15 @@ function dpRoll(
   return { dice: count, roll, attribute, skill, base, achievement: base + roll };
 }
 
+/** 常时被动的战斗加值（缺省 0）。 */
+function passiveBonus(
+  participant: CombatParticipantState,
+  key: keyof CombatPassiveMods
+): number {
+  const value = participant.passiveMods?.[key];
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 /** 消耗 DP；不足时记录日志并返回 false。 */
 function spendDp(
   ctx: ResolveContext,
@@ -4085,16 +4105,17 @@ function resolveDpDefense(
       return { success: false, reduction: 0 };
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
-    const success = roll.achievement >= attackAchievement;
+    const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus");
+    const success = reactionAchievement >= attackAchievement;
     const reduction = success ? 0 : dpSkillLevel(ctx.pack, defender, reaction.skill ?? "MELEE") * 2;
     pushLog(ctx.state, {
       kind: "CHECK",
       actorId: defender.id,
       targetId: null,
       text:
-        defender.name + " 防御（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
+        defender.name + " 防御（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + reactionAchievement +
         " / 攻击达成 " + attackAchievement + " → " + (success ? "防御成功" : "防御失败，减伤 " + reduction),
-      data: { rollType: "DP_DEFEND", dice, roll: roll.roll, base: roll.base, achievement: roll.achievement, attackAchievement, success, reduction }
+      data: { rollType: "DP_DEFEND", dice, roll: roll.roll, base: roll.base, achievement: reactionAchievement, attackAchievement, success, reduction }
     });
     return { success, reduction };
   }
@@ -4104,7 +4125,8 @@ function resolveDpDefense(
     return { success: false, reduction: 0 };
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
-  const success = roll.achievement >= attackAchievement;
+  const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus");
+  const success = reactionAchievement >= attackAchievement;
   let grazeGain = 0;
   if (success && ctx.pack.system === "TOUHOU") {
     // 千幻抄 6.26：成功回避射击 / 追击 / 近战可获得擦弹点数（防御不能）。
@@ -4116,10 +4138,10 @@ function resolveDpDefense(
     actorId: defender.id,
     targetId: null,
     text:
-      defender.name + " 回避（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
+      defender.name + " 回避（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + reactionAchievement +
       " / 攻击达成 " + attackAchievement + " → " + (success ? "回避成功" : "回避失败") +
       (grazeGain > 0 ? "，擦弹 +" + grazeGain : ""),
-    data: { rollType: "DP_DODGE", dice, roll: roll.roll, base: roll.base, achievement: roll.achievement, attackAchievement, success, grazeGain }
+    data: { rollType: "DP_DODGE", dice, roll: roll.roll, base: roll.base, achievement: reactionAchievement, attackAchievement, success, grazeGain }
   });
   return { success, reduction: 0 };
 }
@@ -4157,20 +4179,21 @@ function resolveDpCover(
     if (spendDp(ctx, coverer, perDie * dice, "掩护 " + dice + "D") === false) continue;
     coverer.coverUsedThisRound = true;
     const roll = dpRoll(ctx.pack, state, coverer, "dex", reaction.skill ?? "DODGE", dice, salt + ":" + coverer.id);
-    const success = roll.achievement >= attackAchievement;
+    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus");
+    const success = reactionAchievement >= attackAchievement;
     pushLog(state, {
       kind: "CHECK",
       actorId: coverer.id,
       targetId: attacker.id,
       text:
-        coverer.name + " 掩护 " + target.name + "：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
+        coverer.name + " 掩护 " + target.name + "：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + reactionAchievement +
         " / 攻击达成 " + attackAchievement + " → " + (success ? "代替承受伤害" : "掩护失败，原目标无减伤承受"),
       data: {
         rollType: "DP_COVER",
         dice,
         roll: roll.roll,
         base: roll.base,
-        achievement: roll.achievement,
+        achievement: reactionAchievement,
         attackAchievement,
         success,
         coverTargetId: target.id,
@@ -4198,7 +4221,7 @@ function resolveDpRangedAttack(
   const attributeKey = submission.dpAttribute ?? "dex";
   const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged:" + actor.id + ":" + defender.id);
   const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
-  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0);
+  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus");
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
@@ -4238,7 +4261,7 @@ function resolveDpRangedAttack(
   } catch {
     rolled = 0;
   }
-  const enhancedRoll = Math.round((rolled + (enhance?.flatDamage ?? 0)) * (enhance?.damageMultiplier ?? 1));
+  const enhancedRoll = Math.round((rolled + (enhance?.flatDamage ?? 0) + passiveBonus(actor, "damageBonus")) * (enhance?.damageMultiplier ?? 1));
   const total = Math.max(0, enhancedRoll - reduction);
   const armorResult = absorbWithArmor(damageTarget, total);
   const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining, actor);
@@ -4264,7 +4287,7 @@ function rollDpDamage(
   salt: string
 ): number {
   try {
-    return Math.max(0, rollDice(parseDice(expandDamageBonus(expression, actor.damageBonus)), nextRollRng(ctx.state, salt)).total);
+    return Math.max(0, rollDice(parseDice(expandDamageBonus(expression, actor.damageBonus)), nextRollRng(ctx.state, salt)).total + passiveBonus(actor, "damageBonus"));
   } catch {
     return 0;
   }
@@ -4385,7 +4408,7 @@ function resolveDpMelee(
 
   const meleeEnhance = spellcardEnhanceForAttack(ctx.pack, actor, submission.skill ?? "MELEE");
   const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);
-  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0);
+  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus");
   const defenderAvoid = dpSkillLevel(ctx.pack, defender, "DODGE");
   const defenderDanmaku = dpSkillLevel(ctx.pack, defender, "DANMAKU");
   const approachTarget = dpAttribute(ctx.pack, defender, "str") + Math.max(defenderAvoid, defenderDanmaku + 15);
@@ -4402,19 +4425,20 @@ function resolveDpMelee(
   if (approachAchievement < approachTarget) return;
 
   const hit = dpRoll(ctx.pack, state, actor, "str", submission.skill ?? "MELEE", hitDice, "dp-melee-hit:" + actor.id + ":" + defender.id);
+  const hitAchievement = hit.achievement + passiveBonus(actor, "accuracyBonus");
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
     targetId: defender.id,
-    text: actor.name + " 近战命中：" + hitDice + "d6=" + hit.roll + " + " + hit.base + " = " + hit.achievement,
-    data: { rollType: "DP_MELEE_HIT", dice: hitDice, roll: hit.roll, base: hit.base, achievement: hit.achievement }
+    text: actor.name + " 近战命中：" + hitDice + "d6=" + hit.roll + " + " + hit.base + " = " + hitAchievement,
+    data: { rollType: "DP_MELEE_HIT", dice: hitDice, roll: hit.roll, base: hit.base, achievement: hitAchievement }
   });
-  const cover = resolveDpCover(ctx, actor, defender, hit.achievement, "dp-melee-cover:" + actor.id + ":" + defender.id);
+  const cover = resolveDpCover(ctx, actor, defender, hitAchievement, "dp-melee-cover:" + actor.id + ":" + defender.id);
   let damageTarget = defender;
   let reduction = 0;
   if (cover === null) {
     const reaction = reactionFor(ctx, defender.id);
-    const defense = resolveDpDefense(ctx, defender, reaction, hit.achievement);
+    const defense = resolveDpDefense(ctx, defender, reaction, hitAchievement);
     if (defense.success) {
       pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: defender.id, text: defender.name + " 成功应对近战攻击" });
       return;

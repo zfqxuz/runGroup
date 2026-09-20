@@ -342,7 +342,17 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 ### 2.8 后续条目（未铺开）
 
 1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
-   - 能力点与等级的车卡 / 成长流程（已实现）、每级习得数量、妖力 / 特技常时被动。
+   - ✅ 能力点与等级的车卡 / 成长流程（已实现）。
+   - ✅ **能力变体**：`AbilityCategorySchema.variants` 支持替代习得路径与攻击种类限制；
+     登记神术术式版（3/6/9/12/15/15，禁射击 / 追击 / 弹幕）与妖术妖弹化（2/3/5…前缀，待 wiki 补齐后续档）。
+   - ✅ **妖力类别**：新增 `YOURIKI`；车卡 UI / 消费者工具支持 `CATEGORY`、`CATEGORY:SUFFIX`、`CATEGORY#VARIANT` 三种实例 id。
+   - ✅ **每级习得数量**：`abilitySpellCountIssue` 接入车卡 UI 与服务端保存拦截（按 `magic.spells.abilityId` 归类）。
+   - ✅ **种族免费 / 限制**：`RaceSchema.freeAbilityLevels` / `disallowedAbilityCategories`；
+     妖怪免费 3 级妖术，人类禁止妖力 / 妖术（属性使组合为例外开关）。
+   - ✅ **妖力 / 特技常时被动层**：`AbilityDefinitionSchema.passives`（属性 / 技能 / 衍生 / 伤害 / 应对 / 命中 / 移动），
+     `collectAbilityPassiveMods` 在战斗准备时求值；DP 战斗的伤害、回避 / 防御 / 掩护 / 抵抗、命中与追逐移动已接入。
+     具体妖力 / 特技条目仍待 wiki 列表补入 `abilities.definitions`。
+   - ⏳ 属性使具体法术表（9.2）、术式版神术 / 妖弹化妖术的完整法术清单仍待 wiki 数据。
    - `BARRIER` 结界（部分已实现）：`MagicEffect BARRIER` 建立独立 HP 结界，
      伤害优先由结界吸收、击破溢出无效，支持到期轮次；战斗视图显示结界 HP。
      7.5 的「大小 / 等级 / 目标值 / 灵力消耗表、范围与位置、扩大缩小、结界内战斗惩罚」仍需范围模型与 wiki 数据。
@@ -357,7 +367,9 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 6. **其他规则 · 剩余**（v2: 14.x）
    - ✅ 6.18 其他行动：DP 新增 `dpAction: "SKILL"`（调查 / 感知等），最多 3D、消耗 DP，
      也可直接 PASS 不判定；UI 提供技能 / 特性值 / 目标值 / 骰数选择。
-   - ⏳ 移动公式接入追逐（需要 m/s → MOV 换算）、重量 / 财产、遮挡物 / 掩体判定。
+   - ✅ 移动公式接入追逐：`touhouMovement`（地面 / 飞行）接入 `chaseBaseMov`，新增〈运动〉技能与
+     `TOUHOU_MOV_PER_MPS` 换算常量（默认 1 m/s = 1 MOV），并叠加常时移动加值。
+   - ⏳ 重量 / 财产、遮挡物 / 掩体判定（需要物品重量表 / 位置模型 + wiki 数值）。
 
 ## 3. P2 KP行为 / 不可达
 

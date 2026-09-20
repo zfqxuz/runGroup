@@ -13,12 +13,15 @@ import {
 } from "@touhou/combat";
 import {
   coc7DamageBonus,
+  collectAbilityPassiveMods,
   computeAtbMax,
   computeBaseSpeed,
   computeDerived,
+  effectiveAbilityLevels,
   parseConditions,
   spellcardBattleDeclarationRules,
   spellcardSideUsableCount,
+  type AbilityPassiveMods,
   type AttributeSet,
   type CompiledRulePack,
   type DerivedStats,
@@ -311,6 +314,90 @@ export function characterSpellsOf(character: Character): string[] {
   return stringArrayOf(backstory.spells);
 }
 
+/** 角色已习得的常时能力条目 id（妖力 / 特技）；backstory 优先。 */
+export function characterAbilityDefinitionsOf(character: Character): string[] {
+  const backstory = (character.backstory ?? {}) as Record<string, unknown>;
+  const fromBackstory = stringArrayOf(backstory.abilityDefinitions);
+  if (fromBackstory.length > 0) return fromBackstory;
+  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
+  return stringArrayOf(sourceData.abilityDefinitions);
+}
+
+/** 规则包里可直接作为被动表达式常量的数值 const。 */
+function numericConstsOf(pack: CompiledRulePack): Record<string, number> {
+  const output: Record<string, number> = {};
+  for (const [key, value] of Object.entries(pack.pack.const)) {
+    if (typeof value === "number" && Number.isFinite(value)) output[key] = value;
+  }
+  return output;
+}
+
+const ZERO_PASSIVE_MODS: AbilityPassiveMods = {
+  attributeMods: {},
+  skillMods: {},
+  derivedMods: {},
+  damageBonus: 0,
+  reactionBonus: 0,
+  accuracyBonus: 0,
+  movementBonus: 0,
+  sources: []
+};
+
+/** 把被动数值修正叠加到属性 / 技能记录上（不修改原对象）。 */
+function applyRecordMods<T extends Record<string, number>>(
+  base: T,
+  mods: Readonly<Record<string, number>>
+): T {
+  const output: Record<string, number> = { ...base };
+  for (const [key, value] of Object.entries(mods)) {
+    if (!Number.isFinite(value)) continue;
+    output[key] = Math.max(0, (output[key] ?? 0) + value);
+  }
+  return output as T;
+}
+
+/** 把被动衍生值修正叠加到 DerivedStats 已知键上。 */
+function applyDerivedPassives(
+  derived: DerivedStats,
+  mods: Readonly<Record<string, number>>
+): DerivedStats {
+  const output: DerivedStats = { ...derived };
+  for (const [key, value] of Object.entries(mods)) {
+    if (!Number.isFinite(value)) continue;
+    const typedKey = key as keyof DerivedStats;
+    const current = output[typedKey];
+    if (typeof current === "number") {
+      output[typedKey] = Math.max(0, current + value) as never;
+    }
+  }
+  return output;
+}
+
+/** 计算 TOUHOU 单位的常时被动；其他系统返回空。 */
+function passiveModsFor(
+  pack: CompiledRulePack,
+  abilityLevels: Readonly<Record<string, number>>,
+  definitionIds: readonly string[]
+): AbilityPassiveMods {
+  if (pack.system !== "TOUHOU") return ZERO_PASSIVE_MODS;
+  return collectAbilityPassiveMods(pack.pack.abilities, {
+    abilityLevels,
+    definitionIds,
+    constants: numericConstsOf(pack)
+  });
+}
+
+/** 计算种族免费能力后的有效等级。 */
+function effectiveLevelsFor(
+  pack: CompiledRulePack,
+  abilityLevels: Readonly<Record<string, number>>,
+  raceKey: string | null
+): Record<string, number> {
+  if (pack.system !== "TOUHOU" || raceKey === null) return { ...abilityLevels };
+  const race = pack.pack.races[raceKey] ?? null;
+  return effectiveAbilityLevels(abilityLevels, race);
+}
+
 function buildCharacterInit(
   pack: CompiledRulePack,
   character: Character,
@@ -318,7 +405,8 @@ function buildCharacterInit(
   conditions: readonly GameCondition[] = [],
   vitals?: ParticipantInit["vitals"]
 ): ParticipantInit {
-  const attributes: AttributeSet = {
+  const raceKey = character.race ?? null;
+  const baseAttributes: AttributeSet = {
     str: character.str,
     con: character.con,
     siz: character.siz,
@@ -329,15 +417,21 @@ function buildCharacterInit(
     edu: character.edu,
     luck: character.luck
   };
-  const skills = buildEffectiveSkills(pack, character);
+  // 种族免费能力（如妖怪 3 级妖术）+ 常时被动（妖力 / 特技）。
+  const abilityLevels = effectiveLevelsFor(pack, characterAbilityLevelsOf(character), raceKey);
+  const passiveMods = passiveModsFor(pack, abilityLevels, characterAbilityDefinitionsOf(character));
+  const attributes = applyRecordMods(baseAttributes, passiveMods.attributeMods);
+  const baseSkills = buildEffectiveSkills(pack, character);
+  const skills = applyRecordMods(baseSkills, passiveMods.skillMods);
   const hpCoefficient = pack.system === "TOUHOU" ? characterHpCoefficientOf(character) : undefined;
   const outcome = computeDerived(pack, {
     attributes,
-    race: character.race ?? null,
+    race: raceKey,
     skills,
     constOverrides: hpCoefficient === undefined ? undefined : { HP_COEFFICIENT: hpCoefficient }
   });
-  const vars: Record<string, number> = { ...outcome.attributes, ...outcome.derived };
+  const derived = applyDerivedPassives(outcome.derived, passiveMods.derivedMods);
+  const vars: Record<string, number> = { ...outcome.attributes, ...derived };
   return {
     id: character.id,
     name: character.name,
@@ -345,15 +439,21 @@ function buildCharacterInit(
     characterId: character.id,
     faction,
     attributes: outcome.attributes,
-    derived: outcome.derived,
-    race: character.race ?? null,
+    derived,
+    race: raceKey,
     raceFlags: outcome.flags,
     elements:
-      character.race === null
+      raceKey === null
         ? []
-        : [...(pack.pack.races[character.race]?.elements ?? [])],
-    abilityLevels: characterAbilityLevelsOf(character),
+        : [...(pack.pack.races[raceKey]?.elements ?? [])],
+    abilityLevels,
     abilityAttributes: characterAbilityAttributesOf(character),
+    passiveMods: {
+      damageBonus: passiveMods.damageBonus,
+      reactionBonus: passiveMods.reactionBonus,
+      accuracyBonus: passiveMods.accuracyBonus,
+      movementBonus: passiveMods.movementBonus
+    },
     skills,
     spells: characterSpellsOf(character),
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",
@@ -372,8 +472,12 @@ function buildNpcInit(
 ): ParticipantInit | string {
   const parsed = NpcStatsSchema.safeParse(card.stats);
   if (parsed.success === false) return "NPC 卡数据不合法：" + card.name;
-  const attributes = parsed.data.attributes as AttributeSet;
-  const derived: DerivedStats = {
+  const raceKey = parsed.data.race ?? null;
+  const abilityLevels = effectiveLevelsFor(pack, parsed.data.abilities, raceKey);
+  const passiveMods = passiveModsFor(pack, abilityLevels, parsed.data.abilityDefinitions);
+  const attributes = applyRecordMods(parsed.data.attributes as AttributeSet, passiveMods.attributeMods);
+  const skills = applyRecordMods(parsed.data.skills, passiveMods.skillMods);
+  const baseDerived: DerivedStats = {
     hp: parsed.data.maxHp,
     maxHp: parsed.data.maxHp,
     mp: parsed.data.maxMp,
@@ -383,6 +487,7 @@ function buildNpcInit(
     dp: parsed.data.maxDp,
     maxDp: parsed.data.maxDp
   };
+  const derived = applyDerivedPassives(baseDerived, passiveMods.derivedMods);
   const vars: Record<string, number> = { ...attributes, ...derived };
   const summonOrigin = parsed.data.summonOrigin ?? {};
   const originCasterId = typeof summonOrigin.casterId === "string" ? summonOrigin.casterId : null;
@@ -395,17 +500,24 @@ function buildNpcInit(
     faction,
     attributes,
     derived,
-    race: parsed.data.race ?? null,
-    raceFlags: parsed.data.race === null ? [] : [...(pack.races[parsed.data.race]?.flags ?? [])],
+    race: raceKey,
+    raceFlags: raceKey === null ? [] : [...(pack.races[raceKey]?.flags ?? [])],
     elements:
-      parsed.data.race === null
+      raceKey === null
         ? []
-        : [...(pack.pack.races[parsed.data.race]?.elements ?? [])],
-    abilityLevels: { ...parsed.data.abilities },
+        : [...(pack.pack.races[raceKey]?.elements ?? [])],
+    abilityLevels,
+    abilityAttributes: { ...parsed.data.abilityAttributes },
+    passiveMods: {
+      damageBonus: passiveMods.damageBonus,
+      reactionBonus: passiveMods.reactionBonus,
+      accuracyBonus: passiveMods.accuracyBonus,
+      movementBonus: passiveMods.movementBonus
+    },
     // 持久召唤卡再次参战时仍标记为召唤物，便于到期 / 击杀后清理卡与 Token。
     summonedBy: isPersistentSummon ? originCasterId ?? card.id : null,
     summonedName: isPersistentSummon ? card.name : null,
-    skills: { ...parsed.data.skills },
+    skills,
     spells: parsed.data.spells.length > 0 ? [...parsed.data.spells] : [...defaultSpells],
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(attributes.str + attributes.siz) : "0",
     atbMax: computeAtbMax(pack, vars),

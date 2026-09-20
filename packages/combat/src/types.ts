@@ -53,6 +53,14 @@ export interface BarrierState {
   expiresAtRound: number | null;
 }
 
+/** 常时被动加值：由 AbilityDefinition.passives 在战斗准备时汇总。 */
+export interface CombatPassiveMods {
+  readonly damageBonus: number;
+  readonly reactionBonus: number;
+  readonly accuracyBonus: number;
+  readonly movementBonus: number;
+}
+
 export interface CombatParticipantState {
   readonly id: string;
   readonly name: string;
@@ -127,6 +135,8 @@ export interface CombatParticipantState {
   abilityLevels?: Record<string, number>;
   /** 千幻抄能力实例指定的发动特性值（如属性使选 {知性}/{感觉}）。 */
   abilityAttributes?: Record<string, string>;
+  /** 常时被动加值（妖力 / 常时特技）；战斗准备时由规则层算出。 */
+  passiveMods?: CombatPassiveMods;
   /** 千幻抄 14.3：灵力归零导致昏迷；灵力恢复后清除。 */
   mpExhausted?: boolean;
   skills: Record<string, number>;

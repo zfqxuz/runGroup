@@ -26,7 +26,12 @@ export const TOUHOU_EXT: RulePackOverlay = {
      * COC7 百分制技能 → 千幻抄技能等级的换算：技能等级 = floor(技能值 / SKILL_SCALE)。
      * 20 ≈ COC7 100 对应千幻抄 5 级。
      */
-    SKILL_SCALE: 20
+    SKILL_SCALE: 20,
+    /**
+     * 14.1 追逐换算：移动 m/s → 追逐 MOV。
+     * 1 = 1 m/s 记 1 MOV（默认）；使用 ATTR_SCALE=1 原始属性量级的房间可调低。
+     */
+    TOUHOU_MOV_PER_MPS: 1
   },
   derived: {
     // 千幻抄：特性值 = floor(COC7 属性 / ATTR_SCALE)，HP = 10 + {耐久} × HP系数。
@@ -79,6 +84,7 @@ TOUHOU_EXT.races = {
     description: "最普通也最自由的种族。幸运 +15，兴趣技能点为智力×2.5，初始财产（信用）更高，但通常不可修习【妖术】。",
     attrMods: { luck: "15" },
     interestPoints: "int * 2.5",
+    disallowedAbilityCategories: ["YOURIKI", "YOUJUTSU"],
     flags: ["NO_YOUJUTSU", "CREDIT_20"],
     abilities: [
       { id: "NO_YOUJUTSU", name: "不可修习妖术", description: "人类原则上不能习得【妖术】；KP 可用规则许可作为例外。", automated: false }
@@ -166,6 +172,8 @@ TOUHOU_EXT.races = {
     description: "身体能力与妖力强悍的种族。擅长【妖术】，但面对魔法与神术/阴阳术时较为脆弱。",
     attrMods: { str: "10", con: "10", pow: "10" },
     skillBonuses: { YOUJUTSU: "40" },
+    // 妖怪免费获得 3 级【妖术】（10.1 / 2.11）。
+    freeAbilityLevels: { YOUJUTSU: 3 },
     flags: ["CAN_YOUJUTSU", "WEAK_TO_SPIRIT", "WEAK_TO_MAGIC"],
     abilities: [
       { id: "FREE_YOUJUTSU", name: "免费妖术", description: "妖怪默认获得一定等级的【妖术】（由技能加值体现）。", automated: false, tags: ["YOUJUTSU"] },
@@ -330,7 +338,17 @@ TOUHOU_EXT.abilities = {
       description: "咏唱 + 单手结印发动；结界、降灵、驱魔。",
       activationAttribute: "int",
       costTable: [5, 10, 15, 20, 25, 25],
-      spellsPerLevel: 2
+      spellsPerLevel: 2,
+      // 7.1 术式版：消费更低（3/6/9/12/15/15），但不能用于射击 / 追击 / 弹幕。
+      variants: {
+        UTSUSHI: {
+          id: "UTSUSHI",
+          name: "术式版",
+          description: "消费 3/6/9/12/15/15…；不能用于射击 / 追击 / 弹幕。",
+          costTable: [3, 6, 9, 12, 15, 15],
+          restrictedAttackKinds: ["RANGED", "CHASE", "DANMAKU"]
+        }
+      }
     },
     MAGIC: {
       id: "MAGIC",
@@ -352,6 +370,23 @@ TOUHOU_EXT.abilities = {
       id: "YOUJUTSU",
       name: "妖术",
       description: "妖怪专属；可与技能组合、妖弹化、常在化。",
+      activationAttribute: "pow",
+      costTable: [1, 2, 4, 6, 8, 10, 12, 12],
+      spellsPerLevel: 0,
+      // 10.2 妖弹化：消费 2/3/5…（已知前缀；更高等级待 wiki 法术表补齐）。
+      variants: {
+        DANMAKU: {
+          id: "DANMAKU",
+          name: "妖弹化",
+          description: "把妖术妖弹化的变体消费表（2/3/5…，更高等级待补）。",
+          costTable: [2, 3, 5]
+        }
+      }
+    },
+    YOURIKI: {
+      id: "YOURIKI",
+      name: "妖力",
+      description: "支付消费习得后常时生效；各种族可免费获得特定妖力（10.1）。",
       activationAttribute: "pow",
       costTable: [1, 2, 4, 6, 8, 10, 12, 12],
       spellsPerLevel: 0
@@ -430,6 +465,7 @@ TOUHOU_EXT.skills = [
   { id: "LANGUAGE_OWN", name: "母语", category: "KNOWLEDGE", base: "edu" },
   { id: "LANGUAGE_OTHER", name: "外语", category: "KNOWLEDGE", base: "1" },
   { id: "FLIGHT", name: "战斗-飞行", category: "PHYSICAL", base: "20", description: "幻想乡基础行动技能；可表现为装备飞行、腾云驾雾、骑扫把等方式" },
+  { id: "ATHLETICS", name: "运动", category: "PHYSICAL", base: "20", description: "千幻抄〈运动〉；14.1 地面移动速度与追逐速度检定使用。" },
   { id: "CLIMB", name: "攀爬", category: "PHYSICAL", base: "20" },
   { id: "STEALTH", name: "潜行", category: "PHYSICAL", base: "20" },
   { id: "LISTEN", name: "聆听", category: "PHYSICAL", base: "20" },

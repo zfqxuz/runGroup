@@ -40,6 +40,10 @@ export const NpcStatsSchema = z.object({
   skills: z.record(z.string(), z.number().int().min(0).max(999)).default({}),
   /** 千幻抄能力等级：categoryId -> Lv；没有能力系统的 NPC 留空。 */
   abilities: z.record(z.string(), z.number().int().min(0).max(99)).default({}),
+  /** 千幻抄能力实例的发动特性值覆盖（如属性使 {知性}/{感觉}）。 */
+  abilityAttributes: z.record(z.string(), z.string().max(20)).default({}),
+  /** 已习得的常时能力条目 id（妖力 / 特技）。 */
+  abilityDefinitions: z.array(z.string().max(120)).max(200).default([]),
   /** 原文中的武器 / 攻击方式；战斗攻击选项会直接读取这里。 */
   weapons: z.array(NpcWeaponSchema).max(30).default([]),
   /** 战前护甲表达式，如 "2d6" / "12"；0 表示无护甲。 */

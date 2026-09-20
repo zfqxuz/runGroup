@@ -1,0 +1,145 @@
+import { describe, expect, it } from "vitest";
+import {
+  builtinRegistry,
+  compileParsedRulePack,
+  computeAtbMax,
+  computeBaseSpeed,
+  computeDerived,
+  resolveRulePack,
+  type AttributeSet
+} from "@touhou/rules";
+import {
+  addParticipant,
+  beginDpRound,
+  createCombat,
+  declareDp,
+  resolveDpTurn,
+  type CombatPassiveMods,
+  type CombatParticipantState,
+  type CombatState
+} from "../index";
+
+const touhou = compileParsedRulePack(resolveRulePack("touhou-ext", builtinRegistry()));
+
+const attrs: AttributeSet = {
+  str: 50, con: 50, siz: 60, dex: 55,
+  app: 50, int: 60, pow: 40, edu: 70, luck: 45
+};
+
+function passive(overrides: Partial<CombatPassiveMods> = {}): CombatPassiveMods {
+  return {
+    damageBonus: 0,
+    reactionBonus: 0,
+    accuracyBonus: 0,
+    movementBonus: 0,
+    ...overrides
+  };
+}
+
+interface Setup {
+  readonly state: CombatState;
+  readonly actor: CombatParticipantState;
+  readonly e1: CombatParticipantState;
+}
+
+function makeCombat(seed: string, actorMods: CombatPassiveMods, enemyMods: CombatPassiveMods): Setup {
+  const state = createCombat({ id: "c-" + seed, seed, tickMs: 250, mode: "DP" });
+  const derived = computeDerived(touhou, { attributes: attrs }).derived;
+  const build = (
+    id: string,
+    faction: string,
+    kind: "PLAYER" | "NPC",
+    skills: Record<string, number>,
+    mods: CombatPassiveMods
+  ) =>
+    addParticipant(state, {
+      id,
+      name: id,
+      kind,
+      characterId: kind === "PLAYER" ? id : null,
+      faction,
+      attributes: attrs,
+      derived,
+      skills,
+      passiveMods: mods,
+      atbMax: computeAtbMax(touhou, { dex: attrs.dex }),
+      speed: computeBaseSpeed(touhou, { dex: attrs.dex })
+    });
+  const actor = build("actor", "PC", "PLAYER", { DANMAKU: 100 }, actorMods);
+  const e1 = build("e1", "BOSS", "NPC", { DANMAKU: 0, DODGE: 0 }, enemyMods);
+  return { state, actor, e1 };
+}
+
+function startRound(state: CombatState, actor: CombatParticipantState, e1: CombatParticipantState): void {
+  beginDpRound(touhou, state);
+  actor.dp = 30;
+  e1.dp = 30;
+  declareDp(state, actor.id, 30);
+  declareDp(state, e1.id, 0);
+}
+
+function ranged(state: CombatState, targetId: string, damage: string, dice = 1): void {
+  state.pending["actor"] = {
+    actorId: "actor",
+    kind: "DANMAKU",
+    dpAction: "RANGED",
+    targetId,
+    skill: "DANMAKU",
+    dpDice: dice,
+    damage
+  };
+}
+
+describe("常时被动在 DP 战斗中生效", () => {
+  it("damageBonus 直接加到攻击伤害上（同种子对照）", () => {
+    const base = makeCombat("passive-dmg-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(base.state, base.actor, base.e1);
+    ranged(base.state, "e1", "10");
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseDamage = base.e1.maxHp - base.e1.hp;
+
+    const boosted = makeCombat("passive-dmg-base", passive({ damageBonus: 25 }), passive({ reactionBonus: -999 }));
+    startRound(boosted.state, boosted.actor, boosted.e1);
+    ranged(boosted.state, "e1", "10");
+    resolveDpTurn(touhou, boosted.state, { e1: { type: "PASS" } });
+    const boostedDamage = boosted.e1.maxHp - boosted.e1.hp;
+
+    expect(boostedDamage).toBe(baseDamage + 25);
+  });
+
+  it("reactionBonus 能扭转回避结果", () => {
+    const without = makeCombat("passive-react", passive(), passive());
+    startRound(without.state, without.actor, without.e1);
+    ranged(without.state, "e1", "10");
+    // e1 DODGE 0 级 + 0 骰，无法回避高技能攻击。
+    resolveDpTurn(touhou, without.state, { e1: { type: "DODGE", dpDice: 0 } });
+    expect(without.e1.hp).toBeLessThan(without.e1.maxHp);
+
+    const withBonus = makeCombat("passive-react", passive(), passive({ reactionBonus: 30 }));
+    startRound(withBonus.state, withBonus.actor, withBonus.e1);
+    ranged(withBonus.state, "e1", "10");
+    resolveDpTurn(touhou, withBonus.state, { e1: { type: "DODGE", dpDice: 0 } });
+    expect(withBonus.e1.hp).toBe(withBonus.e1.maxHp);
+    expect(withBonus.state.log.some((entry) => entry.data?.rollType === "DP_RANGED_MISS")).toBe(true);
+  });
+
+  it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {
+    const base = makeCombat("passive-acc-base", passive(), passive());
+    startRound(base.state, base.actor, base.e1);
+    ranged(base.state, "e1", "10");
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseAchievement = Number(
+      base.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_ATTACK")?.data?.achievement ?? 0
+    );
+
+    const boosted = makeCombat("passive-acc-base", passive({ accuracyBonus: 12 }), passive());
+    startRound(boosted.state, boosted.actor, boosted.e1);
+    ranged(boosted.state, "e1", "10");
+    resolveDpTurn(touhou, boosted.state, { e1: { type: "PASS" } });
+    const boostedAchievement = Number(
+      boosted.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_ATTACK")?.data?.achievement ?? 0
+    );
+
+    expect(boostedAchievement).toBe(baseAchievement + 12);
+  });
+});

@@ -2,6 +2,7 @@ import {
   coc7Movement,
   isSuccess,
   resolveCheck,
+  touhouMovement,
   type CheckResult,
   type CompiledRulePack
 } from "@touhou/rules";
@@ -33,9 +34,29 @@ function participantName(participant: CombatParticipantState): string {
   return participant.isIdentified ? participant.name : participant.name;
 }
 
+function scaledConst(pack: CompiledRulePack, key: string, fallback: number): number {
+  const value = pack.pack.const[key];
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function movementAttribute(pack: CompiledRulePack, participant: CombatParticipantState, key: string): number {
+  const scale = scaledConst(pack, "ATTR_SCALE", 1);
+  const raw = participant.attributes[key as keyof typeof participant.attributes] ?? 0;
+  return Math.max(0, Math.floor(raw / scale));
+}
+
+function movementSkillLevel(pack: CompiledRulePack, participant: CombatParticipantState, skillId: string): number {
+  const scale = scaledConst(pack, "SKILL_SCALE", 20);
+  const raw = participant.skills?.[skillId] ?? 0;
+  return Math.max(0, Math.floor(raw / scale));
+}
+
 /**
  * 追逐基础 MOV。
- * COC7 步行追逐使用规则书 MOV；东方沿用 ATB 速度做近似换算。
+ *
+ * COC7 步行追逐使用规则书 MOV。
+ * 东方按 14.1 的千幻抄移动公式取 m/s：地面 = {身体}+〈运动〉；
+ * 追逐格按「1 格 ≈ 1 m/s 每轮」直接换算，取整后至少 1，并叠加常时移动加值。
  */
 export function chaseBaseMov(pack: CompiledRulePack, participant: CombatParticipantState): number {
   if (pack.system === "COC7") {
@@ -48,7 +69,16 @@ export function chaseBaseMov(pack: CompiledRulePack, participant: CombatParticip
       })
     );
   }
-  return Math.max(1, Math.floor(participant.speed / 1000));
+  const movement = touhouMovement({
+    str: movementAttribute(pack, participant, "str"),
+    int: movementAttribute(pack, participant, "int"),
+    athletics: movementSkillLevel(pack, participant, "ATHLETICS"),
+    flight: movementSkillLevel(pack, participant, "FLIGHT"),
+    mode: "GROUND"
+  });
+  const bonus = participant.passiveMods?.movementBonus ?? 0;
+  const perMps = scaledConst(pack, "TOUHOU_MOV_PER_MPS", 1);
+  return Math.max(1, Math.round((movement + (Number.isFinite(bonus) ? bonus : 0)) * perMps));
 }
 
 /** 步行/肉体移动使用体质检定；载具追逐以后可以扩展为汽车驾驶。 */

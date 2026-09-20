@@ -40,6 +40,9 @@ export type {
   Element,
   ElementRules,
   AbilityCategory,
+  AbilityVariant,
+  AbilityPassive,
+  AbilityDefinition,
   AbilityRules,
   GrowthRank,
   StatusEffectRule,
@@ -193,15 +196,29 @@ export {
 export type { TouhouDamageFormula } from "./touhou-dp";
 
 export {
+  abilityCategoryAllowedForRace,
+  abilityCategoryLevelFromLevels,
   abilityCostForLevel,
+  abilityDefinitionUnlocked,
   abilityLevelForPoints,
   abilityPointBudget,
   abilitySpellCountIssue,
   abilitySpendTotal,
   abilityTotalCost,
+  applyAbilityPassiveMods,
+  collectAbilityPassiveMods,
+  effectiveAbilityLevels,
   resolveAbilityCategory,
+  resolveAbilityVariant,
   splitAbilityInstanceId,
+  splitAbilityVariantId,
   validateAbilitySpend
+} from "./abilities";
+export type {
+  AbilityPassiveInput,
+  AbilityPassiveMods,
+  AbilitySpendCheck,
+  AbilitySpendOptions
 } from "./abilities";
 
 export {

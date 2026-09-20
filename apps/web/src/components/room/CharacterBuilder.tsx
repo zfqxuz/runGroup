@@ -16,10 +16,13 @@ import {
   compileParsedRulePack,
   computeDerived,
   rollAttributeSets,
+  abilityCategoryLevelFromLevels,
   abilityCostForLevel,
   abilityPointBudget,
+  abilitySpellCountIssue,
   abilitySpendTotal,
   abilityTotalCost,
+  resolveAbilityCategory,
   validateAbilitySpend,
   type AttributeKey,
   type AttributeSet,
@@ -233,6 +236,13 @@ export default function CharacterBuilder(props: Props) {
     }
     return output;
   });
+  const [abilityDefinitions, setAbilityDefinitions] = useState<string[]>(() => {
+    const raw =
+      initial?.backstory?.abilityDefinitions !== undefined
+        ? initial.backstory.abilityDefinitions
+        : initial?.sourceData?.abilityDefinitions;
+    return Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string") : [];
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   // 第二页（选填）：人物故事 / 财产 / 持有物品
@@ -409,6 +419,36 @@ export default function CharacterBuilder(props: Props) {
     ? validateAbilitySpend(props.pack.abilities, abilityTier, abilityLevels)
     : null;
   const abilityIssue = abilityCheck !== null && abilityCheck.ok === false ? abilityCheck.error ?? "能力点不合法" : null;
+  // 每级习得法术数量校验：把 bsSpells 中能匹配到规则包法术的条目按 abilityId 归类。
+  const learnedSpellKeys = new Set(
+    parseJsonArray(bsSpells)
+      .map((item) => {
+        if (typeof item === "string") return item.trim();
+        if (item !== null && typeof item === "object") {
+          const name = (item as { name?: unknown }).name;
+          return typeof name === "string" ? name.trim() : "";
+        }
+        return "";
+      })
+      .filter((key) => key.length > 0)
+  );
+  const abilitySpellIssue = (() => {
+    if (abilitiesEnabled === false) return null;
+    const packSpells = props.pack.magic?.spells ?? [];
+    for (const category of abilityCategoryList) {
+      const level = abilityCategoryLevelFromLevels(abilityLevels, category.id);
+      if (level <= 0) continue;
+      const learned = packSpells.filter((spell) => {
+        if (spell.abilityId === undefined) return false;
+        const cat = resolveAbilityCategory(props.pack.abilities, spell.abilityId);
+        if (cat?.id !== category.id) return false;
+        return learnedSpellKeys.has(spell.id) || learnedSpellKeys.has(spell.name);
+      }).length;
+      const issue = abilitySpellCountIssue(category, level, learned);
+      if (issue !== null) return issue;
+    }
+    return null;
+  })();
 
   const coc7Extras = useMemo(() => {
     if (isCoc7 === false) return null;
@@ -914,6 +954,7 @@ export default function CharacterBuilder(props: Props) {
               Object.entries(abilityLevels).filter(([, level]) => level > 0)
             ),
             abilityAttributes: abilityAttributeMap,
+            abilityDefinitions,
             abilityTier
           }
         : {})
@@ -983,8 +1024,8 @@ export default function CharacterBuilder(props: Props) {
       setStep(1);
       return;
     }
-    if (abilitiesEnabled && abilityIssue !== null) {
-      setMessage(abilityIssue);
+    if (abilitiesEnabled && (abilityIssue !== null || abilitySpellIssue !== null)) {
+      setMessage(abilityIssue ?? abilitySpellIssue);
       return;
     }
     setBusy(true);
@@ -1617,18 +1658,36 @@ export default function CharacterBuilder(props: Props) {
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
               {abilityCategoryList.flatMap((category) => {
                 const elementList = Object.values(props.pack.elements);
-                const instances =
-                  category.id === "ELEMENTALIST" && elementList.length > 0
-                    ? elementList.map((element) => ({
-                        id: "ELEMENTALIST:" + element.id,
-                        label: element.name + "·属性使",
-                        attributeChoice: true
+                const isElementalist = category.id === "ELEMENTALIST" && elementList.length > 0;
+                const variantList = Object.values(category.variants);
+                const instances = isElementalist
+                  ? elementList.map((element) => ({
+                      id: "ELEMENTALIST:" + element.id,
+                      label: element.name + "·属性使",
+                      attributeChoice: true,
+                      variantId: null as string | null,
+                      maxLevel: Math.max(1, category.costTable.length)
+                    }))
+                  : [
+                      {
+                        id: category.id,
+                        label: category.name,
+                        attributeChoice: false,
+                        variantId: null as string | null,
+                        maxLevel: Math.max(1, category.costTable.length)
+                      },
+                      ...variantList.map((variant) => ({
+                        id: category.id + "#" + variant.id,
+                        label: category.name + "·" + variant.name,
+                        attributeChoice: false,
+                        variantId: variant.id as string | null,
+                        maxLevel: Math.max(1, variant.costTable.length)
                       }))
-                    : [{ id: category.id, label: category.name, attributeChoice: false }];
+                    ];
                 return instances.map((instance) => {
                   const level = abilityLevels[instance.id] ?? 0;
-                  const maxLevel = Math.max(1, category.costTable.length);
-                  const nextCost = abilityCostForLevel(category, level + 1);
+                  const maxLevel = instance.maxLevel;
+                  const nextCost = abilityCostForLevel(category, level + 1, instance.variantId);
                   return (
                     <div
                       key={instance.id}
@@ -1637,7 +1696,7 @@ export default function CharacterBuilder(props: Props) {
                       <div className="min-w-0">
                         <p className="truncate text-xs text-white/80">{instance.label}</p>
                         <p className="text-[10px] text-white/35">
-                          累计 {abilityTotalCost(category, level)} 点 · 下一级 {nextCost} 点
+                          累计 {abilityTotalCost(category, level, instance.variantId)} 点 · 下一级 {nextCost} 点
                         </p>
                       </div>
                       {instance.attributeChoice ? (
@@ -1678,8 +1737,56 @@ export default function CharacterBuilder(props: Props) {
               })}
             </div>
           )}
+          {Object.keys(props.pack.abilities.definitions).length > 0 ? (
+            <div className="mt-4 rounded-lg border border-white/10 bg-ink-900/40 p-3">
+              <p className="text-xs font-medium text-white/70">常时能力（妖力 / 特技）</p>
+              <p className="mt-1 text-[10px] text-white/40">
+                达到所需能力等级后可勾选；常时被动会在战斗准备时自动生效。
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                {Object.values(props.pack.abilities.definitions).map((definition) => {
+                  const level = abilityCategoryLevelFromLevels(abilityLevels, definition.categoryId);
+                  const unlocked = level >= definition.minLevel;
+                  const checked = abilityDefinitions.includes(definition.id);
+                  return (
+                    <label
+                      key={definition.id}
+                      className={
+                        "flex items-start gap-2 rounded border px-2 py-1.5 text-[11px] " +
+                        (unlocked ? "border-white/10 text-white/75" : "border-white/5 text-white/30")
+                      }
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={unlocked === false}
+                        onChange={(event) =>
+                          setAbilityDefinitions((prev) =>
+                            event.target.checked
+                              ? [...prev.filter((id) => id !== definition.id), definition.id]
+                              : prev.filter((id) => id !== definition.id)
+                          )
+                        }
+                        className="mt-0.5"
+                      />
+                      <span>
+                        <span className="block">{definition.name}</span>
+                        <span className="block text-[10px] text-white/35">
+                          需 {definition.categoryId} Lv{definition.minLevel}
+                          {definition.description === undefined ? "" : " · " + definition.description}
+                        </span>
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
           {abilityIssue === null ? null : (
             <p className="mt-3 text-xs text-red-300">{abilityIssue}</p>
+          )}
+          {abilitySpellIssue === null ? null : (
+            <p className="mt-1 text-xs text-red-300">{abilitySpellIssue}</p>
           )}
         </section>
       ) : null}
