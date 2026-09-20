@@ -357,11 +357,24 @@ export const AbilityCategorySchema = z.object({
   spellsPerLevel: z.number().int().nonnegative().default(0)
 });
 
+/** 成长等级表的一行：分配给某分类后获得的成长量。 */
+export const GrowthRankSchema = z.object({
+  attribute: z.number().nonnegative(),
+  skill: z.number().nonnegative(),
+  ability: z.number().nonnegative(),
+  /** HP 系数成长量；小数保留，HP 计算时向上取整。 */
+  hpCoefficient: z.number().nonnegative(),
+  /** SC 持有数成长量；小数保留，实际持有数向下取整。 */
+  spellcard: z.number().nonnegative()
+});
+
 export const AbilityRulesSchema = z.object({
   enabled: z.boolean().default(false),
   categories: z.record(z.string(), AbilityCategorySchema).default({}),
   /** 车卡能力点预算：grade（A-D）-> 能力点。千幻抄为 30/25/20/15。 */
-  pointBudgets: z.record(z.string(), z.number().int().nonnegative()).default({})
+  pointBudgets: z.record(z.string(), z.number().int().nonnegative()).default({}),
+  /** 成长等级表：A-F -> 四类成长量。 */
+  growthRanks: z.record(z.string(), GrowthRankSchema).default({})
 });
 
 export const SpellCardRulesSchema = z.object({
@@ -587,6 +600,7 @@ export type Element = z.output<typeof ElementSchema>;
 export type ElementRules = z.output<typeof ElementRulesSchema>;
 export type AbilityCategory = z.output<typeof AbilityCategorySchema>;
 export type AbilityRules = z.output<typeof AbilityRulesSchema>;
+export type GrowthRank = z.output<typeof GrowthRankSchema>;
 export type RaceAbility = z.output<typeof RaceAbilitySchema>;
 export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;

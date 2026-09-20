@@ -10,6 +10,7 @@ export {
   ElementRulesSchema,
   AbilityCategorySchema,
   AbilityRulesSchema,
+  GrowthRankSchema,
   StatusEffectSchema,
   DamageRulesSchema,
   SpellCardRulesSchema,
@@ -38,6 +39,7 @@ export type {
   ElementRules,
   AbilityCategory,
   AbilityRules,
+  GrowthRank,
   StatusEffectRule,
   DamageRules,
   SpellCardRules,
@@ -181,6 +183,30 @@ export {
   abilityTotalCost,
   validateAbilitySpend
 } from "./abilities";
+
+export {
+  TOUHOU_RESTRICTED_GROWTH_RATIO,
+  TOUHOU_STARTING_HP_COEFFICIENT,
+  TOUHOU_STARTING_SPELLCARDS,
+  TOUHOU_YOUJUTSU_CREATION_MAX,
+  touhouAbilityGrowthCost,
+  touhouAbilityGrowthSpent,
+  touhouAttributeGrowthCost,
+  touhouGrowthGrant,
+  touhouHpCoefficientAfter,
+  touhouHpFromCoefficient,
+  touhouRestrictedGrowthCap,
+  touhouRestrictedGrowthIssue,
+  touhouSkillGrowthCost,
+  touhouSkillGrowthIssue,
+  touhouSkillGrowthStepCost,
+  touhouSpellcardCount,
+  touhouSpellcardPoolAfter,
+  touhouYoujutsuCountCap,
+  touhouYoujutsuCountIssue
+} from "./growth-touhou";
+export type { TouhouGrowthAssignment, TouhouGrowthGrant } from "./growth-touhou";
+
 export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./growth";
 
 export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";

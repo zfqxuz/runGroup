@@ -205,7 +205,29 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 
 **未覆盖的 14.x**：移动公式接入追逐（需要 m/s → MOV 的换算决策）、重量 / 财产、遮挡物 / 掩体判定。
 
-### 2.6 后续条目（未铺开）
+### 2.6 已完成（第六批）：成长等级 A-F 与消费表（v2: 13.1–13.4、13.6）
+
+**数据**（来自 wiki 成长等级页）
+- `AbilityRulesSchema.growthRanks`：A-F 四类成长量，`touhou-ext` 登记：
+  - 特性值 10/8/6/4/2/1；技能 18/15/12/9/6/3；能力 12/10/8/6/4/2；
+  - HP 系数 0.8/0.6/0.4/0.2/0.1/0.1；SC 0.7/0.6/0.5/0.4/0.3/0.1。
+
+**规则工具**（`packages/rules/src/growth-touhou.ts`）
+- `touhouGrowthGrant`：把 GM 给的 4 个等级分配到「特性值 / 技能 / 能力 / HP&SC」。
+- `touhouAttributeGrowthCost`：n→n+1 花费 n+1。
+- `touhouSkillGrowthStepCost` / `touhouSkillGrowthCost` / `touhouSkillGrowthIssue`：
+  升到 L 级花 L 点、5 级及以后固定 5 点、一次最多 1 级。
+- `touhouAbilityGrowthCost`：复用开卡消费表（神术/魔法 5/10/15/20/25…、属性使 4/8/12/16/20…、
+  妖术与锻炼 1/2/4/6/8/10/12…）。
+- `touhouRestrictedGrowthCap` / `touhouRestrictedGrowthIssue`：妖术 / 锻炼单个能力最多用成长能力点的 60%（向上取整）。
+- `touhouSpellcardPoolAfter` / `touhouSpellcardCount`：SC 持有数从 3 起按小数累计、实际数量向下取整。
+- `touhouHpCoefficientAfter` / `touhouHpFromCoefficient`：HP 系数从 ×4 起累计，HP = ceil(10 + 耐久×系数)。
+- `touhouYoujutsuCountCap` / `touhouYoujutsuCountIssue`：妖术总数上限 = 最高级 Lv+2。
+
+**本批未覆盖**：成长流程的 UI / DB 接线、术式版神术（3/6/9…）与妖弹化妖术（2/3/5…）的变体消费表、
+HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品确认）。
+
+### 2.7 后续条目（未铺开）
 
 1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
    - 能力点与等级的车卡 / 成长流程、每级习得数量、妖力 / 特技常时被动、`BARRIER` 结界。
@@ -215,8 +237,8 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - 开卡 3 张、战斗前 SC 宣言数、展开任意时机、展开/消费回复 DP、LSC、符卡战胜负条件。
 4. **属性相克 · 剩余部分**（v2: 5.2 判定 / 抵抗修正、5.3 属性使能力）
    - 在已有元素表上补抵抗 / 全判定修正与属性使的能力等级、法术表；建议随能力系统一起做。
-5. **成长体系**（v2: 13.x）
-   - A-F 成长等级、特性值/技能/能力/HP系数与SC成长表、妖术与锻炼 60% 上限。
+5. **成长体系 · 剩余**（v2: 13.x）
+   - 成长流程 UI / DB、术式版与妖弹化变体表、HP 系数接入 maxHp。
 6. **其他规则 · 剩余**（v2: 14.x）
    - 移动公式接入追逐、重量 / 财产、遮挡物 / 掩体判定。
 
@@ -298,6 +320,16 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 - 新增规则工具 `abilityPointBudget` / `abilitySpendTotal` / `validateAbilitySpend`；
   `touhou-abilities.test.ts` 扩到 9 条（含 A-D 预算、超支 / 未知类别校验）。
 - 说明：本批只到规则层；车卡 UI、DB 字段与角色草稿接线仍待后续（见第 2.6 节）。
+
+### 4.8 P1 第七批：成长等级 A-F
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（rules 146、combat 138、formula 54、web 5）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS。
+- 新增测试 `packages/rules/src/__tests__/touhou-growth.test.ts`：11 条
+  （成长等级表、四类分配、特性值 / 技能 / 能力消费、60% 上限、SC 池、HP 系数、妖术数量上限）。
+- 说明：本批到规则层；成长流程 UI / DB 与 HP 系数接入 maxHp 仍待后续。
 
 ## 5. 风险与回滚
 

@@ -301,6 +301,15 @@ TOUHOU_EXT.abilities = {
   enabled: true,
   // 车卡能力点：A-D 分别为 30/25/20/15。
   pointBudgets: { A: 30, B: 25, C: 20, D: 15 },
+  // 成长等级表（13.1）：特性值 / 技能 / 能力 / HP系数 & SC。
+  growthRanks: {
+    A: { attribute: 10, skill: 18, ability: 12, hpCoefficient: 0.8, spellcard: 0.7 },
+    B: { attribute: 8, skill: 15, ability: 10, hpCoefficient: 0.6, spellcard: 0.6 },
+    C: { attribute: 6, skill: 12, ability: 8, hpCoefficient: 0.4, spellcard: 0.5 },
+    D: { attribute: 4, skill: 9, ability: 6, hpCoefficient: 0.2, spellcard: 0.4 },
+    E: { attribute: 2, skill: 6, ability: 4, hpCoefficient: 0.1, spellcard: 0.3 },
+    F: { attribute: 1, skill: 3, ability: 2, hpCoefficient: 0.1, spellcard: 0.1 }
+  },
   categories: {
     SPIRIT_ARTS: {
       id: "SPIRIT_ARTS",
