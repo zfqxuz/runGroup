@@ -3,7 +3,8 @@ import { notFound, redirect } from "next/navigation";
 import CombatUnitPicker from "@/components/room/CombatUnitPicker";
 import { startCombatAction } from "@/server/actions/combat";
 import { auth } from "@/server/auth";
-import { listSelectableUnits } from "@/server/combat/setup";
+import { listSelectableSpellcards, listSelectableUnits } from "@/server/combat/setup";
+import { spellcardBattleDeclarationRules } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
 
@@ -32,6 +33,11 @@ export default async function NewCombatPage({
     ruleOverride: room.ruleOverride
   });
   const selectable = await listSelectableUnits(room.id, session.user.id, membership.role);
+  const spellcardsByRef = room.system === "TOUHOU" ? await listSelectableSpellcards(selectable) : {};
+  const spellcardRules =
+    room.system === "TOUHOU" && effective.compiled.pack.spellcard !== undefined
+      ? spellcardBattleDeclarationRules(effective.compiled.pack.spellcard)
+      : null;
   // 同房间允许多场战斗：这里不再因为有进行中的战斗就跳走，改为提示 + 继续发起新战斗。
   const activeCount = await prisma.combat.count({ where: { roomId: room.id, endedAt: null } });
   const isKP = membership.role === "KP";
@@ -114,6 +120,8 @@ export default async function NewCombatPage({
               isKP={isKP}
               defaultAllyRefs={defaultAllyRefs}
               defaultEnemyRefs={defaultEnemyRefs}
+              spellcardsByRef={spellcardsByRef}
+              spellcardRules={spellcardRules}
             />
             {isKP ? (
               <p className="text-[11px] text-white/35">同一角色只能加入一方。</p>

@@ -1211,3 +1211,40 @@ describe("LSC（Last Spell Card）", () => {
     expect(state.log.some((entry) => entry.data?.rollType === "LSC_BROKEN")).toBe(true);
   });
 });
+
+describe("战前 SC 宣言", () => {
+  function consume(state: CombatState, actor: CombatParticipantState, cardId: string, name: string): void {
+    forceReady(actor);
+    submitAction(state, {
+      actorId: actor.id,
+      kind: "SPELLCARD",
+      name,
+      spellCardId: cardId,
+      spellcardMode: "CONSUMPTION",
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+  }
+
+  it("未宣言的符卡无法发动", () => {
+    const { state, a } = makeCombat("sc-declared");
+    a.mp = 100;
+    state.spellcardBattle = { sideUsable: { PC: 2, BOSS: 0 }, declaredCardIds: { PC: ["card-declared"] } };
+    consume(state, a, "card-other", "未宣言符卡");
+    expect(a.usedSpellCards).not.toContain("card-other");
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_NOT_DECLARED")).toBe(true);
+
+    consume(state, a, "card-declared", "已宣言符卡");
+    expect(a.usedSpellCards).toContain("card-declared");
+  });
+
+  it("没有 declaredCardIds 时保持只按池上限限制", () => {
+    const { state, a } = makeCombat("sc-no-declared");
+    a.mp = 100;
+    state.spellcardBattle = { sideUsable: { PC: 3, BOSS: 0 } };
+    consume(state, a, "card-1", "符卡一");
+    consume(state, a, "card-2", "符卡二");
+    expect(a.usedSpellCards).toContain("card-1");
+    expect(a.usedSpellCards).toContain("card-2");
+  });
+});

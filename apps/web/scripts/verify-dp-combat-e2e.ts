@@ -11,6 +11,8 @@ import { clearCombatRuntime, loadCombatRuntime } from "../src/server/combat/runt
 import { prisma } from "../src/server/db/prisma";
 import { loadEffectivePack } from "../src/server/rules/loader";
 import { NpcStatsSchema } from "../src/shared/npc";
+import { SpellCardStatsSchema } from "../src/shared/card";
+import { prepareSpellcardAction } from "../src/server/combat/spellcards";
 import type { Ack, CombatJoinAck, CombatReactionRequest, CombatUpdate } from "../src/shared/socket";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
@@ -168,6 +170,45 @@ async function main(): Promise<void> {
     await prisma.roomCharacterEntry.create({
       data: { roomId: room.id, characterId: character.id, status: "APPROVED" }
     });
+    const spellStats = (name: string) =>
+      SpellCardStatsSchema.parse({
+        mode: "CONSUMPTION",
+        danmaku: name,
+        mpCost: 0,
+        hpRatio: null,
+        durationTicks: null,
+        clearTargets: null,
+        enhanceType: "DANMAKU",
+        enhanceValue: 1,
+        effects: []
+      });
+    const declaredCard = await prisma.card.create({
+      data: {
+        scope: "CHARACTER",
+        ownerId: userId,
+        characterId: character.id,
+        type: "SPELLCARD",
+        name: "已宣言符卡",
+        rarity: "COMMON",
+        system: "TOUHOU",
+        isEquipped: true,
+        stats: spellStats("已宣言符卡") as never
+      }
+    });
+    const undeclaredCard = await prisma.card.create({
+      data: {
+        scope: "CHARACTER",
+        ownerId: userId,
+        characterId: character.id,
+        type: "SPELLCARD",
+        name: "未宣言符卡",
+        rarity: "COMMON",
+        system: "TOUHOU",
+        isEquipped: true,
+        stats: spellStats("未宣言符卡") as never
+      }
+    });
+
     const game = await prisma.game.create({
       data: { roomId: room.id, status: "PLAYING", title: "DP E2E", createdBy: userId },
       select: { id: true }
@@ -217,7 +258,9 @@ async function main(): Promise<void> {
       ruleOverride: room.ruleOverride
     });
     assert(effective.compiled.combat.mode === "DP", "东方房间应为 DP 模式");
-    const created = await createCombatRecord(room.id, effective, [characterRef(character.id)], [npcRef(npc.id)]);
+    const created = await createCombatRecord(room.id, effective, [characterRef(character.id)], [npcRef(npc.id)], {
+      spellcardDeclarations: { ALLY: [declaredCard.id] }
+    });
     assert(created.ok === true && created.combatId !== undefined, created.error ?? "创建战斗失败");
     const combatId = created.combatId as string;
 
@@ -230,6 +273,29 @@ async function main(): Promise<void> {
     const enemy = runtime.state.participants.find((item) => item.characterId === null);
     assert(pc !== undefined && enemy !== undefined, "战斗单位缺失");
     assert(pc.dp > 0, "PC 回合开始应有 DP（dp=" + pc.dp + " maxDp=" + pc.maxDp + "）");
+    const declared = runtime.state.spellcardBattle?.declaredCardIds?.ALLY ?? [];
+    assert(declared.includes(declaredCard.id), "我方宣言池应包含已宣言符卡");
+    assert(declared.includes(undeclaredCard.id) === false, "我方宣言池不应包含未宣言符卡");
+    const pcCards = runtime.spellcardsByParticipant.get(pc.id) ?? [];
+    const declaredCheck = prepareSpellcardAction(
+      runtime.pack,
+      pc,
+      pcCards,
+      { actorId: pc.id, kind: "SPELLCARD", spellCardId: declaredCard.id, spellcardMode: "CONSUMPTION" },
+      runtime.state
+    );
+    assert(declaredCheck.ok === true, "已宣言符卡应可通过准备校验：" + (declaredCheck.ok ? "" : declaredCheck.error));
+    const undeclaredCheck = prepareSpellcardAction(
+      runtime.pack,
+      pc,
+      pcCards,
+      { actorId: pc.id, kind: "SPELLCARD", spellCardId: undeclaredCard.id, spellcardMode: "CONSUMPTION" },
+      runtime.state
+    );
+    assert(
+      undeclaredCheck.ok === false && undeclaredCheck.error.includes("未宣言"),
+      "未宣言符卡应被服务端拦截，实际：" + (undeclaredCheck.ok ? "通过" : undeclaredCheck.error)
+    );
 
     const ticketResponse = await call("/api/socket-ticket", { method: "POST" });
     const ticket = (JSON.parse(ticketResponse.text) as { ticket?: string }).ticket;
@@ -339,7 +405,7 @@ async function main(): Promise<void> {
     assert(persistedRound2.state.round === 2, "第二轮快照 round 应为 2");
 
     console.log(
-      "PASS DP 战斗 E2E：宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
+      "PASS DP 战斗 E2E：SC 战前宣言 → DP 宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
     );
   } finally {
     if (socket !== null) socket.close();

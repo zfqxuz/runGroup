@@ -100,16 +100,6 @@ export function prepareSpellcardAction(
   if (actor.lscUsed === true) {
     return { ok: false, error: "已使用 LSC，本场无法再使用符卡" };
   }
-  if (state?.spellcardBattle !== null && state?.spellcardBattle !== undefined) {
-    const side = actor.faction ?? "ALLY";
-    const cap = Math.max(0, Math.floor(state.spellcardBattle.sideUsable[side] ?? 0));
-    const used = state.participants
-      .filter((participant) => (participant.faction ?? "ALLY") === side)
-      .reduce((sum, participant) => sum + participant.usedSpellCards.length, 0);
-    if (used >= cap) {
-      return { ok: false, error: "本场一方的符卡已用完（" + used + "/" + cap + "）" };
-    }
-  }
   const cardId = action.spellCardId;
   if (typeof cardId !== "string" || cardId.length === 0) {
     return { ok: false, error: "请选择要释放的符卡" };
@@ -117,6 +107,20 @@ export function prepareSpellcardAction(
   const card = cards.find((item) => item.cardId === cardId);
   if (card === undefined) {
     return { ok: false, error: "该角色没有装备这张符卡" };
+  }
+  if (state?.spellcardBattle !== null && state?.spellcardBattle !== undefined) {
+    const side = actor.faction ?? "ALLY";
+    const declared = state.spellcardBattle.declaredCardIds?.[side];
+    if (declared !== undefined && declared.includes(cardId) === false) {
+      return { ok: false, error: "本场未宣言这张符卡" };
+    }
+    const cap = Math.max(0, Math.floor(state.spellcardBattle.sideUsable[side] ?? 0));
+    const used = state.participants
+      .filter((participant) => (participant.faction ?? "ALLY") === side)
+      .reduce((sum, participant) => sum + participant.usedSpellCards.length, 0);
+    if (used >= cap) {
+      return { ok: false, error: "本场一方的符卡已用完（" + used + "/" + cap + "）" };
+    }
   }
   if (actor.mp < card.mpCost) {
     return { ok: false, error: "灵力不足，无法释放「" + card.name + "」" };

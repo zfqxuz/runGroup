@@ -2398,6 +2398,17 @@ function resolveSpellcard(
   // 千幻抄 6.1.2：一方本场可用的 SC 总数有限，用完即无法再展开 / 消费。
   if (ctx.pack.system === "TOUHOU" && state.spellcardBattle !== null && state.spellcardBattle !== undefined) {
     const side = actor.faction ?? "ALLY";
+    const declared = state.spellcardBattle.declaredCardIds?.[side];
+    if (declared !== undefined && cardId !== null && declared.includes(cardId) === false) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: actor.id,
+        targetId: null,
+        text: "本场未宣言符卡「" + name + "」，无法发动",
+        data: { rollType: "SPELLCARD_NOT_DECLARED", side, cardId }
+      });
+      return;
+    }
     const cap = Math.max(0, Math.floor(state.spellcardBattle.sideUsable[side] ?? 0));
     const used = state.participants
       .filter((participant) => (participant.faction ?? "ALLY") === side)

@@ -343,6 +343,8 @@ export interface DpRoundState {
 export interface SpellcardBattleState {
   /** faction -> 本场可用 SC 总数（按「能使用 SC 的人数」自动计算）。 */
   sideUsable: Record<string, number>;
+  /** faction -> 战斗开始前双方选定的 SC 卡 id；缺省表示未做战前宣言（不额外限制卡池）。 */
+  declaredCardIds?: Record<string, readonly string[]>;
 }
 
 export interface CombatState {

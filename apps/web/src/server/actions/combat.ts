@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { auth } from "@/server/auth";
 import { createCombatRecord, listSelectableUnits } from "@/server/combat/setup";
+import type { CreateCombatOptions } from "@/server/combat/setup";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { emitCombatStarted, emitRoomRefresh } from "@/server/realtime";
@@ -37,9 +38,18 @@ export async function startCombatAction(formData: FormData): Promise<void> {
   });
   const allies = formData.getAll("allies").map((value) => String(value));
   const enemies = formData.getAll("enemies").map((value) => String(value));
+  const allyCards = formData.getAll("allyCards").map((value) => String(value)).filter((value) => value.length > 0);
+  const enemyCards = formData.getAll("enemyCards").map((value) => String(value)).filter((value) => value.length > 0);
+  const declarations: CreateCombatOptions["spellcardDeclarations"] =
+    allyCards.length === 0 && enemyCards.length === 0
+      ? undefined
+      : {
+          ...(allyCards.length > 0 ? { ALLY: allyCards } : {}),
+          ...(enemyCards.length > 0 ? { ENEMY: enemyCards } : {})
+        };
 
   if (membership.role === "KP") {
-    const result = await createCombatRecord(room.id, effective, allies, enemies);
+    const result = await createCombatRecord(room.id, effective, allies, enemies, declarations === undefined ? {} : { spellcardDeclarations: declarations });
     if (result.ok === false || result.combatId === undefined) {
       redirect(errorUrl(room.id, "/combat/new", result.error ?? "战斗创建失败"));
     }
@@ -67,6 +77,7 @@ export async function startCombatAction(formData: FormData): Promise<void> {
       setup: {
         allies: requested,
         enemies: [],
+        allyCards,
         opponentTokenId: opponentTokenId.length === 0 ? null : opponentTokenId
       } as never
     }
@@ -108,10 +119,19 @@ export async function reviewCombatRequestAction(formData: FormData): Promise<voi
     rulePackVersionId: request.room.rulePackVersionId,
     ruleOverride: request.room.ruleOverride
   });
-  const setup = (request.setup ?? {}) as { allies?: unknown; enemies?: unknown };
+  const setup = (request.setup ?? {}) as { allies?: unknown; enemies?: unknown; allyCards?: unknown };
   const allies = Array.isArray(setup.allies) ? setup.allies.map((value) => String(value)) : [];
   const enemies = formData.getAll("enemies").map((value) => String(value));
-  const result = await createCombatRecord(request.roomId, effective, allies, enemies);
+  const requestedAllyCards = Array.isArray(setup.allyCards)
+    ? setup.allyCards.map((value) => String(value)).filter((value) => value.length > 0)
+    : [];
+  const result = await createCombatRecord(
+    request.roomId,
+    effective,
+    allies,
+    enemies,
+    requestedAllyCards.length === 0 ? {} : { spellcardDeclarations: { ALLY: requestedAllyCards } }
+  );
   if (result.ok === false || result.combatId === undefined) {
     redirect(errorUrl(roomId, "/combat/requests/" + request.id, result.error ?? "战斗创建失败"));
   }

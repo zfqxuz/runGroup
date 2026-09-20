@@ -28,6 +28,7 @@ import type { Card, Character, Prisma } from "@prisma/client";
 import { prisma } from "@/server/db/prisma";
 import type { EffectivePack } from "@/server/rules/loader";
 import { NpcStatsSchema } from "@/shared/npc";
+import { SpellCardStatsSchema } from "@/shared/card";
 import { buildEffectiveSkills } from "@/server/character/skills";
 import { emitCombatEnded } from "@/server/realtime";
 import { armorExpressionFromValue } from "@/server/combat/armor";
@@ -53,6 +54,58 @@ export interface SelectableUnit {
   readonly ineligibleReason: string | null;
 }
 
+export interface SelectableSpellcard {
+  readonly cardId: string;
+  readonly name: string;
+  readonly mode: "DECLARATION" | "CONSUMPTION";
+  readonly mpCost: number;
+}
+
+/**
+ * 列出每个候选单位（角色）已装备的 SC，供战前宣言 UI 使用。
+ * 只处理 CHARACTER 引用；NPC 暂不参与符卡宣言。
+ */
+export async function listSelectableSpellcards(
+  units: readonly SelectableUnit[]
+): Promise<Record<string, readonly SelectableSpellcard[]>> {
+  const characterIds = units
+    .map((unit) => (unit.ref.startsWith("character:") ? unit.ref.slice("character:".length) : null))
+    .filter((id): id is string => id !== null && id.length > 0);
+  if (characterIds.length === 0) return {};
+  const cards = await prisma.card.findMany({
+    where: {
+      characterId: { in: [...new Set(characterIds)] },
+      type: "SPELLCARD",
+      isEquipped: true,
+      system: "TOUHOU"
+    },
+    select: { id: true, name: true, characterId: true, stats: true },
+    orderBy: { createdAt: "asc" }
+  });
+  const byCharacter = new Map<string, SelectableSpellcard[]>();
+  for (const card of cards) {
+    if (typeof card.characterId !== "string" || card.characterId.length === 0) continue;
+    const parsed = SpellCardStatsSchema.safeParse(card.stats);
+    if (parsed.success === false) continue;
+    const list = byCharacter.get(card.characterId) ?? [];
+    list.push({
+      cardId: card.id,
+      name: card.name,
+      mode: parsed.data.mode,
+      mpCost: parsed.data.mpCost
+    });
+    byCharacter.set(card.characterId, list);
+  }
+  const output: Record<string, readonly SelectableSpellcard[]> = {};
+  for (const unit of units) {
+    if (unit.ref.startsWith("character:") === false) continue;
+    const list = byCharacter.get(unit.ref.slice("character:".length));
+    if (list === undefined) continue;
+    output[unit.ref] = list;
+  }
+  return output;
+}
+
 export interface UnitSelection {
   readonly ref: string;
   readonly faction: string;
@@ -67,6 +120,14 @@ export interface CreateCombatResult {
 export interface CreateCombatOptions {
   /** 指定战斗场景；提供时所有参战单位必须在该场景。 */
   readonly sceneId?: string | null;
+  /**
+   * 千幻抄战前 SC 宣言：双方各自选定的符卡卡 id。
+   * 提供时卡片会被校验归属与数量上限，并限制本场只能使用已宣言的卡。
+   */
+  readonly spellcardDeclarations?: {
+    readonly ALLY?: readonly string[];
+    readonly ENEMY?: readonly string[];
+  };
 }
 
 interface ParticipantScene {
@@ -681,13 +742,15 @@ export async function createCombatRecord(
         isEquipped: true,
         system: "TOUHOU"
       },
-      select: { characterId: true }
+      select: { id: true, characterId: true }
     });
-    const usableCharacterIds = new Set(
-      equippedSpellcards
-        .map((card) => card.characterId)
-        .filter((id): id is string => typeof id === "string" && id.length > 0)
-    );
+    const cardOwnerById = new Map<string, string>();
+    for (const card of equippedSpellcards) {
+      if (typeof card.characterId === "string" && card.characterId.length > 0) {
+        cardOwnerById.set(card.id, card.characterId);
+      }
+    }
+    const usableCharacterIds = new Set(cardOwnerById.values());
     const rules = spellcardBattleDeclarationRules(pack.pack.spellcard);
     const sideUsable: Record<string, number> = {};
     for (const faction of ["ALLY", "ENEMY"]) {
@@ -699,7 +762,39 @@ export async function createCombatRecord(
       ).length;
       sideUsable[faction] = spellcardSideUsableCount(usableMembers, rules);
     }
-    state.spellcardBattle = { sideUsable };
+
+    const requested = options.spellcardDeclarations;
+    if (requested === undefined) {
+      state.spellcardBattle = { sideUsable };
+    } else {
+      const declaredCardIds: Record<string, string[]> = {};
+      for (const faction of ["ALLY", "ENEMY"] as const) {
+        if (requested[faction] === undefined) continue;
+        const unique = [...new Set(requested[faction] ?? [])];
+        const valid = unique.filter((cardId) => {
+          const owner = cardOwnerById.get(cardId);
+          if (owner === undefined) return false;
+          return state.participants.some(
+            (participant) => participant.characterId === owner && participant.faction === faction
+          );
+        });
+        const cap = sideUsable[faction] ?? 0;
+        if (valid.length > cap) {
+          return {
+            ok: false,
+            error:
+              (faction === "ALLY" ? "我方" : "敌方") +
+              "宣言的符卡数（" +
+              valid.length +
+              "）超过本场上限（" +
+              cap +
+              "）"
+          };
+        }
+        declaredCardIds[faction] = valid;
+      }
+      state.spellcardBattle = { sideUsable, declaredCardIds };
+    }
   }
 
   if (pack.combat.mode === "INITIATIVE") beginInitiativeRound(pack, state);
