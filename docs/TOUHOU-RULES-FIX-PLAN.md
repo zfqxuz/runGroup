@@ -132,17 +132,20 @@
 - 伤害管线新增 `ELEMENT_MOD` 步骤；只有 `touhou-ext` pipeline 包含它。
 - `resolveElementAdjustment()`：攻击元素克制目标元素时附加 `2d6`（掷骰失败回退 `+5`），
   同属性时附加 `-2d6`；弱点与同属性同时成立时按千幻抄「不重复叠加」取弱点。
+- 抵抗修正：弱点使防守方本次应对检定目标 `-3`，同属性 `+3`；
+  由 `weaknessResistMod` / `sameElementResistMod` 配置，仅对 DODGE / DEFEND / COUNTER 生效。
 - 攻击 / 法术 / 道具 DAMAGE 效果都走同一属性判定；routine 多段攻击逐段携带元素。
 - 参战单位新增 `elements`，旧快照在 `runtime.ts` 按 race 回填。
 
 **测试与隔离**
 - `packages/rules/src/__tests__/touhou-elements.test.ts`：6 条（属性表、相克双向一致、种族元素、
   ELEMENT_MOD 与 COC7 隔离）。
-- `packages/combat/src/__tests__/touhou-elements.test.ts`：5 条（弱点、同属性、不叠加、无元素不触发）。
+- `packages/combat/src/__tests__/touhou-elements.test.ts`：8 条（弱点、同属性、不叠加、无元素不触发、
+  应对检定目标 -3 / +3 / 不修正）。
 - COC7 基线 `elements` 为空且 pipeline 不含 `ELEMENT_MOD`，传入属性值也不改变伤害。
 
-**仍未覆盖的 5.2 / 5.3**：弱点「抵抗 -3」与「全判定 -1」、同属性「抵抗 +3 / 判定 +1」，
-以及属性使能力（每种属性独立等级、基本 / 追加能力、与妖术组合、范围与脱离）——留待能力系统批次。
+**仍未覆盖的 5.2 / 5.3**：「属性明显时全判定 ±1」属情境裁定，保留为 KP 行为；
+属性使能力（每种属性独立等级、基本 / 追加能力、与妖术组合、范围与脱离）留待能力系统批次。
 
 ### 2.3 后续条目（未铺开）
 
@@ -197,7 +200,7 @@
 - COC7 回归四个脚本全部 PASS。
 - 新增测试：
   - `packages/rules/src/__tests__/touhou-elements.test.ts`：6 条；
-  - `packages/combat/src/__tests__/touhou-elements.test.ts`：5 条；
+  - `packages/combat/src/__tests__/touhou-elements.test.ts`：8 条；
   - `packages/rules/src/__tests__/magic.test.ts` 追加 2 条元素继承测试。
 
 ## 5. 风险与回滚

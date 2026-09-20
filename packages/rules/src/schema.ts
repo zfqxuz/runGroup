@@ -287,7 +287,11 @@ export const ElementRulesSchema = z.object({
   weaknessFlat: ExprSchema.default("5"),
   /** 同属性攻击的伤害惩罚骰；无法掷骰时回退到 sameElementFlat。 */
   sameElementDamage: DiceExprSchema.default("2d6"),
-  sameElementFlat: ExprSchema.default("5")
+  sameElementFlat: ExprSchema.default("5"),
+  /** 弱点攻击时防守方本次应对检定的目标修正。 */
+  weaknessResistMod: ExprSchema.default("-3"),
+  /** 同属性攻击时防守方本次应对检定的目标修正。 */
+  sameElementResistMod: ExprSchema.default("3")
 });
 
 export const SpellCardRulesSchema = z.object({

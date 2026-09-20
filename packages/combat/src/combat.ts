@@ -834,6 +834,8 @@ interface ElementAdjustment {
   readonly relation: "WEAKNESS" | "SAME";
   readonly multiplier: number;
   readonly flat: number;
+  /** 防守方本次应对检定的目标修正（弱点 -3 / 同属性 +3）。 */
+  readonly defenseMod: number;
   readonly sourceElement: string;
 }
 
@@ -888,10 +890,21 @@ function resolveElementAdjustment(
   }
   const magnitude = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
   if (magnitude <= 0) return null;
+
+  const resistExpression = weakness ? rules.weaknessResistMod : rules.sameElementResistMod;
+  let defenseMod = 0;
+  try {
+    const value = evaluateSource(pack, resistExpression, target.vars);
+    defenseMod = Number.isFinite(value) ? Math.floor(value) : 0;
+  } catch {
+    defenseMod = 0;
+  }
+
   return {
     relation,
     multiplier: 1,
     flat: relation === "WEAKNESS" ? magnitude : -magnitude,
+    defenseMod,
     sourceElement: element
   };
 }
@@ -1665,12 +1678,23 @@ function resolveAttack(
     return;
   }
 
+  const elementAdjustment = resolveElementAdjustment(
+    ctx.pack,
+    state,
+    submission.element,
+    defender,
+    `attack:${actor.id}:${submission.shotIndex ?? 0}`
+  );
+  const elementDefenseMod = elementAdjustment?.defenseMod ?? 0;
+
   let defenseSuccess = false;
   let counterDamageSource: string | null = null;
   const counterLabel = isCoc7 ? "反击" : "消弹对抗";
 
   if (reaction.type === "DODGE") {
-    const dodgeTarget = skillValueOf(ctx.pack, defender, reaction.skill ?? "DODGE", defender.attributes.dex);
+    const dodgeTarget =
+      skillValueOf(ctx.pack, defender, reaction.skill ?? "DODGE", defender.attributes.dex) +
+      elementDefenseMod;
     const dodgeUsesPercentile = isCoc7 || attackUsesPercentile;
     const dodgeModifierSources = isCoc7 ? defenseDiceModifierSources(defender) : [];
     const dodgeDice = totalDiceModifiers(dodgeModifierSources);
@@ -1714,12 +1738,9 @@ function resolveAttack(
     });
   } else if (reaction.type === "DEFEND" && isCoc7 === false) {
     // 千幻抄防御：用近战技能与攻击方对抗；成功免伤，失败按规则包 failReduce 减伤。
-    const defendTarget = skillValueOf(
-      ctx.pack,
-      defender,
-      reaction.skill ?? "MELEE",
-      defender.attributes.str
-    );
+    const defendTarget =
+      skillValueOf(ctx.pack, defender, reaction.skill ?? "MELEE", defender.attributes.str) +
+      elementDefenseMod;
     const defend = rollCombatCheck(ctx.pack, rng, defendTarget);
     defenseSuccess = defend.check.rank >= attackCheck.rank;
     pushLog(state, {
@@ -1749,12 +1770,13 @@ function resolveAttack(
       }
     });
   } else if (reaction.type === "COUNTER") {
-    const counterTarget = skillValueOf(
-      ctx.pack,
-      defender,
-      reaction.skill ?? (isCoc7 ? "FIGHTING_BRAWL" : "DANMAKU"),
-      defender.attributes.dex
-    );
+    const counterTarget =
+      skillValueOf(
+        ctx.pack,
+        defender,
+        reaction.skill ?? (isCoc7 ? "FIGHTING_BRAWL" : "DANMAKU"),
+        defender.attributes.dex
+      ) + elementDefenseMod;
     if (isCoc7 || attackUsesPercentile) {
       const counterModifierSources = isCoc7 ? defenseDiceModifierSources(defender) : [];
       const counterDice = totalDiceModifiers(counterModifierSources);
@@ -1939,13 +1961,6 @@ function resolveAttack(
 
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
   const raceMultiplier = raceIncomingMultiplier(ctx.pack, defender, skillName);
-  const elementAdjustment = resolveElementAdjustment(
-    ctx.pack,
-    state,
-    submission.element,
-    defender,
-    `attack:${actor.id}:${submission.shotIndex ?? 0}`
-  );
 
   const outcome = applyDamagePipeline(ctx.pack, {
     baseDamage: damageTotal,

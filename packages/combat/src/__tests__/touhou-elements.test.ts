@@ -43,7 +43,7 @@ function addUnit(
     faction,
     attributes: attrs,
     derived: bigDerived(),
-    skills: { DANMAKU: 100, MAGIC: 100 },
+    skills: { DANMAKU: 100, MAGIC: 100, DODGE: 100 },
     atbMax: computeAtbMax(touhou, { dex: 55 }),
     speed: computeBaseSpeed(touhou, { dex: 55 }),
     ...options
@@ -76,6 +76,34 @@ function attackElement(seed: string, element: string, targetElements: readonly s
   const settle = state.log.find((entry) => entry.data?.rollType === "DAMAGE_SETTLE");
   return { target, steps: String(settle?.data?.steps ?? "") };
 }
+
+function dodgeTargetAgainst(seed: string, element: string, targetElements: readonly string[]): number {
+  const state = createCombat({ id: "c-" + seed, seed, tickMs: 250 });
+  const attacker = addUnit(state, "attacker", "PC");
+  const target = addUnit(state, "target", "BOSS", { elements: [...targetElements] });
+  forceReady(attacker);
+  forceReady(target);
+  submitAction(state, {
+    actorId: "attacker", kind: "DANMAKU", targetId: "target", skill: "DANMAKU", damage: "20", element
+  });
+  resolvePending(touhou, state, { target: { type: "DODGE", skill: "DODGE" } });
+  const dodge = state.log.find((entry) => entry.data?.rollType === "DODGE");
+  return Number(dodge?.data?.target ?? Number.NaN);
+}
+
+describe("属性相克 · 抵抗修正（应对检定目标）", () => {
+  it("弱点属性使防守方应对目标 -3", () => {
+    expect(dodgeTargetAgainst("resist-weak", "WATER", ["FIRE"])).toBe(97);
+  });
+
+  it("同属性使防守方应对目标 +3", () => {
+    expect(dodgeTargetAgainst("resist-same", "FIRE", ["FIRE"])).toBe(103);
+  });
+
+  it("无元素关系时不修正应对目标", () => {
+    expect(dodgeTargetAgainst("resist-none", "WATER", [])).toBe(100);
+  });
+});
 
 describe("属性相克 · 弱点与同属性", () => {
   it("水属性攻击火属性目标时附加 2d6 弱点伤害", () => {

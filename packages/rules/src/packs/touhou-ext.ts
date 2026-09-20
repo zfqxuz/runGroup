@@ -287,7 +287,10 @@ TOUHOU_EXT.elementRules = {
   weaknessDamage: "2d6",
   weaknessFlat: "5",
   sameElementDamage: "2d6",
-  sameElementFlat: "5"
+  sameElementFlat: "5",
+  // 弱点 「抵抗 -3」；同属性「抵抗 +3」，映射到本次应对检定目标。
+  weaknessResistMod: "-3",
+  sameElementResistMod: "3"
 };
 TOUHOU_EXT.statusEffects = {
   // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。
