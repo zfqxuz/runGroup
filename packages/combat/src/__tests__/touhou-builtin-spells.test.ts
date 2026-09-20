@@ -86,6 +86,7 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     const base = resolveRulePack("touhou-ext", builtinRegistry());
     expect(base.magic?.enabled).toBe(false);
     expect(base.magic?.spells.map((spell) => spell.id).sort()).toEqual([
+      "ELEMENTAL_AWAKEN",
       "ELEMENTAL_DESTROY",
       "ELEMENTAL_GENERATE",
       "ELEMENTAL_STRIKE",
@@ -195,6 +196,16 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(target.cover?.hp).toBe(12);
     expect(target.cover?.blocksLineOfSight).toBe(true);
     expect(target.grantedElement ?? null).toBeNull();
+  });
+
+  it("觉醒：按属性使 Lv×2 生成临时战斗单位", () => {
+    const { state, caster } = cast("builtin-awaken", "ELEMENTAL_AWAKEN", { "ELEMENTALIST:FIRE": 3 });
+    expect(caster.mp).toBe(96);
+    const summon = state.participants.find((item) => item.id.startsWith("summon-" + caster.id));
+    expect(summon).toBeDefined();
+    expect(summon?.attributes.str).toBe(6); // 3 × 2
+    expect(summon?.maxHp).toBe(13); // 10 + 3
+    expect(state.log.some((entry) => entry.text.includes("召唤"))).toBe(true);
   });
 
   it("消灭：破坏目标的生成物", () => {

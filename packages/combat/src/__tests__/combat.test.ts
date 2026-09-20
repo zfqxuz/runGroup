@@ -550,7 +550,7 @@ describe("魔法施放", () => {
           mpCost: "0",
           sanCost: "0",
           target: "SELF",
-          effects: [{ type: "SUMMON", name: "测试召唤物", count: "1", durationTicks: "0" }]
+          effects: [{ type: "SUMMON", name: "测试召唤物", count: "1", perLevel: 2, durationTicks: "0" }]
         }
       ]
     }

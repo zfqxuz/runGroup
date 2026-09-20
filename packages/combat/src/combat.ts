@@ -2990,6 +2990,39 @@ function genericSummonTemplate(pack: CompiledRulePack, name: string): SummonTemp
   };
 }
 
+/** 属性使·觉醒等能力召唤：没有模组模板时，用能力等级生成通用召唤物。 */
+function abilitySummonTemplate(
+  pack: CompiledRulePack,
+  actor: CombatParticipantState,
+  name: string,
+  abilityId: string,
+  perLevel: number
+): SummonTemplate {
+  const level = dpAbilityLevel(actor, abilityId);
+  const judgment = Math.max(1, level * Math.max(1, Math.floor(perLevel)));
+  const attributes: AttributeSet = {
+    str: judgment,
+    con: judgment,
+    siz: judgment,
+    dex: judgment,
+    app: judgment,
+    int: judgment,
+    pow: judgment,
+    edu: judgment,
+    luck: judgment
+  };
+  const outcome = computeDerived(pack, { attributes, skills: {} });
+  const hp = Math.max(1, 10 + level);
+  return {
+    name: name.trim().length > 0 ? name.trim() : "觉醒生成物",
+    attributes: outcome.attributes,
+    derived: { ...outcome.derived, hp, maxHp: hp },
+    skills: { DODGE: 0, MELEE: 0, DANMAKU: 0, RESIST: 0 },
+    spells: [],
+    damageBonus: "0"
+  };
+}
+
 function addOrReplaceStatus(
   target: CombatParticipantState,
   status: ActiveStatusEffect
@@ -3450,7 +3483,11 @@ function applyMagicEffect(
     const count = Math.max(1, Math.min(8, Math.floor(evaluateEffectNumber(ctx.pack, effect.count, actor.vars))));
     const duration = evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars);
     for (let index = 0; index < count; index += 1) {
-      const template = submission.summonTemplate ?? genericSummonTemplate(ctx.pack, effect.name ?? "召唤物");
+      const template =
+        submission.summonTemplate ??
+        (effect.abilityId !== undefined
+          ? abilitySummonTemplate(ctx.pack, actor, effect.name ?? "召唤物", effect.abilityId, effect.perLevel)
+          : genericSummonTemplate(ctx.pack, effect.name ?? "召唤物"));
       const ordinal = (state.summonSeq ?? 0) + 1;
       state.summonSeq = ordinal;
       const id = "summon-" + actor.id + "-" + String(ordinal);

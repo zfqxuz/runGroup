@@ -240,6 +240,10 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     /** 直接指定房间内 NPC 卡的 id；存在时优先使用。 */
     cardId: z.string().optional(),
     count: ExprSchema.default("1"),
+    /** 千幻抄能力召唤（如属性使·觉醒）：没有模组召唤模板时，用该能力等级生成通用模板。 */
+    abilityId: z.string().optional(),
+    /** 每级能力提供的判定值（属性使·觉醒默认每级 2）。 */
+    perLevel: z.number().int().min(1).default(2),
     /** 持续行动轮次；0 表示直到战斗结束。 */
     durationTicks: ExprSchema.default("0")
   }),

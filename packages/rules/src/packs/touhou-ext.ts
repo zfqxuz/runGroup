@@ -580,6 +580,20 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "ELEMENTAL_WEAPON", damageBonus: "abilityLv", durationTicks: "0", canRanged: false }]
     },
     {
+      id: "ELEMENTAL_AWAKEN",
+      name: "觉醒",
+      skill: "ELEMENTAL_MAGIC",
+      abilityId: "ELEMENTALIST",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "SELF",
+      targeting: "SELF",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 赋予生成物暂时生命：判定值 = 属性使 Lv×2，HP = 10+属性使 Lv，战斗结束前存在。
+      effects: [{ type: "SUMMON", name: "觉醒生成物", abilityId: "ELEMENTALIST", perLevel: 2, durationTicks: "0" }]
+    },
+    {
       id: "MAGIC_NAPALM",
       name: "燃烧弹",
       skill: "MAGIC",
