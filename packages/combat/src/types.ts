@@ -81,6 +81,18 @@ export interface CoverState {
   blocksLineOfSight?: boolean;
 }
 
+/** 属性使・强化攻击：下一次近战 / 射击 / 追击追加伤害骰，或弹幕固定伤害追加。 */
+export interface AttackBuffState {
+  /** 追加伤害骰数量（1 = +1D）。 */
+  readonly bonusDice: number;
+  /** 弹幕固定伤害追加。 */
+  readonly danmakuDamage: number;
+  /** 剩余次数；0 表示持续时间内不限次数。 */
+  uses: number;
+  /** 到期轮次；null 表示直到消耗 / 战斗结束。 */
+  expiresAtRound: number | null;
+}
+
 /** 常时被动加值：由 AbilityDefinition.passives 在战斗准备时汇总。 */
 export interface CombatPassiveMods {
   readonly damageBonus: number;
@@ -223,6 +235,8 @@ export interface CombatParticipantState {
   abilityUsedThisRound?: boolean;
   /** 集中力：已宣言，下次防御 / 回避 DP 消耗降低，结算后清除。 */
   focusDefense?: boolean;
+  /** 属性使・强化攻击：下一次攻击的追加伤害 / 弹幕伤害；null 表示没有。 */
+  attackBuff?: AttackBuffState | null;
   /** 展开中的结界；null 表示没有。 */
   barrier?: BarrierState | null;
   /** 14.12 当前所处掩体；null / undefined 表示无掩体。 */

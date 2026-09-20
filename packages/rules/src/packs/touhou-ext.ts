@@ -509,6 +509,20 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "DISPEL", keys: ["COVER"] }]
     },
     {
+      id: "ELEMENTAL_STRIKE",
+      name: "强化攻击",
+      skill: "ELEMENTAL_MAGIC",
+      abilityId: "ELEMENTALIST",
+      requiredLevel: 1,
+      mpCost: "3",
+      sanCost: "0",
+      target: "SELF",
+      targeting: "SELF",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "12" },
+      // 属性使・强化攻击：命中判断 / 弹幕宣言时追加 +1D 或弹幕伤害 +2，一次攻击限定一次。
+      effects: [{ type: "ATTACK_BUFF", bonusDice: "1", danmakuDamage: "2", uses: "1", durationTicks: "0" }]
+    },
+    {
       id: "MAGIC_SHIELD",
       name: "护盾术",
       skill: "MAGIC",

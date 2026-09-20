@@ -119,6 +119,16 @@ describe("战斗外施法判定", () => {
   });
 });
 
+describe("ATTACK_BUFF 强化攻击指令", () => {
+  it("ATTACK_BUFF 带默认 bonusDice / danmakuDamage / uses / durationTicks", () => {
+    const spell = spellOf({ effects: [{ type: "ATTACK_BUFF" }] });
+    expect(spellEffectsOf(spell)).toEqual([
+      { type: "ATTACK_BUFF", bonusDice: "1", danmakuDamage: "0", uses: "1", durationTicks: "0" }
+    ]);
+    expect(MAGIC_EFFECT_TYPES).toContain("ATTACK_BUFF");
+  });
+});
+
 describe("BARRIER 结界指令", () => {
   it("BARRIER 带默认 name / durationTicks", () => {
     const spell = spellOf({ effects: [{ type: "BARRIER", hp: "2d6" }] });

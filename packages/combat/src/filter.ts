@@ -93,6 +93,10 @@ export interface ParticipantView {
   readonly focusDefense: boolean;
   /** 属性赋予：当前攻击附带元素；无则为 null。 */
   readonly grantedElement: string | null;
+  /** 属性使・强化攻击：追加伤害骰数；无则为 null。 */
+  readonly attackBuffDice: number | null;
+  readonly attackBuffDanmaku: number | null;
+  readonly attackBuffUses: number | null;
   /** 护盾术追加 DP；仅数字可见时下发。 */
   readonly tempDp: number | null;
   readonly tempDpMax: number | null;
@@ -289,6 +293,9 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       barrierPenalty: showNumbers ? (participant.barrier?.penalty ?? null) : null,
       focusDefense: participant.focusDefense === true,
       grantedElement: showNumbers ? (participant.grantedElement ?? null) : null,
+      attackBuffDice: showNumbers ? (participant.attackBuff?.bonusDice ?? null) : null,
+      attackBuffDanmaku: showNumbers ? (participant.attackBuff?.danmakuDamage ?? null) : null,
+      attackBuffUses: showNumbers ? (participant.attackBuff?.uses ?? null) : null,
       tempDp: showNumbers ? Math.max(0, participant.tempDp ?? 0) : null,
       tempDpMax: showNumbers ? Math.max(0, participant.tempDpMax ?? 0) : null,
       coverName: showNumbers ? (participant.cover?.name ?? null) : null,

@@ -1230,6 +1230,16 @@ export default function CombatBoard(props: Props) {
                         {item.grantedElement === null || item.grantedElement === undefined ? null : (
                           <p className="mt-0.5 font-mono text-[11px] text-violet-200">属性 {item.grantedElement}</p>
                         )}
+                        {(item.attackBuffDice ?? 0) > 0 || (item.attackBuffDanmaku ?? 0) > 0 ? (
+                          <p className="mt-0.5 font-mono text-[11px] text-orange-200">
+                            强化攻击
+                            {(item.attackBuffDice ?? 0) > 0 ? ` +${item.attackBuffDice}D` : ""}
+                            {(item.attackBuffDanmaku ?? 0) > 0 ? ` 弹幕+${item.attackBuffDanmaku}` : ""}
+                            {item.attackBuffUses === null || item.attackBuffUses === undefined || item.attackBuffUses === 0
+                              ? ""
+                              : `（剩余 ${item.attackBuffUses} 次）`}
+                          </p>
+                        ) : null}
                         {(item.tempDp ?? 0) > 0 ? (
                           <p className="mt-0.5 font-mono text-[11px] text-emerald-200">
                             追加DP {item.tempDp}

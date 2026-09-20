@@ -169,6 +169,7 @@ export const MAGIC_EFFECT_TYPES = [
   "BARRIER",
   "TEMP_DP",
   "ELEMENT_BUFF",
+  "ATTACK_BUFF",
   "CREATE_COVER"
 ] as const;
 
@@ -293,6 +294,17 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     /** 赋予的攻击元素 id（对应元素表），如 FIRE / WATER。 */
     element: z.string(),
     /** 持续轮次；0 表示直到战斗结束。 */
+    durationTicks: ExprSchema.default("0")
+  }),
+  z.object({
+    type: z.literal("ATTACK_BUFF"),
+    /** 追加伤害骰数量表达式（1 = +1D）；可引用 abilityLv。 */
+    bonusDice: ExprSchema.default("1"),
+    /** 弹幕固定伤害追加；可引用 abilityLv。 */
+    danmakuDamage: ExprSchema.default("0"),
+    /** 可生效次数；0 表示在持续时间内不限次数。 */
+    uses: ExprSchema.default("1"),
+    /** 持续轮次；0 表示直到消耗完 / 战斗结束。 */
     durationTicks: ExprSchema.default("0")
   }),
   z.object({

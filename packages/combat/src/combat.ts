@@ -52,6 +52,7 @@ import { rngFor } from "./rng";
 import { loadParticipantConditions, possessInitFromConditions } from "./conditions";
 import type {
   ActionSubmission,
+  AttackBuffState,
   CombatMode,
   CombatParticipantState,
   CombatPassiveMods,
@@ -252,6 +253,7 @@ export function addParticipant(
     grantedElement: null,
     grantedElementExpiresAtRound: null,
     focusDefense: false,
+    attackBuff: null,
     grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
@@ -832,9 +834,31 @@ export function expireCovers(state: CombatState): string[] {
   return expired;
 }
 
+/** 属性使・强化攻击到期清理；返回到期单位 id。 */
+export function expireAttackBuffs(state: CombatState): string[] {
+  const expired: string[] = [];
+  for (const participant of state.participants) {
+    const buff = participant.attackBuff;
+    if (buff === null || buff === undefined) continue;
+    if (buff.expiresAtRound === null || buff.expiresAtRound === undefined) continue;
+    if (state.round < buff.expiresAtRound) continue;
+    participant.attackBuff = null;
+    expired.push(participant.id);
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: participant.name + " 的强化攻击持续时间结束",
+      data: { rollType: "ATTACK_BUFF_EXPIRED" }
+    });
+  }
+  return expired;
+}
+
 function expireRoundTimers(state: CombatState): void {
   expireBarriers(state);
   expireCovers(state);
+  expireAttackBuffs(state);
   for (const participant of [...state.participants]) {
     if (
       participant.grantedElement !== null &&
@@ -3506,6 +3530,36 @@ function applyMagicEffect(
     return;
   }
 
+  if (effect.type === "ATTACK_BUFF") {
+    const levelVars = { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 };
+    const bonusDice = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.bonusDice, levelVars)));
+    const danmakuDamage = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.danmakuDamage, levelVars)));
+    const uses = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.uses, actor.vars)));
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    const before = target.attackBuff;
+    // 强化攻击不能叠加：同类取较高数值并刷新剩余次数 / 持续。
+    target.attackBuff = {
+      bonusDice: Math.max(bonusDice, before?.bonusDice ?? 0),
+      danmakuDamage: Math.max(danmakuDamage, before?.danmakuDamage ?? 0),
+      uses: Math.max(uses, before === null || before === undefined ? 0 : before.uses),
+      expiresAtRound: duration > 0 ? state.round + duration : (before?.expiresAtRound ?? null)
+    };
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 获得强化攻击" +
+        (target.attackBuff.bonusDice > 0 ? "（伤害 +" + target.attackBuff.bonusDice + "D）" : "") +
+        (target.attackBuff.danmakuDamage > 0 ? "（弹幕伤害 +" + target.attackBuff.danmakuDamage + "）" : "") +
+        (duration > 0 ? "，" + duration + " 轮" : ""),
+      {
+        rollType: "ATTACK_BUFF",
+        bonusDice: target.attackBuff.bonusDice,
+        danmakuDamage: target.attackBuff.danmakuDamage,
+        uses: target.attackBuff.uses,
+        duration
+      }
+    );
+    return;
+  }
+
   if (effect.type === "TEMP_DP") {
     const amount = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.amount, { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 })));
     const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
@@ -4318,6 +4372,59 @@ function passiveBonus(
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/** 属性使・强化攻击：读取当前生效的强化（到期自动清理）。 */
+function activeAttackBuff(
+  state: CombatState,
+  participant: CombatParticipantState
+): AttackBuffState | null {
+  const buff = participant.attackBuff;
+  if (buff === null || buff === undefined) return null;
+  if (buff.expiresAtRound !== null && buff.expiresAtRound !== undefined && state.round >= buff.expiresAtRound) {
+    participant.attackBuff = null;
+    return null;
+  }
+  return buff;
+}
+
+/** 把强化攻击换算成伤害表达式后缀（如 "+1d6"）。 */
+function attackBuffDiceSuffix(state: CombatState, participant: CombatParticipantState): string {
+  const buff = activeAttackBuff(state, participant);
+  if (buff === null || buff.bonusDice <= 0) return "";
+  return "+" + Math.floor(buff.bonusDice) + "d6";
+}
+
+/** 弹幕固定伤害追加。 */
+function attackBuffDanmakuBonus(state: CombatState, participant: CombatParticipantState): number {
+  const buff = activeAttackBuff(state, participant);
+  return buff === null ? 0 : Math.max(0, Math.floor(buff.danmakuDamage));
+}
+
+/** 攻击结算后消费一次强化；uses 为 0 表示持续时间内不限次数。 */
+function consumeAttackBuff(
+  state: CombatState,
+  participant: CombatParticipantState,
+  label: string
+): void {
+  const buff = activeAttackBuff(state, participant);
+  if (buff === null) return;
+  if (buff.uses > 0) {
+    buff.uses = Math.max(0, buff.uses - 1);
+    if (buff.uses === 0) participant.attackBuff = null;
+  }
+  pushLog(state, {
+    kind: "STATUS",
+    actorId: participant.id,
+    targetId: participant.id,
+    text: participant.name + " 的强化攻击生效：" + label,
+    data: {
+      rollType: "ATTACK_BUFF_CONSUMED",
+      bonusDice: buff.bonusDice,
+      danmakuDamage: buff.danmakuDamage,
+      remainingUses: buff.uses
+    }
+  });
+}
+
 /** 7.5 结界内战斗惩罚（缺省 0）。 */
 function barrierPenalty(participant: CombatParticipantState): number {
   const value = participant.barrier?.penalty;
@@ -4633,8 +4740,11 @@ function resolveDpRangedAttack(
   } else {
     damageTarget = cover.target;
   }
+  const rangedBuffSuffix = attackBuffDiceSuffix(state, actor);
   const damageExpression = expandDamageBonus(
-    dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED") + passiveDamageDiceSuffix(actor),
+    dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED") +
+      passiveDamageDiceSuffix(actor) +
+      rangedBuffSuffix,
     actor.damageBonus
   );
   let rolled = 0;
@@ -4648,6 +4758,7 @@ function resolveDpRangedAttack(
   const total = Math.max(0, Math.round((rolled + flatBonus) * (enhance?.damageMultiplier ?? 1)) - reduction);
   const armorResult = absorbWithArmor(damageTarget, total);
   const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining, actor);
+  consumeAttackBuff(state, actor, "射击" + (rangedBuffSuffix.length > 0 ? " " + rangedBuffSuffix : ""));
   pushLog(state, {
     kind: "DAMAGE",
     actorId: actor.id,
@@ -4743,8 +4854,11 @@ function resolveDpChase(
   const chaseElement = (submission.element ?? actor.grantedElement)?.trim();
   const achievement =
     base + Math.min(escalation, maxEscalation) * 10 + (chaseEnhance?.accuracyMod ?? 0);
+  const chaseBuffSuffix = attackBuffDiceSuffix(state, actor);
   const damageExpression =
-    dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE") + passiveDamageDiceSuffix(actor);
+    dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE") +
+    passiveDamageDiceSuffix(actor) +
+    chaseBuffSuffix;
   const rolledChaseDamage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
   const damage = Math.round(
     (rolledChaseDamage + (chaseEnhance?.flatDamage ?? 0)) * (chaseEnhance?.damageMultiplier ?? 1)
@@ -4781,6 +4895,7 @@ function resolveDpChase(
   for (const hit of hits) {
     applyDpDamage(ctx, actor, hit.target, Math.max(0, damage + hit.elementFlat), hit.label, 0, damageExpression);
   }
+  consumeAttackBuff(state, actor, "追击" + (chaseBuffSuffix.length > 0 ? " " + chaseBuffSuffix : ""));
 }
 
 /**
@@ -4851,8 +4966,11 @@ function resolveDpMelee(
   } else {
     damageTarget = cover.target;
   }
+  const meleeBuffSuffix = attackBuffDiceSuffix(state, actor);
   const damageExpression =
-    dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE") + passiveDamageDiceSuffix(actor);
+    dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE") +
+    passiveDamageDiceSuffix(actor) +
+    meleeBuffSuffix;
   const rolledMeleeDamage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
   const damage = Math.max(
     0,
@@ -4864,6 +4982,7 @@ function resolveDpMelee(
     ? "近战命中（" + damageTarget.name + " 掩护 " + defender.name + "）"
     : "近战命中";
   applyDpDamage(ctx, actor, damageTarget, damage, hitLabel, reduction, damageExpression);
+  consumeAttackBuff(state, actor, "近战" + (meleeBuffSuffix.length > 0 ? " " + meleeBuffSuffix : ""));
 }
 
 /**
@@ -4920,12 +5039,14 @@ function resolveDpDanmaku(
   if (spendDp(ctx, actor, cost, "弹幕") === false) return;
   const reduction = Math.max(0, Math.floor(submission.danmakuDpReduction ?? 1));
   const danmakuEnhance = spellcardEnhanceForAttack(ctx.pack, actor, "DANMAKU");
+  const danmakuBuffBonus = attackBuffDanmakuBonus(state, actor);
   const baseDamage = Math.max(
     0,
     Math.round(
       (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1)) +
         (danmakuEnhance?.flatDamage ?? 0) +
-        passiveBonus(actor, "danmakuDamageBonus")) *
+        passiveBonus(actor, "danmakuDamageBonus") +
+        danmakuBuffBonus) *
         (danmakuEnhance?.damageMultiplier ?? 1)
     )
   );
@@ -4971,6 +5092,7 @@ function resolveDpDanmaku(
       data: { rollType: "DP_DANMAKU_HIT", damage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
     });
   }
+  consumeAttackBuff(state, actor, "弹幕 +" + danmakuBuffBonus + " 伤害");
 }
 
 /**

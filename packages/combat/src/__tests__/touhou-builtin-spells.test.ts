@@ -82,12 +82,13 @@ function cast(seed: string, spellId: string, casterLevels: Record<string, number
 }
 
 describe("千幻抄内置法术（wiki 自动结算子集）", () => {
-  it("东方包登记 4 个内置法术，默认启用开关关闭", () => {
+  it("东方包登记内置法术且默认启用开关关闭", () => {
     const base = resolveRulePack("touhou-ext", builtinRegistry());
     expect(base.magic?.enabled).toBe(false);
     expect(base.magic?.spells.map((spell) => spell.id).sort()).toEqual([
       "ELEMENTAL_DESTROY",
       "ELEMENTAL_GENERATE",
+      "ELEMENTAL_STRIKE",
       "MAGIC_CURE",
       "MAGIC_HEAL",
       "MAGIC_SHIELD",
@@ -108,6 +109,14 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(caster.mp).toBe(96);
     expect(target.tempDp).toBe(6); // ceil(4 × 1.5)
     expect(target.tempDpMax).toBe(6);
+  });
+
+  it("强化攻击：施法者获得下一次攻击 +1D / 弹幕 +2，消耗 3 灵力", () => {
+    const { caster } = cast("builtin-strike", "ELEMENTAL_STRIKE", { "ELEMENTALIST:FIRE": 2 });
+    expect(caster.mp).toBe(97);
+    expect(caster.attackBuff?.bonusDice).toBe(1);
+    expect(caster.attackBuff?.danmakuDamage).toBe(2);
+    expect(caster.attackBuff?.uses).toBe(1);
   });
 
   it("破魔结界：解除目标身上的结界", () => {

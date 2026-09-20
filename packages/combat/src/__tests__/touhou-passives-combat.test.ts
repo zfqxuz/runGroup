@@ -203,6 +203,53 @@ describe("常时被动在 DP 战斗中生效", () => {
     expect(setup.e1.hp).toBe(setup.e1.maxHp - 8);
   });
 
+  it("强化攻击：下一次射击追加 +1D 伤害，并在结算后消耗", () => {
+    const base = makeCombat("attack-buff-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(base.state, base.actor, base.e1);
+    ranged(base.state, "e1", "10");
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseDamage = base.e1.maxHp - base.e1.hp;
+
+    const boosted = makeCombat("attack-buff-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(boosted.state, boosted.actor, boosted.e1);
+    boosted.actor.attackBuff = { bonusDice: 1, danmakuDamage: 0, uses: 1, expiresAtRound: null };
+    ranged(boosted.state, "e1", "10");
+    resolveDpTurn(touhou, boosted.state, { e1: { type: "PASS" } });
+    const boostedDamage = boosted.e1.maxHp - boosted.e1.hp;
+
+    // 固定 10 + 1d6，差值在 1~6 之间。
+    expect(boostedDamage - baseDamage).toBeGreaterThanOrEqual(1);
+    expect(boostedDamage - baseDamage).toBeLessThanOrEqual(6);
+    expect(boosted.actor.attackBuff).toBeNull();
+    expect(boosted.state.log.some((entry) => entry.data?.rollType === "ATTACK_BUFF_CONSUMED")).toBe(true);
+  });
+
+  it("强化攻击：弹幕固定伤害追加，并区分消耗次数", () => {
+    const setup = makeCombat("attack-buff-danmaku", passive(), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.actor.attackBuff = { bonusDice: 0, danmakuDamage: 2, uses: 2, expiresAtRound: null };
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "DANMAKU",
+      danmakuDpReduction: 2,
+      danmakuBaseDamage: 5
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    expect(setup.e1.hp).toBe(setup.e1.maxHp - 7);
+    expect(setup.actor.attackBuff?.uses).toBe(1);
+  });
+
+  it("强化攻击：到期轮开始时被清理", () => {
+    const setup = makeCombat("attack-buff-expire", passive(), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.actor.attackBuff = { bonusDice: 1, danmakuDamage: 0, uses: 0, expiresAtRound: 2 };
+    setup.state.round = 2;
+    beginDpRound(touhou, setup.state);
+    expect(setup.actor.attackBuff).toBeNull();
+    expect(setup.state.log.some((entry) => entry.data?.rollType === "ATTACK_BUFF_EXPIRED")).toBe(true);
+  });
+
   it("追加 DP（护盾术）优先用于回避消耗", () => {
     const setup = makeCombat("shield-temp-dp", passive(), passive());
     startRound(setup.state, setup.actor, setup.e1);

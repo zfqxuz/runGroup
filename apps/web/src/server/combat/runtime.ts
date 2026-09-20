@@ -125,6 +125,18 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       typeof participant.tempDpExpiresAtRound === "number"
         ? Math.max(0, Math.floor(participant.tempDpExpiresAtRound))
         : null;
+    participant.attackBuff =
+      participant.attackBuff !== null && typeof participant.attackBuff === "object"
+        ? {
+            bonusDice: Math.max(0, Math.floor(participant.attackBuff.bonusDice ?? 0)),
+            danmakuDamage: Math.max(0, Math.floor(participant.attackBuff.danmakuDamage ?? 0)),
+            uses: Math.max(0, Math.floor(participant.attackBuff.uses ?? 0)),
+            expiresAtRound:
+              typeof participant.attackBuff.expiresAtRound === "number"
+                ? Math.max(0, Math.floor(participant.attackBuff.expiresAtRound))
+                : null
+          }
+        : null;
     participant.barrier =
       participant.barrier !== null && typeof participant.barrier === "object"
         ? {
