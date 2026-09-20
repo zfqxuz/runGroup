@@ -105,6 +105,18 @@ export interface ElementalWeaponState {
   readonly canRanged: boolean;
 }
 
+/** 祈福：所有行动达成值临时加值。 */
+export interface CheckBuffState {
+  readonly amount: number;
+  readonly expiresAtRound: number | null;
+}
+
+/** 神凭：每轮 DP 回复临时加值。 */
+export interface DpRegenBuffState {
+  readonly amount: number;
+  readonly expiresAtRound: number | null;
+}
+
 /** 常时被动加值：由 AbilityDefinition.passives 在战斗准备时汇总。 */
 export interface CombatPassiveMods {
   readonly damageBonus: number;
@@ -251,6 +263,10 @@ export interface CombatParticipantState {
   attackBuff?: AttackBuffState | null;
   /** 属性使・武器生成：当前生成的近战武器；null 表示没有。 */
   elementalWeapon?: ElementalWeaponState | null;
+  /** 祈福：所有行动达成值加值；null 表示没有。 */
+  checkBuff?: CheckBuffState | null;
+  /** 神凭：每轮 DP 回复加值；null 表示没有。 */
+  dpRegenBuff?: DpRegenBuffState | null;
   /** 展开中的结界；null 表示没有。 */
   barrier?: BarrierState | null;
   /** 14.12 当前所处掩体；null / undefined 表示无掩体。 */
@@ -358,6 +374,8 @@ export interface ActionSubmission {
   readonly spellId?: string;
   /** 本次能力发动的能力等级；由 resolveAbility 写入，LvD / +Lv 缩放使用。 */
   readonly abilityLevel?: number;
+  /** 本次能力发动的最终达成值；供 CHECK_BUFF 等「按达成值缩放」效果使用。 */
+  readonly achievement?: number;
   /** 玩家卡库中的符卡 id；服务端会用它反查卡牌数值。 */
   readonly spellCardId?: string;
   readonly mpCost?: number;

@@ -139,6 +139,20 @@ describe("ELEMENTAL_WEAPON 武器生成指令", () => {
   });
 });
 
+describe("CHECK_BUFF / DP_REGEN_BUFF 指令", () => {
+  it("带默认 amount / durationTicks", () => {
+    const spell = spellOf({
+      effects: [{ type: "CHECK_BUFF" }, { type: "DP_REGEN_BUFF" }]
+    });
+    expect(spellEffectsOf(spell)).toEqual([
+      { type: "CHECK_BUFF", amount: "0", durationTicks: "0" },
+      { type: "DP_REGEN_BUFF", amount: "1", durationTicks: "0" }
+    ]);
+    expect(MAGIC_EFFECT_TYPES).toContain("CHECK_BUFF");
+    expect(MAGIC_EFFECT_TYPES).toContain("DP_REGEN_BUFF");
+  });
+});
+
 describe("battleAttack 战斗系法术描述", () => {
   it("battleAttack 补全默认值", () => {
     const spell = spellOf({ battleAttack: { kind: "RANGED" } });

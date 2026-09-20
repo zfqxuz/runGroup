@@ -171,6 +171,8 @@ export const MAGIC_EFFECT_TYPES = [
   "ELEMENT_BUFF",
   "ATTACK_BUFF",
   "ELEMENTAL_WEAPON",
+  "CHECK_BUFF",
+  "DP_REGEN_BUFF",
   "CREATE_COVER"
 ] as const;
 
@@ -307,6 +309,20 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     durationTicks: ExprSchema.default("0"),
     /** 是否可用该武器进行射击 / 弹幕（未习得剑闪时为 false）。 */
     canRanged: z.boolean().default(false)
+  }),
+  z.object({
+    type: z.literal("CHECK_BUFF"),
+    /** 所有行动达成值加值（近战 / 射击 / 应对 / 能力发动等）；可引用 achievement。 */
+    amount: ExprSchema.default("0"),
+    /** 持续轮次；0 表示直到战斗结束。 */
+    durationTicks: ExprSchema.default("0")
+  }),
+  z.object({
+    type: z.literal("DP_REGEN_BUFF"),
+    /** 每轮 DP 回复追加值。 */
+    amount: ExprSchema.default("1"),
+    /** 持续轮次；0 表示直到战斗结束。 */
+    durationTicks: ExprSchema.default("0")
   }),
   z.object({
     type: z.literal("ATTACK_BUFF"),

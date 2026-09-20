@@ -13,6 +13,7 @@ import {
   beginDpRound,
   createCombat,
   declareDp,
+  dpRegenFor,
   resolveDpActionForActor,
   resolveDpTurn,
   type CombatPassiveMods,
@@ -427,6 +428,38 @@ describe("常时被动在 DP 战斗中生效", () => {
     expect(setup.e1.hp).toBeLessThan(setup.e1.maxHp);
     expect(e2.hp).toBeLessThan(e2.maxHp);
     expect(setup.state.log.some((entry) => entry.data?.multiTarget === true)).toBe(true);
+  });
+
+  it("祈福：所有行动达成值加值进入射击达成值", () => {
+    const base = makeCombat("check-buff-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(base.state, base.actor, base.e1);
+    base.actor.checkBuff = null;
+    ranged(base.state, "e1", "10");
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseAchievement = Number(
+      base.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_ATTACK")?.data?.achievement ?? 0
+    );
+
+    const buffed = makeCombat("check-buff-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(buffed.state, buffed.actor, buffed.e1);
+    buffed.actor.checkBuff = { amount: 5, expiresAtRound: null };
+    ranged(buffed.state, "e1", "10");
+    resolveDpTurn(touhou, buffed.state, { e1: { type: "PASS" } });
+    const buffedAchievement = Number(
+      buffed.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_ATTACK")?.data?.achievement ?? 0
+    );
+
+    expect(buffedAchievement - baseAchievement).toBe(5);
+  });
+
+  it("神凭：每轮 DP 回复追加加值", () => {
+    const setup = makeCombat("dp-regen-buff", passive(), passive());
+    setup.actor.dp = 10;
+    const without = dpRegenFor(touhou, setup.actor, 0);
+    setup.actor.dp = 10;
+    setup.actor.dpRegenBuff = { amount: 3, expiresAtRound: null };
+    const withBuff = dpRegenFor(touhou, setup.actor, 0);
+    expect(withBuff - without).toBe(3);
   });
 
   it("魔法战斗系：行动种类不匹配时不消耗资源、不结算", () => {

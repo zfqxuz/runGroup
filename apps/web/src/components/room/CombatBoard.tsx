@@ -1265,6 +1265,12 @@ export default function CombatBoard(props: Props) {
                             {item.weaponCanRanged ? "（可远程）" : ""}
                           </p>
                         )}
+                        {item.checkBuffAmount === null || item.checkBuffAmount === undefined || item.checkBuffAmount <= 0 ? null : (
+                          <p className="mt-0.5 font-mono text-[11px] text-teal-200">祈福 行动达成 +{item.checkBuffAmount}</p>
+                        )}
+                        {item.dpRegenBuffAmount === null || item.dpRegenBuffAmount === undefined || item.dpRegenBuffAmount <= 0 ? null : (
+                          <p className="mt-0.5 font-mono text-[11px] text-teal-200">神凭 DP 回复 +{item.dpRegenBuffAmount}</p>
+                        )}
                         {(item.tempDp ?? 0) > 0 ? (
                           <p className="mt-0.5 font-mono text-[11px] text-emerald-200">
                             追加DP {item.tempDp}

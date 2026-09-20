@@ -1,6 +1,6 @@
 import { compile as compileExpr, evaluate } from "@touhou/formula";
 import type { CompiledRulePack } from "@touhou/rules";
-import { expireAttackBuffs, expireBarriers, expireCovers, expireElementalWeapons, findParticipant, pushLog, recoverTouhouLscLimits, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
+import { expireAttackBuffs, expireBarriers, expireCovers, expireElementalWeapons, expireTemporaryBuffs, findParticipant, pushLog, recoverTouhouLscLimits, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
 import type { CombatParticipantState, CombatState } from "./types";
 
 function evalDpExpr(
@@ -30,7 +30,8 @@ export function dpRegenFor(
   }
   const current = Math.max(0, Math.floor(participant.dp));
   const bonus = Math.max(0, Math.floor(regenBonus));
-  const next = Math.min(max, current + base + bonus);
+  const buff = Math.max(0, Math.floor(participant.dpRegenBuff?.amount ?? 0));
+  const next = Math.min(max, current + base + bonus + buff);
   return next - current;
 }
 
@@ -50,6 +51,7 @@ export function beginDpRound(pack: CompiledRulePack, state: CombatState): void {
   expireCovers(state);
   expireAttackBuffs(state);
   expireElementalWeapons(state);
+  expireTemporaryBuffs(state);
   recoverTouhouLscLimits(pack, state);
   resolveRoundRaceAbilities(pack, state);
   state.dp = { declared: {}, regenBonus: {}, acted: [] };

@@ -101,7 +101,10 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
       "MAGIC_TRANSFER",
       "MAGIC_WIDE_SHOT",
       "SPIRIT_BARRIER_BREAK",
-      "SPIRIT_BLESSING"
+      "SPIRIT_BIND",
+      "SPIRIT_BLESSING",
+      "SPIRIT_PRAYER",
+      "SPIRIT_TRANCE"
     ]);
   });
 
@@ -132,6 +135,34 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(caster.elementalWeapon?.element).toBe("FIRE");
     expect(caster.elementalWeapon?.damageBonus).toBe(3);
     expect(caster.elementalWeapon?.canRanged).toBe(false);
+  });
+
+  it("祈福：按「达成值×2 的十位数」给目标所有行动达成加值", () => {
+    const { caster, target } = cast("builtin-prayer", "SPIRIT_PRAYER", { SPIRIT_ARTS: 3 });
+    expect(caster.mp).toBe(95);
+    expect(target.checkBuff?.amount ?? 0).toBeGreaterThan(0);
+  });
+
+  it("灵缚：抵抗失败的目标被控制，跳过下一次行动", () => {
+    const state = createCombat({ id: "c-builtin-bind", seed: "builtin-bind", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", { abilityLevels: { SPIRIT_ARTS: 3 } });
+    // 低意志 + 无抵抗技能，确保抵抗失败。
+    const enemy = addUnit(state, "enemy", "BOSS", {
+      attributes: { ...attrs, pow: 0 },
+      skills: { RESIST: 0 }
+    });
+    forceReady(caster);
+    forceReady(enemy);
+    submitAction(state, { actorId: "caster", kind: "MAGIC", targetId: "enemy", spellId: "SPIRIT_BIND", name: "SPIRIT_BIND" });
+    resolvePending(pack, state, { enemy: { type: "PASS" } });
+    expect(enemy.controlActions ?? 0).toBeGreaterThanOrEqual(1);
+    expect(state.log.some((entry) => entry.data?.rollType === "ABILITY_RESIST")).toBe(true);
+  });
+
+  it("神凭：施法者获得每轮 DP 回复 +1", () => {
+    const { caster } = cast("builtin-trance", "SPIRIT_TRANCE", { SPIRIT_ARTS: 3 });
+    expect(caster.mp).toBe(96);
+    expect(caster.dpRegenBuff?.amount).toBe(1);
   });
 
   it("破魔结界：解除目标身上的结界", () => {

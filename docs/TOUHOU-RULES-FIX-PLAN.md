@@ -365,7 +365,8 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      房间页新增「法术·能力速查表」面板（分类 / 系别 / 搜索）。
    - ✅ **内置可结算法术子集**：`touhou-ext.magic.spells` 登记 加持 / 恢复术 / 治愈术 / 转灵术 / 护盾术 / 破魔结界 /
      属性使·生成 / 属性使·消灭 / 属性使·强化攻击 / 属性使·武器生成 /
-     魔法战斗系·燃烧弹 / 光束 / 飞弹 / 切裂术 / 爆射 / 广域射击（HEAL Lv×5、DISPEL、MP_RESTORE、
+     魔法战斗系·燃烧弹 / 光束 / 飞弹 / 切裂术 / 爆射 / 广域射击 /
+     神术·祈福 / 灵缚 / 神凭（HEAL Lv×5、DISPEL、MP_RESTORE、
      TEMP_DP ceil(Lv×1.5)、CREATE_COVER 强度 Lv×4、解除状态/结界/生成物、ATTACK_BUFF +1D / 弹幕 +2、
      ELEMENTAL_WEAPON 近战 +属性使 Lv、battleAttack 强化 DP 攻击）；
      TOUHOU 房间启用魔法且无模组法术时，`applyMagicRulesToRoom` 回退使用内置法术。
@@ -380,6 +381,9 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      多目标 / 无视前卫后卫。内置燃烧弹（弹幕 +2 伤 / 回避 DP +1）、光束（射击 +ceil(魔法 Lv/2)D）、
      飞弹（追击 +ceil(魔法 Lv/2)D）、切裂术（近战 +ceil(魔法 Lv/2)D）、爆射（多目标射击 +ceil(魔法 Lv/2)D、
      无视前卫后卫）、广域射击（多目标射击）。
+   - ✅ **神术追加可结算法术**：`CHECK_BUFF`（祈福：按发动达成值×2 的十位数给所有行动达成加值）、
+     `DP_REGEN_BUFF`（神凭：战斗短期预知，10 分钟 DP 回复 +1）、灵缚（CONTROL，抵抗失败跳过下一次行动）；
+     修正了抵抗技能未习得时把特性值当技能重复计算的问题。
    - ✅ **能力类别级法术**：`resolveAbility` / `dpAbilityLevel` 支持 `abilityId=类别` 时回退到同类别实例最高等级
      （如 `ELEMENTALIST:FIRE` 支撑 `abilityId=ELEMENTALIST` 的生成/消灭）。
    - ✅ **追加 DP（护盾术）**：`MagicEffect TEMP_DP`；追加 DP 只用于回避 / 防御 / 弹幕减免，

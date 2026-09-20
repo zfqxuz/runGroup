@@ -153,6 +153,26 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
             canRanged: participant.elementalWeapon.canRanged === true
           }
         : null;
+    participant.checkBuff =
+      participant.checkBuff !== null && typeof participant.checkBuff === "object"
+        ? {
+            amount: Math.max(0, Math.floor(participant.checkBuff.amount ?? 0)),
+            expiresAtRound:
+              typeof participant.checkBuff.expiresAtRound === "number"
+                ? Math.max(0, Math.floor(participant.checkBuff.expiresAtRound))
+                : null
+          }
+        : null;
+    participant.dpRegenBuff =
+      participant.dpRegenBuff !== null && typeof participant.dpRegenBuff === "object"
+        ? {
+            amount: Math.max(0, Math.floor(participant.dpRegenBuff.amount ?? 0)),
+            expiresAtRound:
+              typeof participant.dpRegenBuff.expiresAtRound === "number"
+                ? Math.max(0, Math.floor(participant.dpRegenBuff.expiresAtRound))
+                : null
+          }
+        : null;
     participant.barrier =
       participant.barrier !== null && typeof participant.barrier === "object"
         ? {

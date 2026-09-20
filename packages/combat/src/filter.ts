@@ -101,6 +101,10 @@ export interface ParticipantView {
   readonly weaponElement: string | null;
   readonly weaponDamageBonus: number | null;
   readonly weaponCanRanged: boolean;
+  /** 祈福：所有行动达成值加值；无则为 null。 */
+  readonly checkBuffAmount: number | null;
+  /** 神凭：每轮 DP 回复加值；无则为 null。 */
+  readonly dpRegenBuffAmount: number | null;
   /** 护盾术追加 DP；仅数字可见时下发。 */
   readonly tempDp: number | null;
   readonly tempDpMax: number | null;
@@ -303,6 +307,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       weaponElement: showNumbers ? (participant.elementalWeapon?.element ?? null) : null,
       weaponDamageBonus: showNumbers ? (participant.elementalWeapon?.damageBonus ?? null) : null,
       weaponCanRanged: showNumbers ? participant.elementalWeapon?.canRanged === true : false,
+      checkBuffAmount: showNumbers ? (participant.checkBuff?.amount ?? null) : null,
+      dpRegenBuffAmount: showNumbers ? (participant.dpRegenBuff?.amount ?? null) : null,
       tempDp: showNumbers ? Math.max(0, participant.tempDp ?? 0) : null,
       tempDpMax: showNumbers ? Math.max(0, participant.tempDpMax ?? 0) : null,
       coverName: showNumbers ? (participant.cover?.name ?? null) : null,

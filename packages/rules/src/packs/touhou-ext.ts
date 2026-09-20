@@ -442,6 +442,49 @@ TOUHOU_EXT.magic = {
       ]
     },
     {
+      id: "SPIRIT_PRAYER",
+      name: "祈福",
+      skill: "SPIRIT_ARTS",
+      abilityId: "SPIRIT_ARTS",
+      requiredLevel: 1,
+      mpCost: "5",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ALLY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "18" },
+      // 受术者所有行动达成值 +「(祈福达成值×2)的十位数」，10 分钟（60 轮）。
+      effects: [{ type: "CHECK_BUFF", amount: "floor(achievement * 2 / 10)", durationTicks: "60" }]
+    },
+    {
+      id: "SPIRIT_BIND",
+      name: "灵缚",
+      skill: "SPIRIT_ARTS",
+      abilityId: "SPIRIT_ARTS",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "15" },
+      resist: { attribute: "pow", skill: "RESIST", dice: "3D6" },
+      // 固定位置 / 姿势：引擎简化为失去下一次行动。
+      effects: [{ type: "CONTROL", durationActions: "1" }]
+    },
+    {
+      id: "SPIRIT_TRANCE",
+      name: "神凭",
+      skill: "SPIRIT_ARTS",
+      abilityId: "SPIRIT_ARTS",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "SELF",
+      targeting: "SELF",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 战斗中的短期预知：10 分钟（60 轮）DP 回复 +1。
+      effects: [{ type: "DP_REGEN_BUFF", amount: "1", durationTicks: "60" }]
+    },
+    {
       id: "MAGIC_HEAL",
       name: "恢复术",
       skill: "MAGIC",

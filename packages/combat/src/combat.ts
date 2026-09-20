@@ -255,6 +255,8 @@ export function addParticipant(
     focusDefense: false,
     attackBuff: null,
     elementalWeapon: null,
+    checkBuff: null,
+    dpRegenBuff: null,
     grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
@@ -856,6 +858,24 @@ export function expireAttackBuffs(state: CombatState): string[] {
   return expired;
 }
 
+/** 祈福 / 神凭到期清理；返回到期单位 id。 */
+export function expireTemporaryBuffs(state: CombatState): string[] {
+  const expired: string[] = [];
+  for (const participant of state.participants) {
+    const check = participant.checkBuff;
+    if (check !== null && check !== undefined && check.expiresAtRound !== null && state.round >= check.expiresAtRound) {
+      participant.checkBuff = null;
+      expired.push(participant.id);
+    }
+    const regen = participant.dpRegenBuff;
+    if (regen !== null && regen !== undefined && regen.expiresAtRound !== null && state.round >= regen.expiresAtRound) {
+      participant.dpRegenBuff = null;
+      expired.push(participant.id);
+    }
+  }
+  return expired;
+}
+
 /** 属性使・武器生成到期清理；返回到期单位 id。 */
 export function expireElementalWeapons(state: CombatState): string[] {
   const expired: string[] = [];
@@ -882,6 +902,7 @@ function expireRoundTimers(state: CombatState): void {
   expireCovers(state);
   expireAttackBuffs(state);
   expireElementalWeapons(state);
+  expireTemporaryBuffs(state);
   for (const participant of [...state.participants]) {
     if (
       participant.grantedElement !== null &&
@@ -3617,6 +3638,47 @@ function applyMagicEffect(
     return;
   }
 
+  if (effect.type === "CHECK_BUFF") {
+    const amount = Math.max(
+      0,
+      Math.floor(
+        evaluateEffectNumber(ctx.pack, effect.amount, {
+          ...actor.vars,
+          abilityLv: submission.abilityLevel ?? 0,
+          achievement: submission.achievement ?? 0
+        })
+      )
+    );
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    const before = target.checkBuff;
+    target.checkBuff = {
+      amount: Math.max(amount, before?.amount ?? 0),
+      expiresAtRound: duration > 0 ? state.round + duration : (before?.expiresAtRound ?? null)
+    };
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 所有行动达成值 +" + target.checkBuff.amount +
+        (duration > 0 ? "（" + duration + " 轮）" : ""),
+      { rollType: "CHECK_BUFF", amount: target.checkBuff.amount, duration }
+    );
+    return;
+  }
+
+  if (effect.type === "DP_REGEN_BUFF") {
+    const amount = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.amount, actor.vars)));
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    const before = target.dpRegenBuff;
+    target.dpRegenBuff = {
+      amount: Math.max(amount, before?.amount ?? 0),
+      expiresAtRound: duration > 0 ? state.round + duration : (before?.expiresAtRound ?? null)
+    };
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 每轮 DP 回复 +" + target.dpRegenBuff.amount +
+        (duration > 0 ? "（" + duration + " 轮）" : ""),
+      { rollType: "DP_REGEN_BUFF", amount: target.dpRegenBuff.amount, duration }
+    );
+    return;
+  }
+
   if (effect.type === "TEMP_DP") {
     const amount = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.amount, { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 })));
     const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
@@ -3836,9 +3898,11 @@ function rollAbilityResist(
 
   const rawAttribute = target.attributes[resist.attribute as keyof AttributeSet] ?? target.vars[resist.attribute] ?? 0;
   const attributeValue = isDp ? dpAttribute(ctx.pack, target, resist.attribute) : rawAttribute;
+  // 抵抗技能未习得时按 0 级处理（不能拿特性值当技能等级重复计算）。
+  const resistSkillRaw = skillValueOf(ctx.pack, target, resist.skill, 0);
   const skill = isDp
-    ? dpSkillLevel(ctx.pack, target, resist.skill)
-    : skillValueOf(ctx.pack, target, resist.skill, attributeValue);
+    ? Math.max(0, Math.floor(resistSkillRaw / dpConst(ctx.pack, "SKILL_SCALE", 20)))
+    : resistSkillRaw;
   const base = attributeValue + skill;
   const reactionBonus = passiveBonus(target, "reactionBonus") - barrierPenalty(target);
   const targetValue = touhouResistTargetValue(casterLevel, casterAchievement);
@@ -4066,7 +4130,7 @@ function resolveAbility(
   executeSpellEffects(
     ctx,
     actor,
-    { ...submission, abilityLevel: level },
+    { ...submission, abilityLevel: level, achievement },
     spell,
     cost,
     { logKind: "SPELLCARD", verb: "发动" }
@@ -4497,7 +4561,13 @@ function passiveBonus(
   key: keyof CombatPassiveMods
 ): number {
   const value = participant.passiveMods?.[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+  const base = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  // 祈福：所有行动达成值上升；命中 / 应对分别读 accuracyBonus / reactionBonus。
+  if (key === "accuracyBonus" || key === "reactionBonus") {
+    const buff = participant.checkBuff;
+    if (buff !== null && buff !== undefined) return base + Math.max(0, Math.floor(buff.amount));
+  }
+  return base;
 }
 
 /** 从属性使实例 id 后缀推导武器属性（ELEMENTALIST:FIRE -> FIRE）。 */
