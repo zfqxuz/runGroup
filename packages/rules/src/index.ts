@@ -215,7 +215,7 @@ export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./
 
 export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";
 export { spellcardBattleDeclarationRules, spellcardSideUsableCount } from "./spellcard";
-export { dpEconomySummary } from "./dp-economy";
+export { dpEconomySummary, dpRegenFromVars } from "./dp-economy";
 export type { DpEconomyInput, DpEconomySummary } from "./dp-economy";
 export { spendMagicPoints } from "./resources";
 export { MADNESS_BOUT_TABLE, MANIAS, PHOBIAS, rollMadnessBout, rollSanityLoss, resolveSanityCheck } from "./sanity";

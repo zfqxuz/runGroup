@@ -1,3 +1,5 @@
+import { compile as compileExpr, evaluate } from "@touhou/formula";
+import type { CompiledRulePack } from "./compile";
 import type { DpActionCosts } from "./schema";
 
 export interface DpEconomyInput {
@@ -80,4 +82,22 @@ export function dpEconomySummary(input: DpEconomyInput): DpEconomySummary {
       chaseOneTarget: safeInt(costs.chasePerTarget)
     }
   };
+}
+
+/** 按当前规则包（含房间覆盖）计算某属性集下的 DP 回复；供 KP 试算使用。 */
+export function dpRegenFromVars(
+  compiled: CompiledRulePack,
+  vars: Readonly<Record<string, number>>
+): number {
+  const rules = compiled.pack.dp;
+  try {
+    const expression = compileExpr(rules.regen, {
+      vars: Object.keys(vars),
+      consts: compiled.constantNames
+    });
+    const value = evaluate(expression, { vars, consts: compiled.pack.const });
+    return Math.max(rules.minRegen, Number.isFinite(value) ? Math.floor(value) : rules.minRegen);
+  } catch {
+    return rules.minRegen;
+  }
 }

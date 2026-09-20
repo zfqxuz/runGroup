@@ -249,6 +249,46 @@ export async function setRoomMagicEnabledAction(formData: FormData): Promise<voi
   redirect(inLobby ? "/rooms/" + roomId + "/prepare?settings=magic" : "/rooms/" + roomId);
 }
 
+/**
+ * 东方模式专用：设置 COC7 属性 → 千幻抄特性值的换算系数（房间参数）。
+ * 1 = 直接代入；10 ≈ 千幻抄原版量级。COC7 房间拒绝该操作。
+ */
+export async function setTouhouAttributeScaleAction(formData: FormData): Promise<void> {
+  const session = await auth();
+  if (session === null) redirect("/login");
+  const roomId = String(formData.get("roomId") ?? "");
+  const membership = await prisma.roomMember.findUnique({
+    where: { roomId_userId: { roomId, userId: session.user.id } },
+    select: {
+      role: true,
+      room: { select: { system: true, ruleOverride: true } }
+    }
+  });
+  if (membership === null || membership.role !== "KP") redirect("/rooms/" + roomId);
+  if (membership.room.system !== "TOUHOU") redirect("/rooms/" + roomId + "/prepare");
+  const raw = Number(formData.get("attrScale"));
+  if (Number.isFinite(raw) === false) redirect("/rooms/" + roomId + "/prepare?error=scale");
+  const scale = Math.min(100, Math.max(0.1, raw));
+  const override =
+    membership.room.ruleOverride !== null && typeof membership.room.ruleOverride === "object"
+      ? (membership.room.ruleOverride as Record<string, unknown>)
+      : {};
+  const constOverride =
+    override.const !== null && typeof override.const === "object"
+      ? (override.const as Record<string, unknown>)
+      : {};
+  await prisma.room.update({
+    where: { id: roomId },
+    data: {
+      ruleOverride: { ...override, const: { ...constOverride, ATTR_SCALE: scale } } as never
+    }
+  });
+  revalidatePath("/rooms/" + roomId);
+  revalidatePath("/rooms/" + roomId + "/prepare");
+  emitRoomRefresh(roomId, "settings");
+  redirect("/rooms/" + roomId + "/prepare?settings=dp");
+}
+
 export async function startRoomAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) redirect("/login");

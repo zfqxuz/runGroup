@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { dpEconomySummary, resolveRulePack } from "../index";
+import { compileParsedRulePack,
+  computeDerived,
+  deepMerge,
+  dpEconomySummary,
+  dpRegenFromVars,
+  resolveRulePack,
+  type RulePack } from "../index";
 import { builtinRegistry } from "../packs";
 
 const costs = resolveRulePack("touhou-ext", builtinRegistry()).dp.actionCosts;
@@ -60,5 +66,45 @@ describe("DP / MP 资源经济换算", () => {
     });
     expect(summary.danmakuPerRound).toBe(0);
     expect(summary.danmakuPerBattle).toBe(0);
+  });
+});
+
+describe("房间尺度参数 ATTR_SCALE", () => {
+  const basePack = resolveRulePack("touhou-ext", builtinRegistry());
+  const attrs = { str: 50, con: 50, siz: 60, dex: 55, app: 50, int: 60, pow: 40, edu: 70, luck: 45 };
+
+  function compiledWithScale(scale: number) {
+    const merged = deepMerge(basePack, { const: { ATTR_SCALE: scale } }) as RulePack;
+    return compileParsedRulePack(merged);
+  }
+
+  it("ATTR_SCALE=1（默认）保持直接代入", () => {
+    const pack = compiledWithScale(1);
+    const derived = computeDerived(pack, { attributes: attrs }).derived;
+    expect(derived.maxHp).toBe(210);
+    expect(derived.maxMp).toBe(160);
+    expect(derived.maxDp).toBe(150);
+    const vars = { ...attrs, ...derived };
+    expect(dpRegenFromVars(pack, vars)).toBe(39);
+  });
+
+  it("ATTR_SCALE=10 得到千幻抄原版量级", () => {
+    const pack = compiledWithScale(10);
+    const derived = computeDerived(pack, { attributes: attrs }).derived;
+    expect(derived.maxHp).toBe(30);   // floor(50/10)=5 -> 10+5*4
+    expect(derived.maxMp).toBe(16);   // floor(40/10)=4 -> 4*4
+    expect(derived.maxDp).toBe(24);   // 10+5+5+4
+    const vars = { ...attrs, ...derived };
+    expect(dpRegenFromVars(pack, vars)).toBe(4); // ceil((6+5)/3)
+  });
+
+  it("ATTR_SCALE=2 得到中间档", () => {
+    const pack = compiledWithScale(2);
+    const derived = computeDerived(pack, { attributes: attrs }).derived;
+    expect(derived.maxHp).toBe(110);  // floor(50/2)=25 -> 10+25*4
+    expect(derived.maxMp).toBe(80);   // floor(40/2)=20 -> 80
+    expect(derived.maxDp).toBe(80);   // 10+25+25+20
+    const vars = { ...attrs, ...derived };
+    expect(dpRegenFromVars(pack, vars)).toBe(19); // ceil((30+27)/3)
   });
 });

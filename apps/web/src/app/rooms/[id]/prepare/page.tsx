@@ -8,6 +8,7 @@ import KpValueEditor from "@/components/room/KpValueEditor";
 import KpToolsPanel from "@/components/room/KpToolsPanel";
 import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
+import RoomDpEconomyPanel, { type DpEconomyCharacter } from "@/components/room/RoomDpEconomyPanel";
 import {
   selectRoomModuleAction,
   setActiveCharacterAction,
@@ -306,9 +307,56 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   });
   const approvedForPrepare = await prisma.roomCharacterEntry.findMany({
     where: { roomId: room.id, status: "APPROVED" },
-    include: { character: { select: { name: true, userId: true } } },
+    include: {
+      character: {
+        select: {
+          name: true,
+          userId: true,
+          str: true,
+          con: true,
+          siz: true,
+          dex: true,
+          app: true,
+          int: true,
+          pow: true,
+          edu: true,
+          luck: true
+        }
+      }
+    },
     orderBy: { submittedAt: "asc" }
   });
+  const ruleOverrideRecord =
+    room.ruleOverride !== null && typeof room.ruleOverride === "object"
+      ? (room.ruleOverride as Record<string, unknown>)
+      : {};
+  const constOverrideRecord =
+    ruleOverrideRecord.const !== null && typeof ruleOverrideRecord.const === "object"
+      ? (ruleOverrideRecord.const as Record<string, unknown>)
+      : {};
+  const rawAttrScale = constOverrideRecord.ATTR_SCALE;
+  const attrScale =
+    typeof rawAttrScale === "number" && Number.isFinite(rawAttrScale) && rawAttrScale > 0
+      ? rawAttrScale
+      : 1;
+  const dpEconomyCharacters: readonly DpEconomyCharacter[] =
+    room.system === "TOUHOU"
+      ? approvedForPrepare.map((entry) => ({
+          id: entry.characterId,
+          name: entry.character.name,
+          attributes: {
+            str: entry.character.str,
+            con: entry.character.con,
+            siz: entry.character.siz,
+            dex: entry.character.dex,
+            app: entry.character.app,
+            int: entry.character.int,
+            pow: entry.character.pow,
+            edu: entry.character.edu,
+            luck: entry.character.luck
+          }
+        }))
+      : [];
   const sceneUnitsForPrepare = [
     ...approvedForPrepare
       .filter((entry) => isKP || entry.character.userId === session.user.id)
@@ -385,6 +433,15 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
         magicEnabled={room.magicEnabled}
         magicSpellCount={selectedModuleMagic?.spells.length ?? 0}
       />
+
+      {room.system === "TOUHOU" && isKP ? (
+        <RoomDpEconomyPanel
+          roomId={room.id}
+          pack={pack}
+          characters={dpEconomyCharacters}
+          currentScale={attrScale}
+        />
+      ) : null}
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <div className="flex flex-wrap items-center justify-between gap-3">

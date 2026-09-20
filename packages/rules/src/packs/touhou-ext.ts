@@ -15,14 +15,20 @@ export const TOUHOU_EXT: RulePackOverlay = {
     DP_BASE: 10,
     HP_COEFFICIENT: 4,
     DEFEND_REDUCE: 3,
-    GRAZE_GAIN_RATIO: 0.5
+    GRAZE_GAIN_RATIO: 0.5,
+    /**
+     * COC7 属性 → 千幻抄特性值的换算系数：特性值 = floor(COC7 属性 / ATTR_SCALE)。
+     * 1 = 直接代入（默认）；10 = 约等于千幻抄原版量级。
+     * 房间可由 KP 在准备页覆盖；只影响东方模式。
+     */
+    ATTR_SCALE: 1
   },
   derived: {
-    // 千幻抄：HP = 10 + {耐久} × HP系数，向上取整（HP系数开卡为 4，可成长）。
-    maxHp: "ceil(10 + con * HP_COEFFICIENT)",
-    maxMp: "pow * MP_PER_POW",
-    maxSan: "pow",
-    maxDp: "DP_BASE + str + con + pow"
+    // 千幻抄：特性值 = floor(COC7 属性 / ATTR_SCALE)，HP = 10 + {耐久} × HP系数。
+    maxHp: "ceil(10 + floor(con / ATTR_SCALE) * HP_COEFFICIENT)",
+    maxMp: "floor(pow / ATTR_SCALE) * MP_PER_POW",
+    maxSan: "floor(pow / ATTR_SCALE)",
+    maxDp: "DP_BASE + floor(str / ATTR_SCALE) + floor(con / ATTR_SCALE) + floor(pow / ATTR_SCALE)"
   },
   atb: {
     tickMs: 250,
@@ -442,7 +448,7 @@ TOUHOU_EXT.skills = [
  */
 TOUHOU_EXT.dp = {
   // 千幻抄：DP 回复 = ceil((知性 + 感觉)/3)，最低 2；平台把「感觉」映射为 DEX。
-  regen: "ceil((int + dex) / 3)",
+  regen: "ceil((floor(int / ATTR_SCALE) + floor(dex / ATTR_SCALE)) / 3)",
   minRegen: 2,
   maxDicePerCheck: 3,
   // 千幻抄行动消耗；模组 / 房间可覆盖。

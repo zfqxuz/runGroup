@@ -34,7 +34,8 @@ describe("extends 链解析", () => {
     const pack = resolveRulePack("touhou-ext", registry);
     expect(pack.system).toBe("TOUHOU");
     expect(pack.const.MP_PER_POW).toBe(4);
-    expect(pack.derived.maxMp).toBe("pow * MP_PER_POW");
+    expect(pack.const.ATTR_SCALE).toBe(1);
+    expect(pack.derived.maxMp).toBe("floor(pow / ATTR_SCALE) * MP_PER_POW");
     expect(pack.check.criticalAt).toBe("1");
     expect(pack.attributes.max).toBe(90);
     expect(pack.atb.actionCost.DANMAKU).toBe("40");
