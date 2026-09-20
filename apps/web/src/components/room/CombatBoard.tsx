@@ -1281,6 +1281,7 @@ export default function CombatBoard(props: Props) {
                     )}
                     {item.barrierHp === null ? null : (
                       <p className="mt-1 font-mono text-[11px] text-sky-200">
+                        {item.barrierAnchor === "AREA" ? "领域·" : ""}
                         {item.barrierName ?? "结界"}
                         {item.barrierSizeMeters === null || item.barrierSizeMeters === undefined
                           ? ""

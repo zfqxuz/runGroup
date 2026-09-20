@@ -75,8 +75,11 @@ export interface BarrierState {
   targetValue?: number;
   /** 结界内战斗惩罚（回避减值）。 */
   penalty?: number;
-  /** SELF 贴在目标身上；AREA 占据区域（范围模型接入后使用）。 */
+  /** SELF 贴在目标身上；AREA 占据地图区域（复用房间 Scene/Map/Token 坐标）。 */
   anchor?: "SELF" | "AREA";
+  /** AREA 结界中心的地图坐标（像素）；SELF / 未同步时为 null。 */
+  centerX?: number | null;
+  centerY?: number | null;
   /** 持续时间（小时），由术者等级 × 2 得来。 */
   durationHours?: number;
 }

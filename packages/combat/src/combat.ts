@@ -96,6 +96,61 @@ function combatCellDistance(a: ReturnType<typeof combatCellOf>, b: ReturnType<ty
   return Math.max(Math.abs((a.col ?? 0) - (b.col ?? 0)), Math.abs((a.row ?? 0) - (b.row ?? 0)));
 }
 
+/** 点到地图坐标的距离（米）；缺坐标或网格时返回 null。 */
+export function combatPointDistanceMeters(
+  state: CombatState,
+  position: CombatPosition,
+  x: number,
+  y: number
+): number | null {
+  const grid = state.grid;
+  if (grid === null || grid === undefined) return null;
+  if (grid.gridType === "NONE") {
+    const scale = combatFeetPerCell() / Math.max(1, grid.gridSize);
+    return (Math.hypot(position.x - x, position.y - y) * scale) / FEET_PER_METER;
+  }
+  const feet = combatCellDistance(
+    combatCellOf(grid, position.x, position.y),
+    combatCellOf(grid, x, y)
+  ) * combatFeetPerCell();
+  return feet / FEET_PER_METER;
+}
+
+/**
+ * 找到把指定单位包含在内的 AREA 结界（取惩罚最高者）。
+ * 结界数值不叠加；没有地图坐标 / 不在任何 AREA 内时返回 null。
+ */
+export function areaBarrierForParticipant(
+  state: CombatState,
+  participantId: string
+): BarrierState | null {
+  const participant = state.participants.find((item) => item.id === participantId);
+  if (participant?.position === null || participant?.position === undefined) return null;
+  let best: BarrierState | null = null;
+  for (const owner of state.participants) {
+    const barrier = owner.barrier;
+    if (barrier === null || barrier === undefined) continue;
+    if (barrier.anchor !== "AREA" || (barrier.hp ?? 0) <= 0) continue;
+    if (barrier.centerX === null || barrier.centerX === undefined) continue;
+    if (barrier.centerY === null || barrier.centerY === undefined) continue;
+    const distance = combatPointDistanceMeters(state, participant.position, barrier.centerX, barrier.centerY);
+    if (distance === null || distance > (barrier.sizeMeters ?? 0)) continue;
+    if (best === null || (barrier.penalty ?? 0) > (best.penalty ?? 0)) best = barrier;
+  }
+  return best;
+}
+
+/** 结界的战斗惩罚：自身 SELF 结界与所处 AREA 结界取最大值，不叠加。 */
+export function participantBarrierPenalty(
+  state: CombatState,
+  participant: CombatParticipantState
+): number {
+  let penalty = Math.max(0, Math.floor(participant.barrier?.penalty ?? 0));
+  const area = areaBarrierForParticipant(state, participant.id);
+  if (area !== null) penalty = Math.max(penalty, Math.max(0, Math.floor(area.penalty ?? 0)));
+  return penalty;
+}
+
 /** 战斗内两个单位按当前场景网格计算的实际距离（英尺）；缺坐标或网格时返回 null。 */
 export function combatDistanceFeet(
   state: CombatState,
@@ -151,6 +206,7 @@ import { loadParticipantConditions, possessInitFromConditions } from "./conditio
 import type {
   ActionSubmission,
   AttackBuffState,
+  BarrierState,
   CombatGrid,
   CombatMode,
   CombatParticipantState,
@@ -1473,6 +1529,35 @@ function applyDamageToParticipant(
         targetId: target.id,
         text: target.name + " 的「" + barrier.name + "」吸收 " + applied + " 点伤害（剩余 HP " + barrier.hp + "）",
         data: { rollType: "BARRIER_ABSORB", name: barrier.name, absorbed: applied, hp: barrier.hp }
+      });
+    }
+    return { toDeclaration: 0, toHp: 0 };
+  }
+
+  // 7.5 AREA 结界：目标位于某片区域结界内时，伤害先由该结界承受；击破溢出无效。
+  const areaBarrier = areaBarrierForParticipant(ctx.state, target.id);
+  if (areaBarrier !== null && (areaBarrier.hp ?? 0) > 0) {
+    const hpBefore = areaBarrier.hp;
+    const applied = Math.max(0, Math.floor(remaining));
+    areaBarrier.hp = Math.max(0, hpBefore - applied);
+    if (areaBarrier.hp <= 0) {
+      for (const owner of ctx.state.participants) {
+        if (owner.barrier === areaBarrier) owner.barrier = null;
+      }
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 的「" + areaBarrier.name + "」承受 " + hpBefore + " 点伤害后被击破，溢出伤害无效",
+        data: { rollType: "BARRIER_BROKEN", name: areaBarrier.name, hp: 0, anchor: "AREA" }
+      });
+    } else {
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 受到「" + areaBarrier.name + "」保护，吸收 " + applied + " 点伤害（剩余 HP " + areaBarrier.hp + "）",
+        data: { rollType: "BARRIER_ABSORB", name: areaBarrier.name, absorbed: applied, hp: areaBarrier.hp, anchor: "AREA" }
       });
     }
     return { toDeclaration: 0, toHp: 0 };
@@ -3520,6 +3605,20 @@ function applyMagicEffect(
     if (barrierMpCost > 0 && spendCombatMagicPoints(ctx, actor, barrierMpCost, "结界「" + (effect.name || "结界") + "」") === false) {
       return;
     }
+    // AREA 结界以目标 / 施法者的当前 Token 坐标为圆心；没有地图坐标时无法展开。
+    const origin = target.position ?? actor.position ?? null;
+    let centerX: number | null = null;
+    let centerY: number | null = null;
+    if (effect.anchor === "AREA") {
+      if (origin === null) {
+        log(actor.name + " " + verb + "「" + spell.name + "」失败：AREA 结界需要地图 Token 坐标", {
+          rollType: "BARRIER_AREA_NO_POSITION"
+        });
+        return;
+      }
+      centerX = origin.x;
+      centerY = origin.y;
+    }
     target.barrier = {
       hp: finalHp,
       maxHp: finalMaxHp,
@@ -3531,6 +3630,8 @@ function applyMagicEffect(
       targetValue: stats?.targetValue ?? 0,
       penalty: stats?.penalty ?? 0,
       anchor: effect.anchor,
+      centerX,
+      centerY,
       durationHours: stats?.durationHours ?? 0
     };
     log(
@@ -4046,7 +4147,7 @@ function rollAbilityResist(
     ? Math.max(0, Math.floor(resistSkillRaw / dpConst(ctx.pack, "SKILL_SCALE", 20)))
     : resistSkillRaw;
   const base = attributeValue + skill;
-  const reactionBonus = passiveBonus(target, "reactionBonus") - barrierPenalty(target);
+  const reactionBonus = passiveBonus(target, "reactionBonus") - barrierPenalty(ctx.state, target);
   const targetValue = touhouResistTargetValue(casterLevel, casterAchievement);
   const rng = nextRollRng(ctx.state, `ability-resist:${caster.id}:${target.id}:${spell.id}`);
   let roll = 0;
@@ -4187,7 +4288,7 @@ function resolveAbility(
     modifier = 0;
   }
   const base = attributeValue + level + modifier;
-  const accuracyBonus = passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
+  const accuracyBonus = passiveBonus(actor, "accuracyBonus") - barrierPenalty(ctx.state, actor);
   const rng = nextRollRng(state, `ability:${actor.id}:${spell.id}`);
   let roll = 0;
   let target = base;
@@ -4806,10 +4907,9 @@ function consumeAttackBuff(
   });
 }
 
-/** 7.5 结界内战斗惩罚（缺省 0）。 */
-function barrierPenalty(participant: CombatParticipantState): number {
-  const value = participant.barrier?.penalty;
-  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
+/** 7.5 结界内战斗惩罚（自身 SELF 与 AREA 取最大，缺省 0）。 */
+function barrierPenalty(state: CombatState, participant: CombatParticipantState): number {
+  return participantBarrierPenalty(state, participant);
 }
 
 /** 近战 / 射击 / 追击追加伤害：+Nd6（气功等被动）。 */
@@ -4962,7 +5062,7 @@ function resolveDpDefense(
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
     const reactionAchievement =
-      roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender) + elementDefenseMod;
+      roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(ctx.state, defender) + coverDefenseBonus(defender) + elementDefenseMod;
     const success = reactionAchievement >= attackAchievement;
     const reduction = success ? 0 : dpSkillLevel(ctx.pack, defender, reaction.skill ?? "MELEE") * 2;
     pushLog(ctx.state, {
@@ -4984,7 +5084,7 @@ function resolveDpDefense(
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
   const reactionAchievement =
-    roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender) + elementDefenseMod;
+    roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(ctx.state, defender) + coverDefenseBonus(defender) + elementDefenseMod;
   const success = reactionAchievement >= attackAchievement;
   let grazeGain = 0;
   if (success && ctx.pack.system === "TOUHOU") {
@@ -5040,7 +5140,7 @@ function resolveDpCover(
     if (spendDp(ctx, coverer, perDie * dice, "掩护 " + dice + "D") === false) continue;
     coverer.coverUsedThisRound = true;
     const roll = dpRoll(ctx.pack, state, coverer, "dex", reaction.skill ?? "DODGE", dice, salt + ":" + coverer.id);
-    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus") - barrierPenalty(coverer) + coverDefenseBonus(coverer);
+    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus") - barrierPenalty(ctx.state, coverer) + coverDefenseBonus(coverer);
     const success = reactionAchievement >= attackAchievement;
     pushLog(state, {
       kind: "CHECK",
@@ -5102,7 +5202,7 @@ function resolveDpRangedAttack(
     "dp-ranged-elem:" + actor.id + ":" + defender.id
   );
   const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
-  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
+  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(ctx.state, actor);
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
@@ -5217,7 +5317,7 @@ function resolveDpRangedMultiAttack(
   const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged-multi:" + actor.id + ":" + state.round);
   const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
   const attackAchievement =
-    attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
+    attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(ctx.state, actor);
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
@@ -5501,7 +5601,7 @@ function resolveDpMelee(
     "dp-melee-elem:" + actor.id + ":" + defender.id
   );
   const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);
-  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
+  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(ctx.state, actor);
   const defenderAvoid = dpSkillLevel(ctx.pack, defender, "DODGE");
   const defenderDanmaku = dpSkillLevel(ctx.pack, defender, "DANMAKU");
   const approachTarget = dpAttribute(ctx.pack, defender, "str") + Math.max(defenderAvoid, defenderDanmaku + 15);
@@ -5518,7 +5618,7 @@ function resolveDpMelee(
   if (approachAchievement < approachTarget) return;
 
   const hit = dpRoll(ctx.pack, state, actor, "str", submission.skill ?? "MELEE", hitDice, "dp-melee-hit:" + actor.id + ":" + defender.id);
-  const hitAchievement = hit.achievement + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
+  const hitAchievement = hit.achievement + passiveBonus(actor, "accuracyBonus") - barrierPenalty(ctx.state, actor);
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,

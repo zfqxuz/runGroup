@@ -203,6 +203,14 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
                 ? Math.max(0, Math.floor(participant.barrier.penalty))
                 : 0,
             anchor: participant.barrier.anchor === "AREA" ? "AREA" : "SELF",
+            centerX:
+              typeof participant.barrier.centerX === "number"
+                ? participant.barrier.centerX
+                : null,
+            centerY:
+              typeof participant.barrier.centerY === "number"
+                ? participant.barrier.centerY
+                : null,
             durationHours:
               typeof participant.barrier.durationHours === "number"
                 ? Math.max(0, participant.barrier.durationHours)

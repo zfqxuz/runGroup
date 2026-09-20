@@ -402,7 +402,11 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      `participant.position` 由 `syncCombatPositions` 从 runtime 的 `sceneGrid` / `tokenPositions` 注入；
      `combatDistanceFeet` / `combatDistanceMeters` 支持 SQUARE / HEX / NONE 三种网格；
      `scene:token:move` 成功后刷新所有进行中战斗的坐标并广播 `combat:update`。
-     ⏳ 在此之上接 7.5 AREA 锚点、范围判定与「效果范围脱离」窗口即可，不需要重做地图。
+   - ✅ **7.5 AREA 结界（复用房间地图）**：`BARRIER` 的 `anchor=AREA` 以目标 / 施法者 Token
+     坐标为圆心，`sizeMeters` 为半径；`areaBarrierForParticipant` 判定内外，
+     `participantBarrierPenalty` 对范围内单位取自身 / AREA 最大惩罚；
+     范围内目标受击时伤害先由 AREA 结界吸收、击破溢出无效；无地图坐标时拒绝展开并记录日志。
+     ⏳ 禁域 / 禁则 / 识域 / 转移 / 封印各自的“入界 / 出界 / 指定存在”语义仍待逐条映射。
    - ✅ `BARRIER` 结界（7.5，wiki 表 7.1 数值已落地）：`RulePack.barrier`
      （tiers 2/5/10/15/20/25/30/40m + extended +10m/+1Lv/目标+2/灵力+2；castRange 30m；
      resizeMpCost 2；duration = 神术 Lv×2 小时；dodge = 达成值 + floor(大小/2)；
@@ -410,7 +414,8 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      `MagicEffect BARRIER` 支持 `sizeMeters` / anchor，查表得到必要 Lv / 目标值 / 灵力 / 持续 / 惩罚；
      伤害优先由结界吸收、击破溢出无效；DISPEL 可解除结界（记录目标值）；
      重复展开支持 REPLACE / REFRESH / STACK；扩大缩小按 HP 比例迁移；战斗视图显示大小 / 必要 Lv / 惩罚。
-     ⏳ AREA 范围与「效果范围脱离」已具备地图坐标 / 距离底层（复用房间 Scene/Map/Token），仍需接锚点判定与脱离窗口。
+     ✅ AREA 基础已接：坐标 / 距离 / 内外判定 / 惩罚 / 伤害吸收均复用房间 Scene/Map/Token；
+     ⏳ 仅剩禁域 / 封印等“禁止进入 / 禁止离开”的逐法术语义。
 2. **DP 机制 · 剩余**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
    - 回合 / 宣言 / DP 回复核心已完成；剩余行动结算与 socket 接线（见 2.7 里程碑 1–2）。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
