@@ -45,6 +45,10 @@ export interface CharacterBackstory {
   readonly spells: readonly string[];
   readonly spellDetails: readonly BackstorySpell[];
   readonly companions: readonly BackstoryCompanion[];
+  /** 千幻抄能力等级：类别 id -> Lv。 */
+  readonly abilities: Readonly<Record<string, number>>;
+  /** 千幻抄车卡能力等级 A-D。 */
+  readonly abilityTier: string | null;
 }
 
 function recordOf(value: unknown): Record<string, unknown> {
@@ -126,6 +130,17 @@ export function characterBackstoryOf(value: unknown): CharacterBackstory | null 
       })
       .filter((item): item is BackstoryCompanion => item !== null),
     spells: namesOf(record.spells),
+    abilities: (() => {
+      const raw = recordOf(record.abilities);
+      const output: Record<string, number> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+          output[key] = Math.max(0, Math.floor(value));
+        }
+      }
+      return output;
+    })(),
+    abilityTier: stringOrNull(record.abilityTier),
     spellDetails: arrayOf(record.spellDetails)
       .map((item) => {
         const entry = recordOf(item);
@@ -158,6 +173,8 @@ export function characterBackstoryOf(value: unknown): CharacterBackstory | null 
     backstory.mythosExperiences.length > 0 ||
     backstory.spellDetails.length > 0 ||
     backstory.spells.length > 0 ||
-    backstory.companions.length > 0;
+    backstory.companions.length > 0 ||
+    Object.keys(backstory.abilities).length > 0 ||
+    backstory.abilityTier !== null;
   return hasAny ? backstory : null;
 }

@@ -91,6 +91,24 @@ export default function BackstoryPanel({ value }: { value: unknown }) {
         </div>
       )}
 
+      {Object.keys(backstory.abilities).length === 0 && backstory.abilityTier === null ? null : (
+        <div className="mt-5">
+          <h3 className="text-xs font-medium text-white/60">
+            千幻抄能力{backstory.abilityTier === null ? "" : "（" + backstory.abilityTier + " 级能力点）"}
+          </h3>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {Object.entries(backstory.abilities).map(([id, level]) => (
+              <span
+                key={id}
+                className="rounded-lg border border-spirit-400/25 bg-spirit-400/5 px-3 py-1.5 font-mono text-[11px] text-spirit-200"
+              >
+                {id} Lv{level}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
       {backstory.companions.length === 0 ? null : (
         <div className="mt-5">
           <h3 className="text-xs font-medium text-white/60">调查员伙伴</h3>

@@ -202,11 +202,13 @@ function numberRecordOf(value: unknown): Record<string, number> {
 
 /** 千幻抄能力等级：优先读角色 sourceData.abilities，其次 backstory.abilities。 */
 export function characterAbilityLevelsOf(character: Character): Record<string, number> {
-  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
-  const source = numberRecordOf(sourceData.abilities);
-  if (Object.keys(source).length > 0) return source;
+  // 车卡编辑器把能力写进 backstory.abilities；导入角色可能只有 sourceData.abilities。
+  // backstory 优先，保证编辑器的修改生效。
   const backstory = (character.backstory ?? {}) as Record<string, unknown>;
-  return numberRecordOf(backstory.abilities);
+  const fromBackstory = numberRecordOf(backstory.abilities);
+  if (Object.keys(fromBackstory).length > 0) return fromBackstory;
+  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
+  return numberRecordOf(sourceData.abilities);
 }
 
 export function characterSpellsOf(character: Character): string[] {

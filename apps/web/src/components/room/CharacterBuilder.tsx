@@ -16,6 +16,11 @@ import {
   compileParsedRulePack,
   computeDerived,
   rollAttributeSets,
+  abilityCostForLevel,
+  abilityPointBudget,
+  abilitySpendTotal,
+  abilityTotalCost,
+  validateAbilitySpend,
   type AttributeKey,
   type AttributeSet,
   type AttributeSetOption,
@@ -71,6 +76,7 @@ export interface CharacterEditorInitial {
   readonly interestAdded: Record<string, number>;
   readonly slotAssignments: Record<string, string[]>;
   readonly backstory: Record<string, unknown>;
+  readonly sourceData?: Record<string, unknown>;
   readonly assets: Record<string, unknown>;
   readonly items: readonly CharacterItemDraft[];
 }
@@ -169,6 +175,17 @@ function assetText(initial: CharacterEditorInitial | null, key: string): string 
   return typeof value === "number" ? String(value) : typeof value === "string" ? value : "";
 }
 
+function numberRecordOf(value: unknown): Record<string, number> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  const output: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === "number" && Number.isFinite(raw) && raw > 0) {
+      output[key] = Math.max(0, Math.floor(raw));
+    }
+  }
+  return output;
+}
+
 export default function CharacterBuilder(props: Props) {
   const router = useRouter();
   const initial = props.initial ?? null;
@@ -196,6 +213,14 @@ export default function CharacterBuilder(props: Props) {
   const [occupationAdded, setOccupationAdded] = useState<Record<string, number>>(initial?.occupationAdded ?? {});
   const [slotAssignments, setSlotAssignments] = useState<Record<string, string[]>>(initial?.slotAssignments ?? {});
   const [interestAdded, setInterestAdded] = useState<Record<string, number>>(initial?.interestAdded ?? {});
+  const [abilityTier, setAbilityTier] = useState<string>(
+    typeof initial?.backstory?.abilityTier === "string" ? initial.backstory.abilityTier : "C"
+  );
+  const [abilityLevels, setAbilityLevels] = useState<Record<string, number>>(() => {
+    const fromBackstory = numberRecordOf(initial?.backstory?.abilities);
+    if (Object.keys(fromBackstory).length > 0) return fromBackstory;
+    return numberRecordOf(initial?.sourceData?.abilities);
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   // 第二页（选填）：人物故事 / 财产 / 持有物品
@@ -362,6 +387,16 @@ export default function CharacterBuilder(props: Props) {
     () => computeDerived(compiled, { attributes: ageAppliedAttributes, race, skills: { CTHULHU_MYTHOS: mythosTotal } }),
     [compiled, ageAppliedAttributes, mythosTotal, race]
   );
+
+  const abilitiesEnabled = props.system === "TOUHOU" && props.pack.abilities.enabled === true;
+  const abilityCategoryList = abilitiesEnabled ? Object.values(props.pack.abilities.categories) : [];
+  const abilityTierOptions = Object.keys(props.pack.abilities.pointBudgets);
+  const abilityBudget = abilitiesEnabled ? abilityPointBudget(props.pack.abilities, abilityTier) : null;
+  const abilitySpent = abilitiesEnabled ? abilitySpendTotal(props.pack.abilities, abilityLevels) : 0;
+  const abilityCheck = abilitiesEnabled
+    ? validateAbilitySpend(props.pack.abilities, abilityTier, abilityLevels)
+    : null;
+  const abilityIssue = abilityCheck !== null && abilityCheck.ok === false ? abilityCheck.error ?? "能力点不合法" : null;
 
   const coc7Extras = useMemo(() => {
     if (isCoc7 === false) return null;
@@ -860,7 +895,15 @@ export default function CharacterBuilder(props: Props) {
       spellDetails,
       spells: spellDetails
         .map((item) => (item !== null && typeof item === "object" ? (item as { name?: unknown }).name : undefined))
-        .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+        .filter((value): value is string => typeof value === "string" && value.trim().length > 0),
+      ...(abilitiesEnabled
+        ? {
+            abilities: Object.fromEntries(
+              Object.entries(abilityLevels).filter(([, level]) => level > 0)
+            ),
+            abilityTier
+          }
+        : {})
     };
   }
 
@@ -925,6 +968,10 @@ export default function CharacterBuilder(props: Props) {
     if (error !== null) {
       setMessage(error);
       setStep(1);
+      return;
+    }
+    if (abilitiesEnabled && abilityIssue !== null) {
+      setMessage(abilityIssue);
       return;
     }
     setBusy(true);
@@ -1516,6 +1563,86 @@ export default function CharacterBuilder(props: Props) {
           </p>
         )}
       </section>
+
+      {abilitiesEnabled ? (
+        <section className="rounded-xl border border-spirit-400/25 bg-spirit-400/5 p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-[240px] flex-1">
+              <h2 className="text-base font-semibold text-white/90">千幻抄能力</h2>
+              <p className="mt-1 text-[11px] text-white/45">
+                能力等级 A/B/C/D 决定能力点预算；逐级消费表在规则包里，超支会阻止保存。
+              </p>
+            </div>
+            <label className="flex flex-col gap-1">
+              <span className="text-[10px] text-white/40">能力等级</span>
+              <select
+                value={abilityTier}
+                onChange={(event) => setAbilityTier(event.target.value)}
+                className={inputClass + " w-32"}
+              >
+                {abilityTierOptions.map((tier) => (
+                  <option key={tier} value={tier}>
+                    {tier}（{props.pack.abilities.pointBudgets[tier]} 点）
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span
+              className={
+                "rounded-lg border px-3 py-2 font-mono text-xs " +
+                (abilityIssue === null
+                  ? "border-spirit-400/40 bg-spirit-400/10 text-spirit-200"
+                  : "border-red-400/40 bg-red-400/10 text-red-200")
+              }
+            >
+              能力点 {abilitySpent} / {abilityBudget ?? "—"}
+            </span>
+          </div>
+          {abilityCategoryList.length === 0 ? (
+            <p className="mt-3 text-xs text-white/45">本规则包没有登记能力类别。</p>
+          ) : (
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              {abilityCategoryList.map((category) => {
+                const level = abilityLevels[category.id] ?? 0;
+                const maxLevel = Math.max(1, category.costTable.length);
+                const nextCost = abilityCostForLevel(category, level + 1);
+                return (
+                  <div
+                    key={category.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="truncate text-xs text-white/80">{category.name}</p>
+                      <p className="text-[10px] text-white/35">
+                        累计 {abilityTotalCost(category, level)} 点 · 下一级 {nextCost} 点
+                      </p>
+                    </div>
+                    <select
+                      value={level}
+                      onChange={(event) =>
+                        setAbilityLevels((prev) => ({
+                          ...prev,
+                          [category.id]: Math.max(0, Math.floor(Number(event.target.value) || 0))
+                        }))
+                      }
+                      className={inputClass + " w-24"}
+                    >
+                      {Array.from({ length: maxLevel + 1 }, (_unused, lv) => (
+                        <option key={lv} value={lv}>
+                          Lv{lv}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {abilityIssue === null ? null : (
+            <p className="mt-3 text-xs text-red-300">{abilityIssue}</p>
+          )}
+        </section>
+      ) : null}
 
       {isStarterMode ? (
         <section className="rounded-xl border border-sakura-500/25 bg-sakura-500/5 p-5">

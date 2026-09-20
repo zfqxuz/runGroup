@@ -125,6 +125,7 @@ export default async function EditCharacterPage({
     interestAdded: pointMapOf(allocation.interest),
     slotAssignments: slotsOf(allocation.slots),
     backstory: recordOf(character.backstory),
+    sourceData: recordOf(character.sourceData),
     assets: recordOf(recordOf(character.sourceData).assets),
     items: character.cards.map((card): CharacterItemDraft => ({
       id: card.id,
