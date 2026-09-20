@@ -243,6 +243,9 @@ export function addParticipant(
     maxSan,
     dp,
     maxDp,
+    tempDp: 0,
+    tempDpMax: 0,
+    tempDpExpiresAtRound: null,
     grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
@@ -826,6 +829,23 @@ function expireRoundTimers(state: CombatState): void {
   expireBarriers(state);
   expireCovers(state);
   for (const participant of [...state.participants]) {
+    if (
+      (participant.tempDp ?? 0) > 0 &&
+      participant.tempDpExpiresAtRound !== null &&
+      participant.tempDpExpiresAtRound !== undefined &&
+      state.round >= participant.tempDpExpiresAtRound
+    ) {
+      const had = participant.tempDp ?? 0;
+      participant.tempDp = 0;
+      participant.tempDpExpiresAtRound = null;
+      pushLog(state, {
+        kind: "STATUS",
+        actorId: participant.id,
+        targetId: participant.id,
+        text: participant.name + " 的追加 DP 持续时间结束（剩余 " + had + " 点消散）",
+        data: { rollType: "TEMP_DP_EXPIRED", tempDp: had }
+      });
+    }
     if (participant.armorExpiresAtRound !== null && participant.armorExpiresAtRound !== undefined && state.round >= participant.armorExpiresAtRound) {
       const hadArmor = participant.armor;
       participant.armor = 0;
@@ -3437,6 +3457,24 @@ function applyMagicEffect(
     return;
   }
 
+  if (effect.type === "TEMP_DP") {
+    const amount = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.amount, { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 })));
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    const before = Math.max(0, target.tempDp ?? 0);
+    // 护盾术：重复施展时取较高值。
+    if (amount >= before) {
+      target.tempDp = amount;
+      target.tempDpMax = amount;
+      target.tempDpExpiresAtRound = duration > 0 ? state.round + duration : null;
+    }
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 获得追加 DP " + Math.max(before, amount) +
+        (duration > 0 ? "（" + duration + " 轮）" : ""),
+      { rollType: "TEMP_DP_GRANTED", tempDp: target.tempDp ?? 0, tempDpMax: target.tempDpMax ?? 0, duration }
+    );
+    return;
+  }
+
   if (effect.type === "DISPEL") {
     let removedStatuses = 0;
     if (effect.keys.length === 0) {
@@ -4267,6 +4305,23 @@ function applyCoverFixedDamage(
   return true;
 }
 
+/** 消耗追加 DP（护盾术）优先，再扣普通 DP；用于回避 / 防御 / 弹幕减免。 */
+function spendReactionDp(
+  ctx: ResolveContext,
+  participant: CombatParticipantState,
+  amount: number,
+  label: string
+): boolean {
+  const cost = Math.max(0, Math.floor(amount));
+  if (cost <= 0) return true;
+  const temp = Math.max(0, Math.floor(participant.tempDp ?? 0));
+  const fromTemp = Math.min(temp, cost);
+  participant.tempDp = temp - fromTemp;
+  const rest = cost - fromTemp;
+  if (rest <= 0) return true;
+  return spendDp(ctx, participant, rest, label);
+}
+
 /** 消耗 DP；不足时记录日志并返回 false。 */
 function spendDp(
   ctx: ResolveContext,
@@ -4308,7 +4363,7 @@ function resolveDpDefense(
   const dice = Math.max(1, Math.floor(reaction.dpDice ?? 1));
   if (reaction.type === "DEFEND") {
     const perDie = Math.max(0, Math.floor(costs.defendPerDie));
-    if (spendDp(ctx, defender, perDie * dice, "防御 " + dice + "D") === false) {
+    if (spendReactionDp(ctx, defender, perDie * dice, "防御 " + dice + "D") === false) {
       return { success: false, reduction: 0 };
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
@@ -4328,7 +4383,7 @@ function resolveDpDefense(
   }
   // 默认回避：对射击 / 追击 / 近战可用
   const perDie = Math.max(0, Math.floor(costs.dodgePerDie));
-  if (spendDp(ctx, defender, perDie * dice, "回避 " + dice + "D") === false) {
+  if (spendReactionDp(ctx, defender, perDie * dice, "回避 " + dice + "D") === false) {
     return { success: false, reduction: 0 };
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
@@ -4746,8 +4801,12 @@ function resolveDpDanmaku(
     // 14.5 被弹判定小：降低回避 DP 消耗与命中伤害（最低 0）。
     const dpReduction = Math.max(0, reduction - passiveBonus(target, "danmakuDpReduction"));
     const damage = Math.max(0, baseDamage - passiveBonus(target, "danmakuDamageReduction"));
-    if (reaction.type === "DODGE" && target.dp >= dpReduction) {
-      target.dp -= dpReduction;
+    const availableDp = Math.max(0, target.dp) + Math.max(0, Math.floor(target.tempDp ?? 0));
+    if (reaction.type === "DODGE" && availableDp >= dpReduction) {
+      const temp = Math.max(0, Math.floor(target.tempDp ?? 0));
+      const fromTemp = Math.min(temp, dpReduction);
+      target.tempDp = temp - fromTemp;
+      target.dp = Math.max(0, target.dp - (dpReduction - fromTemp));
       if (ctx.pack.system === "TOUHOU") {
         target.grazePoints = Math.max(0, Math.floor(target.grazePoints ?? 0)) + 1;
       }

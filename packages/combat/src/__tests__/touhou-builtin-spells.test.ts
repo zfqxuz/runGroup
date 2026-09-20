@@ -88,6 +88,7 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(base.magic?.spells.map((spell) => spell.id).sort()).toEqual([
       "MAGIC_CURE",
       "MAGIC_HEAL",
+      "MAGIC_SHIELD",
       "MAGIC_TRANSFER",
       "SPIRIT_BLESSING"
     ]);
@@ -97,6 +98,13 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     const { caster, target } = cast("builtin-blessing", "SPIRIT_BLESSING", { SPIRIT_ARTS: 3 });
     expect(caster.mp).toBe(96);
     expect(target.hp).toBe(25); // 10 + 3×5
+  });
+
+  it("护盾术：获得 ceil(魔法 Lv×1.5) 追加 DP", () => {
+    const { caster, target } = cast("builtin-shield", "MAGIC_SHIELD", { MAGIC: 4 });
+    expect(caster.mp).toBe(96);
+    expect(target.tempDp).toBe(6); // ceil(4 × 1.5)
+    expect(target.tempDpMax).toBe(6);
   });
 
   it("恢复术：恢复 魔法 Lv×5 HP", () => {

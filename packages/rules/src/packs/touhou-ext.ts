@@ -468,6 +468,19 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "DISPEL", keys: ["DISEASE", "POISON"] }]
     },
     {
+      id: "MAGIC_SHIELD",
+      name: "护盾术",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ALLY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      effects: [{ type: "TEMP_DP", amount: "ceil(abilityLv * 1.5)", durationTicks: "0" }]
+    },
+    {
       id: "MAGIC_TRANSFER",
       name: "转灵术",
       skill: "MAGIC",

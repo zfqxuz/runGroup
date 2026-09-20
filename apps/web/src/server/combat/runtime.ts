@@ -111,6 +111,12 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
         ? participant.abilityLevels
         : {};
     participant.mpExhausted = participant.mpExhausted === true;
+    participant.tempDp = Math.max(0, Math.floor(participant.tempDp ?? 0));
+    participant.tempDpMax = Math.max(participant.tempDp, Math.floor(participant.tempDpMax ?? 0));
+    participant.tempDpExpiresAtRound =
+      typeof participant.tempDpExpiresAtRound === "number"
+        ? Math.max(0, Math.floor(participant.tempDpExpiresAtRound))
+        : null;
     participant.barrier =
       participant.barrier !== null && typeof participant.barrier === "object"
         ? {

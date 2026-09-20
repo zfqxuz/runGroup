@@ -202,6 +202,16 @@ describe("常时被动在 DP 战斗中生效", () => {
     expect(setup.e1.hp).toBe(setup.e1.maxHp - 8);
   });
 
+  it("追加 DP（护盾术）优先用于回避消耗", () => {
+    const setup = makeCombat("shield-temp-dp", passive(), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.e1.tempDp = 6;
+    ranged(setup.state, "e1", "10");
+    resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE", dpDice: 1 } });
+    expect(setup.e1.tempDp).toBe(5);
+    expect(setup.e1.dp).toBe(30);
+  });
+
   it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {
     const base = makeCombat("passive-acc-base", passive(), passive());
     startRound(base.state, base.actor, base.e1);

@@ -166,7 +166,8 @@ export const MAGIC_EFFECT_TYPES = [
   "CONTROL",
   "CLEANSE",
   "DISPEL",
-  "BARRIER"
+  "BARRIER",
+  "TEMP_DP"
 ] as const;
 
 /** 按能力等级缩放伤害 / 治疗的公共字段（LvD / +Lv）。 */
@@ -271,6 +272,13 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     sizeMeters: z.number().nonnegative().optional(),
     /** 锚定方式：SELF 贴在目标身上，AREA 占据一片区域（需要位置模型）。 */
     anchor: z.enum(["SELF", "AREA"]).default("SELF")
+  }),
+  z.object({
+    type: z.literal("TEMP_DP"),
+    /** 追加 DP，只用于回避 / 防御 / 弹幕 DP 减少；可引用 abilityLv。 */
+    amount: ExprSchema,
+    /** 持续轮次；0 表示直到消耗完 / 战斗结束。 */
+    durationTicks: ExprSchema.default("0")
   }),
   z.object({
     type: z.literal("DISPEL"),

@@ -1227,6 +1227,12 @@ export default function CombatBoard(props: Props) {
                           />
                         </div>
                         <p className="mt-1 font-mono text-[11px] text-white/55">HP {item.hp}/{item.maxHp}</p>
+                        {(item.tempDp ?? 0) > 0 ? (
+                          <p className="mt-0.5 font-mono text-[11px] text-emerald-200">
+                            追加DP {item.tempDp}
+                            {item.tempDpMax === null || item.tempDpMax === undefined ? "" : "/" + item.tempDpMax}
+                          </p>
+                        ) : null}
                       </>
                     )}
                     {item.barrierHp === null ? null : (

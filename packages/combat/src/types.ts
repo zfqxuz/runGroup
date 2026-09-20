@@ -136,6 +136,11 @@ export interface CombatParticipantState {
   maxSan: number;
   dp: number;
   maxDp: number;
+  /** 护盾术等提供的追加 DP：只用于回避 / 防御 / 弹幕减免。 */
+  tempDp?: number;
+  tempDpMax?: number;
+  /** 追加 DP 到期轮次；null 表示直到耗尽 / 战斗结束。 */
+  tempDpExpiresAtRound?: number | null;
   /** 千幻抄擦弹点数；战斗结束后消失。 */
   grazePoints: number;
   /** 已消费擦弹点预存的伤害加值；下一次对应攻击结算后清零。 */
