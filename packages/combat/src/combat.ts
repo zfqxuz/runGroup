@@ -247,6 +247,7 @@ export function addParticipant(
     raceFlags: [...(init.raceFlags ?? [])],
     elements: [...(init.elements ?? [])],
     abilityLevels: { ...(init.abilityLevels ?? {}) },
+    mpExhausted: false,
     skills: init.skills ?? {},
     spells: [...(init.spells ?? [])],
     damageBonus: init.damageBonus ?? "0",
@@ -701,6 +702,7 @@ function spendCombatMagicPoints(
 
   if (ctx.pack.system !== "COC7") {
     actor.mp = Math.max(0, actor.mp - amount);
+    applyTouhouMpExhaustion(ctx, actor);
     return true;
   }
 
@@ -760,6 +762,43 @@ function spendCombatMagicPoints(
     }
   }
   return true;
+}
+
+/** 千幻抄 14.3：灵力归零即昏迷、行动不能。 */
+function applyTouhouMpExhaustion(ctx: ResolveContext, participant: CombatParticipantState): void {
+  if (ctx.pack.system !== "TOUHOU") return;
+  if (participant.mp > 0 || participant.mpExhausted === true) return;
+  participant.mp = 0;
+  participant.mpExhausted = true;
+  participant.unconscious = true;
+  participant.prone = true;
+  participant.defeated = true;
+  participant.isReady = false;
+  pushLog(ctx.state, {
+    kind: "DEFEAT",
+    actorId: participant.id,
+    targetId: participant.id,
+    text: participant.name + " 灵力归零，昏迷并失去行动能力",
+    data: { rollType: "MP_EXHAUSTED" }
+  });
+}
+
+/** 灵力回复到正数时解除「灵力归零昏迷」；HP 仍为 0 时不解除战斗不能。 */
+function clearTouhouMpExhaustion(ctx: ResolveContext, participant: CombatParticipantState): void {
+  if (ctx.pack.system !== "TOUHOU") return;
+  if (participant.mpExhausted !== true || participant.mp <= 0) return;
+  participant.mpExhausted = false;
+  if (participant.dead === true || participant.hp <= 0) return;
+  participant.unconscious = false;
+  participant.prone = false;
+  participant.defeated = false;
+  pushLog(ctx.state, {
+    kind: "STATUS",
+    actorId: participant.id,
+    targetId: participant.id,
+    text: participant.name + " 灵力恢复，从灵力归零昏迷中苏醒",
+    data: { rollType: "MP_RECOVERED" }
+  });
 }
 
 /** 读取参战单位种族上的某条能力定义；没有种族 / 找不到时返回 null。 */
@@ -1978,8 +2017,14 @@ function resolveAttack(
     vars: defender.vars
   });
 
-  if (outcome.mpCost > 0) defender.mp = Math.max(0, defender.mp - outcome.mpCost);
-  if (outcome.mpGained > 0) defender.mp = Math.min(defender.maxMp, defender.mp + outcome.mpGained);
+  if (outcome.mpCost > 0) {
+    defender.mp = Math.max(0, defender.mp - outcome.mpCost);
+    applyTouhouMpExhaustion(ctx, defender);
+  }
+  if (outcome.mpGained > 0) {
+    defender.mp = Math.min(defender.maxMp, defender.mp + outcome.mpGained);
+    clearTouhouMpExhaustion(ctx, defender);
+  }
 
   const armorResult = absorbWithArmor(defender, outcome.damage);
   const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining);
@@ -2266,6 +2311,7 @@ function resolveSpellcard(
   if (mode === "CONSUMPTION") {
     actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
     actor.mp = Math.max(0, actor.mp - mpCost);
+    applyTouhouMpExhaustion(ctx, actor);
     pushLog(state, {
       kind: "SPELLCARD",
       actorId: actor.id,
@@ -2333,7 +2379,8 @@ function resolveSpellcard(
   }
 
   actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
-  actor.mp -= mpCost;
+  actor.mp = Math.max(0, actor.mp - mpCost);
+  applyTouhouMpExhaustion(ctx, actor);
   const rawDuration = Math.max(0, Math.floor(submission.declarationDurationTicks ?? 0));
   // 不传持续 tick 视为“持续到被击破”。不能用 Infinity：CombatState 会写入
   // JSON 快照，Infinity 会被序列化成 null 导致重载后立刻过期。
@@ -2410,6 +2457,7 @@ function resolveOutOfRule(ctx: ResolveContext, actor: CombatParticipantState, su
   }
   const mpCost = Math.max(0, Math.floor(evaluateSource(ctx.pack, rules.outOfRule.mpCost, actor.vars)));
   actor.mp = Math.max(0, actor.mp - mpCost);
+  applyTouhouMpExhaustion(ctx, actor);
   actor.san = Math.max(0, actor.san - sanCost);
   pushLog(ctx.state, {
     kind: "SPELLCARD",
@@ -2581,10 +2629,15 @@ function resolveMagicTargets(
   state: CombatState,
   actor: CombatParticipantState,
   spell: MagicSpell,
-  requestedTargetId: string | null
+  requestedTargetId: string | null,
+  /** 是否允许选中「已失去战斗能力但未死亡」的目标（用于千幻抄救助昏迷 / 灵力归零者）。 */
+  includeDowned = false
 ): CombatParticipantState[] {
   const targeting = spellTargeting(spell);
-  const alive = state.participants.filter((participant) => participant.defeated === false);
+  const alive = state.participants.filter(
+    (participant) =>
+      participant.defeated === false || (includeDowned && participant.dead !== true && participant.hp > 0)
+  );
   if (spellEffectsOf(spell).some((effect) => effect.type === "SUMMON")) return [actor];
   if (targeting === "SELF" || spell.target === "SELF") return [actor];
   if (spell.target === "ALL") {
@@ -2594,7 +2647,10 @@ function resolveMagicTargets(
   }
   if (requestedTargetId === null) return [];
   const target = findParticipant(state, requestedTargetId);
-  return target === undefined || target.defeated ? [] : [target];
+  if (target === undefined) return [];
+  if (target.dead === true) return [];
+  if (target.defeated && includeDowned === false) return [];
+  return [target];
 }
 
 /**
@@ -2738,8 +2794,14 @@ function applyMagicEffect(
       shieldMultiplier,
       vars: target.vars
     });
-    if (outcome.mpCost > 0) target.mp = Math.max(0, target.mp - outcome.mpCost);
-    if (outcome.mpGained > 0) target.mp = Math.min(target.maxMp, target.mp + outcome.mpGained);
+    if (outcome.mpCost > 0) {
+      target.mp = Math.max(0, target.mp - outcome.mpCost);
+      applyTouhouMpExhaustion(ctx, target);
+    }
+    if (outcome.mpGained > 0) {
+      target.mp = Math.min(target.maxMp, target.mp + outcome.mpGained);
+      clearTouhouMpExhaustion(ctx, target);
+    }
     const armorResult = absorbWithArmor(target, outcome.damage);
     const applied = applyDamageToParticipant(ctx, target, armorResult.remaining);
     pushLog(state, {
@@ -2777,6 +2839,7 @@ function applyMagicEffect(
     const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
     const before = target.mp;
     target.mp = Math.min(target.maxMp, target.mp + amount);
+    clearTouhouMpExhaustion(ctx, target);
     log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.mp - before) + " MP", { mp: target.mp - before });
     return;
   }
@@ -2784,8 +2847,10 @@ function applyMagicEffect(
   if (effect.type === "MP_DRAIN") {
     const amount = evaluateEffectNumber(ctx.pack, effect.amount, actor.vars);
     const drained = Math.min(target.mp, amount);
-    target.mp -= drained;
+    target.mp = Math.max(0, target.mp - drained);
+    applyTouhouMpExhaustion(ctx, target);
     actor.mp = Math.min(actor.maxMp, actor.mp + drained);
+    clearTouhouMpExhaustion(ctx, actor);
     log(actor.name + " " + verb + "「" + spell.name + "」 → 抽取 " + target.name + " " + drained + " MP", { drained });
     return;
   }
@@ -3301,7 +3366,9 @@ function resolveTargetedEffects(
   const meta = { spellId: spell.id, spell: spell.name };
 
   const requestedTargetId = submission.targetId ?? null;
-  const targets = resolveMagicTargets(state, actor, spell, requestedTargetId);
+  // 千幻抄允许治疗 / 回灵类法术救助「灵力归零昏迷」的队友；敌人伤害仍跳过倒地目标。
+  const includeDowned = ctx.pack.system === "TOUHOU" && isHostileSpell(spell) === false;
+  const targets = resolveMagicTargets(state, actor, spell, requestedTargetId, includeDowned);
   if (targets.length === 0) {
     pushLog(state, {
       kind: logKind,
@@ -3358,8 +3425,12 @@ function resolveTargetedEffects(
       continue;
     }
 
+    // 允许对「施法前已昏迷、但未死亡」的队友结算治疗 / 回灵；
+    // 若是本次效果把目标打到失去战斗能力，则后续效果不再继续。
+    const wasDowned = target.defeated;
     for (const effect of effects) {
-      if (target.defeated) break;
+      if (target.dead === true) break;
+      if (target.defeated && wasDowned === false) break;
       applyMagicEffect(ctx, actor, target, spell, effect, defense, submission, logKind, verb);
     }
   }
@@ -3396,6 +3467,7 @@ function resolveGrazeSpend(
     const restored = use / 5;
     actor.mp = Math.min(actor.maxMp, actor.mp + restored);
     actor.vars.mp = actor.mp;
+    clearTouhouMpExhaustion(ctx, actor);
     pushLog(state, {
       kind: "STATUS",
       actorId: actor.id,

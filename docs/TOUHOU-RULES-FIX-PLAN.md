@@ -187,7 +187,23 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 - 测试：rules `magic.test.ts` 追加 DISPEL / 缩放解析；combat `touhou-abilities.test.ts` 追加
   `+Lv`、`LvD`、普通路径不缩放、DISPEL 指定 key / 全部状态 / 击破符卡。
 
-### 2.5 后续条目（未铺开）
+### 2.5 已完成（第五批）：14.x 恢复 / 移动 + 灵力归零昏迷
+
+**规则层纯函数**（`packages/rules/src/touhou.ts`）
+- `touhouMovement`：地面 = {身体}+〈运动〉；飞行 = ({知性}或{身体}+〈飞行〉)×2（m/s）。
+- `resolveTouhouNaturalHealing`：每小时 1 HP；有〈应急处置〉/〈医学〉每小时额外 + 技能等级（14.5）。
+- `resolveTouhouEmergencyCare`：{知性}+〈应急处置/医学〉+3D6，DC18；成功恢复达成值半数，耗时 30 分钟（14.6）。
+- `resolveTouhouMpRecovery`：清醒每 10 分钟 +1；连续睡 3 小时回满（14.8）。
+- `TOUHOU_WAKE_MINUTES = 30`：HP 回复后约 30 分钟苏醒（14.4，供时间推进流程使用）。
+
+**战斗层**
+- 千幻抄 14.3：灵力归零即昏迷、行动不能。新增 `mpExhausted` 标记；所有扣灵点（施法、能力、符卡、
+  规则外法术、MP 吸取、伤害管线 MP 消耗）都会触发；灵力恢复（MP 回复、吸取、擦弹兑换）会解除昏迷。
+- 千幻抄允许治疗 / 回灵类法术选中「已灵力归零但未死亡」的队友；敌人伤害仍跳过倒地目标。
+
+**未覆盖的 14.x**：移动公式接入追逐（需要 m/s → MOV 的换算决策）、重量 / 财产、遮挡物 / 掩体判定。
+
+### 2.6 后续条目（未铺开）
 
 1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
    - 能力点与等级的车卡 / 成长流程、每级习得数量、妖力 / 特技常时被动、`BARRIER` 结界。
@@ -199,8 +215,8 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - 在已有元素表上补抵抗 / 全判定修正与属性使的能力等级、法术表；建议随能力系统一起做。
 5. **成长体系**（v2: 13.x）
    - A-F 成长等级、特性值/技能/能力/HP系数与SC成长表、妖术与锻炼 60% 上限。
-6. **其他规则**（v2: 14.x）
-   - 千幻抄移动公式、灵力自然恢复、30分钟苏醒、应急治疗 DC18、财产/重量/遮挡物。
+6. **其他规则 · 剩余**（v2: 14.x）
+   - 移动公式接入追逐、重量 / 财产、遮挡物 / 掩体判定。
 
 ## 3. P2 KP行为 / 不可达
 
@@ -260,6 +276,16 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 - COC7 回归四个脚本全部 PASS。
 - 新增测试：combat `touhou-abilities.test.ts` 扩到 10 条（含 `+Lv` / `LvD` / 普通路径不缩放 / DISPEL）；
   rules `magic.test.ts` 追加 DISPEL 与缩放解析断言。
+
+### 4.6 P1 第五批：14.x 恢复 / 移动 + 灵力归零昏迷
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（rules 133、combat 138、formula 54、web 5）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS。
+- 新增测试：
+  - `packages/rules/src/__tests__/touhou-rules.test.ts`：11 条（移动 / 自然治愈 / 应急治疗 / 灵力恢复）；
+  - `packages/combat/src/__tests__/touhou-mp-exhaustion.test.ts`：3 条（归零昏迷 / 队友唤醒 / COC7 隔离）。
 
 ## 5. 风险与回滚
 

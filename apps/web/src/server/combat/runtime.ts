@@ -109,6 +109,7 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       participant.abilityLevels !== null && typeof participant.abilityLevels === "object"
         ? participant.abilityLevels
         : {};
+    participant.mpExhausted = participant.mpExhausted === true;
   }
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();

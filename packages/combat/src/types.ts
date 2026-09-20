@@ -114,6 +114,8 @@ export interface CombatParticipantState {
   elements?: string[];
   /** 千幻抄能力等级：categoryId -> Lv；COC7 单位为空对象。 */
   abilityLevels?: Record<string, number>;
+  /** 千幻抄 14.3：灵力归零导致昏迷；灵力恢复后清除。 */
+  mpExhausted?: boolean;
   skills: Record<string, number>;
   /** 该单位允许施放的法术 id；玩家来自角色卡，NPC 来自 NPC 卡。 */
   spells: string[];

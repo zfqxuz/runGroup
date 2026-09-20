@@ -155,6 +155,23 @@ export type { AttributeSetOption, PointBuyCheck } from "./attributes";
 
 export { isGrowthCheckPassed, resolveGrowthChecks } from "./growth";
 
+export {
+  TOUHOU_WAKE_MINUTES,
+  resolveTouhouEmergencyCare,
+  resolveTouhouMpRecovery,
+  resolveTouhouNaturalHealing,
+  touhouMovement
+} from "./touhou";
+export type {
+  TouhouEmergencyCareInput,
+  TouhouEmergencyCareOutcome,
+  TouhouMovementInput,
+  TouhouMpRecoveryInput,
+  TouhouMpRecoveryOutcome,
+  TouhouNaturalHealingInput,
+  TouhouNaturalHealingOutcome
+} from "./touhou";
+
 export { abilityCostForLevel, abilityLevelForPoints, abilitySpellCountIssue, abilityTotalCost } from "./abilities";
 export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./growth";
 
