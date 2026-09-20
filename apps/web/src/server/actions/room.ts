@@ -54,8 +54,15 @@ export async function createRoomAction(formData: FormData): Promise<void> {
   const method = pack.attributes.methods.find((item) => item.id === methodId);
   if (method === undefined) redirect("/rooms/new?error=method");
 
-  const requestedMode = formData.get("combatMode") === "INITIATIVE" ? "INITIATIVE" : "ATB";
-  const combatMode: CombatMode = requestedMode;
+  const rawMode = String(formData.get("combatMode") ?? "");
+  const combatMode: CombatMode =
+    system === "TOUHOU"
+      ? rawMode === "DP"
+        ? "DP"
+        : "INITIATIVE"
+      : rawMode === "ATB"
+        ? "ATB"
+        : "INITIATIVE";
 
   // 只允许关闭真实存在的事件，否则合并后会产生缺少 label 的非法事件
   const requested = formData.getAll("disabledEvents").map((value) => String(value));

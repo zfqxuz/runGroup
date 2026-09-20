@@ -1,4 +1,5 @@
 import type { MagicEffect, MagicTargeting } from "@touhou/rules";
+import type { SpellCardCombatProfile } from "@/shared/card";
 import type { DanmakuPattern } from "./schema";
 
 export type SpellCardMode = "DECLARATION" | "CONSUMPTION";
@@ -21,6 +22,8 @@ export interface CombatSpellCardOption {
   readonly enhanceType: SpellCardEnhanceType;
   readonly enhanceValue: number;
   readonly pattern: DanmakuPattern | null;
+  /** Touhou-COC7 战斗档案；DP 模式忽略。 */
+  readonly combat: SpellCardCombatProfile | null;
   /** 卡牌声明的效果；符卡可以像法术/道具一样结算这些效果。 */
   readonly effects: readonly MagicEffect[];
   readonly targeting: MagicTargeting;

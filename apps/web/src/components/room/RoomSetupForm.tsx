@@ -28,30 +28,43 @@ interface Props {
 }
 
 const MODE_LABELS: Record<"INITIATIVE" | "ATB" | "DP", { title: string; hint: string }> = {
-  INITIATIVE: { title: "顺序制", hint: "KP 每轮排定出手顺序，全员依次行动" },
-  ATB: { title: "ATB 进度条", hint: "全局计数器推进，谁进度先满谁行动" },
-  DP: { title: "DP 骰池", hint: "千幻抄：按声明 DP 排序，消耗 DP 进行判定" }
+  INITIATIVE: { title: "标准 CoC7 规则", hint: "d100 战斗；东方只扩展角色 / 技能 / 种族，符卡视为武器 / 护甲 / 魔法" },
+  ATB: { title: "ATB 进度条", hint: "CoC7 规则 + ATB 出手顺序（仅 CoC7 房间）" },
+  DP: { title: "千幻抄 DP 规则", hint: "DP 骰池、弹幕、擦弹、符卡独立 HP、能力 / 结界" }
 };
 
 export default function RoomSetupForm(props: Props) {
   const initialSystem: SystemKey = props.selectedModule?.system === "TOUHOU" ? "TOUHOU" : "COC7";
   const initialOptions = props.options[initialSystem];
+  const initialModes: readonly ("INITIATIVE" | "ATB" | "DP")[] =
+    initialSystem === "TOUHOU" ? ["INITIATIVE", "DP"] : ["INITIATIVE", "ATB"];
   const [system, setSystem] = useState<SystemKey>(initialSystem);
   const active = props.options[system];
   const [methodId, setMethodId] = useState(initialOptions.methods[0]?.id ?? "");
   const [era, setEra] = useState<"CLASSIC" | "MODERN">(
     props.selectedModule?.era === "CLASSIC" ? "CLASSIC" : "MODERN"
   );
-  const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB" | "DP">(initialOptions.defaultMode);
+  const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB" | "DP">(
+    initialModes.includes(initialOptions.defaultMode)
+      ? initialOptions.defaultMode
+      : (initialModes[0] ?? "INITIATIVE")
+  );
   const [disabled, setDisabled] = useState<readonly string[]>([]);
   const [allowPlayerCombatRequest, setAllowPlayerCombatRequest] = useState(true);
   const [characterVisibility, setCharacterVisibility] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");
+
+  function availableModes(next: SystemKey): readonly ("INITIATIVE" | "ATB" | "DP")[] {
+    const modes: readonly ("INITIATIVE" | "ATB" | "DP")[] =
+      next === "TOUHOU" ? ["INITIATIVE", "DP"] : ["INITIATIVE", "ATB"];
+    return modes;
+  }
 
   function switchSystem(next: SystemKey): void {
     const nextOptions = props.options[next];
     setSystem(next);
     setMethodId(nextOptions.methods[0]?.id ?? "");
-    setCombatMode(nextOptions.defaultMode);
+    const modes = availableModes(next);
+    setCombatMode(modes.includes(nextOptions.defaultMode) ? nextOptions.defaultMode : modes[0] ?? "INITIATIVE");
     setDisabled([]);
   }
 
@@ -164,7 +177,7 @@ export default function RoomSetupForm(props: Props) {
         <h2 className="text-sm font-medium text-white/80">战斗模式</h2>
         <p className="mt-1 text-[11px] text-white/35">默认跟随模组，可以覆盖</p>
         <div className="mt-3 flex flex-col gap-2">
-          {(["INITIATIVE", "ATB"] as const).map((mode) => (
+          {availableModes(system).map((mode) => (
             <label key={mode} className="flex items-start gap-3 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
               <input
                 type="radio"

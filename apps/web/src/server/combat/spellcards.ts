@@ -58,6 +58,7 @@ export async function loadSpellcardsByParticipant(
       enhanceType: stats.enhanceType,
       enhanceValue: stats.enhanceValue,
       pattern: stats.pattern ?? null,
+      combat: stats.combat ?? null,
       effects: activeCardEffects(stats),
       targeting: stats.targeting,
       targetScope: stats.targetScope
@@ -147,6 +148,69 @@ export function prepareSpellcardAction(
       : targetScope === "ALL"
         ? null
         : action.targetId ?? null;
+
+  const isStandardMode = pack.combat.mode !== "DP";
+  const combat = card.combat;
+
+  // Touhou-COC7：符卡作为武器，走 CoC7 攻击判定。
+  if (isStandardMode && combat !== null && combat.mode === "WEAPON") {
+    if (combat.skillId === null || combat.skillId.length === 0) {
+      return { ok: false, error: "「" + card.name + "」缺少战斗技能，无法作为武器使用" };
+    }
+    if (combat.damage === null || combat.damage.length === 0) {
+      return { ok: false, error: "「" + card.name + "」缺少伤害表达式，无法作为武器使用" };
+    }
+    return {
+      ok: true,
+      action: {
+        ...action,
+        kind: "SPELLCARD",
+        name: card.name,
+        spellCardId: card.cardId,
+        targetId: targetScope === "SELF" ? null : targetId,
+        mpCost: card.mpCost,
+        spellcardMode: "CONSUMPTION",
+        spellcardCombatMode: "WEAPON",
+        skill: combat.skillId,
+        damage: combat.damage,
+        damageType: combat.damageType ?? undefined,
+        shots: combat.shots?.[0],
+        element: combat.element ?? undefined,
+        accuracyMod: combat.accuracyMod
+      }
+    };
+  }
+
+  // Touhou-COC7：持续型符卡作为护甲池，耗尽即视为符卡损毁。
+  if (isStandardMode && combat !== null && combat.mode === "ARMOR") {
+    const armorRatio = combat.armorRatio ?? card.hpRatio;
+    if (armorRatio === null || Number.isFinite(armorRatio) === false || armorRatio <= 0) {
+      return { ok: false, error: "「" + card.name + "」缺少护甲系数，无法展开" };
+    }
+    const clearTargets: SpellCardClearTargets | undefined =
+      card.clearTargets === null ? undefined : card.clearTargets;
+    return {
+      ok: true,
+      action: {
+        ...action,
+        kind: "SPELLCARD",
+        name: card.name,
+        spellCardId: card.cardId,
+        mpCost: card.mpCost,
+        spellcardMode: "DECLARATION",
+        spellcardCombatMode: "ARMOR",
+        targetId,
+        declarationHp: Math.max(1, Math.round(actor.maxHp * armorRatio)),
+        declarationDurationTicks: card.durationTicks ?? undefined,
+        declarationClearTargets: clearTargets,
+        effects: card.effects,
+        targeting: card.targeting,
+        targetScope,
+        spellcardEnhanceType: card.enhanceType,
+        spellcardEnhanceValue: card.enhanceValue
+      }
+    };
+  }
 
   if (card.mode === "CONSUMPTION") {
     return {

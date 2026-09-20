@@ -388,8 +388,11 @@ export default function CombatBoard(props: Props) {
     : (actorSpellCards[0]?.cardId ?? "");
   const selectedSpellCard =
     actorSpellCards.find((item) => item.cardId === activeSpellCardId) ?? null;
+  const spellcardNeedsTarget =
+    selectedSpellCard !== null &&
+    (selectedSpellCard.effects.length > 0 || selectedSpellCard.combat?.mode === "WEAPON");
   const spellcardEffectTargets =
-    selectedSpellCard === null || selectedActor === null || selectedSpellCard.effects.length === 0
+    selectedSpellCard === null || selectedActor === null || spellcardNeedsTarget === false
       ? []
       : selectedSpellCard.targetScope === "SELF" || selectedSpellCard.targeting === "SELF"
         ? [selectedActor]

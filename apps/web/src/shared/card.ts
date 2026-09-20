@@ -141,6 +141,42 @@ export const ENHANCE_LABELS: Record<EnhanceType, string> = {
   AREA: "范围 · 可攻击多个目标"
 };
 
+/**
+ * 符卡在 Touhou-COC7（非 DP）模式下的战斗档案。
+ * 与武器卡数据结构保持一致：skillId / damage / range / damageBands / shots / element。
+ */
+export const SPELLCARD_COMBAT_MODES = ["WEAPON", "ARMOR", "SPELL"] as const;
+export const SPELLCARD_COMBAT_MODE_LABELS: Record<(typeof SPELLCARD_COMBAT_MODES)[number], string> = {
+  WEAPON: "武器（走 CoC7 攻击判定）",
+  ARMOR: "护甲（持续型，耗尽即损毁）",
+  SPELL: "魔法（走 CoC7 魔法效果）"
+};
+
+export const SpellCardCombatProfileSchema = z.object({
+  mode: z.enum(SPELLCARD_COMBAT_MODES).default("SPELL"),
+  /** CoC7 攻击技能 id；WEAPON 模式必填。 */
+  skillId: z.string().max(60).nullable().default(null),
+  /** 伤害表达式，如 "2d6+db"。 */
+  damage: z.string().max(30).nullable().default(null),
+  damageType: z.enum(["BLUNT", "IMPALING", "NONE"]).nullable().default(null),
+  range: z.enum(["MELEE", "NEAR", "FAR"]).nullable().default(null),
+  damageBands: z
+    .array(
+      z.object({
+        label: z.string().min(1).max(20),
+        expression: z.string().min(1).max(30),
+        maxFeet: z.union([z.number().nonnegative(), z.literal("DEX"), z.null()])
+      })
+    )
+    .nullable()
+    .default(null),
+  shots: z.array(z.number().int().positive()).nullable().default(null),
+  accuracyMod: z.number().int().min(-50).max(50).default(0),
+  element: z.string().max(40).nullable().default(null),
+  /** ARMOR 模式：护甲值 = maxHp × armorRatio；不填时回退 hpRatio。 */
+  armorRatio: z.number().min(0).max(10).nullable().default(null)
+});
+
 const SpellCardStatsCoreSchema = z.object({
   mode: z.enum(["DECLARATION", "CONSUMPTION"]),
   /** 一句话描述这张符卡长什么样。 */
@@ -154,9 +190,12 @@ const SpellCardStatsCoreSchema = z.object({
   /** 强化倍率或加值，含义随 enhanceType 而定。 */
   enhanceValue: z.number().min(0).max(10),
   /** 结构化弹幕演出；纯视觉，不参与战斗判定。旧卡可以没有。 */
-  pattern: DanmakuPatternSchema.nullable().optional()
+  pattern: DanmakuPatternSchema.nullable().optional(),
+  /** Touhou-COC7 战斗档案；DP 模式忽略。旧卡不填时按旧行为。 */
+  combat: SpellCardCombatProfileSchema.nullable().default(null)
 });
 export const SpellCardStatsSchema = SpellCardStatsCoreSchema.merge(CardBaseStatsSchema);
+export type SpellCardCombatProfile = z.output<typeof SpellCardCombatProfileSchema>;
 
 const WeaponStatsCoreSchema = z.object({
   damage: z

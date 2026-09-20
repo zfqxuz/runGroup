@@ -794,6 +794,20 @@ function breakDeclaration(
     text: `${owner.name} 的符卡「${declaration.name}」被击破`,
     data: { event: "BREAK", name: declaration.name, cardId: declaration.cardId, hp: 0 }
   });
+
+  // Touhou-COC7：持续型符卡视为护甲池，耗尽即武器损毁（不触发千幻抄 LSC / 清弹）。
+  if (declaration.combatMode === "ARMOR") {
+    const key = declaration.cardId ?? declaration.name;
+    owner.brokenSpellCards = [...(owner.brokenSpellCards ?? []), key];
+    pushLog(ctx.state, {
+      kind: "SPELLCARD",
+      actorId: owner.id,
+      targetId: null,
+      text: `${owner.name} 的符卡「${declaration.name}」护甲耗尽，本场无法再使用`,
+      data: { event: "DESTROYED", name: declaration.name, cardId: declaration.cardId, brokenSpellCards: owner.brokenSpellCards.length }
+    });
+    return;
+  }
   if (breaker !== undefined) {
     grantDeclarationBreakerDp(ctx, breaker, owner, declaration.name);
   }
@@ -2838,6 +2852,48 @@ function recoverSpellcardDp(
   });
 }
 
+/**
+ * Touhou-COC7：符卡作为武器。
+ * 数值由服务端从卡面 combat 档案写入 submission，客户端只传 spellCardId。
+ */
+function resolveSpellcardAsWeapon(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
+  const state = ctx.state;
+  const name = submission.name ?? "符卡";
+  const cardId = submission.spellCardId ?? null;
+  if (cardId !== null && (actor.brokenSpellCards ?? []).includes(cardId)) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: `${actor.name} 的符卡「${name}」已被击破，本场无法再使用`
+    });
+    return;
+  }
+  const defender = submission.targetId === null || submission.targetId === undefined
+    ? undefined
+    : findParticipant(state, submission.targetId);
+  if (defender === undefined || defender.defeated) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: submission.targetId ?? null, text: `${actor.name} 的符卡武器没有有效目标` });
+    return;
+  }
+  const mpCost = Math.max(0, submission.mpCost ?? 0);
+  if (spendCombatMagicPoints(ctx, actor, mpCost, "符卡武器「" + name + "」") === false) return;
+  const usedKey = cardId ?? name;
+  actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
+  pushLog(state, {
+    kind: "SPELLCARD",
+    actorId: actor.id,
+    targetId: defender.id,
+    text: `${actor.name} 使用符卡武器「${name}」攻击 ${defender.name}`,
+    data: { event: "WEAPON", name, cardId, mpCost, skill: submission.skill ?? null }
+  });
+  resolveAttack(ctx, actor, { ...submission, kind: "DANMAKU" }, defender);
+}
+
 function resolveSpellcard(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -3013,7 +3069,8 @@ function resolveSpellcard(
     damageMultiplier: 1,
     enhanceType: submission.spellcardEnhanceType ?? null,
     enhanceValue,
-    isLsc
+    isLsc,
+    combatMode: submission.spellcardCombatMode === "ARMOR" ? "ARMOR" : null
   };
   if (isLsc) {
     actor.lscUsed = true;
@@ -5963,7 +6020,15 @@ function resolveOne(
       return;
     }
     case "SPELLCARD":
-      resolveSpellcard(ctx, actor, submission);
+      if (
+        ctx.pack.system === "TOUHOU" &&
+        ctx.state.mode !== "DP" &&
+        submission.spellcardCombatMode === "WEAPON"
+      ) {
+        resolveSpellcardAsWeapon(ctx, actor, submission);
+      } else {
+        resolveSpellcard(ctx, actor, submission);
+      }
       return;
     case "DEFEND":
     case "DODGE":

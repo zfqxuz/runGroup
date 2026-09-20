@@ -56,6 +56,8 @@ export interface SpellDeclaration {
   readonly enhanceValue: number;
   /** 是否为 LSC（Last Spell Card）；被击破时立刻气绝。 */
   readonly isLsc?: boolean;
+  /** Touhou-COC7：ARMOR 表示展开型符卡按护甲池结算，击破即武器损毁。 */
+  readonly combatMode?: "ARMOR" | null;
 }
 
 /** 千幻抄结界（7.5）：独立 HP，吸收伤害直到击破或到期。 */
@@ -296,6 +298,10 @@ export interface CombatParticipantState {
   lscBroken?: boolean;
   /** LSC 被击破的时间（ISO 字符串）；用于 30 分钟后恢复 DP 上限。 */
   lscBrokenAt?: string | null;
+  /** Touhou-COC7：已被击破 / 损毁的符卡 id，本场不可再用。 */
+  brokenSpellCards?: string[];
+  /** Touhou-COC7：当前展开为护甲的符卡 id；null 表示没有。 */
+  spellcardArmorCardId?: string | null;
   /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
   initiativeMod?: number;
 }
@@ -400,6 +406,8 @@ export interface ActionSubmission {
   readonly mpCost?: number;
   readonly sanCost?: string;
   readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";
+  /** Touhou-COC7：符卡战斗档案模式；由服务端解析卡面后注入，客户端不可伪造。 */
+  readonly spellcardCombatMode?: "WEAPON" | "ARMOR" | "SPELL";
   /** 展开型符卡的独立 HP（由调用方按 RulePack 的 hpRatio 算好）。 */
   readonly declarationHp?: number;
   readonly declarationDurationTicks?: number;
