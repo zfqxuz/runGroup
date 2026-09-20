@@ -21,7 +21,12 @@ export const TOUHOU_EXT: RulePackOverlay = {
      * 1 = 直接代入（默认）；10 = 约等于千幻抄原版量级。
      * 房间可由 KP 在准备页覆盖；只影响东方模式。
      */
-    ATTR_SCALE: 1
+    ATTR_SCALE: 1,
+    /**
+     * COC7 百分制技能 → 千幻抄技能等级的换算：技能等级 = floor(技能值 / SKILL_SCALE)。
+     * 20 ≈ COC7 100 对应千幻抄 5 级。
+     */
+    SKILL_SCALE: 20
   },
   derived: {
     // 千幻抄：特性值 = floor(COC7 属性 / ATTR_SCALE)，HP = 10 + {耐久} × HP系数。

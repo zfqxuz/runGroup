@@ -193,6 +193,16 @@ export interface ActionSubmission {
   readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
   /** 攻击 / 法术的元素属性 id；服务端从装备或规则包解析，客户端不可伪造。 */
   readonly element?: string;
+  /** DP 模式攻击种类：弹幕 / 射击 / 追击 / 近战。 */
+  readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE";
+  /** DP 模式本次判定消费的骰数（1 骰 = 1 DP × 规则包单价）。 */
+  readonly dpDice?: number;
+  /** DP 模式判定使用的特性值 key；缺省由行动种类决定。 */
+  readonly dpAttribute?: string;
+  /** 弹幕回避时需要减少的 DP 数（由弹幕等级 / 卡牌决定）。 */
+  readonly danmakuDpReduction?: number;
+  /** 弹幕回避者 DP 不足时的固定伤害。 */
+  readonly danmakuBaseDamage?: number;
   /** COC7 手枪连射：同一动作内的射击次数（1–3）。 */
   readonly shots?: number;
   /** COC7 战技：缴械 / 踢倒 / 擒拿。 */

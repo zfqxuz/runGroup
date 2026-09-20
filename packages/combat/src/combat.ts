@@ -438,6 +438,8 @@ export function submitAction(state: CombatState, submission: ActionSubmission): 
 export interface DefenseReaction {
   readonly type: DefenseType;
   readonly skill?: string;
+  /** DP 模式防御行动消费的骰数。 */
+  readonly dpDice?: number;
   /** COC7 反击成功时反击者对攻击者使用的武器伤害表达式（由服务端按装备解析）。 */
   readonly damage?: string;
   readonly weaponName?: string;
@@ -3512,6 +3514,294 @@ function resolveGrazeSpend(
     text: actor.name + " 消费擦弹 " + spent + " 点，下次远程伤害 +" + bonus + "（剩余擦弹 " + actor.grazePoints + "）",
     data: { rollType: "GRAZE_SPEND_RANGED", spent, damageBonus: bonus, grazePoints: actor.grazePoints }
   });
+}
+
+// ================= DP（Dice Pool）行动结算 =================
+
+/** 读取规则包常量；非正数 / 缺失时回退。 */
+function dpConst(pack: CompiledRulePack, key: string, fallback: number): number {
+  const value = pack.pack.const[key];
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+/** COC7 属性 → 千幻抄特性值（房间可通过 ATTR_SCALE 覆盖）。 */
+function dpAttribute(pack: CompiledRulePack, participant: CombatParticipantState, key: string): number {
+  const scale = dpConst(pack, "ATTR_SCALE", 1);
+  const raw = participant.attributes[key as keyof AttributeSet] ?? participant.vars[key] ?? 0;
+  return Math.max(0, Math.floor(raw / scale));
+}
+
+/** COC7 百分制技能 → 千幻抄技能等级（房间可通过 SKILL_SCALE 覆盖）。 */
+function dpSkillLevel(pack: CompiledRulePack, participant: CombatParticipantState, skillId: string): number {
+  const scale = dpConst(pack, "SKILL_SCALE", 20);
+  const raw = skillValueOf(pack, participant, skillId, participant.attributes.dex);
+  return Math.max(0, Math.floor(raw / scale));
+}
+
+interface DpRoll {
+  readonly dice: number;
+  readonly roll: number;
+  readonly attribute: number;
+  readonly skill: number;
+  readonly base: number;
+  readonly achievement: number;
+}
+
+/** 千幻抄判定：{特性值} + 〈技能〉Lv + N D6。 */
+function dpRoll(
+  pack: CompiledRulePack,
+  state: CombatState,
+  participant: CombatParticipantState,
+  attributeKey: string,
+  skillId: string,
+  dice: number,
+  salt: string
+): DpRoll {
+  const count = Math.max(0, Math.floor(Number.isFinite(dice) ? dice : 0));
+  const attribute = dpAttribute(pack, participant, attributeKey);
+  const skill = dpSkillLevel(pack, participant, skillId);
+  const base = attribute + skill;
+  let roll = 0;
+  if (count > 0) {
+    try {
+      roll = rollDice(parseDice(count + "d6"), nextRollRng(state, salt)).total;
+    } catch {
+      roll = 0;
+    }
+  }
+  return { dice: count, roll, attribute, skill, base, achievement: base + roll };
+}
+
+/** 消耗 DP；不足时记录日志并返回 false。 */
+function spendDp(
+  ctx: ResolveContext,
+  participant: CombatParticipantState,
+  amount: number,
+  label: string
+): boolean {
+  const cost = Math.max(0, Math.floor(amount));
+  if (cost <= 0) return true;
+  if (participant.dp < cost) {
+    pushLog(ctx.state, {
+      kind: "SYSTEM",
+      actorId: participant.id,
+      targetId: null,
+      text: participant.name + " 的 DP 不足（需要 " + cost + "，当前 " + participant.dp + "）",
+      data: { rollType: "DP_INSUFFICIENT", required: cost, dp: participant.dp, label }
+    });
+    return false;
+  }
+  participant.dp -= cost;
+  pushLog(ctx.state, {
+    kind: "ACTION",
+    actorId: participant.id,
+    targetId: null,
+    text: participant.name + " 消耗 " + cost + " DP（" + label + "，剩余 " + participant.dp + "）",
+    data: { rollType: "DP_SPEND", cost, dp: participant.dp, label }
+  });
+  return true;
+}
+
+/** DP 防御应对：回避（{感觉}+〈回避〉）/ 防御（{身体}+〈近战武器〉）。 */
+function resolveDpDefense(
+  ctx: ResolveContext,
+  defender: CombatParticipantState,
+  reaction: DefenseReaction,
+  attackAchievement: number
+): { readonly success: boolean; readonly reduction: number } {
+  const costs = ctx.pack.pack.dp.actionCosts;
+  const dice = Math.max(1, Math.floor(reaction.dpDice ?? 1));
+  if (reaction.type === "DEFEND") {
+    const perDie = Math.max(0, Math.floor(costs.defendPerDie));
+    if (spendDp(ctx, defender, perDie * dice, "防御 " + dice + "D") === false) {
+      return { success: false, reduction: 0 };
+    }
+    const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
+    const success = roll.achievement >= attackAchievement;
+    const reduction = success ? 0 : dpSkillLevel(ctx.pack, defender, reaction.skill ?? "MELEE") * 2;
+    pushLog(ctx.state, {
+      kind: "CHECK",
+      actorId: defender.id,
+      targetId: null,
+      text:
+        defender.name + " 防御（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
+        " / 攻击达成 " + attackAchievement + " → " + (success ? "防御成功" : "防御失败，减伤 " + reduction),
+      data: { rollType: "DP_DEFEND", dice, roll: roll.roll, base: roll.base, achievement: roll.achievement, attackAchievement, success, reduction }
+    });
+    return { success, reduction };
+  }
+  // 默认回避：对射击 / 追击 / 近战可用
+  const perDie = Math.max(0, Math.floor(costs.dodgePerDie));
+  if (spendDp(ctx, defender, perDie * dice, "回避 " + dice + "D") === false) {
+    return { success: false, reduction: 0 };
+  }
+  const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
+  const success = roll.achievement >= attackAchievement;
+  pushLog(ctx.state, {
+    kind: "CHECK",
+    actorId: defender.id,
+    targetId: null,
+    text:
+      defender.name + " 回避（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
+      " / 攻击达成 " + attackAchievement + " → " + (success ? "回避成功" : "回避失败"),
+    data: { rollType: "DP_DODGE", dice, roll: roll.roll, base: roll.base, achievement: roll.achievement, attackAchievement, success }
+  });
+  return { success, reduction: 0 };
+}
+
+/** DP 射击：消费判定骰 DP，{特性值}+〈射击/射击武器〉+N D6 对抗目标应对。 */
+function resolveDpRangedAttack(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  defender: CombatParticipantState
+): void {
+  const state = ctx.state;
+  const costs = ctx.pack.pack.dp.actionCosts;
+  const dice = Math.max(1, Math.floor(submission.dpDice ?? 1));
+  const perDie = Math.max(0, Math.floor(costs.rangedPerDie));
+  if (spendDp(ctx, actor, perDie * dice, "射击 " + dice + "D") === false) return;
+  const skillId = submission.skill ?? "DANMAKU";
+  const attributeKey = submission.dpAttribute ?? "dex";
+  const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged:" + actor.id + ":" + defender.id);
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: defender.id,
+    text:
+      actor.name + " 射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attack.achievement,
+    data: { rollType: "DP_RANGED_ATTACK", dice, roll: attack.roll, base: attack.base, achievement: attack.achievement, skill: skillId, attribute: attributeKey }
+  });
+  const reaction = reactionFor(ctx, defender.id);
+  const defense = resolveDpDefense(ctx, defender, reaction, attack.achievement);
+  if (defense.success) {
+    pushLog(state, {
+      kind: "ACTION",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: defender.name + " 成功应对，「" + (submission.name ?? skillId) + "」未命中",
+      data: { rollType: "DP_RANGED_MISS", defense: reaction.type }
+    });
+    return;
+  }
+  const damageExpression = expandDamageBonus(submission.damage ?? "1d6", actor.damageBonus);
+  let rolled = 0;
+  try {
+    rolled = Math.max(0, rollDice(parseDice(damageExpression), nextRollRng(state, "dp-ranged-damage:" + actor.id + ":" + defender.id)).total);
+  } catch {
+    rolled = 0;
+  }
+  const total = Math.max(0, rolled - defense.reduction);
+  const armorResult = absorbWithArmor(defender, total);
+  const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining);
+  pushLog(state, {
+    kind: "DAMAGE",
+    actorId: actor.id,
+    targetId: defender.id,
+    text:
+      "射击伤害：" + defender.name + " 受到 " + total + "（" + damageExpression + " = " + rolled +
+      (defense.reduction > 0 ? "，防御减伤 " + defense.reduction : "") +
+      (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
+      "）→ HP 结算 " + Math.max(0, total - armorResult.absorbed),
+    data: { rollType: "DP_RANGED_DAMAGE", expression: damageExpression, roll: rolled, reduction: defense.reduction, damage: total, armorAbsorbed: armorResult.absorbed, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+  });
+}
+
+/**
+ * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。/**
+ * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。
+ * 目标选择「回避弹幕」时消耗规定 DP，不受伤；DP 不足则受到固定伤害。
+ */
+function resolveDpDanmaku(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
+  const state = ctx.state;
+  const cost = Math.max(0, Math.floor(ctx.pack.pack.dp.actionCosts.danmaku));
+  if (spendDp(ctx, actor, cost, "弹幕") === false) return;
+  const reduction = Math.max(0, Math.floor(submission.danmakuDpReduction ?? 1));
+  const baseDamage = Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1));
+  const targets = state.participants.filter(
+    (participant) => participant.defeated === false && participant.faction !== actor.faction
+  );
+  if (targets.length === 0) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: actor.name + " 的弹幕没有目标" });
+    return;
+  }
+  for (const target of targets) {
+    const reaction = reactionFor(ctx, target.id);
+    if (reaction.type === "DODGE" && target.dp >= reduction) {
+      target.dp -= reduction;
+      pushLog(state, {
+        kind: "STATUS",
+        actorId: actor.id,
+        targetId: target.id,
+        text: target.name + " 回避弹幕，DP -" + reduction + "（剩余 " + target.dp + "）",
+        data: { rollType: "DP_DANMAKU_DODGE", reduction, dp: target.dp }
+      });
+      continue;
+    }
+    const applied = applyDamageToParticipant(ctx, target, baseDamage);
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: target.id,
+      text:
+        target.name +
+        (reaction.type === "DODGE" ? " 的 DP 不足以回避弹幕" : " 未回避弹幕") +
+        "，受到固定伤害 " + baseDamage,
+      data: { rollType: "DP_DANMAKU_HIT", damage: baseDamage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    });
+  }
+}
+
+/**
+ * 结算当前 DP 行动者的一项行动（不含回合推进，由 dp.ts 调用）。
+ * 本批已实现弹幕；其余行动暂时回落到通用 resolveOne，后续补射击/追击/近战/能力。
+ */
+export function resolveDpActionForActor(
+  pack: CompiledRulePack,
+  state: CombatState,
+  reactions: Readonly<Record<string, DefenseReaction>>,
+  actorId: string
+): ResolveResult {
+  const actor = findParticipant(state, actorId);
+  const submission = state.pending[actorId];
+  if (actor === undefined || actor.defeated || submission === undefined) {
+    delete state.pending[actorId];
+    return { acted: [], defeated: [], cleared: [] };
+  }
+  const ctx: ResolveContext = {
+    pack,
+    state,
+    reactions,
+    queue: [],
+    cancelled: new Set<string>(),
+    coverCache: new Map()
+  };
+  const acted: string[] = [];
+  if (submission.kind === "DANMAKU" && submission.dpAction === "DANMAKU") {
+    resolveDpDanmaku(ctx, actor, submission);
+  } else if (submission.kind === "DANMAKU" && submission.dpAction === "RANGED") {
+    const defender = submission.targetId === null || submission.targetId === undefined
+      ? undefined
+      : findParticipant(state, submission.targetId);
+    if (defender === undefined || defender.defeated) {
+      pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: submission.targetId ?? null, text: actor.name + " 的射击目标已不在场" });
+    } else {
+      resolveDpRangedAttack(ctx, actor, submission, defender);
+    }
+  } else {
+    resolveOne(ctx, actor, submission);
+  }
+  acted.push(actor.id);
+  delete state.pending[actorId];
+  return {
+    acted,
+    defeated: state.participants.filter((participant) => participant.defeated).map((participant) => participant.id),
+    cleared: [...ctx.cancelled]
+  };
 }
 
 function resolveOne(

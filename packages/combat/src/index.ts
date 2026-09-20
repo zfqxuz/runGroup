@@ -74,6 +74,7 @@ export {
   dpRegenFor,
   dpTurnOrder,
   endDpTurn,
+  resolveDpTurn,
   grantDpWaitBonus,
   markDpActed
 } from "./dp";

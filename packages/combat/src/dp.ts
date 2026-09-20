@@ -1,6 +1,6 @@
 import { compile as compileExpr, evaluate } from "@touhou/formula";
 import type { CompiledRulePack } from "@touhou/rules";
-import { findParticipant, pushLog, resolveRoundRaceAbilities } from "./combat";
+import { findParticipant, pushLog, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
 import type { CombatParticipantState, CombatState } from "./types";
 
 function evalDpExpr(
@@ -168,4 +168,25 @@ export function endDpTurn(
   const nextActor = next === null ? undefined : findParticipant(state, next);
   if (nextActor !== undefined) nextActor.isReady = true;
   return { roundAdvanced: false, nextActorId: next };
+}
+
+/**
+ * DP 模式：结算当前行动者的行动，然后推进到下一个行动者 / 下一轮。
+ * 行动种类由 ActionSubmission.dpAction 决定；弹幕与射击已在 combat.ts 实现。
+ */
+export function resolveDpTurn(
+  pack: CompiledRulePack,
+  state: CombatState,
+  reactions: Readonly<Record<string, DefenseReaction>> = {}
+): ResolveResult {
+  if (state.mode !== "DP" || state.phase !== "AWAITING_ACTION") {
+    return { acted: [], defeated: [], cleared: [] };
+  }
+  const actorId = currentDpActorId(state);
+  if (actorId === null) {
+    return { acted: [], defeated: [], cleared: [] };
+  }
+  const result = resolveDpActionForActor(pack, state, reactions, actorId);
+  endDpTurn(pack, state);
+  return result;
 }
