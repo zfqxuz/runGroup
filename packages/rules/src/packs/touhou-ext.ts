@@ -382,8 +382,8 @@ TOUHOU_EXT.abilities = {
         DANMAKU: {
           id: "DANMAKU",
           name: "妖弹化",
-          description: "把妖术妖弹化的变体消费表（2/3/5…，更高等级待补）。",
-          costTable: [2, 3, 5]
+          description: "把妖术妖弹化；消费 2/3/5/7/9/11/13，Lv8 起每级 13。",
+          costTable: [2, 3, 5, 7, 9, 11, 13]
         }
       }
     },

@@ -346,7 +346,7 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
    - ✅ 能力点与等级的车卡 / 成长流程（已实现）。
    - ✅ **能力变体**：`AbilityCategorySchema.variants` 支持替代习得路径与攻击种类限制；
-     登记神术术式版（3/6/9/12/15/15，禁射击 / 追击 / 弹幕）与妖术妖弹化（2/3/5…前缀，待 wiki 补齐后续档）。
+     登记神术术式版（3/6/9/12/15/15，禁射击 / 追击 / 弹幕）与妖术妖弹化（2/3/5/7/9/11/13，Lv8 起 13）。
    - ✅ **妖力类别**：新增 `YOURIKI`；车卡 UI / 消费者工具支持 `CATEGORY`、`CATEGORY:SUFFIX`、`CATEGORY#VARIANT` 三种实例 id。
    - ✅ **每级习得数量**：`abilitySpellCountIssue` 接入车卡 UI 与服务端保存拦截（按 `magic.spells.abilityId` 归类）。
    - ✅ **种族免费 / 限制**：`RaceSchema.freeAbilityLevels` / `disallowedAbilityCategories`；

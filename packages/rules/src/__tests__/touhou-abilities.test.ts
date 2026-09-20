@@ -166,8 +166,8 @@ describe("能力变体（术式版 / 妖弹化）", () => {
     expect(bad.error).toContain("未知能力类别");
   });
 
-  it("妖弹化登记已知前缀 2/3/5", () => {
-    expect(touhouPack.abilities.categories.YOUJUTSU?.variants.DANMAKU?.costTable).toEqual([2, 3, 5]);
+  it("妖弹化消费表 2/3/5/7/9/11/13（Lv8 起 13）", () => {
+    expect(touhouPack.abilities.categories.YOUJUTSU?.variants.DANMAKU?.costTable).toEqual([2, 3, 5, 7, 9, 11, 13]);
   });
 });
 
