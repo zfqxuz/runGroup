@@ -20,6 +20,7 @@ import {
   recoverTouhouLscLimits,
   resolvePending,
   resolveSpellcardImmediate,
+  spellcardBattleSummary,
   submitAction,
   type CombatParticipantState,
   type CombatState
@@ -1350,5 +1351,32 @@ describe("任意时机展开（4.9）", () => {
     });
     expect(a.declaration).toBeNull();
     expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_NOT_DECLARED")).toBe(true);
+  });
+});
+
+describe("符卡战余量（4.16）", () => {
+  it("按阵营统计可用 / 已用 / 剩余 SC 与存活人数", () => {
+    const { state, a, npc } = makeCombat("sc-summary");
+    state.spellcardBattle = {
+      sideUsable: { PC: 2, BOSS: 1 },
+      declaredCardIds: { PC: ["card-a"], BOSS: [] }
+    };
+    a.usedSpellCards = ["card-a"];
+    const summary = spellcardBattleSummary(state);
+    expect(summary).not.toBeNull();
+    const pc = summary?.find((side) => side.side === "PC");
+    const boss = summary?.find((side) => side.side === "BOSS");
+    expect(pc?.usable).toBe(2);
+    expect(pc?.used).toBe(1);
+    expect(pc?.remaining).toBe(1);
+    expect(pc?.alive).toBe(2);
+    expect(boss?.remaining).toBe(1);
+    void npc;
+  });
+
+  it("没有 declaredCardIds 时不是正式符卡战", () => {
+    const { state } = makeCombat("sc-summary-none");
+    state.spellcardBattle = { sideUsable: { PC: 2, BOSS: 1 } };
+    expect(spellcardBattleSummary(state)).toBeNull();
   });
 });

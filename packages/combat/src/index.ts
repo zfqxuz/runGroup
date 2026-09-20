@@ -49,6 +49,7 @@ export {
   resolvePending,
   resolveRoundRaceAbilities,
   resolveSpellcardImmediate,
+  spellcardBattleSummary,
   submitAction
 } from "./combat";
 export type {
@@ -56,7 +57,8 @@ export type {
   CombatInit,
   DefenseReaction,
   ParticipantInit,
-  ResolveResult
+  ResolveResult,
+  SpellcardBattleSideSummary
 } from "./combat";
 export type { SummonTemplate } from "./types";
 export {

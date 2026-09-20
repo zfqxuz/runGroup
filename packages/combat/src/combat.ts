@@ -4700,6 +4700,43 @@ export function resolveImmediateAction(
 }
 
 /** 一方全灭（或只剩单一阵营）即结束。 */
+export interface SpellcardBattleSideSummary {
+  /** 阵营 key（ALLY / ENEMY 或自定义）。 */
+  readonly side: string;
+  /** 本场该方可用 SC 总数。 */
+  readonly usable: number;
+  /** 该方已使用 SC 数（跨成员合计）。 */
+  readonly used: number;
+  /** 剩余可用 SC 数。 */
+  readonly remaining: number;
+  /** 该方未退场人数。 */
+  readonly alive: number;
+}
+
+/**
+ * 符卡战余量：按 4.16「没有可用 SC 且 HP 为 0」给出每一方的可用 SC 与存活人数，
+ * 供 KP 判断是否击坠。非符卡战（没有 declaredCardIds）返回 null。
+ */
+export function spellcardBattleSummary(state: CombatState): SpellcardBattleSideSummary[] | null {
+  const battle = state.spellcardBattle;
+  if (battle === null || battle === undefined || battle.declaredCardIds === undefined) return null;
+  const sides = new Set(state.participants.map((participant) => participant.faction ?? "ALLY"));
+  const output: SpellcardBattleSideSummary[] = [];
+  for (const side of sides) {
+    const members = state.participants.filter((participant) => (participant.faction ?? "ALLY") === side);
+    const usable = Math.max(0, Math.floor(battle.sideUsable[side] ?? 0));
+    const used = members.reduce((sum, participant) => sum + participant.usedSpellCards.length, 0);
+    output.push({
+      side,
+      usable,
+      used,
+      remaining: Math.max(0, usable - used),
+      alive: members.filter((participant) => participant.defeated === false).length
+    });
+  }
+  return output;
+}
+
 export function checkEnd(state: CombatState): boolean {
   const alive = state.participants.filter((participant) => participant.defeated === false);
   if (alive.length === 0) return true;

@@ -320,7 +320,10 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
      socket 新增 `combat:immediate-spellcard`（只允许当前应对窗口的目标），
      展开后按 PASS 继续结算，攻击伤害先由新展开的 SC 承受；
      `CombatBoard` 应对窗口列出可展开的符卡按钮。
-   - ⏳ 符卡战胜负条件（4.16）、DB 跨战斗「章节内可用 / 已用 SC」（4.17）。
+   - ✅ 4.16 符卡战余量：`spellcardBattleSummary()` / `CombatView.spellcardBattle` 给出每方
+     可用 / 已用 / 剩余 SC 与存活人数；KP 视图显示「SC 剩余 x/y」，全部存活为 0 但仍有 SC 时提示 KP 裁定。
+     （HP 归零 = 行动不能，因此「全灭」判定仍由引擎结束战斗。）
+   - ✅ 4.17 跨战斗消耗（见里程碑 3）。
 
 ### 2.8 后续条目（未铺开）
 

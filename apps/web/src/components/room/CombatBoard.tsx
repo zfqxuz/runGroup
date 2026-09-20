@@ -886,6 +886,16 @@ export default function CombatBoard(props: Props) {
             <p className="mt-0.5 text-[11px] text-white/35">
               {view === null ? "" : "第 " + view.round + " 轮 " + view.tick + (activeActor === null ? "" : " · 当前 " + activeActor.name)}
             </p>
+            {props.isKP && view?.spellcardBattle !== null && view?.spellcardBattle !== undefined ? (
+              <p className="mt-0.5 flex flex-wrap gap-2 text-[11px] text-sakura-200/80">
+                {view.spellcardBattle.map((side) => (
+                  <span key={side.side} className="rounded border border-sakura-500/30 px-2 py-0.5">
+                    {side.side === "ALLY" ? "我方" : side.side === "ENEMY" ? "敌方" : side.side} SC {side.remaining}/{side.usable}
+                    {side.alive === 0 && side.remaining > 0 ? "（已无存活，KP 裁定）" : ""}
+                  </span>
+                ))}
+              </p>
+            ) : null}
           </div>
           <span className={"rounded-full border px-2 py-0.5 text-[11px] " + (conn === "online" ? "border-emerald-400/40 text-emerald-300" : "border-white/20 text-white/50")}>
             {connLabel}

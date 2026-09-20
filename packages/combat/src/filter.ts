@@ -106,6 +106,14 @@ export interface ChaseView {
   readonly ending: string | null;
 }
 
+export interface SpellcardBattleSideView {
+  readonly side: string;
+  readonly usable: number;
+  readonly used: number;
+  readonly remaining: number;
+  readonly alive: number;
+}
+
 export interface DpView {
   /** participantId -> 本轮声明的 DP。 */
   readonly declared: Readonly<Record<string, number>>;
@@ -126,6 +134,8 @@ export interface CombatView {
   readonly activeActorId: string | null;
   /** DP 模式的一轮状态；其他模式为 null。 */
   readonly dp: DpView | null;
+  /** 符卡战每方 SC 余量；非符卡战为 null。 */
+  readonly spellcardBattle: readonly SpellcardBattleSideView[] | null;
   readonly participants: readonly ParticipantView[];
   readonly log: readonly LogEntry[];
   readonly pendingIds: readonly string[];
@@ -285,6 +295,26 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
             currentActorId: dpCurrentActorId
           }
         : null,
+    spellcardBattle:
+      state.spellcardBattle === null || state.spellcardBattle === undefined || state.spellcardBattle.declaredCardIds === undefined
+        ? null
+        : (() => {
+            const sides = new Set(state.participants.map((participant) => participant.faction ?? "ALLY"));
+            const output: SpellcardBattleSideView[] = [];
+            for (const side of sides) {
+              const members = state.participants.filter((participant) => (participant.faction ?? "ALLY") === side);
+              const usable = Math.max(0, Math.floor(state.spellcardBattle?.sideUsable[side] ?? 0));
+              const used = members.reduce((sum, participant) => sum + participant.usedSpellCards.length, 0);
+              output.push({
+                side,
+                usable,
+                used,
+                remaining: Math.max(0, usable - used),
+                alive: members.filter((participant) => participant.defeated === false).length
+              });
+            }
+            return output;
+          })(),
     participants,
     log,
     pendingIds: Object.keys(state.pending),
