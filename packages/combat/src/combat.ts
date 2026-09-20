@@ -2282,6 +2282,32 @@ function resolveManeuver(
   });
 }
 
+/**
+ * 千幻抄 4.8 / 4.12：展开型 SC 展开时、消费型 SC 发动时，
+ * 回复「DP 上限的一半（向上取整）」。
+ */
+function recoverSpellcardDp(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  name: string,
+  mode: "DECLARATION" | "CONSUMPTION"
+): void {
+  if (ctx.pack.pack.dp === undefined) return;
+  const recover = Math.ceil(Math.max(0, Math.floor(actor.maxDp)) / 2);
+  if (recover <= 0) return;
+  const before = Math.max(0, Math.floor(actor.dp));
+  actor.dp = Math.min(actor.maxDp, before + recover);
+  const gained = actor.dp - before;
+  if (gained <= 0) return;
+  pushLog(ctx.state, {
+    kind: "SPELLCARD",
+    actorId: actor.id,
+    targetId: null,
+    text: actor.name + " 因「" + name + "」回复 " + gained + " DP（" + actor.dp + " / " + actor.maxDp + "）",
+    data: { rollType: "SPELLCARD_DP_RECOVER", mode, name, gained, dp: actor.dp }
+  });
+}
+
 function resolveSpellcard(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -2342,6 +2368,7 @@ function resolveSpellcard(
     actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
     actor.mp = Math.max(0, actor.mp - mpCost);
     applyTouhouMpExhaustion(ctx, actor);
+    recoverSpellcardDp(ctx, actor, name, "CONSUMPTION");
     pushLog(state, {
       kind: "SPELLCARD",
       actorId: actor.id,
@@ -2411,6 +2438,7 @@ function resolveSpellcard(
   actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
   actor.mp = Math.max(0, actor.mp - mpCost);
   applyTouhouMpExhaustion(ctx, actor);
+  recoverSpellcardDp(ctx, actor, name, "DECLARATION");
   const rawDuration = Math.max(0, Math.floor(submission.declarationDurationTicks ?? 0));
   // 不传持续 tick 视为“持续到被击破”。不能用 Infinity：CombatState 会写入
   // JSON 快照，Infinity 会被序列化成 null 导致重载后立刻过期。

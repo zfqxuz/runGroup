@@ -1082,3 +1082,44 @@ describe("符卡战斗 SC 池", () => {
     expect(a.usedSpellCards).toContain("card-2");
   });
 });
+
+describe("SC 回复 DP", () => {
+  it("消费型 SC 发动时回复 DP 上限的一半（向上取整）", () => {
+    const { state, a } = makeCombat("sc-dp-consumption");
+    a.mp = 100;
+    a.dp = 0;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "回灵符卡",
+      spellCardId: "card-dp",
+      spellcardMode: "CONSUMPTION",
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.dp).toBe(Math.ceil(a.maxDp / 2));
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_DP_RECOVER")).toBe(true);
+  });
+
+  it("展开型 SC 展开时回复 DP", () => {
+    const { state, a } = makeCombat("sc-dp-declaration");
+    a.mp = 100;
+    a.dp = 0;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "展开符卡",
+      spellCardId: "card-dp-decl",
+      spellcardMode: "DECLARATION",
+      declarationHp: 10,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.dp).toBe(Math.ceil(a.maxDp / 2));
+    const recover = state.log.find((entry) => entry.data?.rollType === "SPELLCARD_DP_RECOVER");
+    expect(recover?.data?.mode).toBe("DECLARATION");
+  });
+});
