@@ -80,6 +80,7 @@ export const TOUHOU_ABILITY_DEFINITIONS = [
     description: "使普通的格斗攻击能对灵体造成伤害。 每一个等级，使用格斗进行的近战攻击和射击的伤害追加1D，弹幕伤害+1。 必须习得[锻炼：近战武器/格斗]方可使用此能力。",
     costNote: "每级（增加后[气功]等级）x5点",
     costPerLevel: "level * 5",
+    passives: [{ damageDice: "abilityLv", danmakuDamageBonus: "abilityLv" }],
   },
   {
     id: "FEAT_HIGH_SPEED_FLIGHT",

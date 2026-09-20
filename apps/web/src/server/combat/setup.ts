@@ -344,6 +344,8 @@ const ZERO_PASSIVE_MODS: AbilityPassiveMods = {
   grazeBonusPer: 0,
   danmakuDpReduction: 0,
   danmakuDamageReduction: 0,
+  damageDice: 0,
+  danmakuDamageBonus: 0,
   sources: []
 };
 
@@ -459,7 +461,9 @@ function buildCharacterInit(
       movementBonus: passiveMods.movementBonus,
       grazeBonusPer: passiveMods.grazeBonusPer,
       danmakuDpReduction: passiveMods.danmakuDpReduction,
-      danmakuDamageReduction: passiveMods.danmakuDamageReduction
+      danmakuDamageReduction: passiveMods.danmakuDamageReduction,
+      damageDice: passiveMods.damageDice,
+      danmakuDamageBonus: passiveMods.danmakuDamageBonus
     },
     skills,
     spells: characterSpellsOf(character),
@@ -522,7 +526,9 @@ function buildNpcInit(
       movementBonus: passiveMods.movementBonus,
       grazeBonusPer: passiveMods.grazeBonusPer,
       danmakuDpReduction: passiveMods.danmakuDpReduction,
-      danmakuDamageReduction: passiveMods.danmakuDamageReduction
+      danmakuDamageReduction: passiveMods.danmakuDamageReduction,
+      damageDice: passiveMods.damageDice,
+      danmakuDamageBonus: passiveMods.danmakuDamageBonus
     },
     // 持久召唤卡再次参战时仍标记为召唤物，便于到期 / 击杀后清理卡与 Token。
     summonedBy: isPersistentSummon ? originCasterId ?? card.id : null,

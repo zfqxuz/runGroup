@@ -229,7 +229,9 @@ describe("常时被动层（妖力 / 特技）", () => {
             movementBonus: "abilityLv > 2 ? 1 : 0",
             grazeBonusPer: 0,
             danmakuDpReduction: 0,
-            danmakuDamageReduction: 0
+            danmakuDamageReduction: 0,
+            damageDice: "0",
+            danmakuDamageBonus: "0"
           }
         ]
       },
@@ -252,7 +254,9 @@ describe("常时被动层（妖力 / 特技）", () => {
             movementBonus: "0",
             grazeBonusPer: 0,
             danmakuDpReduction: 0,
-            danmakuDamageReduction: 0
+            danmakuDamageReduction: 0,
+            damageDice: "0",
+            danmakuDamageBonus: "0"
           }
         ]
       },
@@ -275,7 +279,9 @@ describe("常时被动层（妖力 / 特技）", () => {
             movementBonus: "0",
             grazeBonusPer: 0,
             danmakuDpReduction: 0,
-            danmakuDamageReduction: 0
+            danmakuDamageReduction: 0,
+            damageDice: "0",
+            danmakuDamageBonus: "0"
           }
         ]
       }
@@ -355,5 +361,8 @@ describe("妖力 / 特技列表定义与消费（wiki）", () => {
     const smallHitbox = touhouPack.abilities.definitions.FEAT_SMALL_HITBOX;
     expect(smallHitbox?.passives[0]?.danmakuDpReduction).toBe(1);
     expect(smallHitbox?.passives[0]?.danmakuDamageReduction).toBe(1);
+    const qigong = touhouPack.abilities.definitions.FEAT_QIGONG;
+    expect(qigong?.passives[0]?.damageDice).toBe("abilityLv");
+    expect(qigong?.passives[0]?.danmakuDamageBonus).toBe("abilityLv");
   });
 });

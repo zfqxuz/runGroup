@@ -35,6 +35,8 @@ function passive(overrides: Partial<CombatPassiveMods> = {}): CombatPassiveMods 
     grazeBonusPer: 0,
     danmakuDpReduction: 0,
     danmakuDamageReduction: 0,
+    damageDice: 0,
+    danmakuDamageBonus: 0,
     ...overrides
   };
 }
@@ -166,6 +168,38 @@ describe("常时被动在 DP 战斗中生效", () => {
     };
     resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
     expect(setup.e1.hp).toBe(setup.e1.maxHp - 4);
+  });
+
+  it("damageDice 为射击追加 Nd6 伤害（气功）", () => {
+    const base = makeCombat("passive-qigong-dice", passive(), passive({ reactionBonus: -999 }));
+    startRound(base.state, base.actor, base.e1);
+    ranged(base.state, "e1", "10");
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseDamage = base.e1.maxHp - base.e1.hp;
+
+    const boosted = makeCombat("passive-qigong-dice", passive({ damageDice: 3 }), passive({ reactionBonus: -999 }));
+    startRound(boosted.state, boosted.actor, boosted.e1);
+    ranged(boosted.state, "e1", "10");
+    resolveDpTurn(touhou, boosted.state, { e1: { type: "PASS" } });
+    const boostedDamage = boosted.e1.maxHp - boosted.e1.hp;
+
+    // 固定 10 点 + 3d6，因此差值在 3~18 之间。
+    expect(boostedDamage - baseDamage).toBeGreaterThanOrEqual(3);
+    expect(boostedDamage - baseDamage).toBeLessThanOrEqual(18);
+  });
+
+  it("danmakuDamageBonus 为弹幕追加固定伤害（气功）", () => {
+    const setup = makeCombat("passive-qigong-danmaku", passive({ danmakuDamageBonus: 3 }), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "DANMAKU",
+      danmakuDpReduction: 2,
+      danmakuBaseDamage: 5
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    expect(setup.e1.hp).toBe(setup.e1.maxHp - 8);
   });
 
   it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {

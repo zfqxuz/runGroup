@@ -335,6 +335,10 @@ export interface AbilityPassiveMods {
   readonly danmakuDpReduction: number;
   /** 受到弹幕攻击时的固定伤害减免。 */
   readonly danmakuDamageReduction: number;
+  /** 攻击伤害追加的 d6 骰数。 */
+  readonly damageDice: number;
+  /** 弹幕伤害固定加值。 */
+  readonly danmakuDamageBonus: number;
   readonly sources: readonly string[];
 }
 
@@ -349,6 +353,8 @@ function emptyPassiveMods(): {
   grazeBonusPer: number;
   danmakuDpReduction: number;
   danmakuDamageReduction: number;
+  damageDice: number;
+  danmakuDamageBonus: number;
   sources: string[];
 } {
   return {
@@ -362,6 +368,8 @@ function emptyPassiveMods(): {
     grazeBonusPer: 0,
     danmakuDpReduction: 0,
     danmakuDamageReduction: 0,
+    damageDice: 0,
+    danmakuDamageBonus: 0,
     sources: []
   };
 }
@@ -399,6 +407,8 @@ function applyPassive(
   mods.grazeBonusPer = Math.max(mods.grazeBonusPer, passive.grazeBonusPer);
   mods.danmakuDpReduction = Math.max(mods.danmakuDpReduction, passive.danmakuDpReduction);
   mods.danmakuDamageReduction = Math.max(mods.danmakuDamageReduction, passive.danmakuDamageReduction);
+  mods.damageDice += evalPassiveExpr(passive.damageDice, abilityLv, constants);
+  mods.danmakuDamageBonus += evalPassiveExpr(passive.danmakuDamageBonus, abilityLv, constants);
   mods.sources.push(sourceId);
 }
 

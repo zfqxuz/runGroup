@@ -417,7 +417,11 @@ export const AbilityPassiveSchema = z.object({
   /** 受到弹幕攻击时，回避所需 DP 减少值（被弹判定小）。 */
   danmakuDpReduction: z.number().int().nonnegative().default(0),
   /** 受到弹幕攻击时，固定伤害减少值。 */
-  danmakuDamageReduction: z.number().int().nonnegative().default(0)
+  danmakuDamageReduction: z.number().int().nonnegative().default(0),
+  /** 攻击伤害追加的 d6 骰数表达式（可引用 abilityLv），作用于近战 / 射击 / 追击。 */
+  damageDice: ExprSchema.default("0"),
+  /** 弹幕伤害固定加值表达式（可引用 abilityLv）。 */
+  danmakuDamageBonus: ExprSchema.default("0")
 });
 
 /** 具体能力条目（妖力 / 特技 / 常时种族能力等），由规则包 / 模组登记。 */

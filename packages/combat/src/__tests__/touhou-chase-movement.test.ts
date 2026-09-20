@@ -47,7 +47,9 @@ function participant(
             movementBonus: passiveMods.movementBonus,
             grazeBonusPer: 0,
             danmakuDpReduction: 0,
-            danmakuDamageReduction: 0
+            danmakuDamageReduction: 0,
+            damageDice: 0,
+            danmakuDamageBonus: 0
           }
   });
 }

@@ -93,6 +93,10 @@ export interface CombatPassiveMods {
   readonly danmakuDpReduction: number;
   /** 受到弹幕攻击时固定伤害减免。 */
   readonly danmakuDamageReduction: number;
+  /** 近战 / 射击 / 追击追加的 d6 骰数。 */
+  readonly damageDice: number;
+  /** 弹幕固定伤害加值。 */
+  readonly danmakuDamageBonus: number;
 }
 
 export interface CombatParticipantState {

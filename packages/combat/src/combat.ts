@@ -273,7 +273,9 @@ export function addParticipant(
       movementBonus: init.passiveMods?.movementBonus ?? 0,
       grazeBonusPer: init.passiveMods?.grazeBonusPer ?? 0,
       danmakuDpReduction: init.passiveMods?.danmakuDpReduction ?? 0,
-      danmakuDamageReduction: init.passiveMods?.danmakuDamageReduction ?? 0
+      danmakuDamageReduction: init.passiveMods?.danmakuDamageReduction ?? 0,
+      damageDice: init.passiveMods?.damageDice ?? 0,
+      danmakuDamageBonus: init.passiveMods?.danmakuDamageBonus ?? 0
     },
     mpExhausted: false,
     skills: init.skills ?? {},
@@ -4196,6 +4198,12 @@ function barrierPenalty(participant: CombatParticipantState): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/** 近战 / 射击 / 追击追加伤害：+Nd6（气功等被动）。 */
+function passiveDamageDiceSuffix(participant: CombatParticipantState): string {
+  const dice = Math.max(0, Math.floor(passiveBonus(participant, "damageDice")));
+  return dice > 0 ? "+" + dice + "d6" : "";
+}
+
 /** 14.12 掩体应对加值：等级 ×2。 */
 function coverDefenseBonus(participant: CombatParticipantState): number {
   const value = participant.cover?.level;
@@ -4455,7 +4463,7 @@ function resolveDpRangedAttack(
     damageTarget = cover.target;
   }
   const damageExpression = expandDamageBonus(
-    dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED"),
+    dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED") + passiveDamageDiceSuffix(actor),
     actor.damageBonus
   );
   let rolled = 0;
@@ -4561,7 +4569,8 @@ function resolveDpChase(
   const chaseEnhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
   const achievement =
     base + Math.min(escalation, maxEscalation) * 10 + (chaseEnhance?.accuracyMod ?? 0);
-  const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE");
+  const damageExpression =
+    dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE") + passiveDamageDiceSuffix(actor);
   const rolledChaseDamage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
   const damage = Math.round(
     (rolledChaseDamage + (chaseEnhance?.flatDamage ?? 0)) * (chaseEnhance?.damageMultiplier ?? 1)
@@ -4652,7 +4661,8 @@ function resolveDpMelee(
   } else {
     damageTarget = cover.target;
   }
-  const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE");
+  const damageExpression =
+    dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE") + passiveDamageDiceSuffix(actor);
   const rolledMeleeDamage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
   const damage = Math.round(rolledMeleeDamage * (meleeEnhance?.damageMultiplier ?? 1));
   const hitLabel = cover !== null && damageTarget.id !== defender.id
@@ -4718,7 +4728,9 @@ function resolveDpDanmaku(
   const baseDamage = Math.max(
     0,
     Math.round(
-      (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1)) + (danmakuEnhance?.flatDamage ?? 0)) *
+      (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1)) +
+        (danmakuEnhance?.flatDamage ?? 0) +
+        passiveBonus(actor, "danmakuDamageBonus")) *
         (danmakuEnhance?.damageMultiplier ?? 1)
     )
   );
