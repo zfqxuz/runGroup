@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   TOUHOU_WAKE_MINUTES,
+  compileParsedRulePack,
+  computeDerived,
+  resolveRulePack,
   resolveTouhouEmergencyCare,
   resolveTouhouMpRecovery,
   resolveTouhouNaturalHealing,
-  touhouMovement
+  spellcardBattleDeclarationRules,
+  spellcardSideUsableCount,
+  touhouMovement,
+  type AttributeSet
 } from "../index";
+import { builtinRegistry } from "../packs";
 
 describe("千幻抄移动速度", () => {
   it("地面 = {身体}+〈运动〉", () => {
@@ -91,5 +98,30 @@ describe("千幻抄灵力恢复（14.8）", () => {
 describe("苏醒时间常量", () => {
   it("HP 回复后约 30 分钟苏醒", () => {
     expect(TOUHOU_WAKE_MINUTES).toBe(30);
+  });
+});
+
+describe("千幻抄 HP 公式与符卡宣言（2.3.1 / 6.1.2）", () => {
+  const attrs: AttributeSet = {
+    str: 50, con: 50, siz: 60, dex: 55,
+    app: 50, int: 60, pow: 40, edu: 70, luck: 45
+  };
+  const touhouPack = resolveRulePack("touhou-ext", builtinRegistry());
+  const touhouCompiled = compileParsedRulePack(touhouPack);
+
+  it("HP = ceil(10 + 耐久 × HP系数)，开卡系数为 4", () => {
+    const result = computeDerived(touhouCompiled, { attributes: attrs });
+    expect(result.derived.maxHp).toBe(210);
+    expect(touhouPack.const.HP_COEFFICIENT).toBe(4);
+  });
+
+  it("一方本场可用 SC 数 = 能使用 SC 的人数 × 2.5，向上取整", () => {
+    const rules = spellcardBattleDeclarationRules(touhouPack.spellcard);
+    expect(rules).toEqual({ perMember: 2.5, rounding: "CEIL", min: 1 });
+    expect(spellcardSideUsableCount(4, rules)).toBe(10);
+    expect(spellcardSideUsableCount(3, rules)).toBe(8);
+    expect(spellcardSideUsableCount(1, rules)).toBe(3);
+    // 不能使用 SC 的成员不计入
+    expect(spellcardSideUsableCount(0, rules)).toBe(0);
   });
 });

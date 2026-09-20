@@ -13,11 +13,13 @@ export const TOUHOU_EXT: RulePackOverlay = {
   const: {
     MP_PER_POW: 4,
     DP_BASE: 10,
+    HP_COEFFICIENT: 4,
     DEFEND_REDUCE: 3,
     GRAZE_GAIN_RATIO: 0.5
   },
   derived: {
-    maxHp: "floor((con + siz) / 10)",
+    // 千幻抄：HP = 10 + {耐久} × HP系数，向上取整（HP系数开卡为 4，可成长）。
+    maxHp: "ceil(10 + con * HP_COEFFICIENT)",
     maxMp: "pow * MP_PER_POW",
     maxSan: "pow",
     maxDp: "DP_BASE + str + con + pow"
@@ -371,6 +373,8 @@ TOUHOU_EXT.spellcard = {
     clearTargets: "ALL"
   },
   consumption: { mpCost: "30", oncePerCombat: true },
+  // 符卡战斗宣言：本场一方可用 SC 数 ≈ 能使用 SC 的人数 × 2~2.5。
+  battleDeclaration: { perMember: 2.5, rounding: "CEIL", min: 1 },
   enhance: {
     MELEE: { accuracyMod: "5", damageMultiplier: "1.5" },
     DANMAKU: { damageFlat: "3", mpCostMod: "2" },

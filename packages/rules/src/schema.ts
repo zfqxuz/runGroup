@@ -388,6 +388,15 @@ export const SpellCardRulesSchema = z.object({
     mpCost: ExprSchema,
     oncePerCombat: z.boolean().default(true)
   }),
+  /** 符卡战斗开始前的 SC 宣言：本场一方可用 SC 数按人数自动计算。 */
+  battleDeclaration: z
+    .object({
+      /** 每名「可使用 SC 的成员」对应的本场可用数（千幻抄约 2~2.5）。 */
+      perMember: z.number().positive().default(2.5),
+      rounding: z.enum(["CEIL", "ROUND", "FLOOR"]).default("CEIL"),
+      min: z.number().int().positive().default(1)
+    })
+    .default({}),
   enhance: z.record(z.string(), z.record(z.string(), ExprSchema)).default({}),
   outOfRule: z.object({
     mpCost: ExprSchema,

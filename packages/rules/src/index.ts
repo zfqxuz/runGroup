@@ -210,6 +210,7 @@ export type { TouhouGrowthAssignment, TouhouGrowthGrant } from "./growth-touhou"
 export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./growth";
 
 export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";
+export { spellcardBattleDeclarationRules, spellcardSideUsableCount } from "./spellcard";
 export { spendMagicPoints } from "./resources";
 export { MADNESS_BOUT_TABLE, MANIAS, PHOBIAS, rollMadnessBout, rollSanityLoss, resolveSanityCheck } from "./sanity";
 export type { MadnessBoutEntry, MadnessBoutResult, SanityCheckResult } from "./sanity";
