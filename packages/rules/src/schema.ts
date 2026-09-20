@@ -489,13 +489,34 @@ export const CombatEventSchema = z.object({
 });
 
 /** 千幻抄 DP（Dice Pool）战斗规则。 */
+export const DpActionCostsSchema = z.object({
+  /** 弹幕：固定 DP 消耗，无判定、打全体。 */
+  danmaku: z.number().int().nonnegative().default(3),
+  /** 射击：每颗判定骰的 DP 消耗。 */
+  rangedPerDie: z.number().int().nonnegative().default(1),
+  /** 追击：每个目标的 DP 消耗。 */
+  chasePerTarget: z.number().int().nonnegative().default(2),
+  /** 近战：接近判定每颗骰的 DP 消耗。 */
+  meleeApproachPerDie: z.number().int().nonnegative().default(1),
+  /** 近战：命中判定每颗骰的 DP 消耗。 */
+  meleeHitPerDie: z.number().int().nonnegative().default(1),
+  /** 回避：每颗判定骰的 DP 消耗。 */
+  dodgePerDie: z.number().int().nonnegative().default(1),
+  /** 防御：每颗判定骰的 DP 消耗。 */
+  defendPerDie: z.number().int().nonnegative().default(1),
+  /** 抵抗：一次最多可用的 DP 骰。 */
+  resistMaxDice: z.number().int().nonnegative().default(3)
+});
+
 export const DpRulesSchema = z.object({
   /** 每回合开始回复的 DP 表达式；千幻抄 = ceil((知性+感觉)/3)。平台把「感觉」映射为 DEX。 */
   regen: ExprSchema.default("ceil((int + dex) / 3)"),
   /** 最低回复量。 */
   minRegen: z.number().int().nonnegative().default(2),
   /** 一次判定最多消费的 DP 骰（能力 / 抵抗为 3）。 */
-  maxDicePerCheck: z.number().int().positive().default(3)
+  maxDicePerCheck: z.number().int().positive().default(3),
+  /** 各行动的 DP 消耗；可被模组 / 房间 ruleOverride 覆盖。 */
+  actionCosts: DpActionCostsSchema.default({})
 });
 
 export const CombatRulesSchema = z.object({
@@ -675,4 +696,5 @@ export type PresetCharacterInput = z.input<typeof PresetCharacterSchema>;
 export type CombatEventRule = z.output<typeof CombatEventSchema>;
 export type CombatRules = z.output<typeof CombatRulesSchema>;
 export type DpRules = z.output<typeof DpRulesSchema>;
+export type DpActionCosts = z.output<typeof DpActionCostsSchema>;
 export type CombatMode = (typeof COMBAT_MODES)[number];

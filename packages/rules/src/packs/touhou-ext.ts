@@ -444,7 +444,18 @@ TOUHOU_EXT.dp = {
   // 千幻抄：DP 回复 = ceil((知性 + 感觉)/3)，最低 2；平台把「感觉」映射为 DEX。
   regen: "ceil((int + dex) / 3)",
   minRegen: 2,
-  maxDicePerCheck: 3
+  maxDicePerCheck: 3,
+  // 千幻抄行动消耗；模组 / 房间可覆盖。
+  actionCosts: {
+    danmaku: 3,
+    rangedPerDie: 1,
+    chasePerTarget: 2,
+    meleeApproachPerDie: 1,
+    meleeHitPerDie: 1,
+    dodgePerDie: 1,
+    defendPerDie: 1,
+    resistMaxDice: 3
+  }
 };
 
 TOUHOU_EXT.combat = {

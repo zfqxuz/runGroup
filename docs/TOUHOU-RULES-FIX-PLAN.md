@@ -242,6 +242,9 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
   `spellcardSideUsableCount()` / `spellcardBattleDeclarationRules()`。
 - DP 规则：`COMBAT_MODES` 新增 `"DP"`；`DpRulesSchema`（regen / minRegen / maxDicePerCheck）；
   `touhou-ext.dp` 登记 `ceil((int + dex)/3)`、最低 2、单次最多 3D。
+- DP 行动消耗：`DpRulesSchema.actionCosts`（弹幕 3、射击/回避/防御 1/骰、追击 2/目标、近战 1+1/骰、
+  抵抗最多 3D），支持模组 / 房间 ruleOverride 覆盖；`dpEconomySummary()` 用于资源经济估算，
+  对照表见 `docs/TOUHOU-DP-ECONOMY.md`。
 - DP 回合核心：`packages/combat/src/dp.ts` —— `beginDpRound`（种族再生 + DP 回复 + 进入宣言）、
   `declareDp`（声明后按 DP 从高到低排序，同值 PC 先于 NPC）、`endDpTurn`（轮转）、
   `dpRegenFor`、`grantDpWaitBonus`（待机下轮回复 +2）；`CombatState.dp` 保存一轮宣言状态。
