@@ -45,7 +45,9 @@ function participant(
             reactionBonus: 0,
             accuracyBonus: 0,
             movementBonus: passiveMods.movementBonus,
-            grazeBonusPer: 0
+            grazeBonusPer: 0,
+            danmakuDpReduction: 0,
+            danmakuDamageReduction: 0
           }
   });
 }

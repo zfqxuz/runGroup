@@ -61,6 +61,7 @@ export const TOUHOU_ABILITY_DEFINITIONS = [
     kind: "PASSIVE",
     description: "受到弹幕攻击时，DP减少值-1，伤害值-1。 计算擦弹时使用原始的DP减少值。",
     cost: 8,
+    passives: [{ danmakuDpReduction: 1, danmakuDamageReduction: 1 }],
   },
   {
     id: "FEAT_WIDE_GRAZE",

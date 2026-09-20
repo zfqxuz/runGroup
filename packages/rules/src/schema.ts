@@ -413,7 +413,11 @@ export const AbilityPassiveSchema = z.object({
   /** 移动速度加值（m/s）。 */
   movementBonus: ExprSchema.default("0"),
   /** 每获得 N 点擦弹数，额外 +1（擦弹判定大）；0 表示不生效。 */
-  grazeBonusPer: z.number().int().nonnegative().default(0)
+  grazeBonusPer: z.number().int().nonnegative().default(0),
+  /** 受到弹幕攻击时，回避所需 DP 减少值（被弹判定小）。 */
+  danmakuDpReduction: z.number().int().nonnegative().default(0),
+  /** 受到弹幕攻击时，固定伤害减少值。 */
+  danmakuDamageReduction: z.number().int().nonnegative().default(0)
 });
 
 /** 具体能力条目（妖力 / 特技 / 常时种族能力等），由规则包 / 模组登记。 */

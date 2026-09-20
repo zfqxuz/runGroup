@@ -33,6 +33,8 @@ function passive(overrides: Partial<CombatPassiveMods> = {}): CombatPassiveMods 
     accuracyBonus: 0,
     movementBonus: 0,
     grazeBonusPer: 0,
+    danmakuDpReduction: 0,
+    danmakuDamageReduction: 0,
     ...overrides
   };
 }
@@ -134,6 +136,36 @@ describe("常时被动在 DP 战斗中生效", () => {
     resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE", dpDice: 3 } });
     // 基础擦弹 = 3 骰 → 3 点；每 3 点额外 +1 → 4 点
     expect(setup.e1.grazePoints).toBe(4);
+  });
+
+  it("被弹判定小：降低弹幕回避 DP 消耗（同种子对照）", () => {
+    const setup = makeCombat("passive-danmaku-dp", passive(), passive({ danmakuDpReduction: 1 }));
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "DANMAKU",
+      danmakuDpReduction: 2,
+      danmakuBaseDamage: 5
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE" } });
+    const dodge = setup.state.log.find((entry) => entry.data?.rollType === "DP_DANMAKU_DODGE");
+    expect(dodge?.data?.reduction).toBe(1);
+    expect(setup.e1.dp).toBe(29);
+  });
+
+  it("被弹判定小：降低弹幕命中伤害", () => {
+    const setup = makeCombat("passive-danmaku-dmg", passive(), passive({ danmakuDamageReduction: 1 }));
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "DANMAKU",
+      danmakuDpReduction: 2,
+      danmakuBaseDamage: 5
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    expect(setup.e1.hp).toBe(setup.e1.maxHp - 4);
   });
 
   it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {

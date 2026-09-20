@@ -89,6 +89,10 @@ export interface CombatPassiveMods {
   readonly movementBonus: number;
   /** 每 N 点擦弹额外 +1（擦弹判定大）；0 表示不生效。 */
   readonly grazeBonusPer: number;
+  /** 受到弹幕攻击时回避 DP 减少值（被弹判定小）。 */
+  readonly danmakuDpReduction: number;
+  /** 受到弹幕攻击时固定伤害减免。 */
+  readonly danmakuDamageReduction: number;
 }
 
 export interface CombatParticipantState {

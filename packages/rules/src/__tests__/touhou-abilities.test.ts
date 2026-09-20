@@ -227,7 +227,9 @@ describe("常时被动层（妖力 / 特技）", () => {
             reactionBonus: "1",
             accuracyBonus: "0",
             movementBonus: "abilityLv > 2 ? 1 : 0",
-            grazeBonusPer: 0
+            grazeBonusPer: 0,
+            danmakuDpReduction: 0,
+            danmakuDamageReduction: 0
           }
         ]
       },
@@ -248,7 +250,9 @@ describe("常时被动层（妖力 / 特技）", () => {
             reactionBonus: "0",
             accuracyBonus: "0",
             movementBonus: "0",
-            grazeBonusPer: 0
+            grazeBonusPer: 0,
+            danmakuDpReduction: 0,
+            danmakuDamageReduction: 0
           }
         ]
       },
@@ -269,7 +273,9 @@ describe("常时被动层（妖力 / 特技）", () => {
             reactionBonus: "0",
             accuracyBonus: "0",
             movementBonus: "0",
-            grazeBonusPer: 0
+            grazeBonusPer: 0,
+            danmakuDpReduction: 0,
+            danmakuDamageReduction: 0
           }
         ]
       }
@@ -346,5 +352,8 @@ describe("妖力 / 特技列表定义与消费（wiki）", () => {
     const graze = touhouPack.abilities.definitions.FEAT_WIDE_GRAZE;
     expect(flight?.passives[0]?.movementBonus).toBe("abilityLv");
     expect(graze?.passives[0]?.grazeBonusPer).toBe(3);
+    const smallHitbox = touhouPack.abilities.definitions.FEAT_SMALL_HITBOX;
+    expect(smallHitbox?.passives[0]?.danmakuDpReduction).toBe(1);
+    expect(smallHitbox?.passives[0]?.danmakuDamageReduction).toBe(1);
   });
 });

@@ -331,6 +331,10 @@ export interface AbilityPassiveMods {
   readonly movementBonus: number;
   /** 每 N 点擦弹额外 +1；0 表示不生效。 */
   readonly grazeBonusPer: number;
+  /** 受到弹幕攻击时的 DP 减少值减免。 */
+  readonly danmakuDpReduction: number;
+  /** 受到弹幕攻击时的固定伤害减免。 */
+  readonly danmakuDamageReduction: number;
   readonly sources: readonly string[];
 }
 
@@ -343,6 +347,8 @@ function emptyPassiveMods(): {
   accuracyBonus: number;
   movementBonus: number;
   grazeBonusPer: number;
+  danmakuDpReduction: number;
+  danmakuDamageReduction: number;
   sources: string[];
 } {
   return {
@@ -354,6 +360,8 @@ function emptyPassiveMods(): {
     accuracyBonus: 0,
     movementBonus: 0,
     grazeBonusPer: 0,
+    danmakuDpReduction: 0,
+    danmakuDamageReduction: 0,
     sources: []
   };
 }
@@ -389,6 +397,8 @@ function applyPassive(
   mods.accuracyBonus += evalPassiveExpr(passive.accuracyBonus, abilityLv, constants);
   mods.movementBonus += evalPassiveExpr(passive.movementBonus, abilityLv, constants);
   mods.grazeBonusPer = Math.max(mods.grazeBonusPer, passive.grazeBonusPer);
+  mods.danmakuDpReduction = Math.max(mods.danmakuDpReduction, passive.danmakuDpReduction);
+  mods.danmakuDamageReduction = Math.max(mods.danmakuDamageReduction, passive.danmakuDamageReduction);
   mods.sources.push(sourceId);
 }
 

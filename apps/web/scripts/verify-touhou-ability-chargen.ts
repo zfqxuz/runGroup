@@ -106,7 +106,9 @@ function main(): void {
             reactionBonus: "1",
             accuracyBonus: "0",
             movementBonus: "0",
-            grazeBonusPer: 0
+            grazeBonusPer: 0,
+            danmakuDpReduction: 0,
+            danmakuDamageReduction: 0
           }
         ]
       }

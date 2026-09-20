@@ -271,7 +271,9 @@ export function addParticipant(
       reactionBonus: init.passiveMods?.reactionBonus ?? 0,
       accuracyBonus: init.passiveMods?.accuracyBonus ?? 0,
       movementBonus: init.passiveMods?.movementBonus ?? 0,
-      grazeBonusPer: init.passiveMods?.grazeBonusPer ?? 0
+      grazeBonusPer: init.passiveMods?.grazeBonusPer ?? 0,
+      danmakuDpReduction: init.passiveMods?.danmakuDpReduction ?? 0,
+      danmakuDamageReduction: init.passiveMods?.danmakuDamageReduction ?? 0
     },
     mpExhausted: false,
     skills: init.skills ?? {},
@@ -4729,8 +4731,11 @@ function resolveDpDanmaku(
   }
   for (const target of targets) {
     const reaction = reactionFor(ctx, target.id);
-    if (reaction.type === "DODGE" && target.dp >= reduction) {
-      target.dp -= reduction;
+    // 14.5 被弹判定小：降低回避 DP 消耗与命中伤害（最低 0）。
+    const dpReduction = Math.max(0, reduction - passiveBonus(target, "danmakuDpReduction"));
+    const damage = Math.max(0, baseDamage - passiveBonus(target, "danmakuDamageReduction"));
+    if (reaction.type === "DODGE" && target.dp >= dpReduction) {
+      target.dp -= dpReduction;
       if (ctx.pack.system === "TOUHOU") {
         target.grazePoints = Math.max(0, Math.floor(target.grazePoints ?? 0)) + 1;
       }
@@ -4738,12 +4743,12 @@ function resolveDpDanmaku(
         kind: "STATUS",
         actorId: actor.id,
         targetId: target.id,
-        text: target.name + " 回避弹幕，DP -" + reduction + "（剩余 " + target.dp + "），擦弹 +1",
-        data: { rollType: "DP_DANMAKU_DODGE", reduction, dp: target.dp, grazePoints: target.grazePoints ?? 0 }
+        text: target.name + " 回避弹幕，DP -" + dpReduction + "（剩余 " + target.dp + "），擦弹 +1",
+        data: { rollType: "DP_DANMAKU_DODGE", reduction: dpReduction, dp: target.dp, grazePoints: target.grazePoints ?? 0 }
       });
       continue;
     }
-    const applied = applyDamageToParticipant(ctx, target, baseDamage, actor);
+    const applied = applyDamageToParticipant(ctx, target, damage, actor);
     pushLog(state, {
       kind: "DAMAGE",
       actorId: actor.id,
@@ -4751,8 +4756,8 @@ function resolveDpDanmaku(
       text:
         target.name +
         (reaction.type === "DODGE" ? " 的 DP 不足以回避弹幕" : " 未回避弹幕") +
-        "，受到固定伤害 " + baseDamage,
-      data: { rollType: "DP_DANMAKU_HIT", damage: baseDamage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+        "，受到固定伤害 " + damage,
+      data: { rollType: "DP_DANMAKU_HIT", damage, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
     });
   }
 }
