@@ -416,6 +416,74 @@ TOUHOU_EXT.abilities = {
   )
 };
 /**
+ * 千幻抄内置法术（可从 wiki 速查表自动结算的子集）。
+ *
+ * 默认 enabled=false；房间 / 模组可通过 ruleOverride 或模组启用魔法规则后使用。
+ * 完整法术列表见 `spellReferences`；未映射的效果由 KP 手动结算。
+ */
+TOUHOU_EXT.magic = {
+  enabled: false,
+  system: "TOUHOU",
+  spells: [
+    {
+      id: "SPIRIT_BLESSING",
+      name: "加持",
+      skill: "SPIRIT_ARTS",
+      abilityId: "SPIRIT_ARTS",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ALLY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      effects: [
+        { type: "HEAL", amount: "0", levelBonus: "abilityLv * 5" },
+        { type: "DISPEL", keys: ["DISEASE", "POISON"] }
+      ]
+    },
+    {
+      id: "MAGIC_HEAL",
+      name: "恢复术",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "5",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ALLY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      effects: [{ type: "HEAL", amount: "0", levelBonus: "abilityLv * 5" }]
+    },
+    {
+      id: "MAGIC_CURE",
+      name: "治愈术",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "7",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ALLY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "18" },
+      effects: [{ type: "DISPEL", keys: ["DISEASE", "POISON"] }]
+    },
+    {
+      id: "MAGIC_TRANSFER",
+      name: "转灵术",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "2",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ALLY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      effects: [{ type: "MP_RESTORE", amount: "abilityLv" }]
+    }
+  ]
+};
+
+/**
  * 7.5 结界系法术通用规则（wiki 表 7.1）。
  *
  * 大小 2/5/10/15/20/25/30/40m，必要 Lv 1–8，目标值 16–30，灵力 4–18；

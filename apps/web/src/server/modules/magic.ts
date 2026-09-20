@@ -125,10 +125,21 @@ export async function applyMagicRulesToRoom(roomId: string, moduleIdOverride: st
     });
     moduleId = game?.moduleId ?? null;
   }
-  if (moduleId === null) return 0;
+  if (moduleId === null) {
+    // 东方规则包内置了可自动结算的法术子集；没有模组法术时回退使用内置法术。
+    if (room.system === "TOUHOU") {
+      await enableBuiltinTouhouMagic(room);
+      return 1;
+    }
+    return 0;
+  }
 
   const info = await loadModuleMagicInfo(moduleId);
   if (info === null || info.spells.length === 0) {
+    if (room.system === "TOUHOU") {
+      await enableBuiltinTouhouMagic(room);
+      return 1;
+    }
     await disableMagicRulesInRoom(room.id);
     return 0;
   }
@@ -147,6 +158,16 @@ export async function applyMagicRulesToRoom(roomId: string, moduleIdOverride: st
     data: { ruleOverride: merged as never }
   });
   return info.spells.length;
+}
+
+/** 东方内置法术：清掉 ruleOverride 里的 spells，让 touhou-ext 的 magic.spells 生效。 */
+async function enableBuiltinTouhouMagic(room: { readonly id: string; readonly ruleOverride: unknown }): Promise<void> {
+  const existing = isPlainObject(room.ruleOverride) ? room.ruleOverride : {};
+  const existingMagic = isPlainObject(existing.magic) ? existing.magic : {};
+  const restMagic = { ...existingMagic };
+  delete restMagic.spells;
+  const merged = { ...existing, magic: { ...restMagic, enabled: true, system: "TOUHOU" } };
+  await prisma.room.update({ where: { id: room.id }, data: { ruleOverride: merged as never } });
 }
 
 export function magicSpellCountOf(ruleOverride: unknown): number {
