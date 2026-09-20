@@ -60,7 +60,11 @@ function main(): void {
   ensure(reread.hpCoefficient === 4.8, "写回后 HP 系数应保持");
   ensure(reread.granted.attribute === 10, "写回后成长点应保持");
 
-  console.log("PASS 千幻抄成长：成长点池 / 特性值 / 技能 / 能力与 60% 限制");
+  // 属性使实例成长：ELEMENTALIST:FIRE 使用属性使消费表。
+  const elemental = checkAbilityGrowth(rules, pools, "ELEMENTALIST:FIRE", 0);
+  ensure(elemental.ok === true && elemental.cost === 4, "属性使 Lv0→1 应花 4 点");
+
+  console.log("PASS 千幻抄成长：成长点池 / 特性值 / 技能 / 能力 / 属性使实例与 60% 限制");
 }
 
 main();

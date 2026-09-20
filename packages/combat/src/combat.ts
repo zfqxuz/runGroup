@@ -29,6 +29,7 @@ import {
   spellEffectsOf,
   spellTargeting,
   clampTouhouDpDice,
+  resolveAbilityCategory,
   touhouChaseDamage,
   touhouLscRecoveryDue,
   touhouMeleeDamage,
@@ -130,6 +131,8 @@ export interface ParticipantInit {
   readonly elements?: readonly string[];
   /** 千幻抄能力等级：categoryId -> Lv。 */
   readonly abilityLevels?: Readonly<Record<string, number>>;
+  /** 能力实例的发动特性值覆盖，例如 { "ELEMENTALIST:FIRE": "dex" }。 */
+  readonly abilityAttributes?: Readonly<Record<string, string>>;
   readonly skills?: Record<string, number>;
   /** 该单位允许施放的法术 id。 */
   readonly spells?: readonly string[];
@@ -255,6 +258,7 @@ export function addParticipant(
     raceFlags: [...(init.raceFlags ?? [])],
     elements: [...(init.elements ?? [])],
     abilityLevels: { ...(init.abilityLevels ?? {}) },
+    abilityAttributes: { ...(init.abilityAttributes ?? {}) },
     mpExhausted: false,
     skills: init.skills ?? {},
     spells: [...(init.spells ?? [])],
@@ -3499,7 +3503,7 @@ function resolveAbility(
   const state = ctx.state;
   const abilityId = spell.abilityId;
   const rules = ctx.pack.pack.abilities;
-  const category = abilityId === undefined ? undefined : rules.categories[abilityId];
+  const category = abilityId === undefined ? undefined : resolveAbilityCategory(rules, abilityId);
   if (abilityId === undefined || category === undefined) {
     resolveMagic(ctx, actor, submission);
     return;
@@ -3520,6 +3524,8 @@ function resolveAbility(
 
   const activation = spell.activation;
   const usePercentile = activation?.dice === "1D100";
+  const instanceAttribute = abilityId === undefined ? undefined : actor.abilityAttributes?.[abilityId];
+  const fallbackActivationAttribute = category.activationAttribute;
 
   // DP 模式：能力发动改为消费 DP 骰的 {特性值}+Lv+ND6 判定（最多 maxDicePerCheck）。
   const isDp = state.mode === "DP";
@@ -3543,7 +3549,7 @@ function resolveAbility(
     actor.abilityUsedThisRound = true;
   }
 
-  const attributeKey = activation?.attribute ?? category.activationAttribute;
+  const attributeKey = activation?.attribute ?? instanceAttribute ?? fallbackActivationAttribute;
   const rawAttribute = actor.attributes[attributeKey as keyof AttributeSet] ?? actor.vars[attributeKey] ?? 0;
   const attributeValue = isDp ? dpAttribute(ctx.pack, actor, attributeKey) : rawAttribute;
   let modifier = 0;

@@ -116,6 +116,8 @@ export interface CombatParticipantState {
   elements?: string[];
   /** 千幻抄能力等级：categoryId -> Lv；COC7 单位为空对象。 */
   abilityLevels?: Record<string, number>;
+  /** 千幻抄能力实例指定的发动特性值（如属性使选 {知性}/{感觉}）。 */
+  abilityAttributes?: Record<string, string>;
   /** 千幻抄 14.3：灵力归零导致昏迷；灵力恢复后清除。 */
   mpExhausted?: boolean;
   skills: Record<string, number>;

@@ -44,7 +44,12 @@ function main(): void {
   ensure(abilitySpendTotal(abilities, ok) === 18, "累计应为 18");
   ensure(validateAbilitySpend(abilities, "C", ok).ok === true, "18 点应通过 C 级预算");
 
-  console.log("PASS 东方能力点车卡：5 类能力 / A-D 预算 / 逐级消费表 / 超支校验");
+  // 属性使每种属性独立：ELEMENTALIST:FIRE / ELEMENTALIST:WATER 按实例累计。
+  const elemental = { "ELEMENTALIST:FIRE": 2, "ELEMENTALIST:WATER": 1 };
+  ensure(abilitySpendTotal(abilities, elemental) === 16, "属性使实例累计应为 16");
+  ensure(validateAbilitySpend(abilities, "C", elemental).ok === true, "属性使 16 点应通过 C 级预算");
+
+  console.log("PASS 东方能力点车卡：5 类能力 / A-D 预算 / 逐级消费表 / 属性使实例 / 超支校验");
 }
 
 main();

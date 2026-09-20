@@ -199,6 +199,8 @@ export {
   abilitySpellCountIssue,
   abilitySpendTotal,
   abilityTotalCost,
+  resolveAbilityCategory,
+  splitAbilityInstanceId,
   validateAbilitySpend
 } from "./abilities";
 

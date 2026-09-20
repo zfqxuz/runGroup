@@ -285,6 +285,24 @@ export function characterAbilityLevelsOf(character: Character): Record<string, n
   return numberRecordOf(sourceData.abilities);
 }
 
+/** 千幻抄能力实例的发动特性值（如属性使 {知性}/{感觉}）；缺省为空。 */
+export function characterAbilityAttributesOf(character: Character): Record<string, string> {
+  const backstory = (character.backstory ?? {}) as Record<string, unknown>;
+  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
+  const raw =
+    backstory.abilityAttributes !== undefined && backstory.abilityAttributes !== null
+      ? backstory.abilityAttributes
+      : sourceData.abilityAttributes;
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const output: Record<string, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof value === "string" && (value === "int" || value === "dex" || value === "pow" || value === "str" || value === "con" || value === "app" || value === "edu" || value === "luck" || value === "siz")) {
+      output[key] = value;
+    }
+  }
+  return output;
+}
+
 export function characterSpellsOf(character: Character): string[] {
   const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
   const sourceSpells = stringArrayOf(sourceData.spells);
@@ -335,6 +353,7 @@ function buildCharacterInit(
         ? []
         : [...(pack.pack.races[character.race]?.elements ?? [])],
     abilityLevels: characterAbilityLevelsOf(character),
+    abilityAttributes: characterAbilityAttributesOf(character),
     skills,
     spells: characterSpellsOf(character),
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",

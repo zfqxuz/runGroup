@@ -6,6 +6,8 @@ import {
   abilitySpellCountIssue,
   abilitySpendTotal,
   abilityTotalCost,
+  resolveAbilityCategory,
+  splitAbilityInstanceId,
   validateAbilitySpend,
   compileParsedRulePack,
   resolveRulePack
@@ -96,5 +98,26 @@ describe("能力消费表计算", () => {
     if (elementalist === undefined) throw new Error("缺少 ELEMENTALIST");
     // 0 表示不限
     expect(abilitySpellCountIssue(elementalist, 3, 999)).toBeNull();
+  });
+});
+
+describe("能力实例 id（属性使每种属性独立）", () => {
+  it("splitAbilityInstanceId 拆分 CATEGORY:SUFFIX", () => {
+    expect(splitAbilityInstanceId("ELEMENTALIST:FIRE")).toEqual({ categoryId: "ELEMENTALIST", suffix: "FIRE" });
+    expect(splitAbilityInstanceId("SPIRIT_ARTS")).toEqual({ categoryId: "SPIRIT_ARTS", suffix: null });
+  });
+
+  it("resolveAbilityCategory 精确匹配优先，再退回前缀类别", () => {
+    const rules = touhouPack.abilities;
+    expect(resolveAbilityCategory(rules, "SPIRIT_ARTS")?.id).toBe("SPIRIT_ARTS");
+    expect(resolveAbilityCategory(rules, "ELEMENTALIST:FIRE")?.id).toBe("ELEMENTALIST");
+    expect(resolveAbilityCategory(rules, "NOPE:FIRE")).toBeUndefined();
+  });
+
+  it("能力点按实例累计消费", () => {
+    const rules = touhouPack.abilities;
+    // 属性使 4/8/12：FIRE Lv2 = 12，WATER Lv1 = 4，合计 16
+    expect(abilitySpendTotal(rules, { "ELEMENTALIST:FIRE": 2, "ELEMENTALIST:WATER": 1 })).toBe(16);
+    expect(validateAbilitySpend(rules, "C", { "ELEMENTALIST:FIRE": 2, "ELEMENTALIST:WATER": 1 }).ok).toBe(true);
   });
 });

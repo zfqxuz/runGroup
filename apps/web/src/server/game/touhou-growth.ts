@@ -1,4 +1,6 @@
 import {
+  resolveAbilityCategory,
+  splitAbilityInstanceId,
   touhouAbilityGrowthCost,
   touhouAttributeGrowthCost,
   touhouGrowthGrant,
@@ -130,14 +132,15 @@ export function checkAbilityGrowth(
   categoryId: string,
   currentLevel: number
 ): TouhouGrowthCheck {
-  const category = rules.categories[categoryId];
+  const category = resolveAbilityCategory(rules, categoryId);
   if (category === undefined) return { ok: false, error: "未知能力类别：" + categoryId };
   const from = Math.max(0, Math.floor(currentLevel));
   const cost = touhouAbilityGrowthCost(category, from, from + 1);
   if (cost > growthRemaining(pools, "ability")) {
     return { ok: false, error: `能力成长需要 ${cost} 点，剩余 ${growthRemaining(pools, "ability")} 点` };
   }
-  if ((TOUHOU_RESTRICTED_ABILITY_IDS as readonly string[]).includes(categoryId)) {
+  const baseCategoryId = splitAbilityInstanceId(categoryId).categoryId;
+  if ((TOUHOU_RESTRICTED_ABILITY_IDS as readonly string[]).includes(baseCategoryId)) {
     const spentOnAbility = Math.floor(pools.spentByAbility[categoryId] ?? 0) + cost;
     const issue = touhouRestrictedGrowthIssue(pools.granted.ability, spentOnAbility);
     if (issue !== null) return { ok: false, error: issue };

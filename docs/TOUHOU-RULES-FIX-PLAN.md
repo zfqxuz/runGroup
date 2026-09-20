@@ -144,8 +144,15 @@
   应对检定目标 -3 / +3 / 不修正）。
 - COC7 基线 `elements` 为空且 pipeline 不含 `ELEMENT_MOD`，传入属性值也不改变伤害。
 
-**仍未覆盖的 5.2 / 5.3**：「属性明显时全判定 ±1」属情境裁定，保留为 KP 行为；
-属性使能力（每种属性独立等级、基本 / 追加能力、与妖术组合、范围与脱离）留待能力系统批次。
+**仍未覆盖的 5.2**：「属性明显时全判定 ±1」属情境裁定，保留为 KP 行为。
+
+**5.3 属性使（结构化支持已落地）**：
+- 能力实例 id `CATEGORY:SUFFIX`（如 `ELEMENTALIST:FIRE`）：`splitAbilityInstanceId` /
+  `resolveAbilityCategory`；`abilitySpendTotal` / `validateAbilitySpend` / 成长校验都按实例累计。
+- 车卡 UI 为属性使逐属性（`pack.elements`）生成独立等级，并可选择发动特性值 {知性}/{感觉}；
+  写入 `backstory.abilities` / `backstory.abilityAttributes`，战斗时 `resolveAbility` 读取实例等级与特性值。
+- 仍未覆盖：属性使具体法术表（9.2）、基本 / 追加能力内容、与妖术组合、范围与脱离；
+  这些需要 wiki 法术表内容由规则包 / 模组补齐。
 
 ### 2.3 已完成（第三批）：能力体系 · 发动 / 抵抗 / 共用执行器（v2: 2.17、2.18、6.11、7.x–11.x 部分）
 

@@ -221,6 +221,18 @@ export default function CharacterBuilder(props: Props) {
     if (Object.keys(fromBackstory).length > 0) return fromBackstory;
     return numberRecordOf(initial?.sourceData?.abilities);
   });
+  const [abilityAttributeMap, setAbilityAttributeMap] = useState<Record<string, "int" | "dex">>(() => {
+    const raw =
+      initial?.backstory?.abilityAttributes !== undefined
+        ? initial.backstory.abilityAttributes
+        : initial?.sourceData?.abilityAttributes;
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const output: Record<string, "int" | "dex"> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (value === "int" || value === "dex") output[key] = value;
+    }
+    return output;
+  });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   // 第二页（选填）：人物故事 / 财产 / 持有物品
@@ -901,6 +913,7 @@ export default function CharacterBuilder(props: Props) {
             abilities: Object.fromEntries(
               Object.entries(abilityLevels).filter(([, level]) => level > 0)
             ),
+            abilityAttributes: abilityAttributeMap,
             abilityTier
           }
         : {})
@@ -1602,39 +1615,66 @@ export default function CharacterBuilder(props: Props) {
             <p className="mt-3 text-xs text-white/45">本规则包没有登记能力类别。</p>
           ) : (
             <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {abilityCategoryList.map((category) => {
-                const level = abilityLevels[category.id] ?? 0;
-                const maxLevel = Math.max(1, category.costTable.length);
-                const nextCost = abilityCostForLevel(category, level + 1);
-                return (
-                  <div
-                    key={category.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-xs text-white/80">{category.name}</p>
-                      <p className="text-[10px] text-white/35">
-                        累计 {abilityTotalCost(category, level)} 点 · 下一级 {nextCost} 点
-                      </p>
-                    </div>
-                    <select
-                      value={level}
-                      onChange={(event) =>
-                        setAbilityLevels((prev) => ({
-                          ...prev,
-                          [category.id]: Math.max(0, Math.floor(Number(event.target.value) || 0))
-                        }))
-                      }
-                      className={inputClass + " w-24"}
+              {abilityCategoryList.flatMap((category) => {
+                const elementList = Object.values(props.pack.elements);
+                const instances =
+                  category.id === "ELEMENTALIST" && elementList.length > 0
+                    ? elementList.map((element) => ({
+                        id: "ELEMENTALIST:" + element.id,
+                        label: element.name + "·属性使",
+                        attributeChoice: true
+                      }))
+                    : [{ id: category.id, label: category.name, attributeChoice: false }];
+                return instances.map((instance) => {
+                  const level = abilityLevels[instance.id] ?? 0;
+                  const maxLevel = Math.max(1, category.costTable.length);
+                  const nextCost = abilityCostForLevel(category, level + 1);
+                  return (
+                    <div
+                      key={instance.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-ink-900/50 px-3 py-2"
                     >
-                      {Array.from({ length: maxLevel + 1 }, (_unused, lv) => (
-                        <option key={lv} value={lv}>
-                          Lv{lv}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                );
+                      <div className="min-w-0">
+                        <p className="truncate text-xs text-white/80">{instance.label}</p>
+                        <p className="text-[10px] text-white/35">
+                          累计 {abilityTotalCost(category, level)} 点 · 下一级 {nextCost} 点
+                        </p>
+                      </div>
+                      {instance.attributeChoice ? (
+                        <select
+                          value={abilityAttributeMap[instance.id] ?? "int"}
+                          onChange={(event) =>
+                            setAbilityAttributeMap((prev) => ({
+                              ...prev,
+                              [instance.id]: event.target.value === "dex" ? "dex" : "int"
+                            }))
+                          }
+                          className={inputClass + " w-28"}
+                          title="发动特性值：{知性} 或 {感觉}"
+                        >
+                          <option value="int">知性</option>
+                          <option value="dex">感觉</option>
+                        </select>
+                      ) : null}
+                      <select
+                        value={level}
+                        onChange={(event) =>
+                          setAbilityLevels((prev) => ({
+                            ...prev,
+                            [instance.id]: Math.max(0, Math.floor(Number(event.target.value) || 0))
+                          }))
+                        }
+                        className={inputClass + " w-24"}
+                      >
+                        {Array.from({ length: maxLevel + 1 }, (_unused, lv) => (
+                          <option key={lv} value={lv}>
+                            Lv{lv}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                });
               })}
             </div>
           )}

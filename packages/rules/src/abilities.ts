@@ -1,6 +1,23 @@
 import type { AbilityCategory, AbilityRules } from "./schema";
 
 /**
+ * 解析能力实例 id。
+ *
+ * 属性使等能力「每种属性独立」，用 `CATEGORY:SUFFIX` 表示实例
+ * （例如 `ELEMENTALIST:FIRE`）；没有冒号时 suffix 为 null，表示整类能力。
+ */
+export function splitAbilityInstanceId(id: string): { readonly categoryId: string; readonly suffix: string | null } {
+  const index = id.indexOf(":");
+  if (index <= 0 || index >= id.length - 1) return { categoryId: id, suffix: null };
+  return { categoryId: id.slice(0, index), suffix: id.slice(index + 1) };
+}
+
+/** 按实例 id 找到能力类别；先精确匹配，再退回冒号前的类别。 */
+export function resolveAbilityCategory(rules: AbilityRules, id: string): AbilityCategory | undefined {
+  return rules.categories[id] ?? rules.categories[splitAbilityInstanceId(id).categoryId];
+}
+
+/**
  * 千幻抄能力消费表。
  *
  * costTable 是「逐级」消费：升到第 1 级花 costTable[0]，第 2 级花 costTable[1]，
@@ -72,7 +89,7 @@ export function abilitySpendTotal(
 ): number {
   let total = 0;
   for (const [categoryId, level] of Object.entries(levels)) {
-    const category = rules.categories[categoryId];
+    const category = resolveAbilityCategory(rules, categoryId);
     if (category === undefined) continue;
     total += abilityTotalCost(category, level);
   }
@@ -97,7 +114,7 @@ export function validateAbilitySpend(
   if (budget === null) {
     return { ok: false, grade, budget: 0, spent: 0, error: `未知的能力等级「${grade}」` };
   }
-  const unknown = Object.keys(levels).filter((categoryId) => rules.categories[categoryId] === undefined);
+  const unknown = Object.keys(levels).filter((categoryId) => resolveAbilityCategory(rules, categoryId) === undefined);
   if (unknown.length > 0) {
     return { ok: false, grade, budget, spent: 0, error: `未知能力类别：${unknown.join("、")}` };
   }

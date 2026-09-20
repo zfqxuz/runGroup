@@ -122,6 +122,18 @@ function buildAbilityPack() {
             activation: { dice: "3D6", modifier: "0", target: "1" }
           },
           {
+            id: "ELEMENT_BOLT",
+            name: "属性使·火",
+            abilityId: "ELEMENTALIST:FIRE",
+            requiredLevel: 1,
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ENEMY",
+            effects: [{ type: "DAMAGE", amount: "4" }],
+            activation: { dice: "3D6", modifier: "0", target: "1" }
+          },
+          {
             id: "PLAIN_LEVEL_BONUS",
             name: "普通法术·等级加值",
             mpCost: "5",
@@ -330,5 +342,28 @@ describe("DISPEL 驱散", () => {
     });
     resolvePending(abilityPack, state, { target: { type: "PASS" } });
     expect(target.statusEffects).toHaveLength(0);
+  });
+});
+
+describe("属性使能力实例（ELEMENTALIST:SUFFIX）", () => {
+  it("按实例 id 读取等级，并用实例指定的发动特性值", () => {
+    const state = createCombat({ id: "c-element-instance", seed: "element-instance", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", {
+      abilityLevels: { "ELEMENTALIST:FIRE": 2 },
+      abilityAttributes: { "ELEMENTALIST:FIRE": "dex" }
+    });
+    const target = addUnit(state, "target", "BOSS", {});
+    forceReady(caster);
+    forceReady(target);
+    submitAction(state, {
+      actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "ELEMENT_BOLT", name: "ELEMENT_BOLT"
+    });
+    resolvePending(abilityPack, state, { target: { type: "PASS" } });
+    const activation = state.log.find((entry) => entry.data?.rollType === "ABILITY_ACTIVATION");
+    expect(activation?.data?.success).toBe(true);
+    // 属性使默认 {知性}=60；实例指定 {感觉}=DEX 55；此处只验证发动成功且等级被读取。
+    expect(activation?.data?.abilityId).toBe("ELEMENTALIST:FIRE");
+    expect(activation?.data?.level).toBe(2);
+    expect(target.hp).toBe(target.maxHp - 4);
   });
 });
