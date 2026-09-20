@@ -359,7 +359,9 @@ export const AbilityCategorySchema = z.object({
 
 export const AbilityRulesSchema = z.object({
   enabled: z.boolean().default(false),
-  categories: z.record(z.string(), AbilityCategorySchema).default({})
+  categories: z.record(z.string(), AbilityCategorySchema).default({}),
+  /** 车卡能力点预算：grade（A-D）-> 能力点。千幻抄为 30/25/20/15。 */
+  pointBudgets: z.record(z.string(), z.number().int().nonnegative()).default({})
 });
 
 export const SpellCardRulesSchema = z.object({

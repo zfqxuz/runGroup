@@ -2,8 +2,11 @@ import { describe, expect, it } from "vitest";
 import {
   abilityCostForLevel,
   abilityLevelForPoints,
+  abilityPointBudget,
   abilitySpellCountIssue,
+  abilitySpendTotal,
   abilityTotalCost,
+  validateAbilitySpend,
   compileParsedRulePack,
   resolveRulePack
 } from "../index";
@@ -33,6 +36,28 @@ describe("千幻抄能力类别与消费表", () => {
   it("COC7 基线不启用能力体系", () => {
     expect(coc7Pack.abilities.enabled).toBe(false);
     expect(Object.keys(coc7Pack.abilities.categories)).toHaveLength(0);
+  });
+
+  it("车卡能力点为 A/B/C/D = 30/25/20/15", () => {
+    expect(abilityPointBudget(touhouPack.abilities, "A")).toBe(30);
+    expect(abilityPointBudget(touhouPack.abilities, "B")).toBe(25);
+    expect(abilityPointBudget(touhouPack.abilities, "C")).toBe(20);
+    expect(abilityPointBudget(touhouPack.abilities, "D")).toBe(15);
+    expect(abilityPointBudget(touhouPack.abilities, "X")).toBeNull();
+  });
+
+  it("能力点花费校验：超支 / 未知类别 / 通过", () => {
+    // 神术 5+10=15，妖术 1+2=3，合计 18
+    const levels = { SPIRIT_ARTS: 2, YOUJUTSU: 2 };
+    expect(abilitySpendTotal(touhouPack.abilities, levels)).toBe(18);
+    // A 级预算 30，18 点通过；D 级预算 15，18 点超支。
+    expect(validateAbilitySpend(touhouPack.abilities, "A", levels).ok).toBe(true);
+    expect(validateAbilitySpend(touhouPack.abilities, "D", levels).ok).toBe(false);
+    // 神术 5+10+15 = 30，D 级 15 点超支。
+    expect(validateAbilitySpend(touhouPack.abilities, "D", { SPIRIT_ARTS: 3 }).ok).toBe(false);
+    const unknown = validateAbilitySpend(touhouPack.abilities, "A", { NOT_A_CATEGORY: 1 });
+    expect(unknown.ok).toBe(false);
+    expect(unknown.error).toContain("未知能力类别");
   });
 
   it("补齐了〈抵抗〉技能，供抵抗判定使用", () => {

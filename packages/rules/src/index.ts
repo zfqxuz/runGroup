@@ -172,7 +172,15 @@ export type {
   TouhouNaturalHealingOutcome
 } from "./touhou";
 
-export { abilityCostForLevel, abilityLevelForPoints, abilitySpellCountIssue, abilityTotalCost } from "./abilities";
+export {
+  abilityCostForLevel,
+  abilityLevelForPoints,
+  abilityPointBudget,
+  abilitySpellCountIssue,
+  abilitySpendTotal,
+  abilityTotalCost,
+  validateAbilitySpend
+} from "./abilities";
 export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./growth";
 
 export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";

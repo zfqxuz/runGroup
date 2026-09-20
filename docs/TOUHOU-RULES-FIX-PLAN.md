@@ -163,6 +163,8 @@
   妖术 1/2/4/6/8/10/12/12、特技 1/2/4/6/8/10/12/12；并补〈抵抗〉技能。
 - 规则工具 `abilityCostForLevel` / `abilityTotalCost` / `abilityLevelForPoints` / `abilitySpellCountIssue`
   （消费表、按点数反推等级、按每级上限校验法术数量）。
+- 车卡能力点预算 `pointBudgets`（A/B/C/D = 30/25/20/15）与
+  `abilityPointBudget` / `abilitySpendTotal` / `validateAbilitySpend`；车卡 UI / DB 接线留待后续。
 
 **战斗流程（仅 TOUHOU）**
 - 新增 `resolveAbility()`：校验已习得等级 → 掷 `{特性值}+Lv+3D6`（可配置 1D100）→
@@ -172,7 +174,7 @@
   NPC 从 `NpcStats.abilities` 读入；旧快照补空对象。
 - COC7 基线 `abilities.enabled=false`，且 dispatcher 仅对 `pack.system==="TOUHOU"` 分流，COC7 仍走原 `resolveMagic`。
 
-**本批未覆盖的能力体系内容**：能力点与车卡 A-D 分配、每级习得法术数量校验、成长消费（13.4）、
+**本批未覆盖的能力体系内容**：能力点车卡 UI / DB 接线、每级习得法术数量校验接入 UI、成长消费（13.4）、
 DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层、`BARRIER` 结界（需要范围 / 位置模型）。
 
 ### 2.4 已完成（第四批）：能力效果缺口 DISPEL / LvD（v2: 7.x–11.x 效果部分）
@@ -286,6 +288,16 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 - 新增测试：
   - `packages/rules/src/__tests__/touhou-rules.test.ts`：11 条（移动 / 自然治愈 / 应急治疗 / 灵力恢复）；
   - `packages/combat/src/__tests__/touhou-mp-exhaustion.test.ts`：3 条（归零昏迷 / 队友唤醒 / COC7 隔离）。
+
+### 4.7 P1 第六批：车卡能力点预算
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（rules 135、combat 138、formula 54、web 5）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS。
+- 新增规则工具 `abilityPointBudget` / `abilitySpendTotal` / `validateAbilitySpend`；
+  `touhou-abilities.test.ts` 扩到 9 条（含 A-D 预算、超支 / 未知类别校验）。
+- 说明：本批只到规则层；车卡 UI、DB 字段与角色草稿接线仍待后续（见第 2.6 节）。
 
 ## 5. 风险与回滚
 

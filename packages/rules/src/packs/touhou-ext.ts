@@ -299,6 +299,8 @@ TOUHOU_EXT.elementRules = {
  */
 TOUHOU_EXT.abilities = {
   enabled: true,
+  // 车卡能力点：A-D 分别为 30/25/20/15。
+  pointBudgets: { A: 30, B: 25, C: 20, D: 15 },
   categories: {
     SPIRIT_ARTS: {
       id: "SPIRIT_ARTS",

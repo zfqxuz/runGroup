@@ -1,4 +1,4 @@
-import type { AbilityCategory } from "./schema";
+import type { AbilityCategory, AbilityRules } from "./schema";
 
 /**
  * 千幻抄能力消费表。
@@ -56,4 +56,60 @@ export function abilitySpellCountIssue(
     return `${category.name} Lv${Math.max(0, Math.floor(level))} 最多习得 ${cap} 个法术（当前 ${count}）`;
   }
   return null;
+}
+
+/** 车卡能力点预算；未知 grade 返回 null。 */
+export function abilityPointBudget(rules: AbilityRules, grade: string): number | null {
+  const value = rules.pointBudgets[grade];
+  if (value === undefined) return null;
+  return Math.max(0, Math.floor(value));
+}
+
+/** 按已习得等级计算能力点总花费。 */
+export function abilitySpendTotal(
+  rules: AbilityRules,
+  levels: Readonly<Record<string, number>>
+): number {
+  let total = 0;
+  for (const [categoryId, level] of Object.entries(levels)) {
+    const category = rules.categories[categoryId];
+    if (category === undefined) continue;
+    total += abilityTotalCost(category, level);
+  }
+  return total;
+}
+
+export interface AbilitySpendCheck {
+  readonly ok: boolean;
+  readonly grade: string;
+  readonly budget: number;
+  readonly spent: number;
+  readonly error?: string;
+}
+
+/** 校验车卡能力点：各能力等级累计消费不得超过该 grade 的预算。 */
+export function validateAbilitySpend(
+  rules: AbilityRules,
+  grade: string,
+  levels: Readonly<Record<string, number>>
+): AbilitySpendCheck {
+  const budget = abilityPointBudget(rules, grade);
+  if (budget === null) {
+    return { ok: false, grade, budget: 0, spent: 0, error: `未知的能力等级「${grade}」` };
+  }
+  const unknown = Object.keys(levels).filter((categoryId) => rules.categories[categoryId] === undefined);
+  if (unknown.length > 0) {
+    return { ok: false, grade, budget, spent: 0, error: `未知能力类别：${unknown.join("、")}` };
+  }
+  const spent = abilitySpendTotal(rules, levels);
+  if (spent > budget) {
+    return {
+      ok: false,
+      grade,
+      budget,
+      spent,
+      error: `能力点超支：${grade} 级预算 ${budget} 点，已花费 ${spent} 点`
+    };
+  }
+  return { ok: true, grade, budget, spent };
 }
