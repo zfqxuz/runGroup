@@ -468,6 +468,20 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "DISPEL", keys: ["DISEASE", "POISON"] }]
     },
     {
+      id: "SPIRIT_BARRIER_BREAK",
+      name: "破魔结界",
+      skill: "SPIRIT_ARTS",
+      abilityId: "SPIRIT_ARTS",
+      requiredLevel: 1,
+      mpCost: "6",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ANY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // keys 为空：清除目标身上所有状态，并解除其结界。
+      effects: [{ type: "DISPEL", keys: [] }]
+    },
+    {
       id: "MAGIC_SHIELD",
       name: "护盾术",
       skill: "MAGIC",

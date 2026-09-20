@@ -90,6 +90,7 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
       "MAGIC_HEAL",
       "MAGIC_SHIELD",
       "MAGIC_TRANSFER",
+      "SPIRIT_BARRIER_BREAK",
       "SPIRIT_BLESSING"
     ]);
   });
@@ -105,6 +106,31 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(caster.mp).toBe(96);
     expect(target.tempDp).toBe(6); // ceil(4 × 1.5)
     expect(target.tempDpMax).toBe(6);
+  });
+
+  it("破魔结界：解除目标身上的结界", () => {
+    const state = createCombat({ id: "c-builtin-break", seed: "builtin-break", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", { abilityLevels: { SPIRIT_ARTS: 1 } });
+    const enemy = addUnit(state, "enemy", "BOSS");
+    enemy.barrier = {
+      hp: 20,
+      maxHp: 20,
+      name: "敌方结界",
+      expiresAtRound: null,
+      sizeMeters: 10,
+      sizeId: "SIZE_10",
+      requiredLevel: 3,
+      targetValue: 20,
+      penalty: 0,
+      anchor: "SELF",
+      durationHours: 3
+    };
+    forceReady(caster);
+    forceReady(enemy);
+    submitAction(state, { actorId: "caster", kind: "MAGIC", targetId: "enemy", spellId: "SPIRIT_BARRIER_BREAK", name: "SPIRIT_BARRIER_BREAK" });
+    resolvePending(pack, state, { enemy: { type: "PASS" } });
+    expect(enemy.barrier).toBeNull();
+    expect(state.log.some((entry) => entry.data?.brokeBarrier === true)).toBe(true);
   });
 
   it("恢复术：恢复 魔法 Lv×5 HP", () => {

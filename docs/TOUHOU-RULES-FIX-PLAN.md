@@ -362,8 +362,8 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - ✅ **wiki 法术 / 能力速查表**：`RulePack.spellReferences` + `packs/data/touhou-spell-references.ts`
      登记 85 条（神术·阴阳术 15、魔法 59、属性使 9、妖术 2），保留目标值 / 灵力 / 范围 / 时间 / 说明；
      房间页新增「法术·能力速查表」面板（分类 / 系别 / 搜索）。
-   - ✅ **内置可结算法术子集**：`touhou-ext.magic.spells` 登记 加持 / 恢复术 / 治愈术 / 转灵术 / 护盾术
-     （HEAL Lv×5、DISPEL、MP_RESTORE、TEMP_DP ceil(Lv×1.5)）；TOUHOU 房间启用魔法且无模组法术时，
+   - ✅ **内置可结算法术子集**：`touhou-ext.magic.spells` 登记 加持 / 恢复术 / 治愈术 / 转灵术 / 护盾术 / 破魔结界
+     （HEAL Lv×5、DISPEL、MP_RESTORE、TEMP_DP ceil(Lv×1.5)、解除状态与结界）；TOUHOU 房间启用魔法且无模组法术时，
      `applyMagicRulesToRoom` 回退使用内置法术。
    - ✅ **追加 DP（护盾术）**：`MagicEffect TEMP_DP`；追加 DP 只用于回避 / 防御 / 弹幕减免，
      消费时优先扣追加 DP，支持到期轮次；战斗视图展示追加 DP。
