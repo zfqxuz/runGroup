@@ -3298,10 +3298,22 @@ function resolveAbility(
   const isDp = state.mode === "DP";
   let dpDice = 0;
   if (isDp && usePercentile === false) {
+    // 千幻抄 6.11：原则上每回合只能发动一次能力。
+    if (actor.abilityUsedThisRound === true) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: actor.id,
+        targetId: null,
+        text: actor.name + " 本回合已经发动过能力，无法再次发动「" + spell.name + "」",
+        data: { rollType: "ABILITY_ALREADY_USED", abilityId }
+      });
+      return;
+    }
     const dpRules = ctx.pack.pack.dp;
     const perDie = Math.max(0, Math.floor(dpRules.actionCosts.abilityPerDie));
     dpDice = clampTouhouDpDice(submission.dpDice ?? dpRules.maxDicePerCheck, dpRules.maxDicePerCheck);
     if (spendDp(ctx, actor, perDie * dpDice, "能力发动 " + dpDice + "D") === false) return;
+    actor.abilityUsedThisRound = true;
   }
 
   const attributeKey = activation?.attribute ?? category.activationAttribute;
@@ -3793,14 +3805,21 @@ function resolveDpDefense(
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
   const success = roll.achievement >= attackAchievement;
+  let grazeGain = 0;
+  if (success && ctx.pack.system === "TOUHOU") {
+    // 千幻抄 6.26：成功回避射击 / 追击 / 近战可获得擦弹点数（防御不能）。
+    grazeGain = Math.max(1, dice);
+    defender.grazePoints = Math.max(0, Math.floor(defender.grazePoints ?? 0)) + grazeGain;
+  }
   pushLog(ctx.state, {
     kind: "CHECK",
     actorId: defender.id,
     targetId: null,
     text:
       defender.name + " 回避（DP）：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
-      " / 攻击达成 " + attackAchievement + " → " + (success ? "回避成功" : "回避失败"),
-    data: { rollType: "DP_DODGE", dice, roll: roll.roll, base: roll.base, achievement: roll.achievement, attackAchievement, success }
+      " / 攻击达成 " + attackAchievement + " → " + (success ? "回避成功" : "回避失败") +
+      (grazeGain > 0 ? "，擦弹 +" + grazeGain : ""),
+    data: { rollType: "DP_DODGE", dice, roll: roll.roll, base: roll.base, achievement: roll.achievement, attackAchievement, success, grazeGain }
   });
   return { success, reduction: 0 };
 }
@@ -3878,20 +3897,23 @@ function resolveDpRangedAttack(
   const skillId = submission.skill ?? "DANMAKU";
   const attributeKey = submission.dpAttribute ?? "dex";
   const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged:" + actor.id + ":" + defender.id);
+  const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
+  const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0);
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
     targetId: defender.id,
     text:
-      actor.name + " 射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attack.achievement,
-    data: { rollType: "DP_RANGED_ATTACK", dice, roll: attack.roll, base: attack.base, achievement: attack.achievement, skill: skillId, attribute: attributeKey }
+      actor.name + " 射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attackAchievement +
+      (enhance === null ? "" : "（符卡强化）"),
+    data: { rollType: "DP_RANGED_ATTACK", dice, roll: attack.roll, base: attack.base, achievement: attackAchievement, skill: skillId, attribute: attributeKey, enhanceAccuracy: enhance?.accuracyMod ?? 0 }
   });
-  const cover = resolveDpCover(ctx, actor, defender, attack.achievement, "dp-ranged-cover:" + actor.id + ":" + defender.id);
+  const cover = resolveDpCover(ctx, actor, defender, attackAchievement, "dp-ranged-cover:" + actor.id + ":" + defender.id);
   let damageTarget = defender;
   let reduction = 0;
   if (cover === null) {
     const reaction = reactionFor(ctx, defender.id);
-    const defense = resolveDpDefense(ctx, defender, reaction, attack.achievement);
+    const defense = resolveDpDefense(ctx, defender, reaction, attackAchievement);
     if (defense.success) {
       pushLog(state, {
         kind: "ACTION",
@@ -3916,7 +3938,8 @@ function resolveDpRangedAttack(
   } catch {
     rolled = 0;
   }
-  const total = Math.max(0, rolled - reduction);
+  const enhancedRoll = Math.round((rolled + (enhance?.flatDamage ?? 0)) * (enhance?.damageMultiplier ?? 1));
+  const total = Math.max(0, enhancedRoll - reduction);
   const armorResult = absorbWithArmor(damageTarget, total);
   const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining);
   pushLog(state, {
@@ -3925,10 +3948,11 @@ function resolveDpRangedAttack(
     targetId: damageTarget.id,
     text:
       "射击伤害：" + damageTarget.name + " 受到 " + total + "（" + damageExpression + " = " + rolled +
+      ((enhance?.flatDamage ?? 0) > 0 ? "，符卡强化 +" + enhance?.flatDamage : "") +
       (reduction > 0 ? "，防御减伤 " + reduction : "") +
       (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
       "）→ HP 结算 " + Math.max(0, total - armorResult.absorbed),
-    data: { rollType: "DP_RANGED_DAMAGE", expression: damageExpression, roll: rolled, reduction, damage: total, armorAbsorbed: armorResult.absorbed, covered: cover !== null && damageTarget.id !== defender.id, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    data: { rollType: "DP_RANGED_DAMAGE", expression: damageExpression, roll: rolled, enhanceFlat: enhance?.flatDamage ?? 0, reduction, damage: total, armorAbsorbed: armorResult.absorbed, covered: cover !== null && damageTarget.id !== defender.id, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
   });
 }
 
@@ -4008,9 +4032,14 @@ function resolveDpChase(
   const maxEscalation = Math.floor(skillLevel / 4);
   const extraDp = Math.min(escalation, maxEscalation) * 2;
   if (extraDp > 0 && spendDp(ctx, actor, extraDp, "追击强化 +" + Math.min(escalation, maxEscalation) * 10) === false) return;
-  const achievement = base + Math.min(escalation, maxEscalation) * 10;
+  const chaseEnhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
+  const achievement =
+    base + Math.min(escalation, maxEscalation) * 10 + (chaseEnhance?.accuracyMod ?? 0);
   const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE");
-  const damage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
+  const rolledChaseDamage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
+  const damage = Math.round(
+    (rolledChaseDamage + (chaseEnhance?.flatDamage ?? 0)) * (chaseEnhance?.damageMultiplier ?? 1)
+  );
   const hits: { target: CombatParticipantState; label: string }[] = [];
   for (const target of targets) {
     const cover = resolveDpCover(ctx, actor, target, achievement, "dp-chase-cover:" + actor.id + ":" + target.id);
@@ -4054,7 +4083,9 @@ function resolveDpMelee(
   const hitCost = Math.max(0, Math.floor(costs.meleeHitPerDie)) * hitDice;
   if (spendDp(ctx, actor, approachCost + hitCost, "接近 " + approachDice + "D + 命中 " + hitDice + "D") === false) return;
 
+  const meleeEnhance = spellcardEnhanceForAttack(ctx.pack, actor, submission.skill ?? "MELEE");
   const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);
+  const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0);
   const defenderAvoid = dpSkillLevel(ctx.pack, defender, "DODGE");
   const defenderDanmaku = dpSkillLevel(ctx.pack, defender, "DANMAKU");
   const approachTarget = dpAttribute(ctx.pack, defender, "str") + Math.max(defenderAvoid, defenderDanmaku + 15);
@@ -4063,11 +4094,12 @@ function resolveDpMelee(
     actorId: actor.id,
     targetId: defender.id,
     text:
-      actor.name + " 接近判定：" + approachDice + "d6=" + approach.roll + " + " + approach.base + " = " + approach.achievement +
-      " / 目标 " + approachTarget + " → " + (approach.achievement >= approachTarget ? "接近成功" : "接近失败"),
-    data: { rollType: "DP_MELEE_APPROACH", dice: approachDice, roll: approach.roll, base: approach.base, achievement: approach.achievement, target: approachTarget, success: approach.achievement >= approachTarget }
+      actor.name + " 接近判定：" + approachDice + "d6=" + approach.roll + " + " + approach.base + " = " + approachAchievement +
+      (meleeEnhance === null ? "" : "（符卡强化）") +
+      " / 目标 " + approachTarget + " → " + (approachAchievement >= approachTarget ? "接近成功" : "接近失败"),
+    data: { rollType: "DP_MELEE_APPROACH", dice: approachDice, roll: approach.roll, base: approach.base, achievement: approachAchievement, target: approachTarget, enhanceAccuracy: meleeEnhance?.accuracyMod ?? 0, success: approachAchievement >= approachTarget }
   });
-  if (approach.achievement < approachTarget) return;
+  if (approachAchievement < approachTarget) return;
 
   const hit = dpRoll(ctx.pack, state, actor, "str", submission.skill ?? "MELEE", hitDice, "dp-melee-hit:" + actor.id + ":" + defender.id);
   pushLog(state, {
@@ -4092,7 +4124,8 @@ function resolveDpMelee(
     damageTarget = cover.target;
   }
   const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE");
-  const damage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
+  const rolledMeleeDamage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
+  const damage = Math.round(rolledMeleeDamage * (meleeEnhance?.damageMultiplier ?? 1));
   const hitLabel = cover !== null && damageTarget.id !== defender.id
     ? "近战命中（" + damageTarget.name + " 掩护 " + defender.name + "）"
     : "近战命中";
@@ -4112,7 +4145,14 @@ function resolveDpDanmaku(
   const cost = Math.max(0, Math.floor(ctx.pack.pack.dp.actionCosts.danmaku));
   if (spendDp(ctx, actor, cost, "弹幕") === false) return;
   const reduction = Math.max(0, Math.floor(submission.danmakuDpReduction ?? 1));
-  const baseDamage = Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1));
+  const danmakuEnhance = spellcardEnhanceForAttack(ctx.pack, actor, "DANMAKU");
+  const baseDamage = Math.max(
+    0,
+    Math.round(
+      (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1)) + (danmakuEnhance?.flatDamage ?? 0)) *
+        (danmakuEnhance?.damageMultiplier ?? 1)
+    )
+  );
   const targets = state.participants.filter(
     (participant) => participant.defeated === false && participant.faction !== actor.faction
   );
@@ -4124,12 +4164,15 @@ function resolveDpDanmaku(
     const reaction = reactionFor(ctx, target.id);
     if (reaction.type === "DODGE" && target.dp >= reduction) {
       target.dp -= reduction;
+      if (ctx.pack.system === "TOUHOU") {
+        target.grazePoints = Math.max(0, Math.floor(target.grazePoints ?? 0)) + 1;
+      }
       pushLog(state, {
         kind: "STATUS",
         actorId: actor.id,
         targetId: target.id,
-        text: target.name + " 回避弹幕，DP -" + reduction + "（剩余 " + target.dp + "）",
-        data: { rollType: "DP_DANMAKU_DODGE", reduction, dp: target.dp }
+        text: target.name + " 回避弹幕，DP -" + reduction + "（剩余 " + target.dp + "），擦弹 +1",
+        data: { rollType: "DP_DANMAKU_DODGE", reduction, dp: target.dp, grazePoints: target.grazePoints ?? 0 }
       });
       continue;
     }
@@ -4172,6 +4215,22 @@ export function resolveDpActionForActor(
     coverCache: new Map()
   };
   const acted: string[] = [];
+  // 千幻抄 6.21：待机（不进行攻击行动）下一回合 DP 回复 +2。
+  if (
+    submission.kind === "PASS" &&
+    submission.grazeSpend === undefined &&
+    state.dp !== null &&
+    state.dp !== undefined
+  ) {
+    state.dp.regenBonus[actor.id] = (state.dp.regenBonus[actor.id] ?? 0) + 2;
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 待机，下回合 DP 回复 +2",
+      data: { rollType: "DP_WAIT", regenBonus: state.dp.regenBonus[actor.id] ?? 0 }
+    });
+  }
   if (submission.kind === "DANMAKU" && submission.dpAction === "DANMAKU") {
     resolveDpDanmaku(ctx, actor, submission);
   } else if (submission.kind === "DANMAKU" && submission.dpAction === "RANGED") {
@@ -4494,6 +4553,7 @@ export function resolvePending(
   for (const participant of state.participants) {
     participant.reactionsThisRound = 0;
     participant.coverUsedThisRound = false;
+    participant.abilityUsedThisRound = false;
   }
   resolveRoundEndDotDamage(pack, state);
   expireRoundTimers(state);
@@ -4559,6 +4619,7 @@ export function beginInitiativeRound(pack: CompiledRulePack, state: CombatState)
   for (const participant of state.participants) {
     participant.reactionsThisRound = 0;
     participant.coverUsedThisRound = false;
+    participant.abilityUsedThisRound = false;
   }
   state.initiativeOrder = buildInitiativeOrder(pack, state);
   state.activeIndex = 0;

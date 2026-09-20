@@ -304,3 +304,68 @@ describe("DP 千幻抄伤害公式", () => {
     expect(damage?.data?.expression).toBe("7");
   });
 });
+
+describe("DP 能力每回合一次 / 符卡强化", () => {
+  it("同一回合第二次发动能力被拦截，不消耗 DP / 灵力", () => {
+    const setup = makeSetup("dp-ability-once", { abilityLevels: { SPIRIT_ARTS: 3 } });
+    const { state, actor, e1 } = setup;
+    startRound(setup);
+    actor.abilityUsedThisRound = true;
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "MAGIC",
+      targetId: "e1",
+      spellId: "DP_BOLT",
+      name: "DP_BOLT",
+      dpDice: 3
+    };
+    resolveDpTurn(pack, state, { e1: { type: "PASS" } });
+    expect(actor.dp).toBe(30);
+    expect(actor.mp).toBe(actor.maxMp);
+    expect(e1.hp).toBe(e1.maxHp);
+    expect(state.log.some((entry) => entry.data?.rollType === "ABILITY_ALREADY_USED")).toBe(true);
+  });
+
+  it("回合开始重置 abilityUsedThisRound", () => {
+    const setup = makeSetup("dp-ability-reset", { abilityLevels: { SPIRIT_ARTS: 3 } });
+    const { actor } = setup;
+    actor.abilityUsedThisRound = true;
+    beginDpRound(pack, setup.state);
+    expect(actor.abilityUsedThisRound).toBe(false);
+  });
+
+  it("展开型符卡强化弹幕射击伤害 flat +3", () => {
+    const setup = makeSetup(
+      "dp-enhance-ranged",
+      {},
+      { skills: { DANMAKU: 0, DODGE: 0, RESIST: 0 } }
+    );
+    const { state, actor } = setup;
+    startRound(setup);
+    actor.declaration = {
+      name: "测试符卡",
+      hp: 10,
+      maxHp: 10,
+      expiresAtTick: 9999,
+      clearTargets: "ALL",
+      cardId: null,
+      damageMultiplier: 1,
+      enhanceType: "DANMAKU",
+      enhanceValue: 1
+    };
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 1,
+      damage: "1"
+    };
+    resolveDpTurn(pack, state, { e1: { type: "PASS" } });
+    const damage = state.log.find((entry) => entry.data?.rollType === "DP_RANGED_DAMAGE");
+    expect(damage?.data?.enhanceFlat).toBe(3);
+    // 1 + 3 = 4 点伤害
+    expect(damage?.data?.damage).toBe(4);
+  });
+});

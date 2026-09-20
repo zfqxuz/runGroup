@@ -147,6 +147,8 @@ export interface CombatParticipantState {
   reactionsThisRound?: number;
   /** DP 掩护：本轮是否已经掩护过他人（前卫一回合一次）。 */
   coverUsedThisRound?: boolean;
+  /** DP 能力：本轮是否已经发动过能力（千幻抄原则上每回合一次）。 */
+  abilityUsedThisRound?: boolean;
   /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
   initiativeMod?: number;
 }

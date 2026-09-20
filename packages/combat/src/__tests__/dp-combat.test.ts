@@ -291,3 +291,36 @@ describe("DP 近战", () => {
     expect(state.log.some((entry) => entry.data?.rollType === "DP_MELEE_HIT")).toBe(false);
   });
 });
+
+describe("DP 擦弹 / 待机", () => {
+  it("DP 回避成功获得擦弹点（防御不获得）", () => {
+    const setup = makeDpCombat("dp-graze", { DANMAKU: 0, DODGE: 0 }, { DODGE: 100 });
+    const { state, e1 } = setup;
+    startRound(setup);
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 1,
+      damage: "10"
+    };
+    resolveDpTurn(touhou, state, { e1: { type: "DODGE", dpDice: 3 } });
+    expect(e1.grazePoints).toBe(3);
+    const dodge = state.log.find((entry) => entry.data?.rollType === "DP_DODGE");
+    expect(dodge?.data?.grazeGain).toBe(3);
+  });
+
+  it("待机使下一回合 DP 回复 +2", () => {
+    const setup = makeDpCombat("dp-wait");
+    const { state, actor } = setup;
+    startRound(setup);
+    state.pending["actor"] = { actorId: "actor", kind: "PASS" };
+    resolveDpTurn(touhou, state, {});
+    expect(state.dp?.regenBonus["actor"]).toBe(2);
+    const wait = state.log.find((entry) => entry.data?.rollType === "DP_WAIT");
+    expect(wait?.data?.regenBonus).toBe(2);
+    void actor;
+  });
+});

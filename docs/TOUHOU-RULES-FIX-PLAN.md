@@ -269,6 +269,11 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
    - ✅ 千幻抄伤害公式（规则层 `packages/rules/src/touhou-dp.ts`）：射击/能力 `能力 LvD+特性`、
      追击 `能力 Lv÷2 D+特性`、近战 `{身体}+锻炼 LvD+武器 Lv`；submission 提供
      `damageAbilityId` / `damageTrainingId` / `damageWeaponSkill` 时启用，否则回退卡面 damage。
+   - ✅ SC 强化接入 DP：弹幕 / 射击 / 追击用 `DANMAKU` flat 加值，近战用 `MELEE` accuracyMod（接近）
+     与 damageMultiplier；与 `spellcardEnhanceForAttack` 共用同一份规则包配置。
+   - ✅ 6.12 / 6.26 擦弹：DP 成功回避射击 / 追击 / 近战获得骰数点擦弹；回避弹幕 +1；防御不获得。
+   - ✅ 6.21 待机：DP 中 `PASS`（非擦弹消费）使下一回合 DP 回复 +2。
+   - ✅ 6.11 能力：DP 中原则上每回合只能发动一次能力（`abilityUsedThisRound`，回合开始重置）。
    - ✅ 掩护 / 身代：队友声明 `COVER` + `coverTargetId`，掷 `{感觉}+〈回避〉+ND6`（`coverPerDie`×骰数）
      对抗攻击达成值；成功由掩护者代替承受伤害，失败原目标无减伤承受；同一掩护者一轮一次
      （`coverUsedThisRound`，`beginDpRound` 重置）。作用于射击 / 追击 / 近战；能力伤害走抵抗流程。
