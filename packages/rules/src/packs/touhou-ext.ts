@@ -43,6 +43,7 @@ export const TOUHOU_EXT: RulePackOverlay = {
       "BASE_DICE",
       "SPELLCARD_MULT",
       "ENHANCE_MOD",
+      "RACE_MOD",
       "DEFEND_REDUCE",
       "COUNTER_RESOLVE",
       "GRAZE_RESOLVE",
@@ -59,88 +60,206 @@ export const TOUHOU_EXT: RulePackOverlay = {
 
 TOUHOU_EXT.races = {
   HUMAN: {
+    tier: "D",
     name: "人类",
     description: "最普通也最自由的种族。幸运 +15，兴趣技能点为智力×2.5，初始财产（信用）更高，但通常不可修习【妖术】。",
     attrMods: { luck: "15" },
     interestPoints: "int * 2.5",
-    flags: ["NO_YOUJUTSU", "CREDIT_20"]
+    flags: ["NO_YOUJUTSU", "CREDIT_20"],
+    abilities: [
+      { id: "NO_YOUJUTSU", name: "不可修习妖术", description: "人类原则上不能习得【妖术】；KP 可用规则许可作为例外。", automated: false }
+    ]
   },
   FAIRY: {
+    tier: "D",
     name: "妖精",
     description: "自然现象的正体，力量与智力偏弱，却极为敏捷。元素法天赋极高，肉体死亡后一个月会自然再生。",
     attrMods: { str: "-5", int: "-5", dex: "15" },
     skillBonuses: { ELEMENTAL_MAGIC: "35" },
-    flags: ["RESPAWN_MONTHLY", "NO_FOOD_REQUIRED"]
+    flags: ["RESPAWN_MONTHLY", "NO_FOOD_REQUIRED"],
+    abilities: [
+      { id: "ELEMENT_AFFINITY", name: "属性亲和", description: "元素魔法天赋极高（由技能加值体现）。", automated: false },
+      { id: "RESPAWN", name: "自然再生", description: "肉体死亡后约一个月会在自然现象中再度成形；战斗内不结算，由 KP 按剧本处理。", automated: false, tags: ["MONTHLY"] }
+    ]
   },
   MAGICIAN: {
+    tier: "C",
     name: "魔法使",
     description: "以魔法为原动力的妖怪。力量与体质偏弱，智力与意志极高，精于【魔法】与【符文】。",
     attrMods: { str: "-5", con: "-5", int: "15", pow: "15" },
     skillBonuses: { MAGIC: "25", RUNE: "20" },
-    flags: ["NO_FOOD_REQUIRED", "CAN_USE_MAGIC"]
+    flags: ["NO_FOOD_REQUIRED", "CAN_USE_MAGIC"],
+    abilities: [
+      { id: "MAGIC_BONUS", name: "魔法/神术天赋", description: "修习【魔法】或神术·阴阳术时获得种族加值（由技能加值体现）。", automated: false, tags: ["MAGIC", "SPIRIT_ARTS"] },
+      { id: "NO_FOOD", name: "无需进食", description: "以魔法为原动力，不需要普通饮食。", automated: false }
+    ]
   },
   BEAST: {
+    tier: "C",
     name: "妖兽",
     description: "动物化成的妖怪，身体能力较强，擅长【妖术】与野兽相关的行动。",
     attrMods: { str: "10", dex: "10", pow: "-5" },
     skillBonuses: { YOUJUTSU: "25" },
-    flags: ["CAN_YOUJUTSU", "BEAST_TRAIT"]
+    flags: ["CAN_YOUJUTSU", "BEAST_TRAIT"],
+    abilities: [
+      { id: "ANIMAL_TALK", name: "动物会话", description: "可以与同类或动物沟通；具体范围由 KP 裁定。", automated: false },
+      { id: "TRANSFORM", name: "变身", description: "可化为人形或兽形；叙事与检定由 KP 处理。", automated: false },
+      { id: "NO_FOOD", name: "妖怪体质", description: "可以靠妖力维持，不依赖普通饮食。", automated: false }
+    ]
   },
   KAPPA: {
+    tier: "C",
     name: "河童",
     description: "住在水里的妖怪，掌握外界科技，擅长水系元素法。",
     attrMods: { con: "-5", int: "15", pow: "10" },
     skillBonuses: { ELEMENTAL_MAGIC: "30" },
-    flags: ["KAPPA_WATER", "HIGH_TECH"]
+    flags: ["KAPPA_WATER", "HIGH_TECH"],
+    abilities: [
+      { id: "WATER", name: "水栖", description: "水下活动自如；水中行动判定由 KP 裁定。", automated: false },
+      { id: "HIGH_TECH", name: "文明利器", description: "能够使用与维修外界科技道具。", automated: false }
+    ]
   },
   TSUKUMOGAMI: {
+    tier: "C",
     name: "付丧神",
     description: "物品变化的妖怪。元素法天赋优秀，并具有与本体相关的特长。",
     skillBonuses: { ELEMENTAL_MAGIC: "25" },
-    flags: ["OBJECT_BOUND", "NO_FOOD_REQUIRED"]
+    flags: ["OBJECT_BOUND", "NO_FOOD_REQUIRED"],
+    abilities: [
+      { id: "OBJECT_BOND", name: "本体绑定", description: "能力与本体物品相关；本体技能由 KP 与玩家共同确认。", automated: false },
+      { id: "TRANSFORM", name: "变身", description: "可变为本体或人形；叙事与检定由 KP 处理。", automated: false },
+      { id: "NO_FOOD", name: "无需进食", description: "付丧神不依赖普通饮食。", automated: false }
+    ]
   },
   GHOST: {
+    tier: "B",
     name: "亡灵",
     description: "死者的亡灵，可以幽体化。体质偏低，意志极高，擅长【妖术】。",
     attrMods: { con: "-5", pow: "20" },
     skillBonuses: { YOUJUTSU: "25" },
-    flags: ["CAN_PHASE", "NO_FOOD_REQUIRED", "UNDEAD"]
+    flags: ["CAN_PHASE", "NO_FOOD_REQUIRED", "UNDEAD"],
+    abilities: [
+      { id: "PHASE", name: "幽体化", description: "可以穿透物理障碍；无法穿越的结界由 KP 裁定。", automated: false },
+      { id: "MP_TO_HP", name: "灵力回 HP", description: "可消耗灵力回复 HP；由 KP 用数值面板或自由掷骰结算。", automated: false },
+      { id: "NO_FOOD", name: "无需进食", description: "亡灵不依赖普通饮食。", automated: false }
+    ]
   },
   YOUKAI: {
+    tier: "B",
     name: "妖怪",
-    description: "身体能力与妖力强悍的种族。擅长【妖术】，但面对精神攻击与神术/阴阳术时较为脆弱。",
+    description: "身体能力与妖力强悍的种族。擅长【妖术】，但面对魔法与神术/阴阳术时较为脆弱。",
     attrMods: { str: "10", con: "10", pow: "10" },
     skillBonuses: { YOUJUTSU: "40" },
-    flags: ["CAN_YOUJUTSU", "WEAK_TO_SPIRIT"]
+    flags: ["CAN_YOUJUTSU", "WEAK_TO_SPIRIT", "WEAK_TO_MAGIC"],
+    abilities: [
+      { id: "FREE_YOUJUTSU", name: "免费妖术", description: "妖怪默认获得一定等级的【妖术】（由技能加值体现）。", automated: false, tags: ["YOUJUTSU"] },
+      {
+        id: "SPIRIT_WEAKNESS",
+        name: "神术弱点",
+        description: "受到神术·阴阳术攻击时伤害提高。",
+        automated: true,
+        tags: ["SPIRIT_ARTS", "RITUAL"],
+        params: { multiplier: "1.5" }
+      },
+      {
+        id: "MAGIC_WEAKNESS",
+        name: "魔法弱点",
+        description: "受到魔法 / 元素魔法攻击时伤害提高。",
+        automated: true,
+        tags: ["MAGIC", "ELEMENTAL_MAGIC"],
+        params: { multiplier: "1.5" }
+      }
+    ]
   },
   TENGU: {
+    tier: "B",
     name: "天狗",
     description: "妖怪山上势力最大的种族之一，高速飞行与风系元素法的大师。",
     attrMods: { str: "5", con: "5", dex: "20" },
     skillBonuses: { ELEMENTAL_MAGIC: "25" },
-    flags: ["CAN_FLY", "TENGU_TRAIT"]
+    flags: ["CAN_FLY", "TENGU_TRAIT"],
+    abilities: [
+      { id: "BEAST_TRAIT", name: "妖兽特性", description: "拥有妖兽的部分特性（动物会话、变身等）。", automated: false },
+      { id: "SOCIAL_BOND", name: "社会约束", description: "受天狗社会与戒律约束；由 KP 在叙事中处理。", automated: false },
+      { id: "FLIGHT", name: "飞行", description: "可高速飞行；飞行检定使用 FLIGHT 技能。", automated: false, tags: ["FLIGHT"] }
+    ]
   },
   VAMPIRE: {
+    tier: "A",
     name: "吸血鬼",
     description: "能力很强但弱点也多的妖怪。力量、体质与意志优秀，擅长【妖术·吸血】。",
     attrMods: { str: "15", con: "10", pow: "10" },
     skillBonuses: { YOUJUTSU: "30" },
-    flags: ["VAMPIRE_WEAKNESS", "CAN_YOUJUTSU"]
+    flags: ["VAMPIRE_WEAKNESS", "CAN_YOUJUTSU"],
+    abilities: [
+      { id: "BLOOD_DRAIN", name: "吸血", description: "可吸收目标鲜血回复自身；由能力效果或 KP 裁定结算。", automated: false },
+      { id: "CHARM", name: "魅惑", description: "对特定目标使用魅惑；检定与抵抗由 KP 裁定。", automated: false },
+      {
+        id: "SUNLIGHT_WEAKNESS",
+        name: "阳光弱点",
+        description: "暴露在阳光下（施加 SUNLIGHT 状态）时受到的伤害提高。",
+        automated: true,
+        tags: ["SUNLIGHT"],
+        params: { multiplier: "1.5" }
+      },
+      { id: "BLOODTHIRST", name: "鲜血需求", description: "需要定期吸血；由 KP 按剧本处理。", automated: false }
+    ]
+  },
+  ABERRATION: {
+    tier: "B",
+    name: "怪异",
+    description: "无法归入既有分类的异常存在。可使用属性使能力，并具有持续再生能力。",
+    flags: ["CAN_ELEMENTALIST", "REGENERATE"],
+    abilities: [
+      { id: "ELEMENTALIST", name: "属性使", description: "可习得【属性使】能力体系；由能力系统承接。", automated: false, tags: ["ELEMENTALIST"] },
+      {
+        id: "REGEN",
+        name: "再生",
+        description: "每轮结束时自动回复少量 HP。",
+        automated: true,
+        params: { amount: "2" }
+      }
+    ]
+  },
+  DEMON: {
+    tier: "A",
+    name: "恶魔",
+    description: "来自异界的高位存在，擅长订立契约与黑暗视觉，但受契约内容约束。",
+    attrMods: { pow: "10", app: "5" },
+    flags: ["DEMON_CONTRACT", "DARKVISION"],
+    abilities: [
+      { id: "CONTRACT", name: "契约", description: "可与他者订立契约并获取相应代价 / 回报；条款由 KP 与玩家协商。", automated: false },
+      { id: "DARKVISION", name: "黑暗视觉", description: "黑暗中可正常视物；由 KP 在探索场景中直接允许。", automated: false }
+    ]
   },
   HOURAI: {
     name: "蓬莱人",
     description: "不老不死，无法被彻底杀死，但运气较差。",
     attrMods: { con: "10", luck: "-10" },
-    flags: ["IMMORTAL"]
+    flags: ["IMMORTAL"],
+    abilities: [
+      {
+        id: "IMMORTAL",
+        name: "不老不死",
+        description: "HP 归零时不会真正死亡，而是以 1 HP 保留不死之身。",
+        automated: true,
+        params: { reviveHp: "1" }
+      }
+    ]
   },
   HANYOU: {
     name: "半妖",
     description: "兼具人与妖的特质，两头都不完全属于。",
     attrMods: { dex: "5", pow: "5", edu: "-5" },
-    flags: ["CAN_YOUJUTSU"]
+    flags: ["CAN_YOUJUTSU"],
+    abilities: [
+      { id: "HALF_YOUKAI", name: "半妖体质", description: "可修习妖术，但受人类与妖怪双方的排斥；由 KP 在叙事中处理。", automated: false }
+    ]
   }
 };
 TOUHOU_EXT.statusEffects = {
+  // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。
+  SUNLIGHT: { stack: "REFRESH", durationTicks: "240" },
   HASTE: { stack: "REFRESH", durationTicks: "240", speedMultiplier: "1.5" },
   SLOW: { stack: "REFRESH", durationTicks: "240", speedMultiplier: "0.5" },
   STOP: { stack: "REPLACE", durationTicks: "40", speedMultiplier: "0" },

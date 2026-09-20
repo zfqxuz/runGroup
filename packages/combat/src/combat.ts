@@ -31,6 +31,7 @@ import {
   type ActiveStatusEffect,
   type AttributeSet,
   type CheckOutcome,
+  type CompiledRaceAbility,
   type CompiledRulePack,
   type DefenseType,
   type DerivedStats,
@@ -113,6 +114,10 @@ export interface ParticipantInit {
   readonly faction: string;
   readonly attributes: AttributeSet;
   readonly derived: DerivedStats;
+  /** 规则包中的种族 key；COC7 / 无种族单位省略。 */
+  readonly race?: string | null;
+  /** 种族扁平 flags；通常由 computeDerived 提供。 */
+  readonly raceFlags?: readonly string[];
   readonly skills?: Record<string, number>;
   /** 该单位允许施放的法术 id。 */
   readonly spells?: readonly string[];
@@ -234,6 +239,8 @@ export function addParticipant(
     conditions: loadedConditions,
     attributes: init.attributes,
     derived: init.derived,
+    race: init.race ?? null,
+    raceFlags: [...(init.raceFlags ?? [])],
     skills: init.skills ?? {},
     spells: [...(init.spells ?? [])],
     damageBonus: init.damageBonus ?? "0",
@@ -749,6 +756,142 @@ function spendCombatMagicPoints(
   return true;
 }
 
+/** 读取参战单位种族上的某条能力定义；没有种族 / 找不到时返回 null。 */
+function raceAbilityOf(
+  pack: CompiledRulePack,
+  participant: CombatParticipantState,
+  abilityId: string
+): CompiledRaceAbility | null {
+  const raceKey = participant.race;
+  if (raceKey === null || raceKey === undefined) return null;
+  const race = pack.races[raceKey];
+  if (race === undefined) return null;
+  return race.abilities.find((ability) => ability.id === abilityId) ?? null;
+}
+
+/** 求值种族能力的数值参数，失败时回退到 fallback。 */
+function raceAbilityNumber(
+  pack: CompiledRulePack,
+  participant: CombatParticipantState,
+  ability: CompiledRaceAbility,
+  key: string,
+  fallback: number
+): number {
+  const expression = ability.params[key];
+  if (expression === undefined) return fallback;
+  try {
+    const value = evaluate(expression, { vars: participant.vars, consts: pack.pack.const });
+    return Number.isFinite(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+/**
+ * 计算种族弱点带来的伤害乘数。
+ *
+ * - 技能弱点：能力 tags 命中本次攻击技能（如妖怪对 MAGIC / SPIRIT_ARTS）。
+ * - 状态弱点：目标带有 tags 指定的状态 key（如吸血鬼的 SUNLIGHT）。
+ *
+ * COC7 单位 race 为 null，永远返回 1。
+ */
+function raceIncomingMultiplier(
+  pack: CompiledRulePack,
+  target: CombatParticipantState,
+  skillName: string | undefined
+): number {
+  if (pack.system !== "TOUHOU") return 1;
+  const raceKey = target.race;
+  if (raceKey === null || raceKey === undefined) return 1;
+  const race = pack.races[raceKey];
+  if (race === undefined) return 1;
+  let multiplier = 1;
+  for (const ability of race.abilities) {
+    if (ability.automated === false) continue;
+    if (
+      ability.id !== "SPIRIT_WEAKNESS" &&
+      ability.id !== "MAGIC_WEAKNESS" &&
+      ability.id !== "SUNLIGHT_WEAKNESS"
+    ) {
+      continue;
+    }
+    const skillMatch = skillName !== undefined && ability.tags.includes(skillName);
+    const statusMatch = ability.tags.some((tag) =>
+      target.statusEffects.some(
+        (effect) => effect.key === tag || effect.key.startsWith(tag + ":")
+      )
+    );
+    if (skillMatch === false && statusMatch === false) continue;
+    multiplier *= raceAbilityNumber(pack, target, ability, "multiplier", 1.5);
+  }
+  return multiplier;
+}
+
+/** 存活单位每轮开始时的种族再生量；无能力时为 0。 */
+function raceRegenAmount(pack: CompiledRulePack, participant: CombatParticipantState): number {
+  if (pack.system !== "TOUHOU") return 0;
+  const ability = raceAbilityOf(pack, participant, "REGEN");
+  if (ability === null) return 0;
+  return Math.max(0, Math.floor(raceAbilityNumber(pack, participant, ability, "amount", 0)));
+}
+
+/**
+ * 不死种族（蓬莱人）的 HP 归零保护。
+ * 触发时把 HP 保留在 reviveHp，不会进入死亡 / 濒死流程，返回 true。
+ */
+function applyRaceImmortalSurvival(
+  ctx: ResolveContext,
+  target: CombatParticipantState
+): boolean {
+  if (ctx.pack.system !== "TOUHOU") return false;
+  const ability = raceAbilityOf(ctx.pack, target, "IMMORTAL");
+  if (ability === null) return false;
+  const reviveHp = Math.max(1, Math.floor(raceAbilityNumber(ctx.pack, target, ability, "reviveHp", 1)));
+  target.hp = Math.min(target.maxHp, reviveHp);
+  target.dead = false;
+  target.dying = false;
+  target.unconscious = false;
+  target.prone = false;
+  target.defeated = false;
+  target.isReady = false;
+  pushLog(ctx.state, {
+    kind: "STATUS",
+    actorId: target.id,
+    targetId: target.id,
+    text: target.name + " 的不死性发动：HP 归零后以 " + target.hp + " HP 保留（不老不死）",
+    data: { rollType: "RACE_IMMORTAL", hp: target.hp, reviveHp }
+  });
+  return true;
+}
+
+/** 每轮开始时结算种族再生；只有 TOUHOU 种族会命中。 */
+export function resolveRoundRaceAbilities(pack: CompiledRulePack, state: CombatState): void {
+  if (pack.system !== "TOUHOU") return;
+  for (const participant of [...state.participants]) {
+    if (participant.defeated) continue;
+    if (participant.hp <= 0 || participant.hp >= participant.maxHp) continue;
+    const amount = raceRegenAmount(pack, participant);
+    if (amount <= 0) continue;
+    const before = participant.hp;
+    participant.hp = Math.min(participant.maxHp, before + amount);
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text:
+        participant.name +
+        " 的「再生」回复 " +
+        (participant.hp - before) +
+        " HP（HP " +
+        before +
+        " → " +
+        participant.hp +
+        "）",
+      data: { rollType: "RACE_REGEN", heal: participant.hp - before, hp: participant.hp }
+    });
+  }
+}
+
 function applyDamageToParticipant(
   ctx: ResolveContext,
   target: CombatParticipantState,
@@ -788,6 +931,11 @@ function applyDamageToParticipant(
   const hpBefore = target.hp;
   const toHp = Math.min(hpBefore, bodyDamage);
   target.hp = hpBefore - toHp;
+
+  // 不死种族（蓬莱人）在 HP 归零时保留不死之身，不进入重伤 / 濒死 / 死亡流程。
+  if (target.hp <= 0 && applyRaceImmortalSurvival(ctx, target)) {
+    return { toDeclaration, toHp };
+  }
 
   if (combatEventEnabled(ctx.pack, "MAJOR_WOUND")) {
     const threshold = combatEventParam(
@@ -1721,6 +1869,7 @@ function resolveAttack(
   }
 
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
+  const raceMultiplier = raceIncomingMultiplier(ctx.pack, defender, skillName);
 
   const outcome = applyDamagePipeline(ctx.pack, {
     baseDamage: damageTotal,
@@ -1728,6 +1877,7 @@ function resolveAttack(
     defenseSuccess,
     spellcardMultiplier: enhance?.damageMultiplier,
     enhanceFlat: (enhance?.flatDamage ?? 0) + grazeDamageBonus,
+    raceMultiplier,
     shieldMultiplier,
     vars: defender.vars
   });
@@ -2415,11 +2565,14 @@ function applyMagicEffect(
       data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: rolled, enhanceFlat: spellEnhance.flat }
     });
     const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
+    const spellSkill = ctx.pack.pack.magic?.spells.find((entry) => entry.id === spell.id)?.skill;
+    const raceMultiplier = raceIncomingMultiplier(ctx.pack, target, spellSkill);
     const outcome = applyDamagePipeline(ctx.pack, {
       baseDamage: base,
       defense: defense.type,
       defenseSuccess: defense.success,
       spellcardMultiplier: spellEnhance.multiplier,
+      raceMultiplier,
       shieldMultiplier,
       vars: target.vars
     });
@@ -3143,6 +3296,7 @@ export function resolvePending(
   }
 
   state.round += 1;
+  resolveRoundRaceAbilities(pack, state);
   for (const participant of state.participants) participant.reactionsThisRound = 0;
   resolveRoundEndDotDamage(pack, state);
   expireRoundTimers(state);
@@ -3243,6 +3397,7 @@ export function endTurn(
     state.initiativeOrder = buildInitiativeOrder(pack, state);
     state.activeIndex = 0;
     state.round += 1;
+    resolveRoundRaceAbilities(pack, state);
     resolveRoundEndDotDamage(pack, state);
     expireRoundTimers(state);
     resolveDyingChecks(pack, state);

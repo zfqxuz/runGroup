@@ -8,6 +8,8 @@ export interface DamageInput {
   readonly defenseSuccess?: boolean;
   readonly spellcardMultiplier?: number;
   readonly enhanceFlat?: number;
+  /** 种族 / 属性相克等来源的最终伤害乘数；由战斗层算好，管线只负责应用。 */
+  readonly raceMultiplier?: number;
   readonly shieldMultiplier?: number;
   readonly vars?: Readonly<Record<string, number>>;
 }
@@ -60,6 +62,14 @@ export function applyDamagePipeline(
         if (flat !== undefined) {
           damage += flat;
           steps.push(`enhance ${flat >= 0 ? "+" : ""}${flat} -> ${damage}`);
+        }
+        break;
+      }
+      case "RACE_MOD": {
+        const multiplier = input.raceMultiplier;
+        if (multiplier !== undefined && multiplier !== 1) {
+          damage *= multiplier;
+          steps.push(`race/元素 x${multiplier} -> ${damage}`);
         }
         break;
       }

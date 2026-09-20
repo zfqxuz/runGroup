@@ -14,6 +14,7 @@ export const PIPELINE_STEPS = [
   "BASE_DICE",
   "SPELLCARD_MULT",
   "ENHANCE_MOD",
+  "RACE_MOD",
   "DEFEND_REDUCE",
   "COUNTER_RESOLVE",
   "GRAZE_RESOLVE",
@@ -74,15 +75,43 @@ export const PresetCharacterSchema = z.object({
   tags: z.array(z.string()).default([])
 });
 
+/**
+ * 种族特殊能力。
+ *
+ * 千幻抄的种族能力既有「能自动结算的被动」也有「必须由 KP 裁定的叙事能力」。
+ * automated=true 的条目由战斗引擎按 id 结算；false 的条目只作为规则提示展示，
+ * 由 KP 用现有掷骰 / 面板 / 局内状态处理。
+ */
+export const RaceAbilitySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** 是否由规则 / 战斗引擎自动结算。 */
+  automated: z.boolean().default(false),
+  /**
+   * 自动结算的触发标签。
+   * - 技能弱点：填技能 id（如 SPIRIT_ARTS、MAGIC）；
+   * - 状态弱点：填状态 key（如 SUNLIGHT）。
+   */
+  tags: z.array(z.string()).default([]),
+  /** 自动化参数；数值公式可引用属性与规则包常量。 */
+  params: z.record(z.string(), ExprSchema).default({})
+});
+
 export const RaceSchema = z.object({
   /** 显示名，例如「妖精」。id 是 key，玩家看到的是这个。 */
   name: z.string(),
   description: z.string().optional(),
+  /** 千幻抄种族等级：A 最强 ~ D 最普通。非 wiki 种族（蓬莱人 / 半妖）留空。 */
+  tier: z.enum(["A", "B", "C", "D"]).optional(),
   attrMods: z.record(z.string(), ExprSchema).default({}),
   derivedOverrides: z.record(z.string(), ExprSchema).default({}),
   skillBonuses: z.record(z.string(), ExprSchema).default({}),
   /** 种族专属兴趣点公式；缺省时使用规则包全局 skillPoints.interest。 */
   interestPoints: ExprSchema.optional(),
+  /** 结构化种族能力。 */
+  abilities: z.array(RaceAbilitySchema).default([]),
+  /** 旧字段：仍被 UI/其他逻辑读取的扁平 flag 列表。 */
   flags: z.array(z.string()).default([])
 });
 
@@ -444,6 +473,7 @@ export const RulePackSchema = z.object({
 
 export type RulePack = z.output<typeof RulePackSchema>;
 export type RulePackInput = z.input<typeof RulePackSchema>;
+export type RaceAbility = z.output<typeof RaceAbilitySchema>;
 export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;
 export type DamageRules = z.output<typeof DamageRulesSchema>;

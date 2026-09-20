@@ -83,25 +83,53 @@
   - `apps/web/src/server/combat/runtime.ts`：旧快照补 `grazePoints = 0`。
 - 测试：更新“擦弹成功”测试，新增“兑换灵力”“强化下一次近战伤害”。
 
-## 2. P1 缺失（后续计划，本轮不铺开）
+## 2. P1 缺失（分批推进）
 
 > 这些属于千幻抄专属内容缺口，不是自动流程错误；补内容时同样遵守第 0 节隔离原则。
+> 本轮先落地「种族与特殊能力」；其余条目仍按顺序排期。
 
-1. **种族与特殊能力**（v2: 2.9、2.11）
-   - 补恶魔、怪异种族数据；补各种族 flags 的自动行为（再生、幽体化、阳光弱点、契约等）。
-   - 建议放在规则包数据层，能力效果走既有 status/effects 指令，不硬编码到通用引擎。
-2. **千幻抄能力体系**（v2: 2.14、2.17、2.18、7.x–11.x）
+### 2.1 已完成（第一批）：种族与特殊能力（v2: 2.9、2.11）
+
+**数据层**
+- `touhou-ext.ts` 补齐 wiki 种族：新增 `DEMON`（恶魔）与 `ABERRATION`（怪异），保留已实现的 `HOURAI` / `HANYOU`。
+- 新增 `RaceSchema.tier` 并登记 wiki 的 A-D 级别：A 吸血鬼 / 恶魔；B 亡灵 / 天狗 / 妖怪 / 怪异；
+  C 魔法使 / 河童 / 付丧神 / 妖兽；D 人类 / 妖精；蓬莱人 / 半妖留空。
+- 新增 `RaceSchema.abilities` 结构化能力表（`id` / `name` / `description` / `automated` / `tags` / `params`），
+  并给全部 14 个 TOUHOU 种族登记能力；旧 `flags` 保留以兼容 UI 与旧数据。
+- 新增 `SUNLIGHT` 状态，供吸血鬼阳光弱点使用。
+
+**规则 / 战斗自动化（仅 TOUHOU 生效）**
+- 伤害管线新增 `RACE_MOD` 步骤；只有 `touhou-ext` 的 pipeline 包含它，COC7 基线不受影响。
+- `raceIncomingMultiplier()`：按种族能力 tags 匹配攻击技能（如妖怪对 `MAGIC` / `SPIRIT_ARTS`）
+  或目标状态 key（如吸血鬼对 `SUNLIGHT`），命中时应用 `params.multiplier`。
+- `resolveRoundRaceAbilities()`：每轮开始为带 `REGEN` 能力的种族（怪异）自动回 HP。
+- `applyRaceImmortalSurvival()`：蓬莱人 HP 归零时保留 `reviveHp`（默认 1），不进入重伤 / 濒死 / 死亡流程。
+- 参战单位新增 `race` / `raceFlags`，由 `setup.ts` 从 `computeDerived` 注入；旧战斗快照在 `runtime.ts` 补默认值。
+
+**测试与隔离**
+- `packages/rules/src/__tests__/touhou-races.test.ts`：种族名单、结构化能力、RACE_MOD 的 TOUHOU / COC7 隔离。
+- `packages/combat/src/__tests__/touhou-races.test.ts`：妖怪魔法弱点、普通攻击不误伤、吸血鬼阳光弱点、
+  无种族不触发、怪异再生、蓬莱人不死、普通种族可死亡。
+- COC7 单位 `race` 为 null，且 COC7 pipeline 无 `RACE_MOD`，因此不读取种族能力、不改变任何判定。
+
+**仍需 KP / 后续能力系统承接的种族能力**（已在数据中登记，`automated: false`）：
+幽体化、灵力回 HP、动物会话 / 变身、本体绑定、水栖、契约 / 黑暗视觉、吸血 / 魅惑、妖精月再生、
+技能学习限制（人类不可学妖术）等。这些依赖能力系统或叙事裁定，不在本轮硬编码。
+
+### 2.2 后续条目（未铺开）
+
+1. **千幻抄能力体系**（v2: 2.14、2.17、2.18、7.x–11.x）
    - 神术·阴阳术 / 魔法 / 属性使 / 妖力 / 妖术 / 特技的能力等级、能力点、法术表、习得与成长。
    - 建议新增 `abilities` 规则包字段和通用“能力等级”模型，复用现有 effects 结算，不覆盖 COC7 技能。
-3. **DP 机制**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
+2. **DP 机制**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
    - 如果要做完整 DP 战斗，需要独立于现有 ATB 的“回合 + DP 宣言 + 消费骰”模式；建议做成 TOUHOU 可选战斗模式，保留 ATB 作为现有房规。
-4. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
+3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
    - 开卡 3 张、战斗前 SC 宣言数、展开任意时机、展开/消费回复 DP、LSC、符卡战胜负条件。
-5. **属性相克**（v2: 5.x）
+4. **属性相克**（v2: 5.x）
    - 新增元素字段与弱点/同属性修正；建议作为规则包 effect modifier，不影响 COC7 无元素伤害。
-6. **成长体系**（v2: 13.x）
+5. **成长体系**（v2: 13.x）
    - A-F 成长等级、特性值/技能/能力/HP系数与SC成长表、妖术与锻炼 60% 上限。
-7. **其他规则**（v2: 14.x）
+6. **其他规则**（v2: 14.x）
    - 千幻抄移动公式、灵力自然恢复、30分钟苏醒、应急治疗 DC18、财产/重量/遮挡物。
 
 ## 3. P2 KP行为 / 不可达
@@ -109,7 +137,9 @@
 - KP行为条目继续用自由掷骰、暗骰、KP 数值面板和局内 JSON 承载，不强行自动化。
 - 不可达条目（如 GM 用敌方骰数×3.5 省略掷骰）可在 DP 模式落地后再评估。
 
-## 4. 本轮验证记录
+## 4. 验证记录
+
+### 4.1 P0 违背修复
 
 - `npm run typecheck`：rules / combat / web 均通过。
 - `npm test`：全部 workspace 通过（combat 110、rules 99、formula 54、web 5）。
@@ -120,6 +150,16 @@
   - `npm run verify:chargen-rules`：PASS；
   - `npm run verify:character-draft`：PASS。
 - COC7 专项测试文件 `packages/combat/src/__tests__/coc7-fixes.test.ts` 全部通过。
+
+### 4.2 P1 第一批：种族与特殊能力
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（新增 rules 6 条、combat 7 条）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS（与 P0 相同）。
+- 新增测试：
+  - `packages/rules/src/__tests__/touhou-races.test.ts`：6 条；
+  - `packages/combat/src/__tests__/touhou-races.test.ts`：7 条。
 
 ## 5. 风险与回滚
 

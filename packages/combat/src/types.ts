@@ -106,6 +106,10 @@ export interface CombatParticipantState {
 
   attributes: AttributeSet;
   derived: DerivedStats;
+  /** 规则包中的种族 key；COC7 单位 / 无种族单位为 null。 */
+  race?: string | null;
+  /** 种族扁平 flags（旧口径，UI 与规则都会读）。 */
+  raceFlags?: string[];
   skills: Record<string, number>;
   /** 该单位允许施放的法术 id；玩家来自角色卡，NPC 来自 NPC 卡。 */
   spells: string[];

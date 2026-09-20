@@ -98,6 +98,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     participant.maxArmor = Math.max(participant.armor, Math.floor(participant.maxArmor ?? participant.armor));
     participant.grazePoints = Math.max(0, Math.floor(participant.grazePoints ?? 0));
     participant.grazeDamageBonus = Math.max(0, Math.floor(participant.grazeDamageBonus ?? 0));
+    participant.race = participant.race ?? null;
+    participant.raceFlags = Array.isArray(participant.raceFlags) ? participant.raceFlags : [];
   }
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();

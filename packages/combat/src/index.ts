@@ -46,6 +46,7 @@ export {
   resolveInitiativeTurn,
   reactionTargetIdsForAction,
   resolvePending,
+  resolveRoundRaceAbilities,
   submitAction
 } from "./combat";
 export type {

@@ -31,10 +31,21 @@ export interface CompiledDamageRules {
   readonly counter: { readonly cost: CompiledExpr; readonly failDamageRatio: CompiledExpr };
 }
 
+export interface CompiledRaceAbility {
+  readonly id: string;
+  readonly name: string;
+  readonly description: string | undefined;
+  readonly automated: boolean;
+  readonly tags: readonly string[];
+  readonly params: Readonly<Record<string, CompiledExpr>>;
+}
+
 export interface CompiledRace {
+  readonly tier: "A" | "B" | "C" | "D" | undefined;
   readonly attrMods: Readonly<Record<string, CompiledExpr>>;
   readonly derivedOverrides: Readonly<Record<string, CompiledExpr>>;
   readonly skillBonuses: Readonly<Record<string, CompiledExpr>>;
+  readonly abilities: readonly CompiledRaceAbility[];
   readonly flags: readonly string[];
 }
 
@@ -269,7 +280,20 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
 
   const races: Record<string, CompiledRace> = {};
   for (const [raceKey, race] of Object.entries(pack.races)) {
+    const abilities: CompiledRaceAbility[] = race.abilities.map((ability, index) => ({
+      id: ability.id,
+      name: ability.name,
+      description: ability.description,
+      automated: ability.automated,
+      tags: [...ability.tags],
+      params: compileMap(
+        `races.${raceKey}.abilities[${index}].params`,
+        ability.params,
+        combatVars
+      )
+    }));
     races[raceKey] = {
+      tier: race.tier,
       attrMods: compileMap(`races.${raceKey}.attrMods`, race.attrMods, attributeVars),
       derivedOverrides: compileMap(
         `races.${raceKey}.derivedOverrides`,
@@ -281,6 +305,7 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
         race.skillBonuses,
         attributeVars
       ),
+      abilities,
       flags: race.flags
     };
   }

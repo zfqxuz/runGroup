@@ -5,6 +5,7 @@ export {
   MagicRulesSchema,
   MagicSpellSchema,
   RaceSchema,
+  RaceAbilitySchema,
   StatusEffectSchema,
   DamageRulesSchema,
   SpellCardRulesSchema,
@@ -28,6 +29,7 @@ export type {
   RulePackInput,
   RulePackOverlay,
   Race,
+  RaceAbility,
   StatusEffectRule,
   DamageRules,
   SpellCardRules,
@@ -104,6 +106,7 @@ export type {
   CompiledAtb,
   CompiledDamageRules,
   CompiledRace,
+  CompiledRaceAbility,
   CompiledRulePack,
   CompiledStatusEffect
 } from "./compile";

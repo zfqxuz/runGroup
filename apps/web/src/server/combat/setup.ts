@@ -229,6 +229,8 @@ function buildCharacterInit(
     faction,
     attributes: outcome.attributes,
     derived: outcome.derived,
+    race: character.race ?? null,
+    raceFlags: outcome.flags,
     skills,
     spells: characterSpellsOf(character),
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",
@@ -270,6 +272,8 @@ function buildNpcInit(
     faction,
     attributes,
     derived,
+    race: parsed.data.race ?? null,
+    raceFlags: parsed.data.race === null ? [] : [...(pack.races[parsed.data.race]?.flags ?? [])],
     // 持久召唤卡再次参战时仍标记为召唤物，便于到期 / 击杀后清理卡与 Token。
     summonedBy: isPersistentSummon ? originCasterId ?? card.id : null,
     summonedName: isPersistentSummon ? card.name : null,
