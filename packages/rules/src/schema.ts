@@ -473,7 +473,7 @@ export const AttributeMethodSchema = z.discriminatedUnion("kind", [
  * INITIATIVE — COC7：KP 每轮排定出手顺序，随后全员依次行动。
  * ATB        — 东方：全局计数器推进，谁进度先满谁行动。
  */
-export const COMBAT_MODES = ["INITIATIVE", "ATB"] as const;
+export const COMBAT_MODES = ["INITIATIVE", "ATB", "DP"] as const;
 
 /**
  * 战斗事件规则表。
@@ -486,6 +486,16 @@ export const CombatEventSchema = z.object({
   description: z.string().optional(),
   defaultEnabled: z.boolean().default(true),
   params: z.record(z.string(), ExprSchema).default({})
+});
+
+/** 千幻抄 DP（Dice Pool）战斗规则。 */
+export const DpRulesSchema = z.object({
+  /** 每回合开始回复的 DP 表达式；千幻抄 = ceil((知性+感觉)/3)。平台把「感觉」映射为 DEX。 */
+  regen: ExprSchema.default("ceil((int + dex) / 3)"),
+  /** 最低回复量。 */
+  minRegen: z.number().int().nonnegative().default(2),
+  /** 一次判定最多消费的 DP 骰（能力 / 抵抗为 3）。 */
+  maxDicePerCheck: z.number().int().positive().default(3)
 });
 
 export const CombatRulesSchema = z.object({
@@ -568,6 +578,8 @@ export const RulePackSchema = z.object({
   }),
 
   combat: CombatRulesSchema,
+  /** DP 模式专用规则；其他模式忽略。 */
+  dp: DpRulesSchema.default({}),
   damage: DamageRulesSchema,
   /** 元素表：key 为元素 id（推荐大写，如 FIRE / WATER）。 */
   elements: z.record(z.string(), ElementSchema).default({}),
@@ -662,4 +674,5 @@ export type PresetCharacterInput = z.input<typeof PresetCharacterSchema>;
 
 export type CombatEventRule = z.output<typeof CombatEventSchema>;
 export type CombatRules = z.output<typeof CombatRulesSchema>;
+export type DpRules = z.output<typeof DpRulesSchema>;
 export type CombatMode = (typeof COMBAT_MODES)[number];

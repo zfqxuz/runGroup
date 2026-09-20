@@ -91,6 +91,7 @@ export function createCombat(init: CombatInit): CombatState {
     seed: init.seed,
     tickMs: init.tickMs,
     mode: init.mode ?? 'ATB',
+    dp: (init.mode ?? 'ATB') === 'DP' ? { declared: {}, regenBonus: {}, acted: [] } : null,
     initiativeOrder: [],
     activeIndex: 0,
     tick: 0,

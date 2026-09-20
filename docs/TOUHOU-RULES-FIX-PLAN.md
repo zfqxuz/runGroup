@@ -227,12 +227,40 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 **本批未覆盖**：成长流程的 UI / DB 接线、术式版神术（3/6/9…）与妖弹化妖术（2/3/5…）的变体消费表、
 HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品确认）。
 
-### 2.7 后续条目（未铺开）
+### 2.7 已完成（第七批）：千幻抄 HP/宣言公式 + DP 模式核心
+
+**用户已确认的决策**
+- 东方拓展**只使用 DP 模式**（`combat.mode: "DP"`），ATB 仅保留给 COC7 / 历史数据。
+- SC 宣言在进入战斗前完成：发起方与应战方各自从可用符卡中选择不超过本场上限的张数；
+  上限按「能使用 SC 的人数」自动计算。
+- 允许改 DB / UI，但改动只能作用于东方模式。
+- HP 使用千幻抄公式 `ceil(10 + 耐久 × HP系数)`。
+
+**已落地**
+- HP：`const.HP_COEFFICIENT=4`，`derived.maxHp = ceil(10 + con * HP_COEFFICIENT)`。
+- SC 宣言：`SpellCardRulesSchema.battleDeclaration`（perMember 2.5 / CEIL / min 1，可配置）+
+  `spellcardSideUsableCount()` / `spellcardBattleDeclarationRules()`。
+- DP 规则：`COMBAT_MODES` 新增 `"DP"`；`DpRulesSchema`（regen / minRegen / maxDicePerCheck）；
+  `touhou-ext.dp` 登记 `ceil((int + dex)/3)`、最低 2、单次最多 3D。
+- DP 回合核心：`packages/combat/src/dp.ts` —— `beginDpRound`（种族再生 + DP 回复 + 进入宣言）、
+  `declareDp`（声明后按 DP 从高到低排序，同值 PC 先于 NPC）、`endDpTurn`（轮转）、
+  `dpRegenFor`、`grantDpWaitBonus`（待机下轮回复 +2）；`CombatState.dp` 保存一轮宣言状态。
+- UI 仅放开 DP 模式类型，尚未开放选择；TOUHOU 仍暂用 ATB，待 DP 行动结算完成后一次性切换。
+
+**DP / SC 后续里程碑（下一步）**
+1. DP 行动结算：弹幕（3 DP、无判定、全体）、射击（DP 骰数 + 3D6 达成值）、追击（2×目标数）、
+   近战（接近 + 命中）、能力（最多 3D）、回避 / 防御 / 掩护 / 抵抗；伤害骰不消耗 DP。
+2. 接线：`setup.ts` / `socket/combat.ts` 增加 DP 分支（回合一 → 宣言 → 逐个行动 →
+   反应窗口 → 轮转），并把 TOUHOU 的 `combat.mode` 切到 `"DP"`、迁移现有东方战斗测试。
+3. SC 宣言流程：DB 记录「章节内可用 / 已用 SC」，战斗创建时双方提交选牌，服务端按人数校验上限。
+4. SC 完整规则：LSC、任意时机展开、符卡战胜负条件。
+
+### 2.8 后续条目（未铺开）
 
 1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
    - 能力点与等级的车卡 / 成长流程、每级习得数量、妖力 / 特技常时被动、`BARRIER` 结界。
-2. **DP 机制**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
-   - 如果要做完整 DP 战斗，需要独立于现有 ATB 的“回合 + DP 宣言 + 消费骰”模式；建议做成 TOUHOU 可选战斗模式，保留 ATB 作为现有房规。
+2. **DP 机制 · 剩余**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
+   - 回合 / 宣言 / DP 回复核心已完成；剩余行动结算与 socket 接线（见 2.7 里程碑 1–2）。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
    - 开卡 3 张、战斗前 SC 宣言数、展开任意时机、展开/消费回复 DP、LSC、符卡战胜负条件。
 4. **属性相克 · 剩余部分**（v2: 5.2 判定 / 抵抗修正、5.3 属性使能力）

@@ -12,7 +12,7 @@ interface PackOptions {
     readonly label: string;
     readonly description: string | null;
   }>;
-  readonly defaultMode: "INITIATIVE" | "ATB";
+  readonly defaultMode: "INITIATIVE" | "ATB" | "DP";
 }
 
 interface SelectedModule {
@@ -27,9 +27,10 @@ interface Props {
   readonly selectedModule?: SelectedModule | null;
 }
 
-const MODE_LABELS: Record<"INITIATIVE" | "ATB", { title: string; hint: string }> = {
+const MODE_LABELS: Record<"INITIATIVE" | "ATB" | "DP", { title: string; hint: string }> = {
   INITIATIVE: { title: "顺序制", hint: "KP 每轮排定出手顺序，全员依次行动" },
-  ATB: { title: "ATB 进度条", hint: "全局计数器推进，谁进度先满谁行动" }
+  ATB: { title: "ATB 进度条", hint: "全局计数器推进，谁进度先满谁行动" },
+  DP: { title: "DP 骰池", hint: "千幻抄：按声明 DP 排序，消耗 DP 进行判定" }
 };
 
 export default function RoomSetupForm(props: Props) {
@@ -41,7 +42,7 @@ export default function RoomSetupForm(props: Props) {
   const [era, setEra] = useState<"CLASSIC" | "MODERN">(
     props.selectedModule?.era === "CLASSIC" ? "CLASSIC" : "MODERN"
   );
-  const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB">(initialOptions.defaultMode);
+  const [combatMode, setCombatMode] = useState<"INITIATIVE" | "ATB" | "DP">(initialOptions.defaultMode);
   const [disabled, setDisabled] = useState<readonly string[]>([]);
   const [allowPlayerCombatRequest, setAllowPlayerCombatRequest] = useState(true);
   const [characterVisibility, setCharacterVisibility] = useState<"PUBLIC" | "PRIVATE">("PUBLIC");

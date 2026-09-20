@@ -8,8 +8,8 @@ import type {
   MagicTargeting
 } from "@touhou/rules";
 
-export type CombatMode = 'INITIATIVE' | 'ATB';
-export type CombatPhase = "ATB_CHARGING" | "AWAITING_ACTION" | "ENDED";
+export type CombatMode = 'INITIATIVE' | 'ATB' | 'DP';
+export type CombatPhase = "ATB_CHARGING" | "AWAITING_ACTION" | "ENDED" | "DP_DECLARATION";
 export type ParticipantKind = "PLAYER" | "NPC";
 export type ActionKind =
   | "DANMAKU"
@@ -292,12 +292,24 @@ export interface ChaseState {
   ending: string | null;
 }
 
+/** DP（Dice Pool）模式的一轮状态。 */
+export interface DpRoundState {
+  /** participantId -> 本轮声明的 DP（越小越后行动）。 */
+  declared: Record<string, number>;
+  /** participantId -> 下轮 DP 回复加成（待机 +2）。 */
+  regenBonus: Record<string, number>;
+  /** 本轮已行动过的 participantId。 */
+  acted: string[];
+}
+
 export interface CombatState {
   readonly id: string;
   readonly seed: string;
   readonly tickMs: number;
-  /** INITIATIVE = COC7；ATB = 东方。 */
+  /** INITIATIVE = COC7；ATB = 东方旧模式；DP = 千幻抄。 */
   readonly mode: CombatMode;
+  /** DP 模式专用的一轮状态；其他模式为 null。 */
+  dp?: DpRoundState | null;
   initiativeOrder: string[];
   activeIndex: number;
   tick: number;

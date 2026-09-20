@@ -440,6 +440,13 @@ TOUHOU_EXT.skills = [
  * 东方战斗：ATB 全局计数器。事件表与 COC7 的三个底座合并
  * （record 在深合并时是逐键合并，array 才是替换）。
  */
+TOUHOU_EXT.dp = {
+  // 千幻抄：DP 回复 = ceil((知性 + 感觉)/3)，最低 2；平台把「感觉」映射为 DEX。
+  regen: "ceil((int + dex) / 3)",
+  minRegen: 2,
+  maxDicePerCheck: 3
+};
+
 TOUHOU_EXT.combat = {
   mode: "ATB",
   initiative: { key: "dex", tieBreak: "KEY_DESC", kpAdjustsOrder: false },

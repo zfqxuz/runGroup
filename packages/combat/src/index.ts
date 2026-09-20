@@ -67,6 +67,17 @@ export {
   possessConditionOf,
   possessInitFromConditions
 } from "./conditions";
+export {
+  beginDpRound,
+  currentDpActorId,
+  declareDp,
+  dpRegenFor,
+  dpTurnOrder,
+  endDpTurn,
+  grantDpWaitBonus,
+  markDpActed
+} from "./dp";
+
 export { rngFor } from "./rng";
 export {
   isThrownOutOfRange,

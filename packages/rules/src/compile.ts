@@ -74,7 +74,7 @@ export interface CompiledSkillPoints {
 }
 
 export interface CompiledCombat {
-  readonly mode: 'INITIATIVE' | 'ATB';
+  readonly mode: 'INITIATIVE' | 'ATB' | 'DP';
   /** INITIATIVE 的排序依据公式；ATB 为 null。 */
   readonly initiativeKey: CompiledExpr | null;
   readonly tieBreak: 'KEY_DESC' | 'RANDOM' | 'KP';
