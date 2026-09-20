@@ -13,6 +13,8 @@ import { loadEffectivePack } from "../src/server/rules/loader";
 import { NpcStatsSchema } from "../src/shared/npc";
 import { SpellCardStatsSchema } from "../src/shared/card";
 import { prepareSpellcardAction } from "../src/server/combat/spellcards";
+import { loadUsedSpellcardKeys, markSpellcardUsed } from "../src/server/combat/spellcard-usage";
+import { listSelectableSpellcards } from "../src/server/combat/setup";
 import type { Ack, CombatJoinAck, CombatReactionRequest, CombatUpdate } from "../src/shared/socket";
 
 const BASE = process.env.E2E_BASE_URL ?? "http://localhost:3100";
@@ -404,8 +406,19 @@ async function main(): Promise<void> {
     assert(persistedRound2.state.phase === "DP_DECLARATION", "第二轮快照应为宣言阶段");
     assert(persistedRound2.state.round === 2, "第二轮快照 round 应为 2");
 
+    // 章节内已用 SC：记录后不应再出现在战前宣言候选里（create 也会过滤）。
+    await markSpellcardUsed(room.id, character.id, declaredCard.id);
+    const usedKeys = await loadUsedSpellcardKeys(room.id, [character.id]);
+    assert(usedKeys.has(character.id + ":" + declaredCard.id), "应记录已用符卡");
+    const selectableCards = await listSelectableSpellcards(room.id, [
+      { ref: "character:" + character.id } as never
+    ]);
+    const remainingIds = (selectableCards["character:" + character.id] ?? []).map((card) => card.cardId);
+    assert(remainingIds.includes(undeclaredCard.id), "未使用符卡应保留在候选里");
+    assert(remainingIds.includes(declaredCard.id) === false, "已用符卡不应再出现在候选里");
+
     console.log(
-      "PASS DP 战斗 E2E：SC 战前宣言 → DP 宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
+      "PASS DP 战斗 E2E：章节内已用 SC → SC 战前宣言 → DP 宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
     );
   } finally {
     if (socket !== null) socket.close();

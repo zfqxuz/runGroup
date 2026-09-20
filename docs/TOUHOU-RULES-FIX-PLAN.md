@@ -300,7 +300,10 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
    - ✅ 服务端 `CreateCombatOptions.spellcardDeclarations` 校验卡归属与上限，
      写入 `spellcardBattle.declaredCardIds`；未宣言的卡不能发动
      （`SPELLCARD_NOT_DECLARED`，准备阶段即拦截）。
-   - ⏳ DB 记录跨战斗的「章节内可用 / 已用 SC」（4.17）仍待做。
+   - ✅ 4.17 跨战斗消耗：新增 `SpellcardUsage(roomId, characterId, cardId)` 表与迁移；
+     战前候选与战斗创建都会过滤本章节已用 SC（按房间记账），
+     提交 / 任意时机展开成功时写入使用记录。
+   - ⏳ 严格「章节」边界（按模组章节而非房间）仍待做。
 4. SC 完整规则（部分完成）：
    - ✅ 4.8 / 4.12：展开型 SC 展开、消费型 SC 发动时回复 `ceil(DP 上限/2)` DP
      （`recoverSpellcardDp`，日志 `SPELLCARD_DP_RECOVER`）。

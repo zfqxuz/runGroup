@@ -602,6 +602,20 @@ model Card {
   @@index([templateId])
 }
 
+/// 千幻抄：跨战斗记录符卡在某房间 / 章节内已经使用过（章节内通常不恢复）。
+model SpellcardUsage {
+  id          String   @id @default(cuid())
+  roomId      String
+  characterId String
+  cardId      String
+  /// 章节标识；null 表示按房间整体记账。
+  chapterId   String?
+  usedAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([roomId, characterId, cardId])
+  @@index([roomId, characterId])
+}
+
 model Asset {
   id           String    @id @default(cuid())
   ownerId      String

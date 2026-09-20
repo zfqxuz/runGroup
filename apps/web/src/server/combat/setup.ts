@@ -29,6 +29,7 @@ import { prisma } from "@/server/db/prisma";
 import type { EffectivePack } from "@/server/rules/loader";
 import { NpcStatsSchema } from "@/shared/npc";
 import { SpellCardStatsSchema } from "@/shared/card";
+import { loadUsedSpellcardKeys } from "@/server/combat/spellcard-usage";
 import { buildEffectiveSkills } from "@/server/character/skills";
 import { emitCombatEnded } from "@/server/realtime";
 import { armorExpressionFromValue } from "@/server/combat/armor";
@@ -66,12 +67,14 @@ export interface SelectableSpellcard {
  * 只处理 CHARACTER 引用；NPC 暂不参与符卡宣言。
  */
 export async function listSelectableSpellcards(
+  roomId: string,
   units: readonly SelectableUnit[]
 ): Promise<Record<string, readonly SelectableSpellcard[]>> {
   const characterIds = units
     .map((unit) => (unit.ref.startsWith("character:") ? unit.ref.slice("character:".length) : null))
     .filter((id): id is string => id !== null && id.length > 0);
   if (characterIds.length === 0) return {};
+  const usedKeys = await loadUsedSpellcardKeys(roomId, characterIds);
   const cards = await prisma.card.findMany({
     where: {
       characterId: { in: [...new Set(characterIds)] },
@@ -85,6 +88,7 @@ export async function listSelectableSpellcards(
   const byCharacter = new Map<string, SelectableSpellcard[]>();
   for (const card of cards) {
     if (typeof card.characterId !== "string" || card.characterId.length === 0) continue;
+    if (usedKeys.has(card.characterId + ":" + card.id)) continue;
     const parsed = SpellCardStatsSchema.safeParse(card.stats);
     if (parsed.success === false) continue;
     const list = byCharacter.get(card.characterId) ?? [];
@@ -744,11 +748,18 @@ export async function createCombatRecord(
       },
       select: { id: true, characterId: true }
     });
+    const usedKeys = await loadUsedSpellcardKeys(
+      roomId,
+      equippedSpellcards
+        .map((card) => card.characterId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    );
     const cardOwnerById = new Map<string, string>();
     for (const card of equippedSpellcards) {
-      if (typeof card.characterId === "string" && card.characterId.length > 0) {
-        cardOwnerById.set(card.id, card.characterId);
-      }
+      if (typeof card.characterId !== "string" || card.characterId.length === 0) continue;
+      // 章节内已使用的 SC 不再进入本场候选 / 宣言池。
+      if (usedKeys.has(card.characterId + ":" + card.id)) continue;
+      cardOwnerById.set(card.id, card.characterId);
     }
     const usableCharacterIds = new Set(cardOwnerById.values());
     const rules = spellcardBattleDeclarationRules(pack.pack.spellcard);

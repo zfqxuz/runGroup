@@ -33,7 +33,7 @@ export default async function NewCombatPage({
     ruleOverride: room.ruleOverride
   });
   const selectable = await listSelectableUnits(room.id, session.user.id, membership.role);
-  const spellcardsByRef = room.system === "TOUHOU" ? await listSelectableSpellcards(selectable) : {};
+  const spellcardsByRef = room.system === "TOUHOU" ? await listSelectableSpellcards(room.id, selectable) : {};
   const spellcardRules =
     room.system === "TOUHOU" && effective.compiled.pack.spellcard !== undefined
       ? spellcardBattleDeclarationRules(effective.compiled.pack.spellcard)
