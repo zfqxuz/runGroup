@@ -475,6 +475,8 @@ export interface CombatActionContext {
       readonly dp?: number;
       readonly grazePoints?: number;
       readonly disarmed?: boolean;
+      /** 14.5 遮挡物：有耐久的完整遮挡会阻止该单位攻击他人。 */
+      readonly cover?: { readonly hp: number; readonly blocksLineOfSight?: boolean } | null;
     }[];
   };
   readonly attackSkills: ReadonlyMap<string, readonly string[]>;
@@ -495,6 +497,16 @@ export function validateCombatAction(
   if (action.kind === "DANMAKU" && action.dpAction !== undefined) {
     const actor = context.state.participants.find((item) => item.id === action.actorId);
     if (actor === undefined) return "行动单位不在场";
+    // 14.5 遮挡：在完整遮挡物中的人物不能攻击他人。
+    if (
+      actor.cover !== null &&
+      actor.cover !== undefined &&
+      actor.cover.hp > 0 &&
+      actor.cover.blocksLineOfSight !== false &&
+      action.dpAction !== "SKILL"
+    ) {
+      return "在遮挡物中无法攻击他人";
+    }
     if (action.dpAction === "DANMAKU" || action.dpAction === "SKILL") return null;
     const targetIds =
       action.dpAction === "CHASE"

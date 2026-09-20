@@ -1293,7 +1293,8 @@ function applyDamageToParticipant(
         data: { rollType: "COVER_ABSORB", name: cover.name, absorbed, hp: cover.hp, overflow: remaining }
       });
     }
-    if (remaining <= 0) return { toDeclaration: 0, toHp: 0 };
+    // wiki 14.5：溢出伤害不会影响到遮挡里的人。
+    return { toDeclaration: 0, toHp: 0 };
   }
 
   const bodyDamage = remaining;
@@ -3098,7 +3099,7 @@ function applyMagicEffect(
   ctx: ResolveContext,
   actor: CombatParticipantState,
   target: CombatParticipantState,
-  spell: { readonly id: string; readonly name: string },
+  spell: { readonly id: string; readonly name: string; readonly abilityId?: string },
   effect: MagicEffect,
   defense: { readonly type: DefenseType; readonly success: boolean },
   submission: ActionSubmission,
@@ -3245,30 +3246,27 @@ function applyMagicEffect(
   }
 
   if (effect.type === "BARRIER") {
+    const rules = ctx.pack.pack.barrier;
     const fallbackHp = Math.max(0, rollEffectDice(effect.hp, state, "magic-barrier:" + actor.id + ":" + spell.id + ":" + target.id));
-    // 7.5：规则包有结界表且 effect.level 指定时优先查表；否则回退到卡面 hp。
-    const stats = resolveBarrierStats(ctx.pack.pack.barrier, {
-      level: Math.max(1, Math.floor(effect.level ?? 1)),
-      sizeId: effect.size ?? null,
-      fallbackHp,
-      vars: actor.vars,
-      consts: ctx.pack.pack.const
+    const casterLevel = spell.abilityId === undefined ? 0 : dpAbilityLevel(actor, spell.abilityId);
+    const defaultSize = rules.tiers.length > 0 ? Math.min(...rules.tiers.map((tier) => tier.sizeMeters)) : 2;
+    // 7.5：按大小（米）查表得到必要 Lv / 目标值 / 灵力消耗 / 持续；HP 来自卡面。
+    const stats = resolveBarrierStats(rules, {
+      sizeMeters: effect.sizeMeters ?? defaultSize,
+      casterLevel,
+      fallbackHp
     });
     const hp = stats === null ? fallbackHp : stats.hp;
-    const tableDuration = stats?.durationTicks ?? 0;
-    const duration =
-      tableDuration > 0
-        ? tableDuration
-        : Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    // 持续时间以「小时」记录（术者 Lv × 2）；effect.durationTicks 仍是战斗轮次，二者并存。
+    const durationRounds = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
     // 重复展开：按规则包 restack 决定替换 / 刷新 / 叠加。
     let finalHp = hp;
     let finalMaxHp = hp;
     if (target.barrier !== null && target.barrier !== undefined) {
-      const outcome = barrierRestackOutcome(ctx.pack.pack.barrier.restack, target.barrier.hp, target.barrier.maxHp, hp);
+      const outcome = barrierRestackOutcome(rules.restack, target.barrier.hp, target.barrier.maxHp, hp);
       finalHp = outcome.hp;
       finalMaxHp = outcome.maxHp;
     }
-    // 7.5 灵力消耗表：表驱动结界在这里支付；使用卡面 hp 的旧数据 mpCost=0，不会重复扣。
     const barrierMpCost = stats?.mpCost ?? 0;
     if (barrierMpCost > 0 && spendCombatMagicPoints(ctx, actor, barrierMpCost, "结界「" + (effect.name || "结界") + "」") === false) {
       return;
@@ -3277,13 +3275,14 @@ function applyMagicEffect(
       hp: finalHp,
       maxHp: finalMaxHp,
       name: effect.name.length > 0 ? effect.name : "结界",
-      expiresAtRound: duration > 0 ? state.round + duration : null,
-      sizeId: stats?.sizeId ?? null,
-      level: stats?.level ?? null,
+      expiresAtRound: durationRounds > 0 ? state.round + durationRounds : null,
+      sizeMeters: stats?.sizeMeters ?? effect.sizeMeters ?? defaultSize,
+      sizeId: stats?.tierId ?? null,
+      requiredLevel: stats?.requiredLevel ?? null,
       targetValue: stats?.targetValue ?? 0,
       penalty: stats?.penalty ?? 0,
       anchor: effect.anchor,
-      scopeMeters: stats?.scopeMeters ?? 0
+      durationHours: stats?.durationHours ?? 0
     };
     log(
       actor.name +
@@ -3295,22 +3294,26 @@ function applyMagicEffect(
         target.name +
         " 展开「" +
         target.barrier.name +
-        "」（HP " +
+        "」（" +
+        (stats?.sizeMeters ?? effect.sizeMeters ?? defaultSize) +
+        "m，必要 Lv" +
+        (stats?.requiredLevel ?? 0) +
+        "，HP " +
         finalHp +
-        (stats?.sizeName === null || stats?.sizeName === undefined ? "" : "，" + stats.sizeName) +
-        (stats?.level === null || stats?.level === undefined ? "" : " Lv" + stats.level) +
         (stats !== null && stats.targetValue > 0 ? "，目标值 " + stats.targetValue : "") +
         (barrierMpCost > 0 ? "，灵力 " + barrierMpCost : "") +
+        (stats !== null && stats.durationHours > 0 ? "，持续 " + stats.durationHours + " 小时" : "") +
         "）",
       {
         rollType: "BARRIER_APPLIED",
         barrierHp: finalHp,
         barrierMaxHp: finalMaxHp,
         expiresAtRound: target.barrier.expiresAtRound ?? 0,
-        barrierLevel: stats?.level ?? null,
-        barrierSize: stats?.sizeId ?? null,
+        barrierSizeMeters: target.barrier.sizeMeters,
+        barrierRequiredLevel: stats?.requiredLevel ?? null,
         barrierTargetValue: stats?.targetValue ?? 0,
         barrierPenalty: stats?.penalty ?? 0,
+        barrierDurationHours: stats?.durationHours ?? 0,
         barrierMpCost
       }
     );
@@ -4196,6 +4199,63 @@ function coverDefenseBonus(participant: CombatParticipantState): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value * 2 : 0;
 }
 
+/** 14.12 完整遮挡：有耐久的遮挡物会完全挡住里面的人。 */
+function coverBlocksTarget(participant: CombatParticipantState): boolean {
+  const cover = participant.cover;
+  return (
+    cover !== null &&
+    cover !== undefined &&
+    cover.hp > 0 &&
+    cover.blocksLineOfSight !== false
+  );
+}
+
+/**
+ * 14.12 攻击遮挡物：不需要判定直接命中，只结算伤害表达式里的固定值部分
+ * （骰子部分不计），溢出不穿透到遮挡中的人。
+ */
+function fixedDamageComponent(expression: string): number {
+  let total = 0;
+  for (const term of expression.replace(/\s+/g, "").split(/(?=[+-])/)) {
+    if (/^[+-]?\d+$/.test(term)) total += Number(term);
+  }
+  return Math.max(0, total);
+}
+
+function applyCoverFixedDamage(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  target: CombatParticipantState,
+  expression: string
+): boolean {
+  if (coverBlocksTarget(target) === false) return false;
+  const cover = target.cover;
+  if (cover === null || cover === undefined) return false;
+  const fixed = fixedDamageComponent(expandDamageBonus(expression, actor.damageBonus));
+  const hpBefore = cover.hp;
+  cover.hp = Math.max(0, hpBefore - fixed);
+  pushLog(ctx.state, {
+    kind: "DAMAGE",
+    actorId: actor.id,
+    targetId: target.id,
+    text:
+      actor.name + " 攻击 " + target.name + " 的「" + cover.name + "」：固定伤害 " + fixed +
+      "（" + hpBefore + " → " + cover.hp + "，随机伤害不结算）",
+    data: { rollType: "COVER_HIT", name: cover.name, fixedDamage: fixed, hp: cover.hp, expression }
+  });
+  if (cover.hp <= 0) {
+    target.cover = null;
+    pushLog(ctx.state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: target.id,
+      text: target.name + " 的「" + cover.name + "」强度归零被击毁，失去遮挡（溢出伤害无效）",
+      data: { rollType: "COVER_BROKEN", name: cover.name, hp: 0 }
+    });
+  }
+  return true;
+}
+
 /** 消耗 DP；不足时记录日志并返回 false。 */
 function spendDp(
   ctx: ResolveContext,
@@ -4368,6 +4428,7 @@ function resolveDpRangedAttack(
       (enhance === null ? "" : "（符卡强化）"),
     data: { rollType: "DP_RANGED_ATTACK", dice, roll: attack.roll, base: attack.base, achievement: attackAchievement, skill: skillId, attribute: attributeKey, enhanceAccuracy: enhance?.accuracyMod ?? 0 }
   });
+  if (applyCoverFixedDamage(ctx, actor, defender, dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED"))) return;
   const cover = resolveDpCover(ctx, actor, defender, attackAchievement, "dp-ranged-cover:" + actor.id + ":" + defender.id);
   let damageTarget = defender;
   let reduction = 0;
@@ -4502,6 +4563,7 @@ function resolveDpChase(
   );
   const hits: { target: CombatParticipantState; label: string }[] = [];
   for (const target of targets) {
+    if (applyCoverFixedDamage(ctx, actor, target, damageExpression)) continue;
     const cover = resolveDpCover(ctx, actor, target, achievement, "dp-chase-cover:" + actor.id + ":" + target.id);
     if (cover !== null) {
       hits.push({
@@ -4542,6 +4604,7 @@ function resolveDpMelee(
   const approachCost = Math.max(0, Math.floor(costs.meleeApproachPerDie)) * approachDice;
   const hitCost = Math.max(0, Math.floor(costs.meleeHitPerDie)) * hitDice;
   if (spendDp(ctx, actor, approachCost + hitCost, "接近 " + approachDice + "D + 命中 " + hitDice + "D") === false) return;
+  if (applyCoverFixedDamage(ctx, actor, defender, dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE"))) return;
 
   const meleeEnhance = spellcardEnhanceForAttack(ctx.pack, actor, submission.skill ?? "MELEE");
   const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);

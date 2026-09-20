@@ -51,18 +51,20 @@ export interface BarrierState {
   name: string;
   /** 到期轮次；null 表示直到击破或战斗结束。 */
   expiresAtRound: number | null;
-  /** 7.5 结界大小 id（规则包 barrier.sizes）；未查表时为 null。 */
+  /** 7.5 结界大小（米，表 7.1）。 */
+  sizeMeters?: number;
+  /** 7.5 结界档位 id（如 SIZE_10）；未查表时为 null。 */
   sizeId?: string | null;
-  /** 7.5 结界等级；未查表时为 null。 */
-  level?: number | null;
+  /** 使用该大小所需的神术·阴阳术等级（必要 Lv）。 */
+  requiredLevel?: number | null;
   /** 解除 / 抵抗对抗的目标值；0 表示无需对抗。 */
   targetValue?: number;
-  /** 结界内战斗惩罚（达成值减值）。 */
+  /** 结界内战斗惩罚（回避减值）。 */
   penalty?: number;
   /** SELF 贴在目标身上；AREA 占据区域（范围模型接入后使用）。 */
   anchor?: "SELF" | "AREA";
-  /** 影响范围（米）。 */
-  scopeMeters?: number;
+  /** 持续时间（小时），由术者等级 × 2 得来。 */
+  durationHours?: number;
 }
 
 /** 14.12 物理掩体 / 遮挡物：提供应对加值并吸收伤害直到耐久耗尽。 */

@@ -30,9 +30,9 @@ const attrs: AttributeSet = {
 function cover(overrides: Partial<CoverState> = {}): CoverState {
   return {
     name: "石墙",
-    level: 5,
-    hp: 0,
-    maxHp: 0,
+    level: 0,
+    hp: 20,
+    maxHp: 20,
     expiresAtRound: null,
     blocksLineOfSight: true,
     ...overrides
@@ -74,7 +74,7 @@ function startRound(state: CombatState, actor: CombatParticipantState, e1: Comba
   declareDp(state, e1.id, 0);
 }
 
-function ranged(state: CombatState, damage = "10"): void {
+function ranged(state: CombatState, damage = "2d6+3"): void {
   state.pending["actor"] = {
     actorId: "actor",
     kind: "DANMAKU",
@@ -86,38 +86,38 @@ function ranged(state: CombatState, damage = "10"): void {
   };
 }
 
-describe("14.12 物理掩体 / 遮挡", () => {
-  it("掩体等级提供应对加值（Lv×2），可扭转回避结果", () => {
-    const setup = makeCombat("cover-defense");
+describe("14.5 遮挡物 / 掩体（wiki）", () => {
+  it("完整遮挡拦截攻击：只结算固定伤害，本体不受伤", () => {
+    const setup = makeCombat("cover-block");
     startRound(setup.state, setup.actor, setup.e1);
-    setup.e1.cover = cover({ level: 15, hp: 0 });
-    ranged(setup.state);
-    resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE", dpDice: 0 } });
+    setup.e1.cover = cover({ hp: 20, maxHp: 20, blocksLineOfSight: true });
+    ranged(setup.state, "2d6+3"); // 固定值 3
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
     expect(setup.e1.hp).toBe(setup.e1.maxHp);
-    expect(setup.state.log.some((entry) => entry.data?.rollType === "DP_RANGED_MISS")).toBe(true);
+    expect(setup.e1.cover?.hp).toBe(17);
+    expect(setup.state.log.some((entry) => entry.data?.rollType === "COVER_HIT")).toBe(true);
+    expect(setup.state.log.some((entry) => entry.data?.rollType === "DP_RANGED_DAMAGE")).toBe(false);
   });
 
-  it("掩体先吸收伤害，击破后溢出继续结算到本体", () => {
-    const setup = makeCombat("cover-absorb");
+  it("遮挡物强度归零被击毁，溢出伤害无效", () => {
+    const setup = makeCombat("cover-break");
     startRound(setup.state, setup.actor, setup.e1);
-    setup.e1.cover = cover({ level: 0, hp: 4, maxHp: 4 });
+    setup.e1.cover = cover({ hp: 2, maxHp: 2, blocksLineOfSight: true });
     ranged(setup.state, "10");
     resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
     expect(setup.e1.cover).toBeNull();
-    expect(setup.e1.hp).toBe(setup.e1.maxHp - 6);
+    expect(setup.e1.hp).toBe(setup.e1.maxHp);
     expect(setup.state.log.some((entry) => entry.data?.rollType === "COVER_BROKEN")).toBe(true);
-    expect(setup.state.log.some((entry) => entry.data?.rollType === "COVER_ABSORB")).toBe(false);
   });
 
-  it("掩体耐久未被击破时完全吸收伤害", () => {
-    const setup = makeCombat("cover-hold");
+  it("非完整遮挡 / 无耐久时只提供应对加值", () => {
+    const setup = makeCombat("cover-defense");
     startRound(setup.state, setup.actor, setup.e1);
-    setup.e1.cover = cover({ level: 0, hp: 20, maxHp: 20 });
+    setup.e1.cover = cover({ level: 15, hp: 0, maxHp: 0, blocksLineOfSight: false });
     ranged(setup.state, "10");
-    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE", dpDice: 0 } });
     expect(setup.e1.hp).toBe(setup.e1.maxHp);
-    expect(setup.e1.cover?.hp).toBe(10);
-    expect(setup.state.log.some((entry) => entry.data?.rollType === "COVER_ABSORB")).toBe(true);
+    expect(setup.state.log.some((entry) => entry.data?.rollType === "DP_RANGED_MISS")).toBe(true);
   });
 
   it("到期掩体在新一轮开始时清除", () => {

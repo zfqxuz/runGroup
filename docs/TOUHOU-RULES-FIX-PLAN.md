@@ -355,12 +355,14 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      `collectAbilityPassiveMods` 在战斗准备时求值；DP 战斗的伤害、回避 / 防御 / 掩护 / 抵抗、命中与追逐移动已接入。
      具体妖力 / 特技条目仍待 wiki 列表补入 `abilities.definitions`。
    - ⏳ 属性使具体法术表（9.2）、术式版神术 / 妖弹化妖术的完整法术清单仍待 wiki 数据。
-   - ✅ `BARRIER` 结界结构：`RulePack.barrier`（sizes / levels / restack / dispelNeedsContest）；
-     `MagicEffect BARRIER` 支持 size / level / anchor，查表得到 HP / 目标值 / 灵力消耗 / 持续 / 结界内惩罚；
+   - ✅ `BARRIER` 结界（7.5，wiki 表 7.1 数值已落地）：`RulePack.barrier`
+     （tiers 2/5/10/15/20/25/30/40m + extended +10m/+1Lv/目标+2/灵力+2；castRange 30m；
+     resizeMpCost 2；duration = 神术 Lv×2 小时；dodge = 达成值 + floor(大小/2)；
+     结界内 2m² 回避 -3 / 1m² -8；restack；dispelNeedsContest）；
+     `MagicEffect BARRIER` 支持 `sizeMeters` / anchor，查表得到必要 Lv / 目标值 / 灵力 / 持续 / 惩罚；
      伤害优先由结界吸收、击破溢出无效；DISPEL 可解除结界（记录目标值）；
-     重复展开支持 REPLACE / REFRESH / STACK；扩大缩小按 HP 比例迁移；战斗视图显示等级 / 大小 / 惩罚。
-     ⏳ 具体大小 / 等级数值表与位置（AREA 范围）仍待 wiki 数据与范围模型；touhou-ext 目前只启用结构，
-     法术卡继续使用 `effect.hp`，模组可通过 ruleOverride 提供 `barrier.levels`。
+     重复展开支持 REPLACE / REFRESH / STACK；扩大缩小按 HP 比例迁移；战斗视图显示大小 / 必要 Lv / 惩罚。
+     ⏳ AREA 范围与「效果范围脱离」仍需地图位置模型。
 2. **DP 机制 · 剩余**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
    - 回合 / 宣言 / DP 回复核心已完成；剩余行动结算与 socket 接线（见 2.7 里程碑 1–2）。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
@@ -374,12 +376,14 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      也可直接 PASS 不判定；UI 提供技能 / 特性值 / 目标值 / 骰数选择。
    - ✅ 移动公式接入追逐：`touhouMovement`（地面 / 飞行）接入 `chaseBaseMov`，新增〈运动〉技能与
      `TOUHOU_MOV_PER_MPS` 换算常量（默认 1 m/s = 1 MOV），并叠加常时移动加值。
-   - ✅ 重量 / 财产：`RulePack.inventory`（carryCapacity / overloadPenaltyPerUnit / currencyName /
-     startingProperty / livingCostPerDay / propertyTradeRate）；卡片新增 `weight`；
-     `resolveEncumbrance` / `resolveProperty` 纯函数；东方默认 10 円、每日 1 円。
-     ⏳ 负重上限精确数值表待 wiki（默认不强制限重，模组可覆盖）。
-   - ✅ 遮挡物 / 掩体：`CoverState`（等级 / 耐久 / 到期 / 挡视线）；`combat:set-cover`（KP）；
-     掩体等级提供应对 +Lv×2，耐久优先吸收伤害、击破后溢出继续结算；到期自动清理；视图展示掩体。
+   - ✅ 重量 / 财产（14.3/14.4，wiki 数值）：`{身体}×10kg`、拖拽 `×1.5`；
+     `RulePack.inventory`（currencyName=円 / subunit=钱 / 100钱=1円 / startingProperty=10 /
+     livingCostPerDay=0.1 / foodCost 5~10钱 / propertyTradeRate / overloadPenaltyPerUnit）；
+     卡片新增 `weight`；`resolveCarryCapacity` / `resolveDragCapacity` / `resolveEncumbrance` /
+     `resolveProperty` / `resolveFoodCostRange` 纯函数；角色装备汇总 `totalWeight`。
+   - ✅ 遮挡物 / 掩体（14.5，wiki 规则）：`CoverState`（强度 / 挡视线 / 到期）；`combat:set-cover`（KP）；
+     完整遮挡（有强度 + 挡视线）完全阻止里外攻击，攻击遮挡物无需判定、只结算伤害固定值部分、溢出不穿透；
+     非完整 / 无强度遮挡提供应对 +Lv×2；到期自动清理；视图展示掩体。
 
 ## 3. P2 KP行为 / 不可达
 

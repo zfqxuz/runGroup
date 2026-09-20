@@ -221,7 +221,47 @@ function main(): void {
   });
   ensure(brawlError === null, "COC 斗殴攻击应被允许");
 
-  console.log("PASS 战斗选项：COC7 反击=斗殴基础值、闪避与无防御、武器限制、非战斗技能过滤、东方事件开关、服务端行动校验");
+  // 14.5 遮挡：完整遮挡物中的单位不能攻击他人。
+  const touhouDpContext = {
+    pack: touhou,
+    state: {
+      participants: [
+        { id: "touhou-pc", defeated: false, faction: "PC", cover: { hp: 10, blocksLineOfSight: true } },
+        { id: "touhou-npc", defeated: false, faction: "BOSS" }
+      ]
+    },
+    attackSkills: new Map<string, readonly string[]>([["touhou-pc", ["DANMAKU"]]])
+  };
+  const coveredError = validateCombatAction(touhouDpContext, {
+    actorId: "touhou-pc",
+    kind: "DANMAKU",
+    dpAction: "RANGED",
+    targetId: "touhou-npc",
+    skill: "DANMAKU",
+    damage: "1d6"
+  });
+  ensure(coveredError === "在遮挡物中无法攻击他人", "完整遮挡中应禁止攻击他人，实际 " + String(coveredError));
+
+  const freeContext = {
+    ...touhouDpContext,
+    state: {
+      participants: [
+        { id: "touhou-pc", defeated: false, faction: "PC", cover: null },
+        { id: "touhou-npc", defeated: false, faction: "BOSS" }
+      ]
+    }
+  };
+  const freeError = validateCombatAction(freeContext, {
+    actorId: "touhou-pc",
+    kind: "DANMAKU",
+    dpAction: "RANGED",
+    targetId: "touhou-npc",
+    skill: "DANMAKU",
+    damage: "1d6"
+  });
+  ensure(freeError === null, "无遮挡时应允许射击，实际 " + String(freeError));
+
+  console.log("PASS 战斗选项：COC7 反击=斗殴基础值、闪避与无防御、武器限制、非战斗技能过滤、东方事件开关、服务端行动校验、遮挡禁攻");
 }
 
 main();

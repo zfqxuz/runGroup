@@ -267,10 +267,8 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     name: z.string().default("结界"),
     /** 持续行动轮次；0 表示直到被击破或战斗结束。 */
     durationTicks: ExprSchema.default("0"),
-    /** 结界大小 id（对应 barrier.sizes）；用于查表与范围描述。 */
-    size: z.string().optional(),
-    /** 结界等级（对应 barrier.levels）；用于查表。 */
-    level: z.number().int().min(1).optional(),
+    /** 结界大小（米），对应 7.5 表 7.1；决定目标值 / 灵力消耗 / 持续。 */
+    sizeMeters: z.number().nonnegative().optional(),
     /** 锚定方式：SELF 贴在目标身上，AREA 占据一片区域（需要位置模型）。 */
     anchor: z.enum(["SELF", "AREA"]).default("SELF")
   }),
@@ -456,62 +454,78 @@ export const AbilityRulesSchema = z.object({
   definitions: z.record(z.string(), AbilityDefinitionSchema).default({})
 });
 
-/** 7.5 结界大小：范围、容量、HP / MP 系数与结界内战斗惩罚。 */
-export const BarrierSizeSchema = z.object({
+/** 7.5 结界大小档位：表 7.1 的一行。 */
+export const BarrierTierSchema = z.object({
   id: z.string(),
   name: z.string(),
-  description: z.string().optional(),
-  /** 影响范围（米）；AREA 锚定用于描述。 */
-  scopeMeters: ExprSchema.default("1"),
-  /** 可容纳单位数；0 表示不限。 */
-  capacity: z.number().int().nonnegative().default(0),
-  /** HP 系数（乘在等级基础 HP 上）。 */
-  hpMultiplier: ExprSchema.default("1"),
-  /** 灵力消耗系数。 */
-  mpMultiplier: ExprSchema.default("1"),
-  /** 结界内战斗惩罚（达成值减值）。 */
-  penalty: ExprSchema.default("0")
+  /** 边长（米）。 */
+  sizeMeters: z.number().nonnegative(),
+  /** 使用该大小所需的神术·阴阳术等级。 */
+  requiredLevel: z.number().int().min(1),
+  /** 判定目标值。 */
+  targetValue: z.number().int().nonnegative(),
+  /** 消耗灵力。 */
+  mpCost: z.number().int().nonnegative()
 });
 
-/** 7.5 结界等级：基础 HP / 目标值 / 灵力消耗 / 持续。 */
-export const BarrierLevelSchema = z.object({
-  level: z.number().int().min(1),
-  /** 基础 HP。 */
-  hp: ExprSchema,
-  /** 解除 / 抵抗对抗的目标值。 */
-  targetValue: ExprSchema,
-  /** 基础灵力消耗。 */
-  mpCost: ExprSchema,
-  /** 基础持续行动轮次；0 表示直到击破 / 战斗结束。 */
-  durationTicks: ExprSchema.default("0")
+/** 超过最大档位后每 +sizeStepMeters 的增量（表 7.1 末行）。 */
+export const BarrierExtendedSchema = z.object({
+  sizeStepMeters: z.number().nonnegative().default(10),
+  requiredLevelPerStep: z.number().nonnegative().default(1),
+  targetValuePerStep: z.number().nonnegative().default(2),
+  mpCostPerStep: z.number().nonnegative().default(2)
 });
 
-/** 7.5 结界系法术通用规则；数值表由规则包 / 模组提供。 */
+/** 结界内战斗惩罚：自由行动范围（正方柱边长）<= maxMeters 时应用。 */
+export const BarrierConfinementSchema = z.object({
+  maxMeters: z.number().nonnegative(),
+  penalty: z.number().nonnegative()
+});
+
+/** 7.5 结界系法术通用规则；数值表来自 wiki 表 7.1。 */
 export const BarrierRulesSchema = z.object({
   enabled: z.boolean().default(false),
-  /** 大小 id -> 定义。 */
-  sizes: z.record(z.string(), BarrierSizeSchema).default({}),
-  /** 等级表，按 level 升序；查表时取 <= 请求等级的最高档。 */
-  levels: z.array(BarrierLevelSchema).default([]),
+  /** 大小档位表，按 sizeMeters 升序（2/5/10/15/20/25/30/40m）。 */
+  tiers: z.array(BarrierTierSchema).default([]),
+  /** 超出最大档位的线性扩展（+10m / +1Lv / 目标 +2 / 灵力 +2）。 */
+  extended: BarrierExtendedSchema.default({}),
+  /** 张开位置距术者最大距离（米）。 */
+  castRangeMeters: z.number().nonnegative().default(30),
+  /** 扩大 / 缩小每级灵力消耗。 */
+  resizeMpCost: z.number().int().nonnegative().default(2),
+  /** 持续时间小时数 = 术者等级 × 此值（默认 Lv×2 小时）。 */
+  durationHoursPerLevel: z.number().nonnegative().default(2),
+  /** 回避目标值附加 = floor(大小 / 此除数)。 */
+  dodgeSizeDivisor: z.number().positive().default(2),
+  /** 结界内战斗惩罚档位，按 maxMeters 升序。 */
+  confinementPenalties: z.array(BarrierConfinementSchema).default([]),
   /** 同一目标重复展开时的处理。 */
   restack: z.enum(["REPLACE", "REFRESH", "STACK"]).default("REPLACE"),
   /** DISPEL 解除结界时是否需要对抗目标值。 */
-  dispelNeedsContest: z.boolean().default(false)
+  dispelNeedsContest: z.boolean().default(true)
 });
 
 /** 14.10 / 14.11 重量与财产规则；数值表由规则包 / 模组提供。 */
 export const InventoryRulesSchema = z.object({
   enabled: z.boolean().default(false),
-  /** 负重上限表达式，可引用 str / siz / con 等；不填表示不限制负重。 */
+  /** 负重上限表达式（14.3：{身体}×10 千克）；不填表示不限制负重。 */
   carryCapacity: ExprSchema.optional(),
-  /** 每超重 1 单位的应对 / 移动惩罚。 */
+  /** 地面拖拽倍率（14.3：{身体}×15 千克 → 相对上限的 1.5 倍）。 */
+  dragMultiplier: ExprSchema.default("1.5"),
+  /** 每超重 1 千克的应对 / 移动惩罚；wiki 由 GM 裁定，默认 0。 */
   overloadPenaltyPerUnit: ExprSchema.default("0"),
-  /** 货币名称（千幻抄为「円」）。 */
+  /** 主货币名称（千幻抄为「円」/「元」）。 */
   currencyName: z.string().default("円"),
-  /** 开卡初始财产表达式（千幻抄约 10 円）。 */
+  /** 辅币名称（「钱」）；1 円 = subunitPerUnit 钱。 */
+  currencySubunit: z.string().default("钱"),
+  subunitPerUnit: z.number().int().positive().default(100),
+  /** 开卡初始财产表达式（wiki：各角色约 10 円）。 */
   startingProperty: ExprSchema.default("10"),
-  /** 每天生活费。 */
-  livingCostPerDay: ExprSchema.default("1"),
+  /** 每天基本生活费（wiki：食品约 5~10 钱 → 0.05~0.1 円）。 */
+  livingCostPerDay: ExprSchema.default("0.1"),
+  /** 单日食品费用下限 / 上限（円）。 */
+  foodCostMin: ExprSchema.default("0.05"),
+  foodCostMax: ExprSchema.default("0.1"),
   /** 1 点财产可换取的食物 / 魔法物品点数。 */
   propertyTradeRate: ExprSchema.default("1")
 });
@@ -798,8 +812,9 @@ export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;
 export type DamageRules = z.output<typeof DamageRulesSchema>;
 export type SpellCardRules = z.output<typeof SpellCardRulesSchema>;
-export type BarrierSize = z.output<typeof BarrierSizeSchema>;
-export type BarrierLevel = z.output<typeof BarrierLevelSchema>;
+export type BarrierTier = z.output<typeof BarrierTierSchema>;
+export type BarrierExtended = z.output<typeof BarrierExtendedSchema>;
+export type BarrierConfinement = z.output<typeof BarrierConfinementSchema>;
 export type BarrierRules = z.output<typeof BarrierRulesSchema>;
 export type InventoryRules = z.output<typeof InventoryRulesSchema>;
 export type MagicSpell = z.output<typeof MagicSpellSchema>;

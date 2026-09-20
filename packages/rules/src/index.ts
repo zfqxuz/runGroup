@@ -48,8 +48,9 @@ export type {
   StatusEffectRule,
   DamageRules,
   SpellCardRules,
-  BarrierSize,
-  BarrierLevel,
+  BarrierTier,
+  BarrierExtended,
+  BarrierConfinement,
   BarrierRules,
   InventoryRules,
   ActionCostKey,
@@ -187,7 +188,9 @@ export type {
 
 export {
   resolveCarryCapacity,
+  resolveDragCapacity,
   resolveEncumbrance,
+  resolveFoodCostRange,
   resolveLivingCost,
   resolveProperty,
   resolveStartingProperty
@@ -195,14 +198,18 @@ export {
 export type {
   EncumbranceInput,
   EncumbranceResult,
+  FoodCostRange,
   PropertyInput,
   PropertyResult
 } from "./inventory";
 
 export {
+  barrierConfinementPenalty,
   barrierDispelSuccess,
-  barrierLevelEntry,
+  barrierDodgeTargetValue,
   barrierRestackOutcome,
+  barrierResizeCost,
+  barrierTierForSize,
   resizeBarrierHp,
   resolveBarrierStats
 } from "./barrier";

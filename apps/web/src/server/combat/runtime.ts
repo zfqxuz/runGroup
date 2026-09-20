@@ -123,9 +123,13 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
                 : null,
             sizeId:
               typeof participant.barrier.sizeId === "string" ? participant.barrier.sizeId : null,
-            level:
-              typeof participant.barrier.level === "number"
-                ? Math.max(1, Math.floor(participant.barrier.level))
+            sizeMeters:
+              typeof participant.barrier.sizeMeters === "number"
+                ? Math.max(0, participant.barrier.sizeMeters)
+                : 0,
+            requiredLevel:
+              typeof participant.barrier.requiredLevel === "number"
+                ? Math.max(1, Math.floor(participant.barrier.requiredLevel))
                 : null,
             targetValue:
               typeof participant.barrier.targetValue === "number"
@@ -136,9 +140,9 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
                 ? Math.max(0, Math.floor(participant.barrier.penalty))
                 : 0,
             anchor: participant.barrier.anchor === "AREA" ? "AREA" : "SELF",
-            scopeMeters:
-              typeof participant.barrier.scopeMeters === "number"
-                ? Math.max(0, participant.barrier.scopeMeters)
+            durationHours:
+              typeof participant.barrier.durationHours === "number"
+                ? Math.max(0, participant.barrier.durationHours)
                 : 0
           }
         : null;

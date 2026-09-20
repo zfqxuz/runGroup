@@ -1232,8 +1232,12 @@ export default function CombatBoard(props: Props) {
                     {item.barrierHp === null ? null : (
                       <p className="mt-1 font-mono text-[11px] text-sky-200">
                         {item.barrierName ?? "结界"}
-                        {item.barrierLevel === null || item.barrierLevel === undefined ? "" : " Lv" + item.barrierLevel}
-                        {item.barrierSizeId === null || item.barrierSizeId === undefined ? "" : "·" + item.barrierSizeId}
+                        {item.barrierSizeMeters === null || item.barrierSizeMeters === undefined
+                          ? ""
+                          : " " + item.barrierSizeMeters + "m"}
+                        {item.barrierRequiredLevel === null || item.barrierRequiredLevel === undefined
+                          ? ""
+                          : "·必要Lv" + item.barrierRequiredLevel}
                         {" "}
                         {item.barrierHp}/{item.barrierMaxHp ?? item.barrierHp}
                         {(item.barrierPenalty ?? 0) > 0 ? "（惩罚 -" + item.barrierPenalty + "）" : ""}

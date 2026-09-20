@@ -1,96 +1,112 @@
-import { compile, evaluate } from "@touhou/formula";
-import type { BarrierLevel, BarrierRules, BarrierSize } from "./schema";
+import type { BarrierRules, BarrierTier } from "./schema";
 
 /**
- * 7.5 结界系法术通用规则（架构层）。
+ * 7.5 结界系法术通用规则（wiki 表 7.1）。
  *
- * 具体「大小 / 等级 / 目标值 / 灵力消耗表」是规则书数值，由规则包 / 模组
- * 通过 `RulePack.barrier` 提供；本文件只负责查表、求值与对抗判定。
- * 规则包未启用或没有对应等级档时，调用方回退到法术卡自带的 `hp`。
+ * 数值表由规则包 / 模组通过 `RulePack.barrier` 提供；本文件负责按大小查表、
+ * 处理超出最大档位的线性扩展、持续时间、回避目标值与结界内战斗惩罚。
  */
 
-function evalExpr(
-  expression: string,
-  vars: Readonly<Record<string, number>>,
-  consts: Readonly<Record<string, number>>
-): number {
-  const compiled = compile(expression, { vars: Object.keys(vars), consts: Object.keys(consts) });
-  const value = evaluate(compiled, { vars, consts });
-  return Number.isFinite(value) ? value : 0;
+function sortedTiers(rules: BarrierRules): readonly BarrierTier[] {
+  return [...rules.tiers].sort((a, b) => a.sizeMeters - b.sizeMeters);
 }
 
-/** 取 <= 请求等级的最高档；请求等级低于最小档时取最小档。 */
-export function barrierLevelEntry(rules: BarrierRules, level: number): BarrierLevel | null {
-  if (rules.levels.length === 0) return null;
-  const sorted = [...rules.levels].sort((a, b) => a.level - b.level);
-  const requested = Math.max(1, Math.floor(level));
-  if (requested < sorted[0]!.level) return sorted[0]!;
-  let match: BarrierLevel | null = null;
-  for (const entry of sorted) {
-    if (entry.level <= requested) match = entry;
+/** 取 <= 指定大小的最高档；小于最小档时取最小档，超出最大档时按 extended 线性扩展。 */
+export function barrierTierForSize(
+  rules: BarrierRules,
+  sizeMeters: number
+): { readonly tier: BarrierTier | null; readonly extraSteps: number } {
+  const size = Math.max(0, sizeMeters);
+  const tiers = sortedTiers(rules);
+  if (tiers.length === 0) return { tier: null, extraSteps: 0 };
+  const first = tiers[0]!;
+  if (size < first.sizeMeters) return { tier: first, extraSteps: 0 };
+  let match = first;
+  for (const tier of tiers) {
+    if (tier.sizeMeters <= size) match = tier;
     else break;
   }
-  return match;
+  const largest = tiers[tiers.length - 1]!;
+  if (size <= largest.sizeMeters) return { tier: match, extraSteps: 0 };
+  const step = rules.extended.sizeStepMeters;
+  if (step <= 0) return { tier: largest, extraSteps: 0 };
+  const extraSteps = Math.ceil((size - largest.sizeMeters) / step);
+  return { tier: largest, extraSteps };
 }
 
 export interface BarrierStatsInput {
-  readonly level: number;
-  readonly sizeId?: string | null;
-  /** 查表失败时使用的 HP（通常来自法术卡 effect.hp）。 */
+  /** 结界大小（米）。 */
+  readonly sizeMeters: number;
+  /** 施术者【神术·阴阳术】等级；决定持续时间。 */
+  readonly casterLevel?: number;
+  /** 结界 HP；通常来自法术卡 effect.hp 的掷骰结果。 */
   readonly fallbackHp?: number;
-  readonly vars?: Readonly<Record<string, number>>;
-  readonly consts?: Readonly<Record<string, number>>;
 }
-
 export interface BarrierStats {
-  readonly level: number;
-  readonly sizeId: string | null;
-  readonly sizeName: string | null;
-  readonly hp: number;
-  readonly maxHp: number;
+  readonly sizeMeters: number;
+  readonly tierId: string | null;
+  readonly tierName: string | null;
+  readonly requiredLevel: number;
   readonly targetValue: number;
   readonly mpCost: number;
-  readonly durationTicks: number;
-  /** 结界内战斗惩罚（达成值减值）。 */
+  readonly durationHours: number;
+  /** 结界内战斗惩罚（回避减值）。 */
   readonly penalty: number;
-  readonly scopeMeters: number;
-  readonly capacity: number;
+  readonly hp: number;
+  readonly maxHp: number;
+  readonly extraSteps: number;
 }
 
-/** 按规则包结界表求值；未启用返回 null，调用方回退到卡面数据。 */
-export function resolveBarrierStats(
-  rules: BarrierRules,
-  input: BarrierStatsInput
-): BarrierStats | null {
+/** 按 7.5 表 7.1 求值；未启用返回 null，调用方回退到卡面数据。 */
+export function resolveBarrierStats(rules: BarrierRules, input: BarrierStatsInput): BarrierStats | null {
   if (rules.enabled !== true) return null;
-  const vars = input.vars ?? {};
-  const consts = input.consts ?? {};
-  const level = Math.max(1, Math.floor(input.level));
-  const entry = barrierLevelEntry(rules, level);
-  const sizeId = input.sizeId ?? null;
-  const size: BarrierSize | undefined = sizeId === null ? undefined : rules.sizes[sizeId];
-  const baseHp = entry === null ? Math.max(0, input.fallbackHp ?? 0) : evalExpr(entry.hp, vars, consts);
-  const hpMultiplier = size === undefined ? 1 : evalExpr(size.hpMultiplier, vars, consts);
-  const hp = Math.max(0, Math.round(baseHp * hpMultiplier));
-  const targetValue = entry === null ? 0 : Math.max(0, Math.round(evalExpr(entry.targetValue, vars, consts)));
-  const mpCost = entry === null ? 0 : Math.max(0, Math.round(evalExpr(entry.mpCost, vars, consts) * (size === undefined ? 1 : evalExpr(size.mpMultiplier, vars, consts))));
-  const durationTicks = entry === null ? 0 : Math.max(0, Math.floor(evalExpr(entry.durationTicks, vars, consts)));
-  const penalty = size === undefined ? 0 : Math.max(0, evalExpr(size.penalty, vars, consts));
-  const scopeMeters = size === undefined ? 0 : Math.max(0, evalExpr(size.scopeMeters, vars, consts));
-  const capacity = size === undefined ? 0 : Math.max(0, size.capacity);
+  const sizeMeters = Math.max(0, input.sizeMeters);
+  const { tier, extraSteps } = barrierTierForSize(rules, sizeMeters);
+  if (tier === null) return null;
+  const ext = rules.extended;
+  const requiredLevel = tier.requiredLevel + extraSteps * ext.requiredLevelPerStep;
+  const targetValue = tier.targetValue + extraSteps * ext.targetValuePerStep;
+  const mpCost = tier.mpCost + extraSteps * ext.mpCostPerStep;
+  const casterLevel = Math.max(0, Math.floor(input.casterLevel ?? 0));
+  const hp = Math.max(0, Math.round(input.fallbackHp ?? 0));
   return {
-    level,
-    sizeId: size?.id ?? null,
-    sizeName: size?.name ?? null,
-    hp,
-    maxHp: hp,
+    sizeMeters,
+    tierId: tier.id,
+    tierName: tier.name,
+    requiredLevel,
     targetValue,
     mpCost,
-    durationTicks,
-    penalty,
-    scopeMeters,
-    capacity
+    durationHours: casterLevel * rules.durationHoursPerLevel,
+    penalty: barrierConfinementPenalty(rules, sizeMeters),
+    hp,
+    maxHp: hp,
+    extraSteps
   };
+}
+
+/** 结界内战斗惩罚：自由行动范围越小惩罚越高。 */
+export function barrierConfinementPenalty(rules: BarrierRules, freeSpaceMeters: number): number {
+  const meters = Math.max(0, freeSpaceMeters);
+  const sorted = [...rules.confinementPenalties].sort((a, b) => a.maxMeters - b.maxMeters);
+  for (const entry of sorted) {
+    if (meters <= entry.maxMeters) return Math.max(0, entry.penalty);
+  }
+  return 0;
+}
+
+/** 7.5：回避结界生成的目标值 = 达成值 + floor(大小 / 除数)，最多消费 3 DP。 */
+export function barrierDodgeTargetValue(
+  achievement: number,
+  sizeMeters: number,
+  rules: BarrierRules
+): number {
+  const divisor = rules.dodgeSizeDivisor > 0 ? rules.dodgeSizeDivisor : 2;
+  return Math.max(0, Math.floor(achievement)) + Math.floor(Math.max(0, sizeMeters) / divisor);
+}
+
+/** 扩大 / 缩小每一步（每级）的灵力消耗。 */
+export function barrierResizeCost(rules: BarrierRules, steps: number): number {
+  return Math.max(0, Math.floor(steps)) * Math.max(0, rules.resizeMpCost);
 }
 
 export interface BarrierResizeInput {
@@ -110,10 +126,7 @@ export interface BarrierResizeResult {
 }
 
 /** 扩大 / 缩小时按当前 HP 比例迁移到新上限。 */
-export function resizeBarrierHp(
-  input: BarrierResizeInput,
-  newMaxHp: number
-): BarrierResizeResult {
+export function resizeBarrierHp(input: BarrierResizeInput, newMaxHp: number): BarrierResizeResult {
   const amount = Math.max(1, Math.floor(input.amount ?? 1));
   const levelDelta = input.direction === "EXPAND" ? amount : -amount;
   const maxHp = Math.max(0, Math.round(newMaxHp));

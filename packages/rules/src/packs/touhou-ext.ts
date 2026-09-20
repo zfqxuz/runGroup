@@ -402,32 +402,60 @@ TOUHOU_EXT.abilities = {
   }
 };
 /**
- * 7.5 结界系法术通用规则。
+ * 7.5 结界系法术通用规则（wiki 表 7.1）。
  *
- * 引擎已支持大小 / 等级 / 目标值 / 灵力消耗查表、持续、解除对抗、扩大缩小
- * 与结界内战斗惩罚；具体数值表（大小档位、每级 HP / MP / 目标值）属于 wiki
- * 内容，待补齐后在模组 / 规则包覆盖这里。当前只启用结构，法术卡仍用 effect.hp。
+ * 大小 2/5/10/15/20/25/30/40m，必要 Lv 1–8，目标值 16–30，灵力 4–18；
+ * 超过 40m 后每 +10m：+1Lv / 目标 +2 / 灵力 +2。持续 = 神术 Lv × 2 小时。
+ * 扩大 / 缩小每级 2 灵力；结界内 2m² → 回避 -3、1m² → 回避 -8。
  */
 TOUHOU_EXT.barrier = {
   enabled: true,
-  sizes: {},
-  levels: [],
+  tiers: [
+    { id: "SIZE_2", name: "2m", sizeMeters: 2, requiredLevel: 1, targetValue: 16, mpCost: 4 },
+    { id: "SIZE_5", name: "5m", sizeMeters: 5, requiredLevel: 2, targetValue: 18, mpCost: 6 },
+    { id: "SIZE_10", name: "10m", sizeMeters: 10, requiredLevel: 3, targetValue: 20, mpCost: 8 },
+    { id: "SIZE_15", name: "15m", sizeMeters: 15, requiredLevel: 4, targetValue: 22, mpCost: 10 },
+    { id: "SIZE_20", name: "20m", sizeMeters: 20, requiredLevel: 5, targetValue: 24, mpCost: 12 },
+    { id: "SIZE_25", name: "25m", sizeMeters: 25, requiredLevel: 6, targetValue: 26, mpCost: 14 },
+    { id: "SIZE_30", name: "30m", sizeMeters: 30, requiredLevel: 7, targetValue: 28, mpCost: 16 },
+    { id: "SIZE_40", name: "40m", sizeMeters: 40, requiredLevel: 8, targetValue: 30, mpCost: 18 }
+  ],
+  extended: {
+    sizeStepMeters: 10,
+    requiredLevelPerStep: 1,
+    targetValuePerStep: 2,
+    mpCostPerStep: 2
+  },
+  castRangeMeters: 30,
+  resizeMpCost: 2,
+  durationHoursPerLevel: 2,
+  dodgeSizeDivisor: 2,
+  confinementPenalties: [
+    { maxMeters: 1, penalty: 8 },
+    { maxMeters: 2, penalty: 3 }
+  ],
   restack: "REPLACE",
-  dispelNeedsContest: false
+  dispelNeedsContest: true
 };
 /**
- * 14.10 / 14.11 重量与财产。
+ * 14.3 / 14.4 重量与财产（wiki）。
  *
- * 千幻抄各角色约 10 円，货币单位为「円」；负重上限的精确数值表属 wiki 内容，
- * 暂不填写 carryCapacity（不强制限重），由模组按需覆盖。
+ * 负重：{身体}×10 千克（地面拖拽 ×1.5）；各角色约 10 円；
+ * 1 円 = 100 钱，食品约 5~10 钱/天；超重惩罚由 GM 裁定（默认 0）。
  */
 TOUHOU_EXT.inventory = {
   enabled: true,
+  carryCapacity: "floor(str / ATTR_SCALE) * 10",
+  dragMultiplier: "1.5",
+  overloadPenaltyPerUnit: "0",
   currencyName: "円",
+  currencySubunit: "钱",
+  subunitPerUnit: 100,
   startingProperty: "10",
-  livingCostPerDay: "1",
-  propertyTradeRate: "1",
-  overloadPenaltyPerUnit: "0"
+  livingCostPerDay: "0.1",
+  foodCostMin: "0.05",
+  foodCostMax: "0.1",
+  propertyTradeRate: "1"
 };
 TOUHOU_EXT.statusEffects = {
   // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。

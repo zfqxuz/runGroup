@@ -82,8 +82,9 @@ export interface ParticipantView {
   readonly barrierHp: number | null;
   readonly barrierMaxHp: number | null;
   readonly barrierName: string | null;
-  /** 7.5 结界等级 / 大小 / 战斗惩罚；无结界时为 null。 */
-  readonly barrierLevel: number | null;
+  /** 7.5 结界大小 / 必要 Lv / 战斗惩罚；无结界时为 null。 */
+  readonly barrierSizeMeters: number | null;
+  readonly barrierRequiredLevel: number | null;
   readonly barrierSizeId: string | null;
   readonly barrierPenalty: number | null;
   /** 14.12 掩体：名称 / 耐久 / 等级 / 是否挡视线；无掩体时为 null / false。 */
@@ -272,7 +273,8 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       barrierHp: showNumbers ? (participant.barrier?.hp ?? null) : null,
       barrierMaxHp: showNumbers ? (participant.barrier?.maxHp ?? null) : null,
       barrierName: showNumbers ? (participant.barrier?.name ?? null) : null,
-      barrierLevel: showNumbers ? (participant.barrier?.level ?? null) : null,
+      barrierSizeMeters: showNumbers ? (participant.barrier?.sizeMeters ?? null) : null,
+      barrierRequiredLevel: showNumbers ? (participant.barrier?.requiredLevel ?? null) : null,
       barrierSizeId: showNumbers ? (participant.barrier?.sizeId ?? null) : null,
       barrierPenalty: showNumbers ? (participant.barrier?.penalty ?? null) : null,
       coverName: showNumbers ? (participant.cover?.name ?? null) : null,

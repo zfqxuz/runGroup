@@ -24,14 +24,27 @@ function evalExpr(
   }
 }
 
-/** 负重上限；规则包未填 carryCapacity 时返回 null（不限制）。 */
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+/** 负重上限（千克）；规则包未填 carryCapacity 时返回 null（不限制）。 */
 export function resolveCarryCapacity(
   rules: InventoryRules,
   vars: Readonly<Record<string, number>> = {},
   consts: Readonly<Record<string, number>> = {}
 ): number | null {
   if (rules.enabled !== true || rules.carryCapacity === undefined) return null;
-  return Math.max(0, evalExpr(rules.carryCapacity, vars, consts, 0));
+  return round2(Math.max(0, evalExpr(rules.carryCapacity, vars, consts, 0)));
+}
+
+/** 14.3 地面拖拽上限；未配置时按 dragMultiplier 估算。 */
+export function resolveDragCapacity(
+  rules: InventoryRules,
+  capacity: number,
+  consts: Readonly<Record<string, number>> = {}
+): number {
+  return round2(Math.max(0, capacity) * Math.max(0, evalExpr(rules.dragMultiplier, {}, consts, 1.5)));
 }
 
 export interface EncumbranceInput {
@@ -100,16 +113,16 @@ export function resolveProperty(
   vars: Readonly<Record<string, number>> = {},
   consts: Readonly<Record<string, number>> = {}
 ): PropertyResult {
-  const propertyBefore = Math.max(0, Math.floor(input.property));
-  const spent = Math.max(0, Math.floor(input.spent));
+  const propertyBefore = Math.max(0, round2(input.property));
+  const spent = Math.max(0, round2(input.spent));
   const rate = Math.max(0, evalExpr(rules.propertyTradeRate, vars, consts, 1));
   return {
     currencyName: rules.currencyName,
     propertyBefore,
     spent,
-    propertyAfter: Math.max(0, propertyBefore - spent),
+    propertyAfter: round2(Math.max(0, propertyBefore - spent)),
     affordable: spent <= propertyBefore,
-    tradeableValue: spent * rate
+    tradeableValue: round2(spent * rate)
   };
 }
 
@@ -119,14 +132,32 @@ export function resolveStartingProperty(
   vars: Readonly<Record<string, number>> = {},
   consts: Readonly<Record<string, number>> = {}
 ): number {
-  return Math.max(0, Math.floor(evalExpr(rules.startingProperty, vars, consts, 10)));
+  return round2(Math.max(0, evalExpr(rules.startingProperty, vars, consts, 10)));
 }
 
-/** 每天生活费。 */
+/** 每天基本生活费（円）。 */
 export function resolveLivingCost(
   rules: InventoryRules,
   vars: Readonly<Record<string, number>> = {},
   consts: Readonly<Record<string, number>> = {}
 ): number {
-  return Math.max(0, evalExpr(rules.livingCostPerDay, vars, consts, 1));
+  return round2(Math.max(0, evalExpr(rules.livingCostPerDay, vars, consts, 0.1)));
+}
+
+export interface FoodCostRange {
+  readonly min: number;
+  readonly max: number;
+  readonly currencyName: string;
+}
+
+/** 单日食品费用区间（wiki：5~10 钱）。 */
+export function resolveFoodCostRange(
+  rules: InventoryRules,
+  consts: Readonly<Record<string, number>> = {}
+): FoodCostRange {
+  return {
+    min: round2(Math.max(0, evalExpr(rules.foodCostMin, {}, consts, 0.05))),
+    max: round2(Math.max(0, evalExpr(rules.foodCostMax, {}, consts, 0.1))),
+    currencyName: rules.currencyName
+  };
 }
