@@ -49,8 +49,8 @@ export interface CharacterBackstory {
   readonly abilities: Readonly<Record<string, number>>;
   /** 千幻抄能力实例的发动特性值覆盖（如属性使 {知性}/{感觉}）。 */
   readonly abilityAttributes: Readonly<Record<string, string>>;
-  /** 已习得的常时能力条目 id（妖力 / 特技）。 */
-  readonly abilityDefinitions: readonly string[];
+  /** 已习得的常时能力条目：id -> Lv（妖力 / 特技）。 */
+  readonly abilityDefinitions: Readonly<Record<string, number>>;
   /** 千幻抄车卡能力等级 A-D。 */
   readonly abilityTier: string | null;
 }
@@ -152,7 +152,16 @@ export function characterBackstoryOf(value: unknown): CharacterBackstory | null 
       }
       return output;
     })(),
-    abilityDefinitions: namesOf(record.abilityDefinitions),
+    abilityDefinitions: (() => {
+      const raw = recordOf(record.abilityDefinitions);
+      const output: Record<string, number> = {};
+      for (const [key, value] of Object.entries(raw)) {
+        if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+          output[key] = Math.max(1, Math.floor(value));
+        }
+      }
+      return output;
+    })(),
     abilityTier: stringOrNull(record.abilityTier),
     spellDetails: arrayOf(record.spellDetails)
       .map((item) => {
@@ -189,7 +198,7 @@ export function characterBackstoryOf(value: unknown): CharacterBackstory | null 
     backstory.companions.length > 0 ||
     Object.keys(backstory.abilities).length > 0 ||
     Object.keys(backstory.abilityAttributes).length > 0 ||
-    backstory.abilityDefinitions.length > 0 ||
+    Object.keys(backstory.abilityDefinitions).length > 0 ||
     backstory.abilityTier !== null;
   return hasAny ? backstory : null;
 }

@@ -351,10 +351,14 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - ✅ **每级习得数量**：`abilitySpellCountIssue` 接入车卡 UI 与服务端保存拦截（按 `magic.spells.abilityId` 归类）。
    - ✅ **种族免费 / 限制**：`RaceSchema.freeAbilityLevels` / `disallowedAbilityCategories`；
      妖怪免费 3 级妖术，人类禁止妖力 / 妖术（属性使组合为例外开关）。
-   - ✅ **妖力 / 特技常时被动层**：`AbilityDefinitionSchema.passives`（属性 / 技能 / 衍生 / 伤害 / 应对 / 命中 / 移动），
-     `collectAbilityPassiveMods` 在战斗准备时求值；DP 战斗的伤害、回避 / 防御 / 掩护 / 抵抗、命中与追逐移动已接入。
-     具体妖力 / 特技条目仍待 wiki 列表补入 `abilities.definitions`。
-   - ⏳ 属性使具体法术表（9.2）、术式版神术 / 妖弹化妖术的完整法术清单仍待 wiki 数据。
+   - ✅ **妖力 / 特技常时被动层**：`AbilityDefinitionSchema.passives`（属性 / 技能 / 衍生 / 伤害 / 应对 / 命中 /
+     移动 / 擦弹追加）+ `grazeBonusPer`；`collectAbilityPassiveMods` 在战斗准备时求值；
+     DP 战斗的伤害、回避 / 防御 / 掩护 / 抵抗、命中、擦弹与追逐移动已接入。
+   - ✅ **妖力 / 特技列表**（wiki 抓取）：`packs/data/touhou-abilities.ts` 登记 19 个条目
+     （名称 / 消费点数 / 说明）；`AbilityDefinitionSchema.cost` / `costPerLevel` / `costNote`
+     接入能力点预算与车卡 UI；高速飞行（移动 +Lv）、擦弹判定大（每 3 点擦弹 +1）已自动化。
+     未自动化条目由 KP 按说明结算。
+   - ⏳ 属性使基本 / 追加能力与神术 / 魔法 / 妖术法术的**效果**仍需逐条映射到 effects（名称 / 消费已可从 wiki 继续补）。
    - ✅ `BARRIER` 结界（7.5，wiki 表 7.1 数值已落地）：`RulePack.barrier`
      （tiers 2/5/10/15/20/25/30/40m + extended +10m/+1Lv/目标+2/灵力+2；castRange 30m；
      resizeMpCost 2；duration = 神术 Lv×2 小时；dodge = 达成值 + floor(大小/2)；

@@ -165,6 +165,46 @@ export function abilitySpendTotal(
   return total;
 }
 
+/** 具体能力条目的单级消费：costPerLevel 优先，否则固定 cost（仅 1 级）。 */
+export function abilityDefinitionStepCost(definition: AbilityDefinition, level: number): number {
+  const lv = Math.max(1, Math.floor(level));
+  if (definition.costPerLevel !== undefined) {
+    try {
+      const compiled = compile(definition.costPerLevel, { vars: ["level"], consts: [] });
+      const value = evaluate(compiled, { vars: { level: lv }, consts: {} });
+      return Number.isFinite(value) ? Math.max(0, Math.round(value)) : 0;
+    } catch {
+      return 0;
+    }
+  }
+  return lv === 1 ? Math.max(0, Math.floor(definition.cost ?? 0)) : 0;
+}
+
+/** 从 0 级到 targetLevel 的具体能力条目累计消费。 */
+export function abilityDefinitionTotalCost(definition: AbilityDefinition, targetLevel: number): number {
+  const max = Math.max(0, Math.floor(targetLevel));
+  if (definition.costPerLevel === undefined) {
+    return max > 0 ? Math.max(0, Math.floor(definition.cost ?? 0)) : 0;
+  }
+  let total = 0;
+  for (let level = 1; level <= max; level += 1) total += abilityDefinitionStepCost(definition, level);
+  return total;
+}
+
+/** 已习得具体能力条目的累计消费：id -> Lv。 */
+export function abilityDefinitionSpendTotal(
+  rules: AbilityRules,
+  definitionLevels: Readonly<Record<string, number>>
+): number {
+  let total = 0;
+  for (const [definitionId, rawLevel] of Object.entries(definitionLevels)) {
+    const definition = rules.definitions[definitionId];
+    if (definition === undefined) continue;
+    total += abilityDefinitionTotalCost(definition, rawLevel);
+  }
+  return total;
+}
+
 export interface AbilitySpendCheck {
   readonly ok: boolean;
   readonly grade: string;
@@ -178,6 +218,8 @@ export interface AbilitySpendOptions {
   readonly race?: Race | null;
   /** 属性使组合例外：允许人类通过属性使路径接触妖术 / 妖力。 */
   readonly allowElementalistException?: boolean;
+  /** 已习得的具体能力条目等级：id -> Lv（妖力 / 特技）。 */
+  readonly definitionLevels?: Readonly<Record<string, number>>;
 }
 
 /** 校验车卡能力点：各能力等级累计消费不得超过该 grade 的预算。 */
@@ -193,7 +235,12 @@ export function validateAbilitySpend(
   }
   const unknown: string[] = [];
   const forbidden: string[] = [];
-  const spent = abilitySpendTotal(rules, levels);
+  for (const definitionId of Object.keys(options.definitionLevels ?? {})) {
+    if (rules.definitions[definitionId] === undefined) unknown.push(definitionId);
+  }
+  const spent =
+    abilitySpendTotal(rules, levels) +
+    abilityDefinitionSpendTotal(rules, options.definitionLevels ?? {});
   for (const instanceId of Object.keys(levels)) {
     const category = resolveAbilityCategory(rules, instanceId);
     if (category === undefined) {
@@ -266,8 +313,10 @@ export function abilityCategoryAllowedForRace(
 export interface AbilityPassiveInput {
   /** 角色有效能力等级（建议先经过 effectiveAbilityLevels）。 */
   readonly abilityLevels: Readonly<Record<string, number>>;
-  /** 已习得的具体能力条目 id。 */
+  /** 已习得的具体能力条目 id（按 1 级处理）；与 definitionLevels 二选一。 */
   readonly definitionIds?: readonly string[];
+  /** 已习得的具体能力条目等级：id -> Lv（妖力 / 特技可多级）。 */
+  readonly definitionLevels?: Readonly<Record<string, number>>;
   /** 规则包常量（可选，供被动表达式引用）。 */
   readonly constants?: Readonly<Record<string, number>>;
 }
@@ -280,6 +329,8 @@ export interface AbilityPassiveMods {
   readonly reactionBonus: number;
   readonly accuracyBonus: number;
   readonly movementBonus: number;
+  /** 每 N 点擦弹额外 +1；0 表示不生效。 */
+  readonly grazeBonusPer: number;
   readonly sources: readonly string[];
 }
 
@@ -291,6 +342,7 @@ function emptyPassiveMods(): {
   reactionBonus: number;
   accuracyBonus: number;
   movementBonus: number;
+  grazeBonusPer: number;
   sources: string[];
 } {
   return {
@@ -301,6 +353,7 @@ function emptyPassiveMods(): {
     reactionBonus: 0,
     accuracyBonus: 0,
     movementBonus: 0,
+    grazeBonusPer: 0,
     sources: []
   };
 }
@@ -335,6 +388,7 @@ function applyPassive(
   mods.reactionBonus += evalPassiveExpr(passive.reactionBonus, abilityLv, constants);
   mods.accuracyBonus += evalPassiveExpr(passive.accuracyBonus, abilityLv, constants);
   mods.movementBonus += evalPassiveExpr(passive.movementBonus, abilityLv, constants);
+  mods.grazeBonusPer = Math.max(mods.grazeBonusPer, passive.grazeBonusPer);
   mods.sources.push(sourceId);
 }
 
@@ -350,10 +404,18 @@ export function collectAbilityPassiveMods(
 ): AbilityPassiveMods {
   const mods = emptyPassiveMods();
   const constants = input.constants ?? {};
-  for (const definitionId of input.definitionIds ?? []) {
+  const explicit = input.definitionLevels ?? {};
+  const owned = new Set<string>([...Object.keys(explicit), ...(input.definitionIds ?? [])]);
+  for (const definitionId of owned) {
     const definition: AbilityDefinition | undefined = rules.definitions[definitionId];
     if (definition === undefined || definition.kind === "ACTIVE") continue;
-    const level = abilityCategoryLevelFromLevels(input.abilityLevels, definition.categoryId);
+    // 显式等级优先；只给 definitionIds 时退回该条目所属类别的等级（兼容旧调用）。
+    const explicitLevel = explicit[definitionId];
+    const categoryLevel = Math.max(1, abilityCategoryLevelFromLevels(input.abilityLevels, definition.categoryId));
+    const level = Math.max(
+      1,
+      Math.floor(Number.isFinite(explicitLevel) ? (explicitLevel as number) : categoryLevel)
+    );
     if (level < definition.minLevel) continue;
     for (const passive of definition.passives) {
       applyPassive(passive, level, constants, mods, definition.id);

@@ -36,7 +36,7 @@ function materializePreset(preset: PresetCharacter, effective: EffectivePack): N
     skills: { ...preset.skills },
     abilities: {},
     abilityAttributes: {},
-    abilityDefinitions: [],
+    abilityDefinitions: {},
     weapons: [],
     armor: "0",
     maxHp: preset.maxHp ?? fallback.derived.maxHp,

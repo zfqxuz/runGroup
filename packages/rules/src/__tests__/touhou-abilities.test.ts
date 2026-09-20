@@ -3,6 +3,9 @@ import {
   abilityCategoryAllowedForRace,
   abilityCategoryLevelFromLevels,
   abilityCostForLevel,
+  abilityDefinitionSpendTotal,
+  abilityDefinitionStepCost,
+  abilityDefinitionTotalCost,
   abilityLevelForPoints,
   abilityPointBudget,
   abilitySpellCountIssue,
@@ -223,7 +226,8 @@ describe("常时被动层（妖力 / 特技）", () => {
             damageBonus: "abilityLv",
             reactionBonus: "1",
             accuracyBonus: "0",
-            movementBonus: "abilityLv > 2 ? 1 : 0"
+            movementBonus: "abilityLv > 2 ? 1 : 0",
+            grazeBonusPer: 0
           }
         ]
       },
@@ -243,7 +247,8 @@ describe("常时被动层（妖力 / 特技）", () => {
             damageBonus: "10",
             reactionBonus: "0",
             accuracyBonus: "0",
-            movementBonus: "0"
+            movementBonus: "0",
+            grazeBonusPer: 0
           }
         ]
       },
@@ -263,7 +268,8 @@ describe("常时被动层（妖力 / 特技）", () => {
             damageBonus: "0",
             reactionBonus: "0",
             accuracyBonus: "0",
-            movementBonus: "0"
+            movementBonus: "0",
+            grazeBonusPer: 0
           }
         ]
       }
@@ -300,5 +306,45 @@ describe("常时被动层（妖力 / 特技）", () => {
     });
     // TOUGH: abilityLv=4 -> +4；HIGH_FEAT: +10
     expect(mods.damageBonus).toBe(14);
+  });
+});
+
+describe("妖力 / 特技列表定义与消费（wiki）", () => {
+  it("东方包登记 19 个定义，含固定消费与逐级消费", () => {
+    const defs = touhouPack.abilities.definitions;
+    expect(Object.keys(defs).length).toBe(19);
+    expect(defs.YOURIKI_ANIMAL_TALK?.cost).toBe(4);
+    expect(defs.YOURIKI_AQUATIC?.cost).toBe(2);
+    expect(defs.FEAT_SMALL_HITBOX?.cost).toBe(8);
+    expect(defs.FEAT_HIGH_SPEED_FLIGHT?.costPerLevel).toBe("2");
+  });
+
+  it("固定消费与小步逐级消费计算", () => {
+    const talk = touhouPack.abilities.definitions.YOURIKI_ANIMAL_TALK;
+    const flight = touhouPack.abilities.definitions.FEAT_HIGH_SPEED_FLIGHT;
+    const qigong = touhouPack.abilities.definitions.FEAT_QIGONG;
+    if (talk === undefined || flight === undefined || qigong === undefined) throw new Error("缺少定义");
+    expect(abilityDefinitionTotalCost(talk, 1)).toBe(4);
+    expect(abilityDefinitionTotalCost(flight, 2)).toBe(4);
+    expect(abilityDefinitionStepCost(flight, 2)).toBe(2);
+    // 气功：升到 Lv2 需 5 + 10 = 15
+    expect(abilityDefinitionTotalCost(qigong, 2)).toBe(15);
+  });
+
+  it("定义消费计入能力点总预算", () => {
+    const rules = touhouPack.abilities;
+    const defs = { YOURIKI_ANIMAL_TALK: 1, FEAT_HIGH_SPEED_FLIGHT: 2 };
+    expect(abilityDefinitionSpendTotal(rules, defs)).toBe(8);
+    expect(validateAbilitySpend(rules, "C", {}, { definitionLevels: defs }).ok).toBe(true);
+    // D 级 15 点：使魔 15 + 动物交谈 4 = 19 超支
+    const over = { FEAT_FAMILIAR: 1, YOURIKI_ANIMAL_TALK: 1 };
+    expect(validateAbilitySpend(rules, "D", {}, { definitionLevels: over }).ok).toBe(false);
+  });
+
+  it("高速飞行 / 擦弹判定大带有可自动化的常时被动", () => {
+    const flight = touhouPack.abilities.definitions.FEAT_HIGH_SPEED_FLIGHT;
+    const graze = touhouPack.abilities.definitions.FEAT_WIDE_GRAZE;
+    expect(flight?.passives[0]?.movementBonus).toBe("abilityLv");
+    expect(graze?.passives[0]?.grazeBonusPer).toBe(3);
   });
 });

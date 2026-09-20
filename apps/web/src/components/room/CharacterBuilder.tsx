@@ -18,6 +18,9 @@ import {
   rollAttributeSets,
   abilityCategoryLevelFromLevels,
   abilityCostForLevel,
+  abilityDefinitionSpendTotal,
+  abilityDefinitionStepCost,
+  abilityDefinitionTotalCost,
   abilityPointBudget,
   abilitySpellCountIssue,
   abilitySpendTotal,
@@ -236,12 +239,19 @@ export default function CharacterBuilder(props: Props) {
     }
     return output;
   });
-  const [abilityDefinitions, setAbilityDefinitions] = useState<string[]>(() => {
+  const [abilityDefinitions, setAbilityDefinitions] = useState<Record<string, number>>(() => {
     const raw =
       initial?.backstory?.abilityDefinitions !== undefined
         ? initial.backstory.abilityDefinitions
         : initial?.sourceData?.abilityDefinitions;
-    return Array.isArray(raw) ? raw.filter((value): value is string => typeof value === "string") : [];
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return {};
+    const output: Record<string, number> = {};
+    for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+      if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+        output[key] = Math.max(1, Math.floor(value));
+      }
+    }
+    return output;
   });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -415,8 +425,12 @@ export default function CharacterBuilder(props: Props) {
   const abilityTierOptions = Object.keys(props.pack.abilities.pointBudgets);
   const abilityBudget = abilitiesEnabled ? abilityPointBudget(props.pack.abilities, abilityTier) : null;
   const abilitySpent = abilitiesEnabled ? abilitySpendTotal(props.pack.abilities, abilityLevels) : 0;
+  const abilityDefinitionSpent = abilitiesEnabled
+    ? abilityDefinitionSpendTotal(props.pack.abilities, abilityDefinitions)
+    : 0;
+  const abilityTotalSpent = abilitySpent + abilityDefinitionSpent;
   const abilityCheck = abilitiesEnabled
-    ? validateAbilitySpend(props.pack.abilities, abilityTier, abilityLevels)
+    ? validateAbilitySpend(props.pack.abilities, abilityTier, abilityLevels, { definitionLevels: abilityDefinitions })
     : null;
   const abilityIssue = abilityCheck !== null && abilityCheck.ok === false ? abilityCheck.error ?? "能力点不合法" : null;
   // 每级习得法术数量校验：把 bsSpells 中能匹配到规则包法术的条目按 abilityId 归类。
@@ -1649,7 +1663,7 @@ export default function CharacterBuilder(props: Props) {
                   : "border-red-400/40 bg-red-400/10 text-red-200")
               }
             >
-              能力点 {abilitySpent} / {abilityBudget ?? "—"}
+              能力点 {abilityTotalSpent} / {abilityBudget ?? "—"}
             </span>
           </div>
           {abilityCategoryList.length === 0 ? (
@@ -1739,15 +1753,25 @@ export default function CharacterBuilder(props: Props) {
           )}
           {Object.keys(props.pack.abilities.definitions).length > 0 ? (
             <div className="mt-4 rounded-lg border border-white/10 bg-ink-900/40 p-3">
-              <p className="text-xs font-medium text-white/70">常时能力（妖力 / 特技）</p>
+              <p className="text-xs font-medium text-white/70">妖力 / 特技（wiki 列表）</p>
               <p className="mt-1 text-[10px] text-white/40">
-                达到所需能力等级后可勾选；常时被动会在战斗准备时自动生效。
+                固定消费条目勾选后生效；逐级条目用数字选择等级。消费计入上方能力点预算；
+                未自动化的效果由 KP 按说明手动结算。
               </p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {Object.values(props.pack.abilities.definitions).map((definition) => {
-                  const level = abilityCategoryLevelFromLevels(abilityLevels, definition.categoryId);
-                  const unlocked = level >= definition.minLevel;
-                  const checked = abilityDefinitions.includes(definition.id);
+                  const categoryLevel = abilityCategoryLevelFromLevels(abilityLevels, definition.categoryId);
+                  const unlocked = definition.minLevel <= 1 || categoryLevel >= definition.minLevel;
+                  const level = abilityDefinitions[definition.id] ?? 0;
+                  const perLevel = definition.costPerLevel !== undefined;
+                  const totalCost = abilityDefinitionTotalCost(definition, level);
+                  const nextCost = abilityDefinitionStepCost(definition, level + 1);
+                  const costText =
+                    definition.cost !== undefined
+                      ? "消费 " + definition.cost + " 点" + (definition.costNote === undefined || definition.costNote === String(definition.cost) ? "" : "（" + definition.costNote + "）")
+                      : perLevel
+                        ? "共 " + totalCost + " 点 · 下一级 " + nextCost + " 点"
+                        : definition.costNote ?? "消费见说明";
                   return (
                     <label
                       key={definition.id}
@@ -1756,25 +1780,52 @@ export default function CharacterBuilder(props: Props) {
                         (unlocked ? "border-white/10 text-white/75" : "border-white/5 text-white/30")
                       }
                     >
-                      <input
-                        type="checkbox"
-                        checked={checked}
-                        disabled={unlocked === false}
-                        onChange={(event) =>
-                          setAbilityDefinitions((prev) =>
-                            event.target.checked
-                              ? [...prev.filter((id) => id !== definition.id), definition.id]
-                              : prev.filter((id) => id !== definition.id)
-                          )
-                        }
-                        className="mt-0.5"
-                      />
-                      <span>
-                        <span className="block">{definition.name}</span>
-                        <span className="block text-[10px] text-white/35">
-                          需 {definition.categoryId} Lv{definition.minLevel}
-                          {definition.description === undefined ? "" : " · " + definition.description}
+                      {perLevel ? (
+                        <select
+                          value={level}
+                          disabled={unlocked === false}
+                          onChange={(event) =>
+                            setAbilityDefinitions((prev) => {
+                              const value = Math.max(0, Math.floor(Number(event.target.value) || 0));
+                              const next = { ...prev };
+                              if (value <= 0) delete next[definition.id];
+                              else next[definition.id] = value;
+                              return next;
+                            })
+                          }
+                          className={inputClass + " w-20 shrink-0"}
+                        >
+                          {Array.from({ length: 7 }, (_unused, lv) => (
+                            <option key={lv} value={lv}>
+                              Lv{lv}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="checkbox"
+                          checked={level > 0}
+                          disabled={unlocked === false}
+                          onChange={(event) =>
+                            setAbilityDefinitions((prev) => {
+                              const next = { ...prev };
+                              if (event.target.checked) next[definition.id] = 1;
+                              else delete next[definition.id];
+                              return next;
+                            })
+                          }
+                          className="mt-0.5 shrink-0"
+                        />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block">
+                          {definition.name}
+                          {perLevel ? " Lv" + level : ""}
                         </span>
+                        <span className="block text-[10px] text-white/35">{costText}</span>
+                        {definition.description === undefined ? null : (
+                          <span className="mt-0.5 block text-[10px] text-white/30">{definition.description}</span>
+                        )}
                       </span>
                     </label>
                   );

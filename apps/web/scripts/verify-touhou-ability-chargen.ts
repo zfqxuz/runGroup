@@ -105,7 +105,8 @@ function main(): void {
             damageBonus: "abilityLv",
             reactionBonus: "1",
             accuracyBonus: "0",
-            movementBonus: "0"
+            movementBonus: "0",
+            grazeBonusPer: 0
           }
         ]
       }
@@ -120,8 +121,17 @@ function main(): void {
   ensure(mods.derivedMods.maxHp === 6, "被动应给 maxHp +6");
   ensure(mods.damageBonus === 3, "被动应给伤害 +3");
 
+  // wiki 妖力 / 特技列表：固定消费与逐级消费。
+  ensure(Object.keys(abilities.definitions).length === 19, "应登记 19 个妖力 / 特技定义");
+  ensure(abilities.definitions.YOURIKI_ANIMAL_TALK?.cost === 4, "动物交谈应消费 4 点");
+  ensure(abilities.definitions.FEAT_HIGH_SPEED_FLIGHT?.costPerLevel === "2", "高速飞行应为每级 2 点");
+  ensure(
+    abilities.definitions.FEAT_WIDE_GRAZE?.passives[0]?.grazeBonusPer === 3,
+    "擦弹判定大应每 3 点擦弹额外 +1"
+  );
+
   console.log(
-    "PASS 东方能力点车卡：6 类能力 / A-D 预算 / 变体消费表 / 属性使实例 / 法术数量 / 种族免费与限制 / 常时被动"
+    "PASS 东方能力点车卡：6 类能力 / A-D 预算 / 变体消费表 / 属性使实例 / 法术数量 / 种族免费与限制 / 常时被动 / 妖力特技列表"
   );
 }
 

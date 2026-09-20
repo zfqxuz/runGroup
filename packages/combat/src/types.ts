@@ -87,6 +87,8 @@ export interface CombatPassiveMods {
   readonly reactionBonus: number;
   readonly accuracyBonus: number;
   readonly movementBonus: number;
+  /** 每 N 点擦弹额外 +1（擦弹判定大）；0 表示不生效。 */
+  readonly grazeBonusPer: number;
 }
 
 export interface CombatParticipantState {

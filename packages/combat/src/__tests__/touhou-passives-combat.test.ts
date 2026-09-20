@@ -32,6 +32,7 @@ function passive(overrides: Partial<CombatPassiveMods> = {}): CombatPassiveMods 
     reactionBonus: 0,
     accuracyBonus: 0,
     movementBonus: 0,
+    grazeBonusPer: 0,
     ...overrides
   };
 }
@@ -121,6 +122,18 @@ describe("常时被动在 DP 战斗中生效", () => {
     resolveDpTurn(touhou, withBonus.state, { e1: { type: "DODGE", dpDice: 0 } });
     expect(withBonus.e1.hp).toBe(withBonus.e1.maxHp);
     expect(withBonus.state.log.some((entry) => entry.data?.rollType === "DP_RANGED_MISS")).toBe(true);
+  });
+
+  it("grazeBonusPer 在成功回避时追加擦弹点（擦弹判定大）", () => {
+    const setup = makeCombat("passive-graze", passive(), passive({ grazeBonusPer: 3 }));
+    // 让攻击方不命中、防守方用 3 骰稳定回避。
+    setup.actor.skills.DANMAKU = 0;
+    setup.e1.skills.DODGE = 200;
+    startRound(setup.state, setup.actor, setup.e1);
+    ranged(setup.state, "e1", "10");
+    resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE", dpDice: 3 } });
+    // 基础擦弹 = 3 骰 → 3 点；每 3 点额外 +1 → 4 点
+    expect(setup.e1.grazePoints).toBe(4);
   });
 
   it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {

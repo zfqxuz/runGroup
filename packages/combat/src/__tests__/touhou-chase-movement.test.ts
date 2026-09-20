@@ -40,7 +40,13 @@ function participant(
     passiveMods:
       passiveMods === undefined
         ? undefined
-        : { damageBonus: 0, reactionBonus: 0, accuracyBonus: 0, movementBonus: passiveMods.movementBonus }
+        : {
+            damageBonus: 0,
+            reactionBonus: 0,
+            accuracyBonus: 0,
+            movementBonus: passiveMods.movementBonus,
+            grazeBonusPer: 0
+          }
   });
 }
 

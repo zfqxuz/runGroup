@@ -411,7 +411,9 @@ export const AbilityPassiveSchema = z.object({
   /** 攻击（射击 / 近战 / 能力）达成值加值。 */
   accuracyBonus: ExprSchema.default("0"),
   /** 移动速度加值（m/s）。 */
-  movementBonus: ExprSchema.default("0")
+  movementBonus: ExprSchema.default("0"),
+  /** 每获得 N 点擦弹数，额外 +1（擦弹判定大）；0 表示不生效。 */
+  grazeBonusPer: z.number().int().nonnegative().default(0)
 });
 
 /** 具体能力条目（妖力 / 特技 / 常时种族能力等），由规则包 / 模组登记。 */
@@ -422,8 +424,14 @@ export const AbilityDefinitionSchema = z.object({
   categoryId: z.string(),
   /** PASSIVE 常时生效；ACTIVE 需主动发动；FREE 由种族 / 剧情免费获得。 */
   kind: z.enum(["PASSIVE", "ACTIVE", "FREE"]).default("PASSIVE"),
-  /** 习得该条目所需的最低能力等级。 */
+  /** 习得该条目所需的最低能力等级（类别等级）；直接购买的能力保持 1。 */
   minLevel: z.number().int().min(1).default(1),
+  /** 固定习得消费点数（如动物交谈 4 点）；与 costPerLevel 二选一。 */
+  cost: z.number().int().nonnegative().optional(),
+  /** 逐级消费表达式（可引用 level），如「每级 2 点」。 */
+  costPerLevel: ExprSchema.optional(),
+  /** 消费说明（展示用），如「每级 2 点」「每 10 点 +1」。 */
+  costNote: z.string().optional(),
   description: z.string().optional(),
   tags: z.array(z.string()).default([]),
   /** 常时效果；多条按顺序累加。 */

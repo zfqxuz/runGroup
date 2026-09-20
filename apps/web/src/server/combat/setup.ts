@@ -315,13 +315,13 @@ export function characterSpellsOf(character: Character): string[] {
   return stringArrayOf(backstory.spells);
 }
 
-/** 角色已习得的常时能力条目 id（妖力 / 特技）；backstory 优先。 */
-export function characterAbilityDefinitionsOf(character: Character): string[] {
+/** 角色已习得的常时能力条目等级（妖力 / 特技）；backstory 优先。 */
+export function characterAbilityDefinitionsOf(character: Character): Record<string, number> {
   const backstory = (character.backstory ?? {}) as Record<string, unknown>;
-  const fromBackstory = stringArrayOf(backstory.abilityDefinitions);
-  if (fromBackstory.length > 0) return fromBackstory;
+  const fromBackstory = numberRecordOf(backstory.abilityDefinitions);
+  if (Object.keys(fromBackstory).length > 0) return fromBackstory;
   const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
-  return stringArrayOf(sourceData.abilityDefinitions);
+  return numberRecordOf(sourceData.abilityDefinitions);
 }
 
 /** 规则包里可直接作为被动表达式常量的数值 const。 */
@@ -341,6 +341,7 @@ const ZERO_PASSIVE_MODS: AbilityPassiveMods = {
   reactionBonus: 0,
   accuracyBonus: 0,
   movementBonus: 0,
+  grazeBonusPer: 0,
   sources: []
 };
 
@@ -378,12 +379,12 @@ function applyDerivedPassives(
 function passiveModsFor(
   pack: CompiledRulePack,
   abilityLevels: Readonly<Record<string, number>>,
-  definitionIds: readonly string[]
+  definitionLevels: Readonly<Record<string, number>>
 ): AbilityPassiveMods {
   if (pack.system !== "TOUHOU") return ZERO_PASSIVE_MODS;
   return collectAbilityPassiveMods(pack.pack.abilities, {
     abilityLevels,
-    definitionIds,
+    definitionLevels,
     constants: numericConstsOf(pack)
   });
 }
@@ -453,7 +454,8 @@ function buildCharacterInit(
       damageBonus: passiveMods.damageBonus,
       reactionBonus: passiveMods.reactionBonus,
       accuracyBonus: passiveMods.accuracyBonus,
-      movementBonus: passiveMods.movementBonus
+      movementBonus: passiveMods.movementBonus,
+      grazeBonusPer: passiveMods.grazeBonusPer
     },
     skills,
     spells: characterSpellsOf(character),
@@ -513,7 +515,8 @@ function buildNpcInit(
       damageBonus: passiveMods.damageBonus,
       reactionBonus: passiveMods.reactionBonus,
       accuracyBonus: passiveMods.accuracyBonus,
-      movementBonus: passiveMods.movementBonus
+      movementBonus: passiveMods.movementBonus,
+      grazeBonusPer: passiveMods.grazeBonusPer
     },
     // 持久召唤卡再次参战时仍标记为召唤物，便于到期 / 击杀后清理卡与 Token。
     summonedBy: isPersistentSummon ? originCasterId ?? card.id : null,

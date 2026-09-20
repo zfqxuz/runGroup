@@ -1,4 +1,8 @@
 import type { RulePackOverlay } from "../schema";
+import { TOUHOU_ABILITY_DEFINITIONS } from "./data/touhou-abilities";
+
+type AbilityDefinitionsInput = NonNullable<NonNullable<RulePackOverlay["abilities"]>["definitions"]>;
+type AbilityDefinitionInput = AbilityDefinitionsInput[string];
 
 /**
  * 东方扩展包。继承 COC7 基线，覆盖衍生公式 / ATB / 伤害管线，
@@ -399,7 +403,14 @@ TOUHOU_EXT.abilities = {
       costTable: [1, 2, 4, 6, 8, 10, 12, 12],
       spellsPerLevel: 0
     }
-  }
+  },
+  // 妖力 / 特技列表（wiki）；具体效果多数需 KP 手动结算，可自动化的常时效果见 passives。
+  definitions: Object.fromEntries(
+    TOUHOU_ABILITY_DEFINITIONS.map((definition) => [
+      String(definition.id),
+      definition as AbilityDefinitionInput
+    ])
+  )
 };
 /**
  * 7.5 结界系法术通用规则（wiki 表 7.1）。

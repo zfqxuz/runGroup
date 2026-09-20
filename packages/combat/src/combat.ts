@@ -270,7 +270,8 @@ export function addParticipant(
       damageBonus: init.passiveMods?.damageBonus ?? 0,
       reactionBonus: init.passiveMods?.reactionBonus ?? 0,
       accuracyBonus: init.passiveMods?.accuracyBonus ?? 0,
-      movementBonus: init.passiveMods?.movementBonus ?? 0
+      movementBonus: init.passiveMods?.movementBonus ?? 0,
+      grazeBonusPer: init.passiveMods?.grazeBonusPer ?? 0
     },
     mpExhausted: false,
     skills: init.skills ?? {},
@@ -4327,7 +4328,9 @@ function resolveDpDefense(
   let grazeGain = 0;
   if (success && ctx.pack.system === "TOUHOU") {
     // 千幻抄 6.26：成功回避射击 / 追击 / 近战可获得擦弹点数（防御不能）。
-    grazeGain = Math.max(1, dice);
+    const baseGraze = Math.max(1, dice);
+    const grazePer = passiveBonus(defender, "grazeBonusPer");
+    grazeGain = baseGraze + (grazePer > 0 ? Math.floor(baseGraze / grazePer) : 0);
     defender.grazePoints = Math.max(0, Math.floor(defender.grazePoints ?? 0)) + grazeGain;
   }
   pushLog(ctx.state, {
