@@ -292,6 +292,56 @@ TOUHOU_EXT.elementRules = {
   weaknessResistMod: "-3",
   sameElementResistMod: "3"
 };
+
+/**
+ * 千幻抄能力类别与逐级消费表。
+ * 具体法术仍放在 magic.spells，通过 spell.abilityId / requiredLevel / activation / resist 接入。
+ */
+TOUHOU_EXT.abilities = {
+  enabled: true,
+  categories: {
+    SPIRIT_ARTS: {
+      id: "SPIRIT_ARTS",
+      name: "神术·阴阳术",
+      description: "咏唱 + 单手结印发动；结界、降灵、驱魔。",
+      activationAttribute: "int",
+      costTable: [5, 10, 15, 20, 25, 25],
+      spellsPerLevel: 2
+    },
+    MAGIC: {
+      id: "MAGIC",
+      name: "魔法",
+      description: "以魔导书习得；有抵抗与仪式魔法规则。",
+      activationAttribute: "int",
+      costTable: [5, 10, 15, 20, 25, 25],
+      spellsPerLevel: 4
+    },
+    ELEMENTALIST: {
+      id: "ELEMENTALIST",
+      name: "属性使",
+      description: "每种属性独立习得；可选 {知性} 或 {感觉} 作为发动特性。",
+      activationAttribute: "int",
+      costTable: [4, 8, 12, 16, 20, 20],
+      spellsPerLevel: 0
+    },
+    YOUJUTSU: {
+      id: "YOUJUTSU",
+      name: "妖术",
+      description: "妖怪专属；可与技能组合、妖弹化、常在化。",
+      activationAttribute: "pow",
+      costTable: [1, 2, 4, 6, 8, 10, 12, 12],
+      spellsPerLevel: 0
+    },
+    FEAT: {
+      id: "FEAT",
+      name: "特技",
+      description: "多数常时有效；含【锻炼】，用于近战/武器伤害。",
+      activationAttribute: "pow",
+      costTable: [1, 2, 4, 6, 8, 10, 12, 12],
+      spellsPerLevel: 0
+    }
+  }
+};
 TOUHOU_EXT.statusEffects = {
   // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。
   SUNLIGHT: { stack: "REFRESH", durationTicks: "240" },
@@ -329,6 +379,7 @@ TOUHOU_EXT.skills = [
   { id: "MELEE", name: "近战格斗", category: "COMBAT", base: "25" },
   { id: "DODGE", name: "闪避", category: "COMBAT", base: "dex / 2" },
   { id: "GRAZE", name: "擦弹", category: "COMBAT", base: "dex / 2", description: "贴身躲过弹幕并回复灵力" },
+  { id: "RESIST", name: "抵抗", category: "COMBAT", base: "pow / 2", description: "抵抗能力 / 妖术 / 异常状态时使用；目标值由施术者能力等级与达成值决定" },
   { id: "THROW", name: "投掷", category: "COMBAT", base: "20" },
   { id: "SPIRIT_ARTS", name: "神术/阴阳术", category: "MAGIC", base: "5", description: "创建结界、降灵驱魔；幻想乡的巫女与道士所修之术" },
   { id: "MAGIC", name: "魔法", category: "MAGIC", base: "1", description: "按【魔法】体系学习与施放法术；需通过符文检定阅读魔导书" },

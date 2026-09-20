@@ -112,6 +112,8 @@ export interface CombatParticipantState {
   raceFlags?: string[];
   /** 先天 / 装备元素亲和与抗性；用于属性相克。 */
   elements?: string[];
+  /** 千幻抄能力等级：categoryId -> Lv；COC7 单位为空对象。 */
+  abilityLevels?: Record<string, number>;
   skills: Record<string, number>;
   /** 该单位允许施放的法术 id；玩家来自角色卡，NPC 来自 NPC 卡。 */
   spells: string[];

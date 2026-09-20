@@ -105,6 +105,10 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     participant.elements = Array.isArray(participant.elements) && participant.elements.length > 0
       ? participant.elements
       : [...raceElements];
+    participant.abilityLevels =
+      participant.abilityLevels !== null && typeof participant.abilityLevels === "object"
+        ? participant.abilityLevels
+        : {};
   }
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();

@@ -120,6 +120,8 @@ export interface ParticipantInit {
   readonly raceFlags?: readonly string[];
   /** 先天 / 装备元素亲和与抗性（元素 id 列表）。 */
   readonly elements?: readonly string[];
+  /** 千幻抄能力等级：categoryId -> Lv。 */
+  readonly abilityLevels?: Readonly<Record<string, number>>;
   readonly skills?: Record<string, number>;
   /** 该单位允许施放的法术 id。 */
   readonly spells?: readonly string[];
@@ -244,6 +246,7 @@ export function addParticipant(
     race: init.race ?? null,
     raceFlags: [...(init.raceFlags ?? [])],
     elements: [...(init.elements ?? [])],
+    abilityLevels: { ...(init.abilityLevels ?? {}) },
     skills: init.skills ?? {},
     spells: [...(init.spells ?? [])],
     damageBonus: init.damageBonus ?? "0",
@@ -2877,6 +2880,57 @@ export function applyForcedSkips(state: CombatState): void {
   }
 }
 
+/** 在规则包的 magic.spells 里按 id / name 找法术。 */
+function findMagicSpell(
+  pack: CompiledRulePack,
+  submission: ActionSubmission
+): MagicSpell | undefined {
+  return pack.pack.magic?.spells.find(
+    (item) => item.id === submission.spellId || item.name === submission.name
+  );
+}
+
+/**
+ * 计算一次施法的 MP / SAN 消耗。
+ * sanSalt 保持与旧调用完全一致，避免改变 COC7 的 RNG 流。
+ */
+function spellCostFor(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  spell: MagicSpell,
+  sanSalt: string
+): { mpCost: number; sanCost: number } {
+  const mpCost = Math.max(0, Math.floor(evaluateSource(ctx.pack, spell.mpCost, actor.vars)));
+  let sanCost = 0;
+  try {
+    sanCost = Math.max(
+      0,
+      rollDice(parseDice(spell.sanCost), nextRollRng(ctx.state, sanSalt + ":" + spell.id)).total
+    );
+  } catch {
+    sanCost = 0;
+  }
+  return { mpCost, sanCost };
+}
+
+/**
+ * 效果执行的公共出口。COC7 魔法、千幻抄能力、道具都复用同一套效果结算；
+ * 调用方负责完成习得 / 发动 / 目标 / 消耗校验。
+ */
+function executeSpellEffects(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  spell: MagicSpell,
+  cost: { mpCost: number; sanCost: number },
+  options: { logKind?: LogEntry["kind"]; verb?: string } = {}
+): void {
+  resolveTargetedEffects(ctx, actor, submission, spell, cost, {
+    logKind: options.logKind ?? "SPELLCARD",
+    verb: options.verb ?? "施放"
+  });
+}
+
 function resolveMagic(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -2888,26 +2942,176 @@ function resolveMagic(
     pushLog(state, { kind: "SYSTEM", actorId: actor.id, targetId: null, text: "本规则包未启用魔法规则" });
     return;
   }
-  const spell = rules.spells.find((item) => item.id === submission.spellId || item.name === submission.name);
+  const spell = findMagicSpell(ctx.pack, submission);
   if (spell === undefined) {
     pushLog(state, { kind: "SYSTEM", actorId: actor.id, targetId: null, text: "没有找到这个法术" });
     return;
   }
 
-  const mpCost = Math.max(0, Math.floor(evaluateSource(ctx.pack, spell.mpCost, actor.vars)));
-  let sanCost = 0;
-  try {
-    sanCost = Math.max(
-      0,
-      rollDice(parseDice(spell.sanCost), nextRollRng(state, "magic-san:" + actor.id + ":" + spell.id)).total
-    );
-  } catch {
-    sanCost = 0;
-  }
-  if (spendCombatMagicPoints(ctx, actor, mpCost, "法术「" + spell.name + "」") === false) return;
-  actor.san = Math.max(0, actor.san - sanCost);
+  const cost = spellCostFor(ctx, actor, spell, "magic-san:" + actor.id);
+  if (spendCombatMagicPoints(ctx, actor, cost.mpCost, "法术「" + spell.name + "」") === false) return;
+  actor.san = Math.max(0, actor.san - cost.sanCost);
 
-  resolveTargetedEffects(ctx, actor, submission, spell, { mpCost, sanCost }, { logKind: "SPELLCARD", verb: "施放" });
+  executeSpellEffects(ctx, actor, submission, spell, cost, { logKind: "SPELLCARD", verb: "施放" });
+}
+
+/** 抵抗判定：目标 {属性}+〈抵抗〉+3D6 ≥ 10 + 施术者 Lv + 达成值×2 的十位数。 */
+function rollAbilityResist(
+  ctx: ResolveContext,
+  caster: CombatParticipantState,
+  target: CombatParticipantState,
+  spell: MagicSpell,
+  casterLevel: number,
+  casterAchievement: number
+): boolean {
+  const resist = spell.resist;
+  if (resist === undefined) return false;
+  const attributeValue = target.attributes[resist.attribute as keyof AttributeSet] ?? target.vars[resist.attribute] ?? 0;
+  const skill = skillValueOf(ctx.pack, target, resist.skill, attributeValue);
+  const base = attributeValue + skill;
+  const targetValue = 10 + casterLevel + Math.floor((casterAchievement * 2) / 10);
+  const rng = nextRollRng(ctx.state, `ability-resist:${caster.id}:${target.id}:${spell.id}`);
+  let roll = 0;
+  let total = 0;
+  let success = false;
+  if (resist.dice === "1D100") {
+    roll = rollDie(rng, 100);
+    total = base;
+    success = roll <= base;
+  } else {
+    roll = rollDice(parseDice("3d6"), rng).total;
+    total = base + roll;
+    success = total >= targetValue;
+  }
+  pushLog(ctx.state, {
+    kind: "CHECK",
+    actorId: target.id,
+    targetId: caster.id,
+    text:
+      target.name +
+      " 抵抗「" +
+      spell.name +
+      "」：" +
+      (resist.dice === "1D100"
+        ? "1d100=" + roll + " / 目标 " + base
+        : "3d6=" + roll + " + " + base + " = " + total + " / 目标 " + targetValue) +
+      " → " +
+      (success ? "抵抗成功" : "抵抗失败"),
+    data: { rollType: "ABILITY_RESIST", roll, base, total, targetValue, success }
+  });
+  return success;
+}
+
+/**
+ * 千幻抄能力发动。
+ *
+ * 与 resolveMagic 的区别：需要已习得等级、掷发动判定、失败也消耗灵力、可被抵抗；
+ * 成功后才复用 executeSpellEffects 执行既有 MagicEffect。
+ */
+function resolveAbility(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  spell: MagicSpell
+): void {
+  const state = ctx.state;
+  const abilityId = spell.abilityId;
+  const rules = ctx.pack.pack.abilities;
+  const category = abilityId === undefined ? undefined : rules.categories[abilityId];
+  if (abilityId === undefined || category === undefined) {
+    resolveMagic(ctx, actor, submission);
+    return;
+  }
+
+  const level = Math.max(0, Math.floor(actor.abilityLevels?.[abilityId] ?? 0));
+  const requiredLevel = Math.max(1, Math.floor(spell.requiredLevel ?? 1));
+  if (level < requiredLevel) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 未达到「" + category.name + "」Lv" + requiredLevel + "，无法发动「" + spell.name + "」",
+      data: { rollType: "ABILITY_LEARN", abilityId, level, requiredLevel }
+    });
+    return;
+  }
+
+  const activation = spell.activation;
+  const attributeKey = activation?.attribute ?? category.activationAttribute;
+  const attributeValue = actor.attributes[attributeKey as keyof AttributeSet] ?? actor.vars[attributeKey] ?? 0;
+  let modifier = 0;
+  try {
+    modifier = Math.floor(evaluateSource(ctx.pack, activation?.modifier ?? "0", actor.vars));
+  } catch {
+    modifier = 0;
+  }
+  const base = attributeValue + level + modifier;
+  const rng = nextRollRng(state, `ability:${actor.id}:${spell.id}`);
+  const usePercentile = activation?.dice === "1D100";
+  const roll = usePercentile ? rollDie(rng, 100) : rollDice(parseDice("3d6"), rng).total;
+  let target = base;
+  let achievement = base;
+  let success = false;
+  if (usePercentile) {
+    success = roll <= base;
+  } else {
+    achievement = base + roll;
+    try {
+      target = Math.floor(evaluateSource(ctx.pack, activation?.target ?? "12", actor.vars));
+    } catch {
+      target = 12;
+    }
+    success = achievement >= target;
+  }
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: submission.targetId ?? null,
+    text:
+      actor.name +
+      " 发动「" +
+      spell.name +
+      "」：" +
+      (usePercentile
+        ? "1d100=" + roll + " / 目标 " + base
+        : "3d6=" + roll + " + " + base + " = " + achievement + " / 目标 " + target) +
+      " → " +
+      (success ? "成功" : "失败"),
+    data: { rollType: "ABILITY_ACTIVATION", abilityId, level, roll, base, achievement, target, success }
+  });
+
+  const cost = spellCostFor(ctx, actor, spell, "ability-san:" + actor.id);
+  // 千幻抄：发动失败也消耗灵力。
+  if (spendCombatMagicPoints(ctx, actor, cost.mpCost, "能力「" + spell.name + "」") === false) return;
+  actor.san = Math.max(0, actor.san - cost.sanCost);
+  if (success === false) {
+    pushLog(state, {
+      kind: "SPELLCARD",
+      actorId: actor.id,
+      targetId: submission.targetId ?? null,
+      text: actor.name + " 发动「" + spell.name + "」失败，灵力仍被消耗",
+      data: { rollType: "ABILITY_FAIL", abilityId, mpCost: cost.mpCost, sanCost: cost.sanCost }
+    });
+    return;
+  }
+
+  const targetId = submission.targetId ?? null;
+  const targetParticipant = targetId === null ? undefined : findParticipant(state, targetId);
+  if (targetParticipant !== undefined && targetParticipant.id !== actor.id && spell.resist !== undefined) {
+    const resisted = rollAbilityResist(ctx, actor, targetParticipant, spell, level, achievement);
+    if (resisted) {
+      pushLog(state, {
+        kind: "SPELLCARD",
+        actorId: actor.id,
+        targetId: targetParticipant.id,
+        text: targetParticipant.name + " 抵抗成功，「" + spell.name + "」被无效化",
+        data: { rollType: "ABILITY_RESISTED", abilityId, spellId: spell.id }
+      });
+      return;
+    }
+  }
+
+  executeSpellEffects(ctx, actor, submission, spell, cost, { logKind: "SPELLCARD", verb: "发动" });
 }
 
 /**
@@ -3134,9 +3338,19 @@ function resolveOne(
   const targetId = submission.targetId ?? null;
 
   switch (submission.kind) {
-    case "MAGIC":
-      resolveMagic(ctx, actor, submission);
+    case "MAGIC": {
+      const spell = findMagicSpell(ctx.pack, submission);
+      if (
+        ctx.pack.system === "TOUHOU" &&
+        spell?.abilityId !== undefined &&
+        ctx.pack.pack.abilities.enabled
+      ) {
+        resolveAbility(ctx, actor, submission, spell);
+      } else {
+        resolveMagic(ctx, actor, submission);
+      }
       return;
+    }
     case "OUT_OF_RULE":
       resolveOutOfRule(ctx, actor, submission);
       return;

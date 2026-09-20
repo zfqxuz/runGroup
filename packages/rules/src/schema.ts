@@ -252,6 +252,33 @@ export const MagicSpellSchema = z.object({
   damage: DiceExprSchema.optional(),
   /** 法术默认元素；单个效果可用自己的 element 覆盖。 */
   element: z.string().optional(),
+  /** 千幻抄能力 id（对应 abilities.categories）；存在时走能力发动流程。 */
+  abilityId: z.string().optional(),
+  /** 发动该法术所需的能力等级。 */
+  requiredLevel: z.number().int().min(1).optional(),
+  /** 发动判定覆盖；缺省使用能力类别的 activationAttribute + 3D6 + 目标 12。 */
+  activation: z
+    .object({
+      /** 判定属性 key（str/con/siz/dex/app/int/pow/edu/luck）。 */
+      attribute: z.string().optional(),
+      /** 3D6 达成值 / 1D100 掷低。千幻抄默认 3D6。 */
+      dice: z.enum(["3D6", "1D100"]).default("3D6"),
+      /** 附加修正表达式。 */
+      modifier: ExprSchema.default("0"),
+      /** 3D6 模式下需要达到的目标值。 */
+      target: ExprSchema.default("12")
+    })
+    .optional(),
+  /** 抵抗判定；缺省无抵抗。 */
+  resist: z
+    .object({
+      /** 抵抗方使用的属性 key。 */
+      attribute: z.string().default("pow"),
+      /** 抵抗方使用的技能 id。 */
+      skill: z.string().default("RESIST"),
+      dice: z.enum(["3D6", "1D100"]).default("3D6")
+    })
+    .optional(),
   target: z.enum(["SELF", "ONE", "ALL"]).default("ONE"),
   /** 目标阵营；不填时根据效果自动推断。 */
   targeting: z.enum(MAGIC_TARGETINGS).optional(),
@@ -292,6 +319,24 @@ export const ElementRulesSchema = z.object({
   weaknessResistMod: ExprSchema.default("-3"),
   /** 同属性攻击时防守方本次应对检定的目标修正。 */
   sameElementResistMod: ExprSchema.default("3")
+});
+
+/** 千幻抄能力类别：神术·阴阳术 / 魔法 / 属性使 / 妖力与妖术 / 特技。 */
+export const AbilityCategorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** 发动判定默认使用的特性值 key。 */
+  activationAttribute: z.string().default("int"),
+  /** 逐级习得消费点：第 n 级取 costTable[n-1]，超出取最后一档。 */
+  costTable: z.array(z.number().int().nonnegative()).min(1),
+  /** 每级可习得法术数；0 表示不限。 */
+  spellsPerLevel: z.number().int().nonnegative().default(0)
+});
+
+export const AbilityRulesSchema = z.object({
+  enabled: z.boolean().default(false),
+  categories: z.record(z.string(), AbilityCategorySchema).default({})
 });
 
 export const SpellCardRulesSchema = z.object({
@@ -480,6 +525,7 @@ export const RulePackSchema = z.object({
   /** 元素表：key 为元素 id（推荐大写，如 FIRE / WATER）。 */
   elements: z.record(z.string(), ElementSchema).default({}),
   elementRules: ElementRulesSchema.default({}),
+  abilities: AbilityRulesSchema.default({}),
   races: z.record(z.string(), RaceSchema).default({}),
 
   presets: z.array(PresetCharacterSchema).default([]),
@@ -514,6 +560,8 @@ export type RulePack = z.output<typeof RulePackSchema>;
 export type RulePackInput = z.input<typeof RulePackSchema>;
 export type Element = z.output<typeof ElementSchema>;
 export type ElementRules = z.output<typeof ElementRulesSchema>;
+export type AbilityCategory = z.output<typeof AbilityCategorySchema>;
+export type AbilityRules = z.output<typeof AbilityRulesSchema>;
 export type RaceAbility = z.output<typeof RaceAbilitySchema>;
 export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;

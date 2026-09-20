@@ -188,6 +188,24 @@ function stringArrayOf(value: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
+function numberRecordOf(value: unknown): Record<string, number> {
+  if (value === null || typeof value !== "object" || Array.isArray(value)) return {};
+  const out: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(value as Record<string, unknown>)) {
+    if (typeof raw === "number" && Number.isFinite(raw)) out[key] = Math.max(0, Math.floor(raw));
+  }
+  return out;
+}
+
+/** 千幻抄能力等级：优先读角色 sourceData.abilities，其次 backstory.abilities。 */
+export function characterAbilityLevelsOf(character: Character): Record<string, number> {
+  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
+  const source = numberRecordOf(sourceData.abilities);
+  if (Object.keys(source).length > 0) return source;
+  const backstory = (character.backstory ?? {}) as Record<string, unknown>;
+  return numberRecordOf(backstory.abilities);
+}
+
 export function characterSpellsOf(character: Character): string[] {
   const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
   const sourceSpells = stringArrayOf(sourceData.spells);
@@ -235,6 +253,7 @@ function buildCharacterInit(
       character.race === null
         ? []
         : [...(pack.pack.races[character.race]?.elements ?? [])],
+    abilityLevels: characterAbilityLevelsOf(character),
     skills,
     spells: characterSpellsOf(character),
     damageBonus: pack.system === "COC7" ? coc7DamageBonus(outcome.attributes.str + outcome.attributes.siz) : "0",
@@ -282,6 +301,7 @@ function buildNpcInit(
       parsed.data.race === null
         ? []
         : [...(pack.pack.races[parsed.data.race]?.elements ?? [])],
+    abilityLevels: { ...parsed.data.abilities },
     // 持久召唤卡再次参战时仍标记为召唤物，便于到期 / 击杀后清理卡与 Token。
     summonedBy: isPersistentSummon ? originCasterId ?? card.id : null,
     summonedName: isPersistentSummon ? card.name : null,

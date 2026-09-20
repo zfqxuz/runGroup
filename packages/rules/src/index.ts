@@ -8,6 +8,8 @@ export {
   RaceAbilitySchema,
   ElementSchema,
   ElementRulesSchema,
+  AbilityCategorySchema,
+  AbilityRulesSchema,
   StatusEffectSchema,
   DamageRulesSchema,
   SpellCardRulesSchema,
@@ -34,6 +36,8 @@ export type {
   RaceAbility,
   Element,
   ElementRules,
+  AbilityCategory,
+  AbilityRules,
   StatusEffectRule,
   DamageRules,
   SpellCardRules,
@@ -150,6 +154,8 @@ export { attributeTotal, checkPointBuy, rollAttributeSets } from "./attributes";
 export type { AttributeSetOption, PointBuyCheck } from "./attributes";
 
 export { isGrowthCheckPassed, resolveGrowthChecks } from "./growth";
+
+export { abilityCostForLevel, abilityLevelForPoints, abilitySpellCountIssue, abilityTotalCost } from "./abilities";
 export type { GrowthCheckInput, GrowthCheckOptions, GrowthCheckResult } from "./growth";
 
 export { spellEffectsOf, spellTargeting, isHostileSpell, canCastOutsideCombat, outOfCombatBlockReason } from "./magic";

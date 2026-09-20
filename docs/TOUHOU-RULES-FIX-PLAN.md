@@ -147,11 +147,39 @@
 **仍未覆盖的 5.2 / 5.3**：「属性明显时全判定 ±1」属情境裁定，保留为 KP 行为；
 属性使能力（每种属性独立等级、基本 / 追加能力、与妖术组合、范围与脱离）留待能力系统批次。
 
-### 2.3 后续条目（未铺开）
+### 2.3 已完成（第三批）：能力体系 · 发动 / 抵抗 / 共用执行器（v2: 2.17、2.18、6.11、7.x–11.x 部分）
 
-1. **千幻抄能力体系**（v2: 2.14、2.17、2.18、7.x–11.x）
-   - 神术·阴阳术 / 魔法 / 属性使 / 妖力 / 妖术 / 特技的能力等级、能力点、法术表、习得与成长。
-   - 建议新增 `abilities` 规则包字段和通用“能力等级”模型，复用现有 effects 结算，不覆盖 COC7 技能。
+**共用执行器（低风险重构）**
+- 从 `resolveMagic` 中提取 `executeSpellEffects()` 与 `spellCostFor()`：
+  COC7 魔法、千幻抄能力、道具都走同一个 `resolveTargetedEffects` 效果执行器。
+- `resolveMagic` 的消耗、SAN 掷骰 salt、判定与结算顺序保持原样，COC7 行为不变（原 magic 测试全部通过）。
+
+**规则数据**
+- 新增 `AbilityRulesSchema`（`categories`：`activationAttribute` / `costTable` / `spellsPerLevel`）与 `RulePackSchema.abilities`。
+- `MagicSpellSchema` 增加 `abilityId` / `requiredLevel` / `activation` / `resist`：
+  法术仍放在 `magic.spells` 里，能力字段只是把它接入能力流程。
+- `touhou-ext` 登记五类能力与消费表：
+  神术·阴阳术 5/10/15/20/25/25、魔法 5/10/15/20/25/25、属性使 4/8/12/16/20/20、
+  妖术 1/2/4/6/8/10/12/12、特技 1/2/4/6/8/10/12/12；并补〈抵抗〉技能。
+- 规则工具 `abilityCostForLevel` / `abilityTotalCost` / `abilityLevelForPoints` / `abilitySpellCountIssue`
+  （消费表、按点数反推等级、按每级上限校验法术数量）。
+
+**战斗流程（仅 TOUHOU）**
+- 新增 `resolveAbility()`：校验已习得等级 → 掷 `{特性值}+Lv+3D6`（可配置 1D100）→
+  **无论成败都扣灵力** → 成功后再走抵抗判定 → 最后复用 `executeSpellEffects()`。
+- 抵抗：`{属性}+〈抵抗〉+3D6 ≥ 10 + 术者 Lv + 达成值×2 的十位数`，可配置属性 / 技能 / 骰式。
+- 参战单位新增 `abilityLevels`：角色从 `sourceData.abilities` / `backstory.abilities` 读入，
+  NPC 从 `NpcStats.abilities` 读入；旧快照补空对象。
+- COC7 基线 `abilities.enabled=false`，且 dispatcher 仅对 `pack.system==="TOUHOU"` 分流，COC7 仍走原 `resolveMagic`。
+
+**本批未覆盖的能力体系内容**：能力点与车卡 A-D 分配、每级习得法术数量校验、成长消费（13.4）、
+DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层、
+`MagicEffect` 的 `DISPEL` / `BARRIER` / 变骰等级缩放（`LvD`）。
+
+### 2.4 后续条目（未铺开）
+
+1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
+   - 能力点与等级的车卡 / 成长流程、每级习得数量、妖力 / 特技常时被动、`LvD` 缩放、结界 / 驱散。
 2. **DP 机制**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
    - 如果要做完整 DP 战斗，需要独立于现有 ATB 的“回合 + DP 宣言 + 消费骰”模式；建议做成 TOUHOU 可选战斗模式，保留 ATB 作为现有房规。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
@@ -202,6 +230,16 @@
   - `packages/rules/src/__tests__/touhou-elements.test.ts`：6 条；
   - `packages/combat/src/__tests__/touhou-elements.test.ts`：8 条；
   - `packages/rules/src/__tests__/magic.test.ts` 追加 2 条元素继承测试。
+
+### 4.4 P1 第三批：能力体系发动 / 抵抗
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（rules 120、combat 130、formula 54、web 5）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS；原有 COC7 / TOUHOU magic 测试不变。
+- 新增测试：
+  - `packages/rules/src/__tests__/touhou-abilities.test.ts`：7 条（类别、消费表、工具函数、习得数量、COC7 隔离、〈抵抗〉）；
+  - `packages/combat/src/__tests__/touhou-abilities.test.ts`：5 条（成功、失败仍扣灵、等级门槛、抵抗成功 / 失败）。
 
 ## 5. 风险与回滚
 
