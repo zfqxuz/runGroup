@@ -258,6 +258,7 @@ export function addParticipant(
     raceFlags: [...(init.raceFlags ?? [])],
     elements: [...(init.elements ?? [])],
     abilityLevels: { ...(init.abilityLevels ?? {}) },
+    barrier: null,
     abilityAttributes: { ...(init.abilityAttributes ?? {}) },
     mpExhausted: false,
     skills: init.skills ?? {},
@@ -764,7 +765,28 @@ export function resolveRoundEndDotDamage(pack: CompiledRulePack, state: CombatSt
   }
 }
 
+/** 清理到期结界；到期的结界移除并写日志。 */
+export function expireBarriers(state: CombatState): string[] {
+  const expired: string[] = [];
+  for (const participant of state.participants) {
+    const barrier = participant.barrier;
+    if (barrier === null || barrier === undefined) continue;
+    if (barrier.expiresAtRound === null || state.round < barrier.expiresAtRound) continue;
+    participant.barrier = null;
+    expired.push(participant.id);
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: participant.name + " 的「" + barrier.name + "」持续时间结束",
+      data: { rollType: "BARRIER_EXPIRED", name: barrier.name }
+    });
+  }
+  return expired;
+}
+
 function expireRoundTimers(state: CombatState): void {
+  expireBarriers(state);
   for (const participant of [...state.participants]) {
     if (participant.armorExpiresAtRound !== null && participant.armorExpiresAtRound !== undefined && state.round >= participant.armorExpiresAtRound) {
       const hadArmor = participant.armor;
@@ -1184,6 +1206,33 @@ function applyDamageToParticipant(
       });
     }
     return { toDeclaration, toHp: 0 };
+  }
+
+  // 千幻抄 7.5：结界有自己的 HP，优先于本体承受伤害；击破时溢出无效。
+  const barrier = target.barrier ?? null;
+  if (barrier !== null && barrier.hp > 0) {
+    const hpBefore = barrier.hp;
+    const applied = Math.max(0, Math.floor(remaining));
+    barrier.hp = Math.max(0, hpBefore - applied);
+    if (barrier.hp <= 0) {
+      target.barrier = null;
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 的「" + barrier.name + "」承受 " + hpBefore + " 点伤害后被击破，溢出伤害无效",
+        data: { rollType: "BARRIER_BROKEN", name: barrier.name, hp: 0 }
+      });
+    } else {
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 的「" + barrier.name + "」吸收 " + applied + " 点伤害（剩余 HP " + barrier.hp + "）",
+        data: { rollType: "BARRIER_ABSORB", name: barrier.name, absorbed: applied, hp: barrier.hp }
+      });
+    }
+    return { toDeclaration: 0, toHp: 0 };
   }
 
   const bodyDamage = remaining;
@@ -3131,6 +3180,22 @@ function applyMagicEffect(
   if (effect.type === "STATUS") {
     const stacks = Math.max(1, evaluateEffectNumber(ctx.pack, effect.stacks, actor.vars));
     applyStatus(ctx.pack, state, target.id, effect.key, stacks);
+    return;
+  }
+
+  if (effect.type === "BARRIER") {
+    const hp = Math.max(0, rollEffectDice(effect.hp, state, "magic-barrier:" + actor.id + ":" + spell.id + ":" + target.id));
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    target.barrier = {
+      hp,
+      maxHp: hp,
+      name: effect.name.length > 0 ? effect.name : "结界",
+      expiresAtRound: duration > 0 ? state.round + duration : null
+    };
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 展开「" + target.barrier.name + "」（HP " + hp + "）",
+      { rollType: "BARRIER_APPLIED", barrierHp: hp, barrierMaxHp: hp, expiresAtRound: target.barrier.expiresAtRound ?? 0 }
+    );
     return;
   }
 

@@ -44,6 +44,15 @@ export interface SpellDeclaration {
   readonly isLsc?: boolean;
 }
 
+/** 千幻抄结界（7.5）：独立 HP，吸收伤害直到击破或到期。 */
+export interface BarrierState {
+  hp: number;
+  maxHp: number;
+  name: string;
+  /** 到期轮次；null 表示直到击破或战斗结束。 */
+  expiresAtRound: number | null;
+}
+
 export interface CombatParticipantState {
   readonly id: string;
   readonly name: string;
@@ -153,6 +162,8 @@ export interface CombatParticipantState {
   coverUsedThisRound?: boolean;
   /** DP 能力：本轮是否已经发动过能力（千幻抄原则上每回合一次）。 */
   abilityUsedThisRound?: boolean;
+  /** 展开中的结界；null 表示没有。 */
+  barrier?: BarrierState | null;
   /** 已使用过 LSC：之后不能再使用任何符卡。 */
   lscUsed?: boolean;
   /** LSC 被击破：立刻气绝，30 分钟内 DP 上限视为 0。 */

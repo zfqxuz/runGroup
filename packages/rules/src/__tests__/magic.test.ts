@@ -118,3 +118,13 @@ describe("战斗外施法判定", () => {
     expect(canCastOutsideCombat(spell)).toBe(false);
   });
 });
+
+describe("BARRIER 结界指令", () => {
+  it("BARRIER 带默认 name / durationTicks", () => {
+    const spell = spellOf({ effects: [{ type: "BARRIER", hp: "2d6" }] });
+    expect(spellEffectsOf(spell)).toEqual([
+      { type: "BARRIER", hp: "2d6", name: "结界", durationTicks: "0" }
+    ]);
+    expect(MAGIC_EFFECT_TYPES).toContain("BARRIER");
+  });
+});

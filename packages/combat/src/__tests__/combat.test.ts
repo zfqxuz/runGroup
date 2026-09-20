@@ -15,6 +15,7 @@ import {
   applyForcedSkips,
   applyStatus,
   createCombat,
+  expireBarriers,
   filterCombatForViewer,
   reactionTargetIdsForAction,
   recoverTouhouLscLimits,
@@ -1378,5 +1379,35 @@ describe("符卡战余量（4.16）", () => {
     const { state } = makeCombat("sc-summary-none");
     state.spellcardBattle = { sideUsable: { PC: 2, BOSS: 1 } };
     expect(spellcardBattleSummary(state)).toBeNull();
+  });
+});
+
+describe("结界（BARRIER）", () => {
+  it("结界优先吸收伤害，击破时溢出无效", () => {
+    const { state, a, b } = makeCombat("barrier-absorb");
+    a.barrier = { hp: 10, maxHp: 10, name: "测试结界", expiresAtRound: null };
+    forceReady(b);
+    submitAction(state, { actorId: "b", kind: "DANMAKU", targetId: "a", skill: "DANMAKU", damage: "6" });
+    resolvePending(touhou, state, { a: { type: "PASS" } });
+    expect(a.hp).toBe(a.maxHp);
+    expect(a.barrier?.hp).toBe(4);
+
+    forceReady(b);
+    submitAction(state, { actorId: "b", kind: "DANMAKU", targetId: "a", skill: "DANMAKU", damage: "6" });
+    resolvePending(touhou, state, { a: { type: "PASS" } });
+    expect(a.hp).toBe(a.maxHp);
+    expect(a.barrier).toBeNull();
+    expect(state.log.some((entry) => entry.data?.rollType === "BARRIER_BROKEN")).toBe(true);
+  });
+
+  it("到期结界被清除", () => {
+    const { state, a } = makeCombat("barrier-expire");
+    a.barrier = { hp: 5, maxHp: 5, name: "限时结界", expiresAtRound: 2 };
+    state.round = 1;
+    expect(expireBarriers(state)).toEqual([]);
+    state.round = 2;
+    expect(expireBarriers(state)).toEqual(["a"]);
+    expect(a.barrier).toBeNull();
+    expect(state.log.some((entry) => entry.data?.rollType === "BARRIER_EXPIRED")).toBe(true);
   });
 });

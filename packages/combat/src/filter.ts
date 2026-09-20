@@ -78,6 +78,10 @@ export interface ParticipantView {
   readonly skills: Readonly<Record<string, number>> | null;
   /** 千幻抄能力等级（类别 id -> Lv）；仅对可见单位下发，DP 伤害公式需要。 */
   readonly abilityLevels: Readonly<Record<string, number>> | null;
+  /** 结界 HP / 上限；没有结界时均为 null。 */
+  readonly barrierHp: number | null;
+  readonly barrierMaxHp: number | null;
+  readonly barrierName: string | null;
   /** 是否已使用 LSC（不能再使用符卡）。 */
   readonly lscUsed: boolean;
   /** LSC 是否已被击破（气绝 / DP 上限 0）。 */
@@ -255,6 +259,9 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       speed: participant.speed,
       skills: showNumbers ? participant.skills : null,
       abilityLevels: showNumbers ? { ...(participant.abilityLevels ?? {}) } : null,
+      barrierHp: showNumbers ? (participant.barrier?.hp ?? null) : null,
+      barrierMaxHp: showNumbers ? (participant.barrier?.maxHp ?? null) : null,
+      barrierName: showNumbers ? (participant.barrier?.name ?? null) : null,
       lscUsed: showNumbers ? participant.lscUsed === true : false,
       lscBroken: showNumbers ? participant.lscBroken === true : false
     };

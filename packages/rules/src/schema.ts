@@ -161,7 +161,8 @@ export const MAGIC_EFFECT_TYPES = [
   "STUN",
   "CONTROL",
   "CLEANSE",
-  "DISPEL"
+  "DISPEL",
+  "BARRIER"
 ] as const;
 
 /** 按能力等级缩放伤害 / 治疗的公共字段（LvD / +Lv）。 */
@@ -253,6 +254,15 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("CLEANSE"),
     keys: z.array(z.string()).default([])
+  }),
+  z.object({
+    type: z.literal("BARRIER"),
+    /** 结界 HP，按骰式 / 表达式结算；吸收伤害直到击破。 */
+    hp: DiceExprSchema,
+    /** 结界名称，用于日志与战斗视图。 */
+    name: z.string().default("结界"),
+    /** 持续行动轮次；0 表示直到被击破或战斗结束。 */
+    durationTicks: ExprSchema.default("0")
   }),
   z.object({
     type: z.literal("DISPEL"),

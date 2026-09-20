@@ -122,6 +122,15 @@ function buildAbilityPack() {
             activation: { dice: "3D6", modifier: "0", target: "1" }
           },
           {
+            id: "BARRIER_SPELL",
+            name: "结界·测试",
+            mpCost: "5",
+            sanCost: "0",
+            target: "SELF",
+            targeting: "SELF",
+            effects: [{ type: "BARRIER", hp: "10", name: "测试结界", durationTicks: "0" }]
+          },
+          {
             id: "ELEMENT_BOLT",
             name: "属性使·火",
             abilityId: "ELEMENTALIST:FIRE",
@@ -365,5 +374,15 @@ describe("属性使能力实例（ELEMENTALIST:SUFFIX）", () => {
     expect(activation?.data?.abilityId).toBe("ELEMENTALIST:FIRE");
     expect(activation?.data?.level).toBe(2);
     expect(target.hp).toBe(target.maxHp - 4);
+  });
+});
+
+describe("结界法术（BARRIER）", () => {
+  it("施放后为目标建立结界", () => {
+    const { state, caster } = castAbility("barrier-spell", "BARRIER_SPELL");
+    expect(caster.barrier).not.toBeNull();
+    expect(caster.barrier?.hp).toBe(10);
+    expect(caster.barrier?.name).toBe("测试结界");
+    expect(state.log.some((entry) => entry.data?.rollType === "BARRIER_APPLIED")).toBe(true);
   });
 });

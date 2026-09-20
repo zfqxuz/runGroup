@@ -1229,6 +1229,11 @@ export default function CombatBoard(props: Props) {
                         <p className="mt-1 font-mono text-[11px] text-white/55">HP {item.hp}/{item.maxHp}</p>
                       </>
                     )}
+                    {item.barrierHp === null ? null : (
+                      <p className="mt-1 font-mono text-[11px] text-sky-200">
+                        {item.barrierName ?? "结界"} {item.barrierHp}/{item.barrierMaxHp ?? item.barrierHp}
+                      </p>
+                    )}
                   </div>
                   {view?.mode === "ATB" ? (
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">
