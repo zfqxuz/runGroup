@@ -129,6 +129,16 @@ describe("ATTACK_BUFF 强化攻击指令", () => {
   });
 });
 
+describe("ELEMENTAL_WEAPON 武器生成指令", () => {
+  it("ELEMENTAL_WEAPON 带默认 damageBonus / durationTicks / canRanged", () => {
+    const spell = spellOf({ effects: [{ type: "ELEMENTAL_WEAPON" }] });
+    expect(spellEffectsOf(spell)).toEqual([
+      { type: "ELEMENTAL_WEAPON", damageBonus: "abilityLv", durationTicks: "0", canRanged: false }
+    ]);
+    expect(MAGIC_EFFECT_TYPES).toContain("ELEMENTAL_WEAPON");
+  });
+});
+
 describe("BARRIER 结界指令", () => {
   it("BARRIER 带默认 name / durationTicks", () => {
     const spell = spellOf({ effects: [{ type: "BARRIER", hp: "2d6" }] });

@@ -137,6 +137,22 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
                 : null
           }
         : null;
+    participant.elementalWeapon =
+      participant.elementalWeapon !== null && typeof participant.elementalWeapon === "object"
+        ? {
+            element:
+              typeof participant.elementalWeapon.element === "string" &&
+              participant.elementalWeapon.element.length > 0
+                ? participant.elementalWeapon.element
+                : null,
+            damageBonus: Math.max(0, Math.floor(participant.elementalWeapon.damageBonus ?? 0)),
+            expiresAtRound:
+              typeof participant.elementalWeapon.expiresAtRound === "number"
+                ? Math.max(0, Math.floor(participant.elementalWeapon.expiresAtRound))
+                : null,
+            canRanged: participant.elementalWeapon.canRanged === true
+          }
+        : null;
     participant.barrier =
       participant.barrier !== null && typeof participant.barrier === "object"
         ? {

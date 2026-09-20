@@ -240,6 +240,100 @@ describe("常时被动在 DP 战斗中生效", () => {
     expect(setup.actor.attackBuff?.uses).toBe(1);
   });
 
+  it("武器生成：近战伤害增加属性使 Lv", () => {
+    const base = makeCombat("weapon-melee-base", passive(), passive());
+    base.actor.skills.DODGE = 100;
+    base.actor.skills.MELEE = 100;
+    startRound(base.state, base.actor, base.e1);
+    base.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "MELEE",
+      targetId: "e1",
+      skill: "MELEE",
+      dpDice: 10,
+      dpSecondaryDice: 10,
+      damage: "10"
+    };
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseDamage = base.e1.maxHp - base.e1.hp;
+
+    const armed = makeCombat("weapon-melee-base", passive(), passive());
+    armed.actor.skills.DODGE = 100;
+    armed.actor.skills.MELEE = 100;
+    armed.actor.elementalWeapon = { element: "FIRE", damageBonus: 5, expiresAtRound: null, canRanged: false };
+    startRound(armed.state, armed.actor, armed.e1);
+    armed.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "MELEE",
+      targetId: "e1",
+      skill: "MELEE",
+      dpDice: 10,
+      dpSecondaryDice: 10,
+      damage: "10"
+    };
+    resolveDpTurn(touhou, armed.state, { e1: { type: "PASS" } });
+    const armedDamage = armed.e1.maxHp - armed.e1.hp;
+
+    expect(armedDamage - baseDamage).toBe(5);
+  });
+
+  it("武器生成：攻击附带属性并在弱点时结算", () => {
+    const setup = makeCombat("weapon-melee-element", passive(), passive());
+    setup.actor.skills.DODGE = 100;
+    setup.actor.skills.MELEE = 100;
+    setup.e1.elements = ["METAL"]; // 火克金
+    setup.actor.elementalWeapon = { element: "FIRE", damageBonus: 0, expiresAtRound: null, canRanged: false };
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "MELEE",
+      targetId: "e1",
+      skill: "MELEE",
+      dpDice: 10,
+      dpSecondaryDice: 10,
+      damage: "1"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    const log = setup.state.log.find(
+      (entry) => entry.data?.rollType === "DP_DAMAGE" && String(entry.data?.elementNote ?? "").includes("FIRE")
+    );
+    expect(log).toBeDefined();
+    expect(log?.text).toContain("FIRE");
+    expect(log?.text).toContain("WEAKNESS");
+  });
+
+  it("武器生成：未习得剑闪时远程攻击不获得武器加值", () => {
+    const withoutSwordFlash = makeCombat("weapon-ranged-gate", passive(), passive({ reactionBonus: -999 }));
+    startRound(withoutSwordFlash.state, withoutSwordFlash.actor, withoutSwordFlash.e1);
+    withoutSwordFlash.actor.elementalWeapon = { element: "FIRE", damageBonus: 5, expiresAtRound: null, canRanged: false };
+    ranged(withoutSwordFlash.state, "e1", "10");
+    resolveDpTurn(touhou, withoutSwordFlash.state, { e1: { type: "PASS" } });
+    const gatedDamage = withoutSwordFlash.e1.maxHp - withoutSwordFlash.e1.hp;
+
+    const withSwordFlash = makeCombat("weapon-ranged-gate", passive(), passive({ reactionBonus: -999 }));
+    startRound(withSwordFlash.state, withSwordFlash.actor, withSwordFlash.e1);
+    withSwordFlash.actor.elementalWeapon = { element: "FIRE", damageBonus: 5, expiresAtRound: null, canRanged: true };
+    ranged(withSwordFlash.state, "e1", "10");
+    resolveDpTurn(touhou, withSwordFlash.state, { e1: { type: "PASS" } });
+    const empoweredDamage = withSwordFlash.e1.maxHp - withSwordFlash.e1.hp;
+
+    expect(gatedDamage).toBe(10);
+    expect(empoweredDamage - gatedDamage).toBe(5);
+  });
+
+  it("武器生成：到期轮开始时被清理", () => {
+    const setup = makeCombat("weapon-expire", passive(), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.actor.elementalWeapon = { element: "FIRE", damageBonus: 3, expiresAtRound: 2, canRanged: false };
+    setup.state.round = 2;
+    beginDpRound(touhou, setup.state);
+    expect(setup.actor.elementalWeapon).toBeNull();
+    expect(setup.state.log.some((entry) => entry.data?.rollType === "ELEMENTAL_WEAPON_EXPIRED")).toBe(true);
+  });
+
   it("强化攻击：到期轮开始时被清理", () => {
     const setup = makeCombat("attack-buff-expire", passive(), passive());
     startRound(setup.state, setup.actor, setup.e1);

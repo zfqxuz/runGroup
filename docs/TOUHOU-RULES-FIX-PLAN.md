@@ -364,12 +364,16 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      登记 85 条（神术·阴阳术 15、魔法 59、属性使 9、妖术 2），保留目标值 / 灵力 / 范围 / 时间 / 说明；
      房间页新增「法术·能力速查表」面板（分类 / 系别 / 搜索）。
    - ✅ **内置可结算法术子集**：`touhou-ext.magic.spells` 登记 加持 / 恢复术 / 治愈术 / 转灵术 / 护盾术 / 破魔结界 /
-     属性使·生成 / 属性使·消灭 / 属性使·强化攻击（HEAL Lv×5、DISPEL、MP_RESTORE、TEMP_DP ceil(Lv×1.5)、
-     CREATE_COVER 强度 Lv×4、解除状态/结界/生成物、ATTACK_BUFF +1D / 弹幕 +2）；
+     属性使·生成 / 属性使·消灭 / 属性使·强化攻击 / 属性使·武器生成（HEAL Lv×5、DISPEL、MP_RESTORE、
+     TEMP_DP ceil(Lv×1.5)、CREATE_COVER 强度 Lv×4、解除状态/结界/生成物、ATTACK_BUFF +1D / 弹幕 +2、
+     ELEMENTAL_WEAPON 近战 +属性使 Lv）；
      TOUHOU 房间启用魔法且无模组法术时，`applyMagicRulesToRoom` 回退使用内置法术。
    - ✅ **属性使·强化攻击（ATTACK_BUFF）**：下一次近战 / 射击 / 追击追加 +bonusDice D，弹幕伤害 +danmakuDamage；
      `uses` 限制生效次数、`durationTicks` 控制持续，重复施展取高值不叠加；DP 战斗的射击 / 追击 / 近战 / 弹幕
      结算后消费，战斗视图展示剩余次数。
+   - ✅ **属性使·武器生成（ELEMENTAL_WEAPON）**：生成近战武器，近战伤害 +属性使 Lv（可叠通常武器加值），
+     攻击附带由能力实例后缀（`ELEMENTALIST:FIRE`）推导的属性，并参与属性相克；未习得剑闪时远程 / 弹幕
+     不获得加值（`canRanged=false`）；到期轮清理，战斗视图展示武器属性与加值。
    - ✅ **能力类别级法术**：`resolveAbility` / `dpAbilityLevel` 支持 `abilityId=类别` 时回退到同类别实例最高等级
      （如 `ELEMENTALIST:FIRE` 支撑 `abilityId=ELEMENTALIST` 的生成/消灭）。
    - ✅ **追加 DP（护盾术）**：`MagicEffect TEMP_DP`；追加 DP 只用于回避 / 防御 / 弹幕减免，
@@ -377,8 +381,7 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - ✅ **DP 属性相克修正**：DP 射击 / 追击 / 近战现在与 ATB 一样应用 ELEMENT_MOD
      （弱点 / 同属性伤害与应对修正）；`MagicEffect ELEMENT_BUFF`（属性赋予）
      授予 `grantedElement`，攻击未指定元素时自动使用；战斗视图展示当前属性。
-   - ⏳ 其余速查条目的自动结算仍需逐条映射（神术结界系、属性使流动/偏向/觉醒/广域效果、魔法战斗系 DP 攻击、
-     武器生成等）。
+   - ⏳ 其余速查条目的自动结算仍需逐条映射（神术结界系、属性使流动/偏向/觉醒/广域效果、魔法战斗系 DP 攻击等）。
    - ✅ `BARRIER` 结界（7.5，wiki 表 7.1 数值已落地）：`RulePack.barrier`
      （tiers 2/5/10/15/20/25/30/40m + extended +10m/+1Lv/目标+2/灵力+2；castRange 30m；
      resizeMpCost 2；duration = 神术 Lv×2 小时；dodge = 达成值 + floor(大小/2)；

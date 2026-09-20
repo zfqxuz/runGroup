@@ -254,6 +254,7 @@ export function addParticipant(
     grantedElementExpiresAtRound: null,
     focusDefense: false,
     attackBuff: null,
+    elementalWeapon: null,
     grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
@@ -855,10 +856,32 @@ export function expireAttackBuffs(state: CombatState): string[] {
   return expired;
 }
 
+/** 属性使・武器生成到期清理；返回到期单位 id。 */
+export function expireElementalWeapons(state: CombatState): string[] {
+  const expired: string[] = [];
+  for (const participant of state.participants) {
+    const weapon = participant.elementalWeapon;
+    if (weapon === null || weapon === undefined) continue;
+    if (weapon.expiresAtRound === null || weapon.expiresAtRound === undefined) continue;
+    if (state.round < weapon.expiresAtRound) continue;
+    participant.elementalWeapon = null;
+    expired.push(participant.id);
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: participant.name + " 的生成武器持续时间结束",
+      data: { rollType: "ELEMENTAL_WEAPON_EXPIRED" }
+    });
+  }
+  return expired;
+}
+
 function expireRoundTimers(state: CombatState): void {
   expireBarriers(state);
   expireCovers(state);
   expireAttackBuffs(state);
+  expireElementalWeapons(state);
   for (const participant of [...state.participants]) {
     if (
       participant.grantedElement !== null &&
@@ -3560,6 +3583,34 @@ function applyMagicEffect(
     return;
   }
 
+  if (effect.type === "ELEMENTAL_WEAPON") {
+    const levelVars = { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 };
+    const damageBonus = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.damageBonus, levelVars)));
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    const element = effect.element ?? deriveElementFromAbility(ctx.pack, target, spell.abilityId);
+    target.elementalWeapon = {
+      element,
+      damageBonus,
+      expiresAtRound: duration > 0 ? state.round + duration : null,
+      canRanged: effect.canRanged
+    };
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 生成武器" +
+        (element === null ? "" : "（属性 " + element + "）") +
+        "（近战伤害 +" + damageBonus + "）" +
+        (effect.canRanged ? "（可射击 / 弹幕）" : "") +
+        (duration > 0 ? "，" + duration + " 轮" : ""),
+      {
+        rollType: "ELEMENTAL_WEAPON",
+        element,
+        damageBonus,
+        canRanged: effect.canRanged,
+        duration
+      }
+    );
+    return;
+  }
+
   if (effect.type === "TEMP_DP") {
     const amount = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.amount, { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 })));
     const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
@@ -4372,6 +4423,47 @@ function passiveBonus(
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+/** 从属性使实例 id 后缀推导武器属性（ELEMENTALIST:FIRE -> FIRE）。 */
+function deriveElementFromAbility(
+  pack: CompiledRulePack,
+  participant: CombatParticipantState,
+  abilityId: string | undefined
+): string | null {
+  if (abilityId === undefined || abilityId.length === 0) return null;
+  const registry = pack.pack.elements;
+  for (const instanceId of Object.keys(participant.abilityLevels ?? {})) {
+    const { categoryId, suffix } = splitAbilityInstanceId(instanceId);
+    if (categoryId !== abilityId || suffix === null) continue;
+    const wanted = suffix.trim().toUpperCase();
+    const key = Object.keys(registry).find((id) => id.toUpperCase() === wanted);
+    if (key !== undefined) return key;
+  }
+  return null;
+}
+
+/** 属性使・武器生成的伤害加值后缀（近战固定 +属性使 Lv；远程仅在剑闪时）。 */
+function elementalWeaponDamageSuffix(
+  participant: CombatParticipantState,
+  kind: "MELEE" | "RANGED"
+): string {
+  const weapon = participant.elementalWeapon;
+  if (weapon === null || weapon === undefined) return "";
+  if (kind === "RANGED" && weapon.canRanged === false) return "";
+  if (weapon.damageBonus <= 0) return "";
+  return "+" + Math.floor(weapon.damageBonus);
+}
+
+/** 生成武器提供的攻击属性（近战；远程需剑闪）。 */
+function elementalWeaponElement(
+  participant: CombatParticipantState,
+  kind: "MELEE" | "RANGED"
+): string | null {
+  const weapon = participant.elementalWeapon;
+  if (weapon === null || weapon === undefined) return null;
+  if (kind === "RANGED" && weapon.canRanged === false) return null;
+  return weapon.element;
+}
+
 /** 属性使・强化攻击：读取当前生效的强化（到期自动清理）。 */
 function activeAttackBuff(
   state: CombatState,
@@ -4700,7 +4792,7 @@ function resolveDpRangedAttack(
   const skillId = submission.skill ?? "DANMAKU";
   const attributeKey = submission.dpAttribute ?? "dex";
   const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged:" + actor.id + ":" + defender.id);
-  const attackElement = (submission.element ?? actor.grantedElement)?.trim();
+  const attackElement = (submission.element ?? actor.grantedElement ?? elementalWeaponElement(actor, "RANGED"))?.trim();
   const elementAdjustment = resolveElementAdjustment(
     ctx.pack,
     state,
@@ -4744,7 +4836,8 @@ function resolveDpRangedAttack(
   const damageExpression = expandDamageBonus(
     dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED") +
       passiveDamageDiceSuffix(actor) +
-      rangedBuffSuffix,
+      rangedBuffSuffix +
+      elementalWeaponDamageSuffix(actor, "RANGED"),
     actor.damageBonus
   );
   let rolled = 0;
@@ -4796,7 +4889,8 @@ function applyDpDamage(
   amount: number,
   label: string,
   reduction = 0,
-  expression?: string
+  expression?: string,
+  elementNote?: string
 ): void {
   const total = Math.max(0, amount - Math.max(0, reduction));
   const armorResult = absorbWithArmor(target, total);
@@ -4808,9 +4902,10 @@ function applyDpDamage(
     text:
       label + "：" + target.name + " 受到 " + total +
       (reduction > 0 ? "（原 " + amount + "，应对减伤 " + reduction + "）" : "") +
+      (elementNote !== undefined && elementNote.length > 0 ? elementNote : "") +
       (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
       " → HP 结算 " + Math.max(0, total - armorResult.absorbed),
-    data: { rollType: "DP_DAMAGE", amount, reduction, damage: total, armorAbsorbed: armorResult.absorbed, expression: expression ?? "", toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    data: { rollType: "DP_DAMAGE", amount, reduction, damage: total, armorAbsorbed: armorResult.absorbed, expression: expression ?? "", elementNote: elementNote ?? "", toDeclaration: applied.toDeclaration, toHp: applied.toHp }
   });
 }
 
@@ -4918,7 +5013,7 @@ function resolveDpMelee(
   if (applyCoverFixedDamage(ctx, actor, defender, dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE"))) return;
 
   const meleeEnhance = spellcardEnhanceForAttack(ctx.pack, actor, submission.skill ?? "MELEE");
-  const meleeElement = (submission.element ?? actor.grantedElement)?.trim();
+  const meleeElement = (submission.element ?? actor.grantedElement ?? elementalWeaponElement(actor, "MELEE"))?.trim();
   const meleeElementAdjustment = resolveElementAdjustment(
     ctx.pack,
     state,
@@ -4970,7 +5065,8 @@ function resolveDpMelee(
   const damageExpression =
     dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE") +
     passiveDamageDiceSuffix(actor) +
-    meleeBuffSuffix;
+    meleeBuffSuffix +
+    elementalWeaponDamageSuffix(actor, "MELEE");
   const rolledMeleeDamage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
   const damage = Math.max(
     0,
@@ -4981,7 +5077,12 @@ function resolveDpMelee(
   const hitLabel = cover !== null && damageTarget.id !== defender.id
     ? "近战命中（" + damageTarget.name + " 掩护 " + defender.name + "）"
     : "近战命中";
-  applyDpDamage(ctx, actor, damageTarget, damage, hitLabel, reduction, damageExpression);
+  const meleeElementNote =
+    meleeElementAdjustment === null
+      ? undefined
+      : "，属性 " + meleeElementAdjustment.sourceElement + " " + meleeElementAdjustment.relation +
+        " +" + meleeElementAdjustment.flat;
+  applyDpDamage(ctx, actor, damageTarget, damage, hitLabel, reduction, damageExpression, meleeElementNote);
   consumeAttackBuff(state, actor, "近战" + (meleeBuffSuffix.length > 0 ? " " + meleeBuffSuffix : ""));
 }
 

@@ -97,6 +97,10 @@ export interface ParticipantView {
   readonly attackBuffDice: number | null;
   readonly attackBuffDanmaku: number | null;
   readonly attackBuffUses: number | null;
+  /** 属性使・武器生成：生成武器的属性 / 伤害加值 / 可否远程；无武器时为 null。 */
+  readonly weaponElement: string | null;
+  readonly weaponDamageBonus: number | null;
+  readonly weaponCanRanged: boolean;
   /** 护盾术追加 DP；仅数字可见时下发。 */
   readonly tempDp: number | null;
   readonly tempDpMax: number | null;
@@ -296,6 +300,9 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       attackBuffDice: showNumbers ? (participant.attackBuff?.bonusDice ?? null) : null,
       attackBuffDanmaku: showNumbers ? (participant.attackBuff?.danmakuDamage ?? null) : null,
       attackBuffUses: showNumbers ? (participant.attackBuff?.uses ?? null) : null,
+      weaponElement: showNumbers ? (participant.elementalWeapon?.element ?? null) : null,
+      weaponDamageBonus: showNumbers ? (participant.elementalWeapon?.damageBonus ?? null) : null,
+      weaponCanRanged: showNumbers ? participant.elementalWeapon?.canRanged === true : false,
       tempDp: showNumbers ? Math.max(0, participant.tempDp ?? 0) : null,
       tempDpMax: showNumbers ? Math.max(0, participant.tempDpMax ?? 0) : null,
       coverName: showNumbers ? (participant.cover?.name ?? null) : null,

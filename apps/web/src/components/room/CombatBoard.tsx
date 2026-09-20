@@ -1240,6 +1240,14 @@ export default function CombatBoard(props: Props) {
                               : `（剩余 ${item.attackBuffUses} 次）`}
                           </p>
                         ) : null}
+                        {item.weaponDamageBonus === null || item.weaponDamageBonus === undefined ? null : (
+                          <p className="mt-0.5 font-mono text-[11px] text-amber-200">
+                            生成武器
+                            {item.weaponElement === null || item.weaponElement === undefined ? "" : ` ${item.weaponElement}`}
+                            {item.weaponDamageBonus > 0 ? ` 近战+${item.weaponDamageBonus}` : ""}
+                            {item.weaponCanRanged ? "（可远程）" : ""}
+                          </p>
+                        )}
                         {(item.tempDp ?? 0) > 0 ? (
                           <p className="mt-0.5 font-mono text-[11px] text-emerald-200">
                             追加DP {item.tempDp}

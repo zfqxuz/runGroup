@@ -170,6 +170,7 @@ export const MAGIC_EFFECT_TYPES = [
   "TEMP_DP",
   "ELEMENT_BUFF",
   "ATTACK_BUFF",
+  "ELEMENTAL_WEAPON",
   "CREATE_COVER"
 ] as const;
 
@@ -295,6 +296,17 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     element: z.string(),
     /** 持续轮次；0 表示直到战斗结束。 */
     durationTicks: ExprSchema.default("0")
+  }),
+  z.object({
+    type: z.literal("ELEMENTAL_WEAPON"),
+    /** 武器属性；不填时由施法者的属性使实例 id 后缀（如 ELEMENTALIST:FIRE）推导。 */
+    element: z.string().optional(),
+    /** 近战伤害固定加值；默认 = 属性使 Lv。 */
+    damageBonus: ExprSchema.default("abilityLv"),
+    /** 持续轮次；0 表示直到战斗结束。 */
+    durationTicks: ExprSchema.default("0"),
+    /** 是否可用该武器进行射击 / 弹幕（未习得剑闪时为 false）。 */
+    canRanged: z.boolean().default(false)
   }),
   z.object({
     type: z.literal("ATTACK_BUFF"),

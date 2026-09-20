@@ -89,6 +89,7 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
       "ELEMENTAL_DESTROY",
       "ELEMENTAL_GENERATE",
       "ELEMENTAL_STRIKE",
+      "ELEMENTAL_WEAPON",
       "MAGIC_CURE",
       "MAGIC_HEAL",
       "MAGIC_SHIELD",
@@ -117,6 +118,14 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(caster.attackBuff?.bonusDice).toBe(1);
     expect(caster.attackBuff?.danmakuDamage).toBe(2);
     expect(caster.attackBuff?.uses).toBe(1);
+  });
+
+  it("武器生成：按属性使 Lv 生成带属性的近战武器", () => {
+    const { caster } = cast("builtin-weapon", "ELEMENTAL_WEAPON", { "ELEMENTALIST:FIRE": 3 });
+    expect(caster.mp).toBe(96);
+    expect(caster.elementalWeapon?.element).toBe("FIRE");
+    expect(caster.elementalWeapon?.damageBonus).toBe(3);
+    expect(caster.elementalWeapon?.canRanged).toBe(false);
   });
 
   it("破魔结界：解除目标身上的结界", () => {

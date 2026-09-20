@@ -523,6 +523,20 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "ATTACK_BUFF", bonusDice: "1", danmakuDamage: "2", uses: "1", durationTicks: "0" }]
     },
     {
+      id: "ELEMENTAL_WEAPON",
+      name: "武器生成",
+      skill: "ELEMENTAL_MAGIC",
+      abilityId: "ELEMENTALIST",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "SELF",
+      targeting: "SELF",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 在手中生成对应属性的近战武器：近战伤害 +属性使 Lv，攻击带有该属性。
+      effects: [{ type: "ELEMENTAL_WEAPON", damageBonus: "abilityLv", durationTicks: "0", canRanged: false }]
+    },
+    {
       id: "MAGIC_SHIELD",
       name: "护盾术",
       skill: "MAGIC",

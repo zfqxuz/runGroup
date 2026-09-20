@@ -93,6 +93,18 @@ export interface AttackBuffState {
   expiresAtRound: number | null;
 }
 
+/** 属性使・武器生成：临时近战武器，攻击附加属性并按能力等级加伤。 */
+export interface ElementalWeaponState {
+  /** 武器属性 id；未能从能力实例推导时为 null。 */
+  readonly element: string | null;
+  /** 近战伤害固定加值（属性使 Lv）。 */
+  readonly damageBonus: number;
+  /** 到期轮次；null 表示直到战斗结束 / 主动消失。 */
+  readonly expiresAtRound: number | null;
+  /** 是否可用该武器进行射击 / 弹幕（剑闪）。 */
+  readonly canRanged: boolean;
+}
+
 /** 常时被动加值：由 AbilityDefinition.passives 在战斗准备时汇总。 */
 export interface CombatPassiveMods {
   readonly damageBonus: number;
@@ -237,6 +249,8 @@ export interface CombatParticipantState {
   focusDefense?: boolean;
   /** 属性使・强化攻击：下一次攻击的追加伤害 / 弹幕伤害；null 表示没有。 */
   attackBuff?: AttackBuffState | null;
+  /** 属性使・武器生成：当前生成的近战武器；null 表示没有。 */
+  elementalWeapon?: ElementalWeaponState | null;
   /** 展开中的结界；null 表示没有。 */
   barrier?: BarrierState | null;
   /** 14.12 当前所处掩体；null / undefined 表示无掩体。 */
