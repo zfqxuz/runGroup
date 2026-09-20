@@ -217,3 +217,77 @@ describe("DP 判定数值换算", () => {
     expect(scaledBase).toBe(10);
   });
 });
+
+describe("DP 追击", () => {
+  it("消费每目标 2 DP，固定达成值 +10，多目标同伤", () => {
+    const setup = makeDpCombat("dp-chase");
+    const { state, actor, e1, e2 } = setup;
+    startRound(setup);
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "CHASE",
+      dpTargetIds: ["e1", "e2"],
+      skill: "DANMAKU",
+      damage: "6"
+    };
+    resolveDpTurn(touhou, state, { e1: { type: "PASS" }, e2: { type: "PASS" } });
+    expect(actor.dp).toBe(26); // 30 - 2×2
+    expect(e1.hp).toBe(e1.maxHp - 6);
+    expect(e2.hp).toBe(e2.maxHp - 6);
+    const chase = state.log.find((entry) => entry.data?.rollType === "DP_CHASE");
+    // 达成值 = dex(55) + Lv5 + 10 = 70（未强化时无日志也接受）
+    expect(state.log.filter((entry) => entry.data?.rollType === "DP_DAMAGE").length).toBe(2);
+    expect(chase?.data?.achievement ?? 70).toBe(70);
+  });
+});
+
+describe("DP 近战", () => {
+  it("先接近判定，再命中判定；命中后结算伤害", () => {
+    const setup = makeDpCombat("dp-melee", { DODGE: 100, MELEE: 100 });
+    const { state, actor, e1 } = setup;
+    startRound(setup, 30);
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "MELEE",
+      targetId: "e1",
+      skill: "MELEE",
+      dpDice: 10,          // 接近判定 10D
+      dpSecondaryDice: 10, // 命中判定 10D
+      damage: "8"
+    };
+    resolveDpTurn(touhou, state, { e1: { type: "PASS" } });
+    expect(actor.dp).toBe(10); // 30 - 10 - 10
+    expect(e1.hp).toBe(e1.maxHp - 8);
+    const approach = state.log.find((entry) => entry.data?.rollType === "DP_MELEE_APPROACH");
+    expect(approach?.data?.success).toBe(true);
+    expect(state.log.some((entry) => entry.data?.rollType === "DP_MELEE_HIT")).toBe(true);
+  });
+
+  it("接近失败时不进行命中判定，也不造成伤害", () => {
+    // 攻击方回避 0 级、接近只掷 1D；防守方回避 5 级，目标值很高
+    const setup = makeDpCombat(
+      "dp-melee-fail",
+      { DODGE: 0, MELEE: 100 },
+      { DODGE: 100, DANMAKU: 100 }
+    );
+    const { state, e1 } = setup;
+    startRound(setup, 30);
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "MELEE",
+      targetId: "e1",
+      skill: "MELEE",
+      dpDice: 1,
+      dpSecondaryDice: 1,
+      damage: "8"
+    };
+    resolveDpTurn(touhou, state, { e1: { type: "PASS" } });
+    expect(e1.hp).toBe(e1.maxHp);
+    const approach = state.log.find((entry) => entry.data?.rollType === "DP_MELEE_APPROACH");
+    expect(approach?.data?.success).toBe(false);
+    expect(state.log.some((entry) => entry.data?.rollType === "DP_MELEE_HIT")).toBe(false);
+  });
+});

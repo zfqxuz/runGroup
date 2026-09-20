@@ -3707,7 +3707,151 @@ function resolveDpRangedAttack(
   });
 }
 
+/** 结算一次普通伤害表达式（伤害骰不消耗 DP）。 */
+function rollDpDamage(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  expression: string,
+  salt: string
+): number {
+  try {
+    return Math.max(0, rollDice(parseDice(expandDamageBonus(expression, actor.damageBonus)), nextRollRng(ctx.state, salt)).total);
+  } catch {
+    return 0;
+  }
+}
+
+/** 把一次已确定的伤害应用到目标（含护甲），并写日志。 */
+function applyDpDamage(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  target: CombatParticipantState,
+  amount: number,
+  label: string,
+  reduction = 0
+): void {
+  const total = Math.max(0, amount - Math.max(0, reduction));
+  const armorResult = absorbWithArmor(target, total);
+  const applied = applyDamageToParticipant(ctx, target, armorResult.remaining);
+  pushLog(ctx.state, {
+    kind: "DAMAGE",
+    actorId: actor.id,
+    targetId: target.id,
+    text:
+      label + "：" + target.name + " 受到 " + total +
+      (reduction > 0 ? "（原 " + amount + "，应对减伤 " + reduction + "）" : "") +
+      (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
+      " → HP 结算 " + Math.max(0, total - armorResult.absorbed),
+    data: { rollType: "DP_DAMAGE", amount, reduction, damage: total, armorAbsorbed: armorResult.absorbed, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+  });
+}
+
 /**
+ * DP 追击：消费「每目标 2 DP」，不进行命中判定，达成值固定 {特性值}+〈追击〉+10；
+ * 目标仍可回避 / 防御。伤害骰只掷一次，命中目标受到相同伤害。
+ */
+function resolveDpChase(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
+  const state = ctx.state;
+  const costs = ctx.pack.pack.dp.actionCosts;
+  const targetIds = (submission.dpTargetIds ?? (submission.targetId === null || submission.targetId === undefined ? [] : [submission.targetId]))
+    .filter((id, index, list) => list.indexOf(id) === index);
+  if (targetIds.length === 0) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: actor.name + " 的追击没有目标" });
+    return;
+  }
+  const skillId = submission.skill ?? "DANMAKU";
+  const skillLevel = dpSkillLevel(ctx.pack, actor, skillId);
+  const maxTargets = Math.ceil(skillLevel / 2) + 1;
+  const targets = targetIds
+    .map((id) => findParticipant(state, id))
+    .filter((item): item is CombatParticipantState => item !== undefined && item.defeated === false)
+    .slice(0, maxTargets);
+  if (targets.length === 0) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: actor.name + " 的追击目标已不在场" });
+    return;
+  }
+  const perTarget = Math.max(0, Math.floor(costs.chasePerTarget));
+  if (spendDp(ctx, actor, perTarget * targets.length, "追击 ×" + targets.length) === false) return;
+  const attributeKey = submission.dpAttribute ?? "dex";
+  const base = dpAttribute(ctx.pack, actor, attributeKey) + skillLevel + 10;
+  const escalation = Math.max(0, Math.floor(submission.dpEscalation ?? 0));
+  const maxEscalation = Math.floor(skillLevel / 4);
+  const extraDp = Math.min(escalation, maxEscalation) * 2;
+  if (extraDp > 0 && spendDp(ctx, actor, extraDp, "追击强化 +" + Math.min(escalation, maxEscalation) * 10) === false) return;
+  const achievement = base + Math.min(escalation, maxEscalation) * 10;
+  const damage = rollDpDamage(ctx, actor, submission.damage ?? "1d6", "dp-chase-damage:" + actor.id + ":" + state.round);
+  const hits: CombatParticipantState[] = [];
+  for (const target of targets) {
+    const reaction = reactionFor(ctx, target.id);
+    const defense = resolveDpDefense(ctx, target, reaction, achievement);
+    if (defense.success === false) hits.push(target);
+  }
+  if (hits.length === 0) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: actor.name + " 的追击被全部应对" });
+    return;
+  }
+  for (const target of hits) {
+    applyDpDamage(ctx, actor, target, damage, "追击命中（达成值 " + achievement + "）");
+  }
+}
+
+/**
+ * DP 近战：先做接近判定（{身体}+〈回避〉 vs 目标 {身体}+max(〈回避〉,〈弹幕〉+15)），
+ * 成功后再做命中判定（{身体}+〈近战武器〉）；接近与命中各自消费 DP 骰。
+ */
+function resolveDpMelee(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  defender: CombatParticipantState
+): void {
+  const state = ctx.state;
+  const costs = ctx.pack.pack.dp.actionCosts;
+  const approachDice = Math.max(1, Math.floor(submission.dpDice ?? 1));
+  const hitDice = Math.max(1, Math.floor(submission.dpSecondaryDice ?? 1));
+  const approachCost = Math.max(0, Math.floor(costs.meleeApproachPerDie)) * approachDice;
+  const hitCost = Math.max(0, Math.floor(costs.meleeHitPerDie)) * hitDice;
+  if (spendDp(ctx, actor, approachCost + hitCost, "接近 " + approachDice + "D + 命中 " + hitDice + "D") === false) return;
+
+  const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);
+  const defenderAvoid = dpSkillLevel(ctx.pack, defender, "DODGE");
+  const defenderDanmaku = dpSkillLevel(ctx.pack, defender, "DANMAKU");
+  const approachTarget = dpAttribute(ctx.pack, defender, "str") + Math.max(defenderAvoid, defenderDanmaku + 15);
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: defender.id,
+    text:
+      actor.name + " 接近判定：" + approachDice + "d6=" + approach.roll + " + " + approach.base + " = " + approach.achievement +
+      " / 目标 " + approachTarget + " → " + (approach.achievement >= approachTarget ? "接近成功" : "接近失败"),
+    data: { rollType: "DP_MELEE_APPROACH", dice: approachDice, roll: approach.roll, base: approach.base, achievement: approach.achievement, target: approachTarget, success: approach.achievement >= approachTarget }
+  });
+  if (approach.achievement < approachTarget) return;
+
+  const hit = dpRoll(ctx.pack, state, actor, "str", submission.skill ?? "MELEE", hitDice, "dp-melee-hit:" + actor.id + ":" + defender.id);
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: defender.id,
+    text: actor.name + " 近战命中：" + hitDice + "d6=" + hit.roll + " + " + hit.base + " = " + hit.achievement,
+    data: { rollType: "DP_MELEE_HIT", dice: hitDice, roll: hit.roll, base: hit.base, achievement: hit.achievement }
+  });
+  const reaction = reactionFor(ctx, defender.id);
+  const defense = resolveDpDefense(ctx, defender, reaction, hit.achievement);
+  if (defense.success) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: defender.id, text: defender.name + " 成功应对近战攻击" });
+    return;
+  }
+  const damage = rollDpDamage(ctx, actor, submission.damage ?? "1d6", "dp-melee-damage:" + actor.id + ":" + defender.id);
+  applyDpDamage(ctx, actor, defender, damage, "近战命中", defense.reduction);
+}
+
+/**
+ * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。/**
  * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。/**
  * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。
  * 目标选择「回避弹幕」时消耗规定 DP，不受伤；DP 不足则受到固定伤害。
@@ -3791,6 +3935,17 @@ export function resolveDpActionForActor(
       pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: submission.targetId ?? null, text: actor.name + " 的射击目标已不在场" });
     } else {
       resolveDpRangedAttack(ctx, actor, submission, defender);
+    }
+  } else if (submission.kind === "DANMAKU" && submission.dpAction === "CHASE") {
+    resolveDpChase(ctx, actor, submission);
+  } else if (submission.kind === "DANMAKU" && submission.dpAction === "MELEE") {
+    const defender = submission.targetId === null || submission.targetId === undefined
+      ? undefined
+      : findParticipant(state, submission.targetId);
+    if (defender === undefined || defender.defeated) {
+      pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: submission.targetId ?? null, text: actor.name + " 的近战目标已不在场" });
+    } else {
+      resolveDpMelee(ctx, actor, submission, defender);
     }
   } else {
     resolveOne(ctx, actor, submission);

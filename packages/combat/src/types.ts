@@ -199,6 +199,12 @@ export interface ActionSubmission {
   readonly dpDice?: number;
   /** DP 模式判定使用的特性值 key；缺省由行动种类决定。 */
   readonly dpAttribute?: string;
+  /** DP 近战：命中判定的骰数（接近判定用 dpDice）。 */
+  readonly dpSecondaryDice?: number;
+  /** DP 追击：多目标 id 列表。 */
+  readonly dpTargetIds?: readonly string[];
+  /** DP 追击：追加消费次数（每 +2 DP，达成值 +10）。 */
+  readonly dpEscalation?: number;
   /** 弹幕回避时需要减少的 DP 数（由弹幕等级 / 卡牌决定）。 */
   readonly danmakuDpReduction?: number;
   /** 弹幕回避者 DP 不足时的固定伤害。 */
