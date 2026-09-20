@@ -210,6 +210,29 @@ describe("符卡", () => {
     expect(state.log.some((entry) => entry.text.includes("溢出"))).toBe(true);
   });
 
+  it("击破展开型 SC 的一方按自然回复量回复 DP（4.11）", () => {
+    const { state, a, b } = makeCombat("sc-break-dp");
+    forceReady(a);
+    forceReady(b);
+    b.dp = 0;
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想封印",
+      spellcardMode: "DECLARATION",
+      declarationHp: 5,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    submitAction(state, {
+      actorId: "b", kind: "DANMAKU", targetId: "a", skill: "DANMAKU", damage: "1d6+10"
+    });
+    resolvePending(touhou, state, { a: { type: "PASS" } });
+    expect(a.declaration).toBeNull();
+    expect(b.dp).toBeGreaterThan(0);
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_BREAK_DP_RECOVER")).toBe(true);
+  });
+
   it("展开型保存卡牌 id 与自定义清弹范围", () => {
     const { state, a } = makeCombat();
     forceReady(a);

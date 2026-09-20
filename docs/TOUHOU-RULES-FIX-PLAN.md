@@ -299,7 +299,9 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
 4. SC 完整规则（部分完成）：
    - ✅ 4.8 / 4.12：展开型 SC 展开、消费型 SC 发动时回复 `ceil(DP 上限/2)` DP
      （`recoverSpellcardDp`，日志 `SPELLCARD_DP_RECOVER`）。
-   - ⏳ LSC、任意时机展开、击破者 DP 回复（4.11）、符卡战胜负条件（4.16）。
+   - ✅ 4.11：击破展开型 SC 的一方按自己的 DP 自然回复量回复 DP
+     （`grantDeclarationBreakerDp`，日志 `SPELLCARD_BREAK_DP_RECOVER`）；主动放弃 SC / 渐进消失仍待做。
+   - ⏳ LSC、任意时机展开、符卡战胜负条件（4.16）、主动放弃 SC。
 
 ### 2.8 后续条目（未铺开）
 

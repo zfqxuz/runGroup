@@ -490,7 +490,40 @@ function evaluateSource(pack: CompiledRulePack, source: string, vars: Record<str
   return evaluate(expression, { vars, consts: pack.pack.const });
 }
 
-function breakDeclaration(ctx: ResolveContext, owner: CombatParticipantState): void {
+/** 千幻抄 4.11：击破展开型 SC 的一方，按自己的 DP 自然回复量回复 DP。 */
+function grantDeclarationBreakerDp(
+  ctx: ResolveContext,
+  breaker: CombatParticipantState,
+  owner: CombatParticipantState,
+  declarationName: string
+): void {
+  const dpRules = ctx.pack.pack.dp;
+  if (dpRules === undefined || breaker.id === owner.id || breaker.defeated) return;
+  let regen = Math.max(0, Math.floor(dpRules.minRegen));
+  try {
+    regen = Math.max(regen, Math.floor(evaluateSource(ctx.pack, dpRules.regen, breaker.vars)));
+  } catch {
+    // 表达式失败时退回 minRegen。
+  }
+  if (regen <= 0) return;
+  const before = Math.max(0, Math.floor(breaker.dp));
+  breaker.dp = Math.min(breaker.maxDp, before + regen);
+  const gained = breaker.dp - before;
+  if (gained <= 0) return;
+  pushLog(ctx.state, {
+    kind: "SPELLCARD",
+    actorId: breaker.id,
+    targetId: owner.id,
+    text: breaker.name + " 击破「" + declarationName + "」，回复 " + gained + " DP（" + breaker.dp + " / " + breaker.maxDp + "）",
+    data: { rollType: "SPELLCARD_BREAK_DP_RECOVER", name: declarationName, gained, dp: breaker.dp }
+  });
+}
+
+function breakDeclaration(
+  ctx: ResolveContext,
+  owner: CombatParticipantState,
+  breaker?: CombatParticipantState
+): void {
   const declaration = owner.declaration;
   if (declaration === null) return;
   owner.declaration = null;
@@ -502,6 +535,9 @@ function breakDeclaration(ctx: ResolveContext, owner: CombatParticipantState): v
     text: `${owner.name} 的符卡「${declaration.name}」被击破`,
     data: { event: "BREAK", name: declaration.name, cardId: declaration.cardId, hp: 0 }
   });
+  if (breaker !== undefined) {
+    grantDeclarationBreakerDp(ctx, breaker, owner, declaration.name);
+  }
 
   const rules = ctx.pack.pack.spellcard;
   if (rules === undefined) return;
@@ -1030,7 +1066,8 @@ export function resolveRoundRaceAbilities(pack: CompiledRulePack, state: CombatS
 function applyDamageToParticipant(
   ctx: ResolveContext,
   target: CombatParticipantState,
-  amount: number
+  amount: number,
+  attacker?: CombatParticipantState
 ): { toDeclaration: number; toHp: number } {
   let remaining = amount;
   let toDeclaration = 0;
@@ -1043,7 +1080,7 @@ function applyDamageToParticipant(
     const applied = Math.max(0, Math.floor(remaining));
     declaration.hp = Math.max(0, hpBefore - applied);
     toDeclaration = applied;
-    if (declaration.hp <= 0) breakDeclaration(ctx, target);
+    if (declaration.hp <= 0) breakDeclaration(ctx, target, attacker);
     if (applied > hpBefore) {
       pushLog(ctx.state, {
         kind: "DAMAGE",
@@ -2038,7 +2075,7 @@ function resolveAttack(
   }
 
   const armorResult = absorbWithArmor(defender, outcome.damage);
-  const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining);
+  const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining, actor);
   const defenseText =
     reaction.type === "PASS"
       ? "未应对"
@@ -2096,7 +2133,7 @@ function resolveAttack(
       data: { rollType: "COUNTER_DAMAGE_ROLL", expression: counterExpression, roll: counterRoll.total }
     });
     const counterArmor = absorbWithArmor(actor, counterRoll.total);
-    const counterApplied = applyDamageToParticipant(ctx, actor, counterArmor.remaining);
+    const counterApplied = applyDamageToParticipant(ctx, actor, counterArmor.remaining, defender);
     pushLog(state, {
       kind: "DAMAGE",
       actorId: defender.id,
@@ -2900,7 +2937,7 @@ function applyMagicEffect(
       clearTouhouMpExhaustion(ctx, target);
     }
     const armorResult = absorbWithArmor(target, outcome.damage);
-    const applied = applyDamageToParticipant(ctx, target, armorResult.remaining);
+    const applied = applyDamageToParticipant(ctx, target, armorResult.remaining, actor);
     pushLog(state, {
       kind: "DAMAGE",
       actorId: actor.id,
@@ -3100,7 +3137,7 @@ function applyMagicEffect(
     }
     let brokeDeclaration = false;
     if (effect.declaration && target.declaration !== null) {
-      breakDeclaration(ctx, target);
+      breakDeclaration(ctx, target, actor);
       brokeDeclaration = true;
     }
     log(
@@ -3989,7 +4026,7 @@ function resolveDpRangedAttack(
   const enhancedRoll = Math.round((rolled + (enhance?.flatDamage ?? 0)) * (enhance?.damageMultiplier ?? 1));
   const total = Math.max(0, enhancedRoll - reduction);
   const armorResult = absorbWithArmor(damageTarget, total);
-  const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining);
+  const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining, actor);
   pushLog(state, {
     kind: "DAMAGE",
     actorId: actor.id,
@@ -4030,7 +4067,7 @@ function applyDpDamage(
 ): void {
   const total = Math.max(0, amount - Math.max(0, reduction));
   const armorResult = absorbWithArmor(target, total);
-  const applied = applyDamageToParticipant(ctx, target, armorResult.remaining);
+  const applied = applyDamageToParticipant(ctx, target, armorResult.remaining, actor);
   pushLog(ctx.state, {
     kind: "DAMAGE",
     actorId: actor.id,
@@ -4224,7 +4261,7 @@ function resolveDpDanmaku(
       });
       continue;
     }
-    const applied = applyDamageToParticipant(ctx, target, baseDamage);
+    const applied = applyDamageToParticipant(ctx, target, baseDamage, actor);
     pushLog(state, {
       kind: "DAMAGE",
       actorId: actor.id,
