@@ -33,6 +33,7 @@ export {
   currentActorId,
   endTurn,
   expireBarriers,
+  expireCovers,
   setInitiativeOrder,
   createCombat,
   endCombat,

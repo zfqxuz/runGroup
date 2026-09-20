@@ -264,6 +264,7 @@ export function addParticipant(
     elements: [...(init.elements ?? [])],
     abilityLevels: { ...(init.abilityLevels ?? {}) },
     barrier: null,
+    cover: null,
     abilityAttributes: { ...(init.abilityAttributes ?? {}) },
     passiveMods: {
       damageBonus: init.passiveMods?.damageBonus ?? 0,
@@ -796,8 +797,29 @@ export function expireBarriers(state: CombatState): string[] {
   return expired;
 }
 
+/** 14.12 清理到期掩体。 */
+export function expireCovers(state: CombatState): string[] {
+  const expired: string[] = [];
+  for (const participant of state.participants) {
+    const cover = participant.cover;
+    if (cover === null || cover === undefined) continue;
+    if (cover.expiresAtRound === null || state.round < cover.expiresAtRound) continue;
+    participant.cover = null;
+    expired.push(participant.id);
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: participant.name + " 的「" + cover.name + "」掩体持续时间结束",
+      data: { rollType: "COVER_EXPIRED", name: cover.name }
+    });
+  }
+  return expired;
+}
+
 function expireRoundTimers(state: CombatState): void {
   expireBarriers(state);
+  expireCovers(state);
   for (const participant of [...state.participants]) {
     if (participant.armorExpiresAtRound !== null && participant.armorExpiresAtRound !== undefined && state.round >= participant.armorExpiresAtRound) {
       const hadArmor = participant.armor;
@@ -1244,6 +1266,34 @@ function applyDamageToParticipant(
       });
     }
     return { toDeclaration: 0, toHp: 0 };
+  }
+
+  // 14.12 物理掩体：吸收伤害直到耐久耗尽，溢出继续结算到本体。
+  const cover = target.cover ?? null;
+  if (cover !== null && cover.hp > 0) {
+    const hpBefore = cover.hp;
+    const absorbed = Math.min(hpBefore, Math.max(0, Math.floor(remaining)));
+    cover.hp = Math.max(0, hpBefore - absorbed);
+    remaining -= absorbed;
+    if (cover.hp <= 0) {
+      target.cover = null;
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 的「" + cover.name + "」承受 " + hpBefore + " 点伤害后被击破，溢出 " + remaining + " 点继续结算",
+        data: { rollType: "COVER_BROKEN", name: cover.name, hp: 0, overflow: remaining }
+      });
+    } else {
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text: target.name + " 的「" + cover.name + "」吸收 " + absorbed + " 点伤害（剩余耐久 " + cover.hp + "）",
+        data: { rollType: "COVER_ABSORB", name: cover.name, absorbed, hp: cover.hp, overflow: remaining }
+      });
+    }
+    if (remaining <= 0) return { toDeclaration: 0, toHp: 0 };
   }
 
   const bodyDamage = remaining;
@@ -4140,6 +4190,12 @@ function barrierPenalty(participant: CombatParticipantState): number {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 0;
 }
 
+/** 14.12 掩体应对加值：等级 ×2。 */
+function coverDefenseBonus(participant: CombatParticipantState): number {
+  const value = participant.cover?.level;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value * 2 : 0;
+}
+
 /** 消耗 DP；不足时记录日志并返回 false。 */
 function spendDp(
   ctx: ResolveContext,
@@ -4185,7 +4241,7 @@ function resolveDpDefense(
       return { success: false, reduction: 0 };
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
-    const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender);
+    const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender);
     const success = reactionAchievement >= attackAchievement;
     const reduction = success ? 0 : dpSkillLevel(ctx.pack, defender, reaction.skill ?? "MELEE") * 2;
     pushLog(ctx.state, {
@@ -4205,7 +4261,8 @@ function resolveDpDefense(
     return { success: false, reduction: 0 };
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
-  const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus");
+  const reactionAchievement =
+    roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender);
   const success = reactionAchievement >= attackAchievement;
   let grazeGain = 0;
   if (success && ctx.pack.system === "TOUHOU") {
@@ -4259,7 +4316,7 @@ function resolveDpCover(
     if (spendDp(ctx, coverer, perDie * dice, "掩护 " + dice + "D") === false) continue;
     coverer.coverUsedThisRound = true;
     const roll = dpRoll(ctx.pack, state, coverer, "dex", reaction.skill ?? "DODGE", dice, salt + ":" + coverer.id);
-    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus") - barrierPenalty(coverer);
+    const reactionAchievement = roll.achievement + passiveBonus(coverer, "reactionBonus") - barrierPenalty(coverer) + coverDefenseBonus(coverer);
     const success = reactionAchievement >= attackAchievement;
     pushLog(state, {
       kind: "CHECK",

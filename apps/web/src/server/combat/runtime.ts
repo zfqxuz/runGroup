@@ -142,6 +142,23 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
                 : 0
           }
         : null;
+    participant.cover =
+      participant.cover !== null && typeof participant.cover === "object"
+        ? {
+            name: typeof participant.cover.name === "string" ? participant.cover.name : "掩体",
+            level:
+              typeof participant.cover.level === "number"
+                ? Math.max(0, Math.floor(participant.cover.level))
+                : 1,
+            hp: Math.max(0, Math.floor(participant.cover.hp ?? 0)),
+            maxHp: Math.max(0, Math.floor(participant.cover.maxHp ?? participant.cover.hp ?? 0)),
+            expiresAtRound:
+              typeof participant.cover.expiresAtRound === "number"
+                ? Math.max(0, Math.floor(participant.cover.expiresAtRound))
+                : null,
+            blocksLineOfSight: participant.cover.blocksLineOfSight === true
+          }
+        : null;
     participant.lscUsed = participant.lscUsed === true;
     participant.lscBroken = participant.lscBroken === true;
     participant.lscBrokenAt = typeof participant.lscBrokenAt === "string" ? participant.lscBrokenAt : null;

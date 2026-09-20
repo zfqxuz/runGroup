@@ -415,6 +415,20 @@ TOUHOU_EXT.barrier = {
   restack: "REPLACE",
   dispelNeedsContest: false
 };
+/**
+ * 14.10 / 14.11 重量与财产。
+ *
+ * 千幻抄各角色约 10 円，货币单位为「円」；负重上限的精确数值表属 wiki 内容，
+ * 暂不填写 carryCapacity（不强制限重），由模组按需覆盖。
+ */
+TOUHOU_EXT.inventory = {
+  enabled: true,
+  currencyName: "円",
+  startingProperty: "10",
+  livingCostPerDay: "1",
+  propertyTradeRate: "1",
+  overloadPenaltyPerUnit: "0"
+};
 TOUHOU_EXT.statusEffects = {
   // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。
   SUNLIGHT: { stack: "REFRESH", durationTicks: "240" },

@@ -30,6 +30,8 @@ export interface CharacterEquipment {
   readonly weapons: readonly CharacterWeapon[];
   readonly items: readonly CharacterItem[];
   readonly assets: CharacterAssets | null;
+  /** 14.10 所有携带物品 / 武器的重量合计。 */
+  readonly totalWeight: number;
 }
 
 function recordOf(value: unknown): Record<string, unknown> {
@@ -71,8 +73,11 @@ export function characterEquipmentOf(sourceData: unknown): CharacterEquipment {
   }
   const rawItems = Array.isArray(source.items) ? source.items : [];
   const items: CharacterItem[] = [];
+  let totalWeight = 0;
   for (const raw of rawItems) {
     const item = recordOf(raw);
+    const weight = numberOrNull(recordOf(item.stats).weight);
+    if (weight !== null) totalWeight += Math.max(0, weight);
     const name = stringOrNull(item.name);
     if (name === null) continue;
     items.push({
@@ -92,5 +97,5 @@ export function characterEquipmentOf(sourceData: unknown): CharacterEquipment {
           cashUnit: stringOrNull(rawAssets.cashUnit),
           otherAssetsValue: stringOrNull(rawAssets.otherAssetsValue)
         };
-  return { weapons, items, assets };
+  return { weapons, items, assets, totalWeight };
 }

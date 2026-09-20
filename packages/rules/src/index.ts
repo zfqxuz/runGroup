@@ -51,6 +51,7 @@ export type {
   BarrierSize,
   BarrierLevel,
   BarrierRules,
+  InventoryRules,
   ActionCostKey,
   PipelineStep,
   CombatMode,
@@ -183,6 +184,20 @@ export type {
   TouhouNaturalHealingInput,
   TouhouNaturalHealingOutcome
 } from "./touhou";
+
+export {
+  resolveCarryCapacity,
+  resolveEncumbrance,
+  resolveLivingCost,
+  resolveProperty,
+  resolveStartingProperty
+} from "./inventory";
+export type {
+  EncumbranceInput,
+  EncumbranceResult,
+  PropertyInput,
+  PropertyResult
+} from "./inventory";
 
 export {
   barrierDispelSuccess,

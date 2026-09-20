@@ -15,6 +15,7 @@
     "verify:dp-combat": "tsx --env-file=.env scripts/verify-dp-combat.ts",
     "verify:touhou-ability-chargen": "tsx --env-file=.env scripts/verify-touhou-ability-chargen.ts",
     "verify:touhou-growth": "tsx --env-file=.env scripts/verify-touhou-growth.ts",
+    "verify:touhou-inventory": "tsx scripts/verify-touhou-inventory.ts",
     "verify:dp-combat-e2e": "tsx --env-file=.env scripts/verify-dp-combat-e2e.ts",
     "lint": "next lint",
     "db:generate": "prisma generate",

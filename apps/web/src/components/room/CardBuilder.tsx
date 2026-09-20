@@ -106,6 +106,7 @@ export default function CardBuilder(props: Props) {
   });
 
   const [weaponType, setWeaponType] = useState(stringOr(stats0.weaponType, "BRAWL"));
+  const [weight, setWeight] = useState(numberOr(stats0.weight, 0));
   const [accuracyMod, setAccuracyMod] = useState(numberOr(stats0.accuracyMod, 0));
 
   const [effect, setEffect] = useState(stringOr(stats0.effect, ""));
@@ -161,7 +162,8 @@ export default function CardBuilder(props: Props) {
         uses: costUses.trim().length === 0 ? null : Number(costUses),
         cooldownRounds
       },
-      usableIn
+      usableIn,
+      weight
     };
   }
 
@@ -429,6 +431,22 @@ export default function CardBuilder(props: Props) {
           </div>
         </section>
       ) : null}
+
+      <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+        <h2 className="text-sm font-medium text-white/80">重量</h2>
+        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+          <label className="flex flex-col gap-1.5">
+            <span className="text-xs text-white/50">重量（14.10 负重）</span>
+            <input
+              type="number"
+              min={0}
+              value={weight}
+              onChange={(event) => setWeight(Math.max(0, Number(event.target.value) || 0))}
+              className={inputClass}
+            />
+          </label>
+        </div>
+      </section>
 
       <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
         <h2 className="text-sm font-medium text-white/80">额外效果</h2>

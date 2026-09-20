@@ -372,7 +372,12 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      也可直接 PASS 不判定；UI 提供技能 / 特性值 / 目标值 / 骰数选择。
    - ✅ 移动公式接入追逐：`touhouMovement`（地面 / 飞行）接入 `chaseBaseMov`，新增〈运动〉技能与
      `TOUHOU_MOV_PER_MPS` 换算常量（默认 1 m/s = 1 MOV），并叠加常时移动加值。
-   - ⏳ 重量 / 财产、遮挡物 / 掩体判定（需要物品重量表 / 位置模型 + wiki 数值）。
+   - ✅ 重量 / 财产：`RulePack.inventory`（carryCapacity / overloadPenaltyPerUnit / currencyName /
+     startingProperty / livingCostPerDay / propertyTradeRate）；卡片新增 `weight`；
+     `resolveEncumbrance` / `resolveProperty` 纯函数；东方默认 10 円、每日 1 円。
+     ⏳ 负重上限精确数值表待 wiki（默认不强制限重，模组可覆盖）。
+   - ✅ 遮挡物 / 掩体：`CoverState`（等级 / 耐久 / 到期 / 挡视线）；`combat:set-cover`（KP）；
+     掩体等级提供应对 +Lv×2，耐久优先吸收伤害、击破后溢出继续结算；到期自动清理；视图展示掩体。
 
 ## 3. P2 KP行为 / 不可达
 

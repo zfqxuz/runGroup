@@ -213,6 +213,23 @@ export interface CombatReadyWeaponPayload {
   readonly ready: boolean;
 }
 
+/** KP 设置 / 清除房间场景中的物理掩体（14.12）。 */
+export interface CombatSetCoverPayload {
+  readonly combatId: string;
+  readonly participantId: string;
+  /** 掩体名称；缺省「掩体」。 */
+  readonly name?: string;
+  /** 掩体等级：应对 +level×2。 */
+  readonly level?: number;
+  /** 耐久；0 表示无限。 */
+  readonly hp?: number;
+  /** 持续轮次；0 / 缺省表示直到击破或战斗结束。 */
+  readonly durationRounds?: number;
+  readonly blocksLineOfSight?: boolean;
+  /** true 清除该单位的掩体。 */
+  readonly clear?: boolean;
+}
+
 export interface CombatReactionRequest {
   readonly combatId: string;
   readonly actorId: string;

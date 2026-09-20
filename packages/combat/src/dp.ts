@@ -1,6 +1,6 @@
 import { compile as compileExpr, evaluate } from "@touhou/formula";
 import type { CompiledRulePack } from "@touhou/rules";
-import { expireBarriers, findParticipant, pushLog, recoverTouhouLscLimits, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
+import { expireBarriers, expireCovers, findParticipant, pushLog, recoverTouhouLscLimits, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
 import type { CombatParticipantState, CombatState } from "./types";
 
 function evalDpExpr(
@@ -47,6 +47,7 @@ export function beginDpRound(pack: CompiledRulePack, state: CombatState): void {
   }
   const pendingBonus = { ...state.dp.regenBonus };
   expireBarriers(state);
+  expireCovers(state);
   recoverTouhouLscLimits(pack, state);
   resolveRoundRaceAbilities(pack, state);
   state.dp = { declared: {}, regenBonus: {}, acted: [] };

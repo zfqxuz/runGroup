@@ -59,6 +59,7 @@ import type {
   CombatReadyWeaponPayload,
   CombatReactionPayload,
   CombatReactionRequest,
+  CombatSetCoverPayload,
   CombatUpdate
 } from "@/shared/socket";
 
@@ -1230,6 +1231,68 @@ async function handleForceResolve(
   ack({ ok: true });
 }
 
+/** 14.12 KP 设置 / 清除物理掩体。 */
+async function handleSetCover(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as Partial<CombatSetCoverPayload>;
+  if (userId === null || typeof input.combatId !== "string" || typeof input.participantId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.roles.get(userId) !== "KP") {
+    ack({ ok: false, error: "只有 KP 可以设置掩体" });
+    return;
+  }
+  const participant = findParticipant(runtime.state, input.participantId);
+  if (participant === undefined) {
+    ack({ ok: false, error: "参战单位不存在" });
+    return;
+  }
+  if (input.clear === true) {
+    participant.cover = null;
+    pushLog(runtime.state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text: participant.name + " 的掩体已清除",
+      data: { rollType: "COVER_CLEARED" }
+    });
+  } else {
+    const level = Math.max(0, Math.floor(Number(input.level ?? 1) || 0));
+    const hp = Math.max(0, Math.floor(Number(input.hp ?? 0) || 0));
+    const durationRounds = Math.max(0, Math.floor(Number(input.durationRounds ?? 0) || 0));
+    const name = typeof input.name === "string" && input.name.trim().length > 0 ? input.name.trim() : "掩体";
+    participant.cover = {
+      name,
+      level,
+      hp,
+      maxHp: hp,
+      expiresAtRound: durationRounds > 0 ? runtime.state.round + durationRounds : null,
+      blocksLineOfSight: input.blocksLineOfSight === true
+    };
+    pushLog(runtime.state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: participant.id,
+      text:
+        participant.name + " 进入「" + name + "」（等级 " + level + (hp > 0 ? "，耐久 " + hp : "，无耐久") + "）",
+      data: { rollType: "COVER_SET", name, level, hp, blocksLineOfSight: participant.cover.blocksLineOfSight === true }
+    });
+  }
+  await persistAndBroadcast(io, runtime);
+  ack({ ok: true });
+}
+
 async function handleInitiativeOrder(
   io: SocketServer,
   socket: Socket,
@@ -1491,6 +1554,10 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   socket.on("combat:abort", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleAbort(io, socket, payload, ack);
   });
+  socket.on("combat:set-cover", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleSetCover(io, socket, payload, ack);
+  });
+
   socket.on("combat:initiative-order", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleInitiativeOrder(io, socket, payload, ack);
   });

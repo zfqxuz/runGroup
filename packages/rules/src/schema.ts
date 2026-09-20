@@ -499,6 +499,23 @@ export const BarrierRulesSchema = z.object({
   dispelNeedsContest: z.boolean().default(false)
 });
 
+/** 14.10 / 14.11 重量与财产规则；数值表由规则包 / 模组提供。 */
+export const InventoryRulesSchema = z.object({
+  enabled: z.boolean().default(false),
+  /** 负重上限表达式，可引用 str / siz / con 等；不填表示不限制负重。 */
+  carryCapacity: ExprSchema.optional(),
+  /** 每超重 1 单位的应对 / 移动惩罚。 */
+  overloadPenaltyPerUnit: ExprSchema.default("0"),
+  /** 货币名称（千幻抄为「円」）。 */
+  currencyName: z.string().default("円"),
+  /** 开卡初始财产表达式（千幻抄约 10 円）。 */
+  startingProperty: ExprSchema.default("10"),
+  /** 每天生活费。 */
+  livingCostPerDay: ExprSchema.default("1"),
+  /** 1 点财产可换取的食物 / 魔法物品点数。 */
+  propertyTradeRate: ExprSchema.default("1")
+});
+
 export const SpellCardRulesSchema = z.object({
   declaration: z.object({
     hpRatio: ExprSchema,
@@ -755,6 +772,7 @@ export const RulePackSchema = z.object({
   statusEffects: z.record(z.string(), StatusEffectSchema).default({}),
   spellcard: SpellCardRulesSchema.optional(),
   barrier: BarrierRulesSchema.default({}),
+  inventory: InventoryRulesSchema.default({}),
   magic: MagicRulesSchema.optional(),
 
   cardBudget: z
@@ -783,6 +801,7 @@ export type SpellCardRules = z.output<typeof SpellCardRulesSchema>;
 export type BarrierSize = z.output<typeof BarrierSizeSchema>;
 export type BarrierLevel = z.output<typeof BarrierLevelSchema>;
 export type BarrierRules = z.output<typeof BarrierRulesSchema>;
+export type InventoryRules = z.output<typeof InventoryRulesSchema>;
 export type MagicSpell = z.output<typeof MagicSpellSchema>;
 export type MagicRules = z.output<typeof MagicRulesSchema>;
 export type MagicEffect = z.output<typeof MagicEffectSchema>;

@@ -38,7 +38,9 @@ export const CardBaseStatsSchema = z.object({
   targetScope: z.enum(CARD_TARGET_SCOPES).default("ONE"),
   cost: CardCostSchema.default({}),
   /** 可在哪些场景使用：战斗内 / 战斗外。 */
-  usableIn: z.array(z.enum(CARD_USABLE_IN)).default(["COMBAT"])
+  usableIn: z.array(z.enum(CARD_USABLE_IN)).default(["COMBAT"]),
+  /** 14.10 重量：负重系统使用；0 表示忽略。 */
+  weight: z.number().nonnegative().max(9999).default(0)
 });
 
 /** 卡上所有效果一律生效；要停用某个效果就把它从卡里移除。 */

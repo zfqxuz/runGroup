@@ -1239,6 +1239,13 @@ export default function CombatBoard(props: Props) {
                         {(item.barrierPenalty ?? 0) > 0 ? "（惩罚 -" + item.barrierPenalty + "）" : ""}
                       </p>
                     )}
+                    {item.coverName === null ? null : (
+                      <p className="mt-1 font-mono text-[11px] text-amber-200">
+                        {item.coverName} Lv{item.coverLevel ?? 0}
+                        {item.coverHp === null || item.coverHp <= 0 ? "（无耐久）" : " " + item.coverHp + "/" + (item.coverMaxHp ?? item.coverHp)}
+                        {item.coverBlocksLineOfSight ? "·挡视线" : ""}
+                      </p>
+                    )}
                   </div>
                   {view?.mode === "ATB" ? (
                     <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-white/10">

@@ -65,6 +65,20 @@ export interface BarrierState {
   scopeMeters?: number;
 }
 
+/** 14.12 物理掩体 / 遮挡物：提供应对加值并吸收伤害直到耐久耗尽。 */
+export interface CoverState {
+  name: string;
+  /** 掩体等级：应对达成值 +level×2，并作为强度档。 */
+  level: number;
+  /** 掩体耐久；0 表示无耐久（只提供应对加值，不吸收伤害）。 */
+  hp: number;
+  maxHp: number;
+  /** 到期轮次；null 表示直到击破或战斗结束。 */
+  expiresAtRound: number | null;
+  /** 是否阻挡视线（远程攻击需先处理掩体）。 */
+  blocksLineOfSight?: boolean;
+}
+
 /** 常时被动加值：由 AbilityDefinition.passives 在战斗准备时汇总。 */
 export interface CombatPassiveMods {
   readonly damageBonus: number;
@@ -186,6 +200,8 @@ export interface CombatParticipantState {
   abilityUsedThisRound?: boolean;
   /** 展开中的结界；null 表示没有。 */
   barrier?: BarrierState | null;
+  /** 14.12 当前所处掩体；null / undefined 表示无掩体。 */
+  cover?: CoverState | null;
   /** 已使用过 LSC：之后不能再使用任何符卡。 */
   lscUsed?: boolean;
   /** LSC 被击破：立刻气绝，30 分钟内 DP 上限视为 0。 */
