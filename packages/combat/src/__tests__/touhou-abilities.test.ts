@@ -150,6 +150,18 @@ function buildAbilityPack() {
             target: "ONE",
             targeting: "ENEMY",
             effects: [{ type: "DAMAGE", amount: "4", levelBonus: "abilityLv * 2" }]
+          },
+          {
+            id: "ELEMENT_GRANT",
+            name: "属性赋予·测试",
+            abilityId: "SPIRIT_ARTS",
+            requiredLevel: 1,
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ALLY",
+            effects: [{ type: "ELEMENT_BUFF", element: "WATER", durationTicks: "0" }],
+            activation: { dice: "3D6", modifier: "0", target: "1" }
           }
         ]
       }
@@ -384,5 +396,12 @@ describe("结界法术（BARRIER）", () => {
     expect(caster.barrier?.hp).toBe(10);
     expect(caster.barrier?.name).toBe("测试结界");
     expect(state.log.some((entry) => entry.data?.rollType === "BARRIER_APPLIED")).toBe(true);
+  });
+});
+
+describe("属性赋予（ELEMENT_BUFF）", () => {
+  it("给目标授予攻击元素", () => {
+    const { target } = castAbility("element-grant", "ELEMENT_GRANT");
+    expect(target.grantedElement).toBe("WATER");
   });
 });

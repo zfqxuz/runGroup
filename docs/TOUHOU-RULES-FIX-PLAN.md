@@ -367,6 +367,9 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      `applyMagicRulesToRoom` 回退使用内置法术。
    - ✅ **追加 DP（护盾术）**：`MagicEffect TEMP_DP`；追加 DP 只用于回避 / 防御 / 弹幕减免，
      消费时优先扣追加 DP，支持到期轮次；战斗视图展示追加 DP。
+   - ✅ **DP 属性相克修正**：DP 射击 / 追击 / 近战现在与 ATB 一样应用 ELEMENT_MOD
+     （弱点 / 同属性伤害与应对修正）；`MagicEffect ELEMENT_BUFF`（属性赋予）
+     授予 `grantedElement`，攻击未指定元素时自动使用；战斗视图展示当前属性。
    - ⏳ 其余速查条目的自动结算仍需逐条映射（神术结界系、属性使生成/消灭/流动、魔法战斗系 DP 攻击等）。
    - ✅ `BARRIER` 结界（7.5，wiki 表 7.1 数值已落地）：`RulePack.barrier`
      （tiers 2/5/10/15/20/25/30/40m + extended +10m/+1Lv/目标+2/灵力+2；castRange 30m；

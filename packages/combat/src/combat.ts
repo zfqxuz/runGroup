@@ -246,6 +246,8 @@ export function addParticipant(
     tempDp: 0,
     tempDpMax: 0,
     tempDpExpiresAtRound: null,
+    grantedElement: null,
+    grantedElementExpiresAtRound: null,
     grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
@@ -829,6 +831,16 @@ function expireRoundTimers(state: CombatState): void {
   expireBarriers(state);
   expireCovers(state);
   for (const participant of [...state.participants]) {
+    if (
+      participant.grantedElement !== null &&
+      participant.grantedElement !== undefined &&
+      participant.grantedElementExpiresAtRound !== null &&
+      participant.grantedElementExpiresAtRound !== undefined &&
+      state.round >= participant.grantedElementExpiresAtRound
+    ) {
+      participant.grantedElement = null;
+      participant.grantedElementExpiresAtRound = null;
+    }
     if (
       (participant.tempDp ?? 0) > 0 &&
       participant.tempDpExpiresAtRound !== null &&
@@ -3457,6 +3469,18 @@ function applyMagicEffect(
     return;
   }
 
+  if (effect.type === "ELEMENT_BUFF") {
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    target.grantedElement = effect.element;
+    target.grantedElementExpiresAtRound = duration > 0 ? state.round + duration : null;
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 的攻击附带属性「" + effect.element + "」" +
+        (duration > 0 ? "（" + duration + " 轮）" : ""),
+      { rollType: "ELEMENT_BUFF", element: effect.element, duration }
+    );
+    return;
+  }
+
   if (effect.type === "TEMP_DP") {
     const amount = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.amount, { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 })));
     const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
@@ -4357,7 +4381,9 @@ function resolveDpDefense(
   ctx: ResolveContext,
   defender: CombatParticipantState,
   reaction: DefenseReaction,
-  attackAchievement: number
+  attackAchievement: number,
+  /** 属性相克对防守方应对检定的修正（弱点 -3 / 同属性 +3）。 */
+  elementDefenseMod = 0
 ): { readonly success: boolean; readonly reduction: number } {
   const costs = ctx.pack.pack.dp.actionCosts;
   const dice = Math.max(1, Math.floor(reaction.dpDice ?? 1));
@@ -4367,7 +4393,8 @@ function resolveDpDefense(
       return { success: false, reduction: 0 };
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
-    const reactionAchievement = roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender);
+    const reactionAchievement =
+      roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender) + elementDefenseMod;
     const success = reactionAchievement >= attackAchievement;
     const reduction = success ? 0 : dpSkillLevel(ctx.pack, defender, reaction.skill ?? "MELEE") * 2;
     pushLog(ctx.state, {
@@ -4388,7 +4415,7 @@ function resolveDpDefense(
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
   const reactionAchievement =
-    roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender);
+    roll.achievement + passiveBonus(defender, "reactionBonus") - barrierPenalty(defender) + coverDefenseBonus(defender) + elementDefenseMod;
   const success = reactionAchievement >= attackAchievement;
   let grazeGain = 0;
   if (success && ctx.pack.system === "TOUHOU") {
@@ -4485,6 +4512,14 @@ function resolveDpRangedAttack(
   const skillId = submission.skill ?? "DANMAKU";
   const attributeKey = submission.dpAttribute ?? "dex";
   const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged:" + actor.id + ":" + defender.id);
+  const attackElement = (submission.element ?? actor.grantedElement)?.trim();
+  const elementAdjustment = resolveElementAdjustment(
+    ctx.pack,
+    state,
+    attackElement,
+    defender,
+    "dp-ranged-elem:" + actor.id + ":" + defender.id
+  );
   const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
   const attackAchievement = attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
   pushLog(state, {
@@ -4502,7 +4537,7 @@ function resolveDpRangedAttack(
   let reduction = 0;
   if (cover === null) {
     const reaction = reactionFor(ctx, defender.id);
-    const defense = resolveDpDefense(ctx, defender, reaction, attackAchievement);
+    const defense = resolveDpDefense(ctx, defender, reaction, attackAchievement, elementAdjustment?.defenseMod ?? 0);
     if (defense.success) {
       pushLog(state, {
         kind: "ACTION",
@@ -4527,8 +4562,9 @@ function resolveDpRangedAttack(
   } catch {
     rolled = 0;
   }
-  const enhancedRoll = Math.round((rolled + (enhance?.flatDamage ?? 0) + passiveBonus(actor, "damageBonus")) * (enhance?.damageMultiplier ?? 1));
-  const total = Math.max(0, enhancedRoll - reduction);
+  const flatBonus =
+    (enhance?.flatDamage ?? 0) + passiveBonus(actor, "damageBonus") + (elementAdjustment?.flat ?? 0);
+  const total = Math.max(0, Math.round((rolled + flatBonus) * (enhance?.damageMultiplier ?? 1)) - reduction);
   const armorResult = absorbWithArmor(damageTarget, total);
   const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining, actor);
   pushLog(state, {
@@ -4537,6 +4573,7 @@ function resolveDpRangedAttack(
     targetId: damageTarget.id,
     text:
       "射击伤害：" + damageTarget.name + " 受到 " + total + "（" + damageExpression + " = " + rolled +
+      (elementAdjustment === null ? "" : "，属性 " + elementAdjustment.sourceElement + " " + elementAdjustment.relation + " " + elementAdjustment.flat) +
       ((enhance?.flatDamage ?? 0) > 0 ? "，符卡强化 +" + enhance?.flatDamage : "") +
       (reduction > 0 ? "，防御减伤 " + reduction : "") +
       (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
@@ -4622,6 +4659,7 @@ function resolveDpChase(
   const extraDp = Math.min(escalation, maxEscalation) * 2;
   if (extraDp > 0 && spendDp(ctx, actor, extraDp, "追击强化 +" + Math.min(escalation, maxEscalation) * 10) === false) return;
   const chaseEnhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
+  const chaseElement = (submission.element ?? actor.grantedElement)?.trim();
   const achievement =
     base + Math.min(escalation, maxEscalation) * 10 + (chaseEnhance?.accuracyMod ?? 0);
   const damageExpression =
@@ -4630,21 +4668,29 @@ function resolveDpChase(
   const damage = Math.round(
     (rolledChaseDamage + (chaseEnhance?.flatDamage ?? 0)) * (chaseEnhance?.damageMultiplier ?? 1)
   );
-  const hits: { target: CombatParticipantState; label: string }[] = [];
+  const hits: { target: CombatParticipantState; label: string; elementFlat: number }[] = [];
   for (const target of targets) {
     if (applyCoverFixedDamage(ctx, actor, target, damageExpression)) continue;
+    const elementAdjustment = resolveElementAdjustment(
+      ctx.pack,
+      state,
+      chaseElement,
+      target,
+      "dp-chase-elem:" + actor.id + ":" + target.id
+    );
     const cover = resolveDpCover(ctx, actor, target, achievement, "dp-chase-cover:" + actor.id + ":" + target.id);
     if (cover !== null) {
       hits.push({
         target: cover.target,
-        label: cover.target.id === target.id ? "追击命中（掩护失败，无减伤）" : "追击命中（" + cover.target.name + " 掩护 " + target.name + "）"
+        label: cover.target.id === target.id ? "追击命中（掩护失败，无减伤）" : "追击命中（" + cover.target.name + " 掩护 " + target.name + "）",
+        elementFlat: elementAdjustment?.flat ?? 0
       });
       continue;
     }
     const reaction = reactionFor(ctx, target.id);
-    const defense = resolveDpDefense(ctx, target, reaction, achievement);
+    const defense = resolveDpDefense(ctx, target, reaction, achievement, elementAdjustment?.defenseMod ?? 0);
     if (defense.success === false) {
-      hits.push({ target, label: "追击命中（达成值 " + achievement + "）" });
+      hits.push({ target, label: "追击命中（达成值 " + achievement + "）", elementFlat: elementAdjustment?.flat ?? 0 });
     }
   }
   if (hits.length === 0) {
@@ -4652,7 +4698,7 @@ function resolveDpChase(
     return;
   }
   for (const hit of hits) {
-    applyDpDamage(ctx, actor, hit.target, damage, hit.label, 0, damageExpression);
+    applyDpDamage(ctx, actor, hit.target, Math.max(0, damage + hit.elementFlat), hit.label, 0, damageExpression);
   }
 }
 
@@ -4676,6 +4722,14 @@ function resolveDpMelee(
   if (applyCoverFixedDamage(ctx, actor, defender, dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE"))) return;
 
   const meleeEnhance = spellcardEnhanceForAttack(ctx.pack, actor, submission.skill ?? "MELEE");
+  const meleeElement = (submission.element ?? actor.grantedElement)?.trim();
+  const meleeElementAdjustment = resolveElementAdjustment(
+    ctx.pack,
+    state,
+    meleeElement,
+    defender,
+    "dp-melee-elem:" + actor.id + ":" + defender.id
+  );
   const approach = dpRoll(ctx.pack, state, actor, "str", "DODGE", approachDice, "dp-melee-approach:" + actor.id + ":" + defender.id);
   const approachAchievement = approach.achievement + (meleeEnhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
   const defenderAvoid = dpSkillLevel(ctx.pack, defender, "DODGE");
@@ -4707,7 +4761,7 @@ function resolveDpMelee(
   let reduction = 0;
   if (cover === null) {
     const reaction = reactionFor(ctx, defender.id);
-    const defense = resolveDpDefense(ctx, defender, reaction, hitAchievement);
+    const defense = resolveDpDefense(ctx, defender, reaction, hitAchievement, meleeElementAdjustment?.defenseMod ?? 0);
     if (defense.success) {
       pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: defender.id, text: defender.name + " 成功应对近战攻击" });
       return;
@@ -4719,7 +4773,12 @@ function resolveDpMelee(
   const damageExpression =
     dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE") + passiveDamageDiceSuffix(actor);
   const rolledMeleeDamage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
-  const damage = Math.round(rolledMeleeDamage * (meleeEnhance?.damageMultiplier ?? 1));
+  const damage = Math.max(
+    0,
+    Math.round(
+      (rolledMeleeDamage + (meleeElementAdjustment?.flat ?? 0)) * (meleeEnhance?.damageMultiplier ?? 1)
+    )
+  );
   const hitLabel = cover !== null && damageTarget.id !== defender.id
     ? "近战命中（" + damageTarget.name + " 掩护 " + defender.name + "）"
     : "近战命中";

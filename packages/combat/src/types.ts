@@ -174,6 +174,10 @@ export interface CombatParticipantState {
   raceFlags?: string[];
   /** 先天 / 装备元素亲和与抗性；用于属性相克。 */
   elements?: string[];
+  /** 属性赋予：本次攻击附加的元素；无则为 null。 */
+  grantedElement?: string | null;
+  /** 属性赋予到期轮次；null 表示直到战斗结束。 */
+  grantedElementExpiresAtRound?: number | null;
   /** 千幻抄能力等级：categoryId -> Lv；COC7 单位为空对象。 */
   abilityLevels?: Record<string, number>;
   /** 千幻抄能力实例指定的发动特性值（如属性使选 {知性}/{感觉}）。 */

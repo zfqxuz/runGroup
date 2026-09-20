@@ -167,7 +167,8 @@ export const MAGIC_EFFECT_TYPES = [
   "CLEANSE",
   "DISPEL",
   "BARRIER",
-  "TEMP_DP"
+  "TEMP_DP",
+  "ELEMENT_BUFF"
 ] as const;
 
 /** 按能力等级缩放伤害 / 治疗的公共字段（LvD / +Lv）。 */
@@ -272,6 +273,13 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     sizeMeters: z.number().nonnegative().optional(),
     /** 锚定方式：SELF 贴在目标身上，AREA 占据一片区域（需要位置模型）。 */
     anchor: z.enum(["SELF", "AREA"]).default("SELF")
+  }),
+  z.object({
+    type: z.literal("ELEMENT_BUFF"),
+    /** 赋予的攻击元素 id（对应元素表），如 FIRE / WATER。 */
+    element: z.string(),
+    /** 持续轮次；0 表示直到战斗结束。 */
+    durationTicks: ExprSchema.default("0")
   }),
   z.object({
     type: z.literal("TEMP_DP"),

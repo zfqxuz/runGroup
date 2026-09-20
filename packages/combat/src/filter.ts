@@ -87,6 +87,8 @@ export interface ParticipantView {
   readonly barrierRequiredLevel: number | null;
   readonly barrierSizeId: string | null;
   readonly barrierPenalty: number | null;
+  /** 属性赋予：当前攻击附带元素；无则为 null。 */
+  readonly grantedElement: string | null;
   /** 护盾术追加 DP；仅数字可见时下发。 */
   readonly tempDp: number | null;
   readonly tempDpMax: number | null;
@@ -280,6 +282,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       barrierRequiredLevel: showNumbers ? (participant.barrier?.requiredLevel ?? null) : null,
       barrierSizeId: showNumbers ? (participant.barrier?.sizeId ?? null) : null,
       barrierPenalty: showNumbers ? (participant.barrier?.penalty ?? null) : null,
+      grantedElement: showNumbers ? (participant.grantedElement ?? null) : null,
       tempDp: showNumbers ? Math.max(0, participant.tempDp ?? 0) : null,
       tempDpMax: showNumbers ? Math.max(0, participant.tempDpMax ?? 0) : null,
       coverName: showNumbers ? (participant.cover?.name ?? null) : null,

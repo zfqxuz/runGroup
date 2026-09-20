@@ -212,6 +212,45 @@ describe("常时被动在 DP 战斗中生效", () => {
     expect(setup.e1.dp).toBe(30);
   });
 
+  it("DP 射击应用属性弱点（水克火）", () => {
+    const setup = makeCombat("dp-element-weakness", passive(), passive());
+    setup.e1.elements = ["FIRE"];
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 3,
+      damage: "1",
+      element: "WATER"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    const damageLog = setup.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_DAMAGE");
+    expect(damageLog?.text).toContain("WEAKNESS");
+    expect(damageLog?.text).toContain("WATER");
+  });
+
+  it("属性赋予的 grantedElement 在攻击元素未指定时生效", () => {
+    const setup = makeCombat("dp-element-grant", passive(), passive());
+    setup.e1.elements = ["FIRE"];
+    setup.actor.grantedElement = "WATER";
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 3,
+      damage: "1"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    const damageLog = setup.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_DAMAGE");
+    expect(damageLog?.text).toContain("WEAKNESS");
+  });
+
   it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {
     const base = makeCombat("passive-acc-base", passive(), passive());
     startRound(base.state, base.actor, base.e1);

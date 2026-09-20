@@ -1227,6 +1227,9 @@ export default function CombatBoard(props: Props) {
                           />
                         </div>
                         <p className="mt-1 font-mono text-[11px] text-white/55">HP {item.hp}/{item.maxHp}</p>
+                        {item.grantedElement === null || item.grantedElement === undefined ? null : (
+                          <p className="mt-0.5 font-mono text-[11px] text-violet-200">属性 {item.grantedElement}</p>
+                        )}
                         {(item.tempDp ?? 0) > 0 ? (
                           <p className="mt-0.5 font-mono text-[11px] text-emerald-200">
                             追加DP {item.tempDp}
