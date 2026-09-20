@@ -358,7 +358,10 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      （名称 / 消费点数 / 说明）；`AbilityDefinitionSchema.cost` / `costPerLevel` / `costNote`
      接入能力点预算与车卡 UI；高速飞行（移动 +Lv）、擦弹判定大（每 3 点擦弹 +1）已自动化。
      未自动化条目由 KP 按说明结算。
-   - ⏳ 属性使基本 / 追加能力与神术 / 魔法 / 妖术法术的**效果**仍需逐条映射到 effects（名称 / 消费已可从 wiki 继续补）。
+   - ✅ **wiki 法术 / 能力速查表**：`RulePack.spellReferences` + `packs/data/touhou-spell-references.ts`
+     登记 85 条（神术·阴阳术 15、魔法 59、属性使 9、妖术 2），保留目标值 / 灵力 / 范围 / 时间 / 说明；
+     房间页新增「法术·能力速查表」面板（分类 / 系别 / 搜索）。
+   - ⏳ 速查条目的**自动结算**仍需逐条映射到 `MagicSpell.effects`（神术结界系、属性使生成/消灭/流动等）。
    - ✅ `BARRIER` 结界（7.5，wiki 表 7.1 数值已落地）：`RulePack.barrier`
      （tiers 2/5/10/15/20/25/30/40m + extended +10m/+1Lv/目标+2/灵力+2；castRange 30m；
      resizeMpCost 2；duration = 神术 Lv×2 小时；dodge = 达成值 + floor(大小/2)；

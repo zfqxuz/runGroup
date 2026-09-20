@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import KpPrepPanel from "@/components/room/KpPrepPanel";
 import KpValueEditor from "@/components/room/KpValueEditor";
 import KpToolsPanel from "@/components/room/KpToolsPanel";
+import SpellReferencePanel from "@/components/room/SpellReferencePanel";
 import RoomAdvancementPanel from "@/components/room/RoomAdvancementPanel";
 import RoomBgmPlayer from "@/components/room/RoomBgmPlayer";
 import RoomGameStatePanel from "@/components/room/RoomGameStatePanel";
@@ -777,6 +778,9 @@ export default async function RoomPage({
 
       {isKP && isKpSplit === false ? <KpValueEditor roomId={room.id} units={placeableSceneUnits} /> : null}
       {isKP && isKpSplit === false ? <KpToolsPanel roomId={room.id} units={placeableSceneUnits} /> : null}
+      {room.system === "TOUHOU" ? (
+        <SpellReferencePanel references={effective.compiled.pack.spellReferences} />
+      ) : null}
 
       {isKpSplit ? (
         <div className="flex flex-col gap-4">

@@ -1,5 +1,6 @@
 import type { RulePackOverlay } from "../schema";
 import { TOUHOU_ABILITY_DEFINITIONS } from "./data/touhou-abilities";
+import { TOUHOU_SPELL_REFERENCES } from "./data/touhou-spell-references";
 
 type AbilityDefinitionsInput = NonNullable<NonNullable<RulePackOverlay["abilities"]>["definitions"]>;
 type AbilityDefinitionInput = AbilityDefinitionsInput[string];
@@ -14,6 +15,8 @@ export const TOUHOU_EXT: RulePackOverlay = {
   system: "TOUHOU",
   version: "1.1.0",
   extends: ["coc7-baseline@1.1.0"],
+  // wiki 法术 / 能力速查表（结构化存档，automation 另见 magic.spells）。
+  spellReferences: TOUHOU_SPELL_REFERENCES,
   const: {
     MP_PER_POW: 4,
     DP_BASE: 10,

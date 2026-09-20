@@ -53,6 +53,7 @@ export type {
   BarrierConfinement,
   BarrierRules,
   InventoryRules,
+  SpellReference,
   ActionCostKey,
   PipelineStep,
   CombatMode,

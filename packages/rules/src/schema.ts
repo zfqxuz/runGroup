@@ -513,6 +513,33 @@ export const BarrierRulesSchema = z.object({
   dispelNeedsContest: z.boolean().default(true)
 });
 
+/**
+ * 法术 / 能力速查条目（wiki 法术列表）。
+ *
+ * 只做结构化存档：名称、分类、目标值、灵力、范围、时间与说明。
+ * 需要自动结算时，再由模组或后续版本把 entry 映射成 MagicSpell.effects。
+ */
+export const SpellReferenceSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  /** 大分类：神术·阴阳术 / 魔法 / 属性使 / 妖术。 */
+  category: z.string(),
+  /** 子类：结界系 / 其他 / 战斗系 / 基本能力 / 追加能力 等。 */
+  school: z.string().optional(),
+  /** 目标值原文（可能含「见说明」或「16/21」）。 */
+  targetValue: z.string().optional(),
+  /** 消费灵力原文。 */
+  mpCostText: z.string().optional(),
+  /** 效果范围原文。 */
+  rangeText: z.string().optional(),
+  /** 效果时间原文。 */
+  durationText: z.string().optional(),
+  /** 效果说明。 */
+  description: z.string(),
+  /** 备注（习得条件 / 消耗表等）。 */
+  note: z.string().optional()
+});
+
 /** 14.10 / 14.11 重量与财产规则；数值表由规则包 / 模组提供。 */
 export const InventoryRulesSchema = z.object({
   enabled: z.boolean().default(false),
@@ -795,6 +822,8 @@ export const RulePackSchema = z.object({
   spellcard: SpellCardRulesSchema.optional(),
   barrier: BarrierRulesSchema.default({}),
   inventory: InventoryRulesSchema.default({}),
+  /** wiki 法术 / 能力速查表；与可结算的 magic.spells 分离。 */
+  spellReferences: z.array(SpellReferenceSchema).default([]),
   magic: MagicRulesSchema.optional(),
 
   cardBudget: z
@@ -825,6 +854,7 @@ export type BarrierExtended = z.output<typeof BarrierExtendedSchema>;
 export type BarrierConfinement = z.output<typeof BarrierConfinementSchema>;
 export type BarrierRules = z.output<typeof BarrierRulesSchema>;
 export type InventoryRules = z.output<typeof InventoryRulesSchema>;
+export type SpellReference = z.output<typeof SpellReferenceSchema>;
 export type MagicSpell = z.output<typeof MagicSpellSchema>;
 export type MagicRules = z.output<typeof MagicRulesSchema>;
 export type MagicEffect = z.output<typeof MagicEffectSchema>;
