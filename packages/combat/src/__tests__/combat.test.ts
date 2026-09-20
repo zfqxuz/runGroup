@@ -1146,3 +1146,68 @@ describe("SC 回复 DP", () => {
     expect(recover?.data?.mode).toBe("DECLARATION");
   });
 });
+
+describe("LSC（Last Spell Card）", () => {
+  it("宣告 LSC 后本场不能再使用符卡", () => {
+    const { state, a } = makeCombat("lsc-use");
+    a.mp = 100;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想天生",
+      spellCardId: "card-lsc",
+      spellcardMode: "DECLARATION",
+      declarationHp: 10,
+      declarationDurationTicks: 240,
+      declarationLsc: true,
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.lscUsed).toBe(true);
+    expect(a.declaration?.isLsc).toBe(true);
+    expect(state.log.some((entry) => entry.data?.rollType === "LSC_DECLARED")).toBe(true);
+
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "另一张符卡",
+      spellCardId: "card-other",
+      spellcardMode: "CONSUMPTION",
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.usedSpellCards).not.toContain("card-other");
+    expect(state.log.some((entry) => entry.text.includes("已使用 LSC"))).toBe(true);
+  });
+
+  it("LSC 被击破时立刻气绝且 DP 上限归零", () => {
+    const { state, a, b } = makeCombat("lsc-break");
+    a.mp = 100;
+    forceReady(a);
+    forceReady(b);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想天生",
+      spellCardId: "card-lsc",
+      spellcardMode: "DECLARATION",
+      declarationHp: 5,
+      declarationDurationTicks: 240,
+      declarationLsc: true,
+      mpCost: 0
+    });
+    submitAction(state, {
+      actorId: "b", kind: "DANMAKU", targetId: "a", skill: "DANMAKU", damage: "1d6+10"
+    });
+    resolvePending(touhou, state, { a: { type: "PASS" } });
+    expect(a.declaration).toBeNull();
+    expect(a.defeated).toBe(true);
+    expect(a.unconscious).toBe(true);
+    expect(a.lscBroken).toBe(true);
+    expect(a.dp).toBe(0);
+    expect(a.maxDp).toBe(0);
+    expect(state.log.some((entry) => entry.data?.rollType === "LSC_BROKEN")).toBe(true);
+  });
+});

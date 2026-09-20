@@ -412,6 +412,7 @@ async function handleAction(
     spellcardMode: raw.spellcardMode === "DECLARATION" || raw.spellcardMode === "CONSUMPTION" ? raw.spellcardMode : undefined,
     declarationHp: asNumber(raw.declarationHp),
     declarationDurationTicks: asNumber(raw.declarationDurationTicks),
+    declarationLsc: raw.declarationLsc === true,
     itemCardId: asString(raw.itemCardId),
     grazeSpend:
       raw.grazeSpend === "MP" || raw.grazeSpend === "MELEE_DAMAGE" || raw.grazeSpend === "RANGED_DAMAGE"

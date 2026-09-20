@@ -539,6 +539,22 @@ function breakDeclaration(
     grantDeclarationBreakerDp(ctx, breaker, owner, declaration.name);
   }
 
+  // 千幻抄 4.15：LSC 被击破立刻气绝，之后 30 分钟 DP 初始值与上限视为 0。
+  if (declaration.isLsc === true) {
+    owner.unconscious = true;
+    owner.defeated = true;
+    owner.lscBroken = true;
+    owner.dp = 0;
+    owner.maxDp = 0;
+    pushLog(ctx.state, {
+      kind: "DEFEAT",
+      actorId: owner.id,
+      targetId: null,
+      text: owner.name + " 的 LSC 被击破，立刻气绝（30 分钟内 DP 上限视为 0）",
+      data: { rollType: "LSC_BROKEN", name: declaration.name }
+    });
+  }
+
   const rules = ctx.pack.pack.spellcard;
   if (rules === undefined) return;
   const clearEvent = ctx.pack.pack.combat.events.SPELLCARD_BREAK_CLEARS_DANMAKU;
@@ -2368,6 +2384,17 @@ function resolveSpellcard(
   const cardId = submission.spellCardId ?? null;
   const usedKey = cardId ?? name;
 
+  // 千幻抄 4.15：使用过 LSC 后不能再使用其他符卡。
+  if (actor.lscUsed === true) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 已使用 LSC，本场无法再使用符卡"
+    });
+    return;
+  }
+
   // 千幻抄 6.1.2：一方本场可用的 SC 总数有限，用完即无法再展开 / 消费。
   if (ctx.pack.system === "TOUHOU" && state.spellcardBattle !== null && state.spellcardBattle !== undefined) {
     const side = actor.faction ?? "ALLY";
@@ -2487,6 +2514,7 @@ function resolveSpellcard(
     submission.spellcardEnhanceValue !== undefined && submission.spellcardEnhanceValue > 0
       ? submission.spellcardEnhanceValue
       : 1;
+  const isLsc = submission.declarationLsc === true;
   actor.declaration = {
     name,
     hp: declarationHp,
@@ -2496,8 +2524,19 @@ function resolveSpellcard(
     cardId,
     damageMultiplier: 1,
     enhanceType: submission.spellcardEnhanceType ?? null,
-    enhanceValue
+    enhanceValue,
+    isLsc
   };
+  if (isLsc) {
+    actor.lscUsed = true;
+    pushLog(state, {
+      kind: "SPELLCARD",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 宣告 LSC「" + name + "」：本场不能再使用其他符卡",
+      data: { rollType: "LSC_DECLARED", name, cardId }
+    });
+  }
 
   pushLog(state, {
     kind: "SPELLCARD",

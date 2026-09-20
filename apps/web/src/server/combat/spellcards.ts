@@ -97,6 +97,9 @@ export function prepareSpellcardAction(
   if (actor.defeated) {
     return { ok: false, error: "施法者已退场" };
   }
+  if (actor.lscUsed === true) {
+    return { ok: false, error: "已使用 LSC，本场无法再使用符卡" };
+  }
   if (state?.spellcardBattle !== null && state?.spellcardBattle !== undefined) {
     const side = actor.faction ?? "ALLY";
     const cap = Math.max(0, Math.floor(state.spellcardBattle.sideUsable[side] ?? 0));

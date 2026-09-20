@@ -110,6 +110,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
         ? participant.abilityLevels
         : {};
     participant.mpExhausted = participant.mpExhausted === true;
+    participant.lscUsed = participant.lscUsed === true;
+    participant.lscBroken = participant.lscBroken === true;
   }
   state.spellcardBattle =
     state.spellcardBattle !== null && typeof state.spellcardBattle === "object"

@@ -113,6 +113,7 @@ export default function CombatBoard(props: Props) {
   const [spellId, setSpellId] = useState("");
   const [spellTargetId, setSpellTargetId] = useState("");
   const [spellCardId, setSpellCardId] = useState("");
+  const [declareLsc, setDeclareLsc] = useState(false);
   const [spellCardTargetId, setSpellCardTargetId] = useState("");
   const [itemCardId, setItemCardId] = useState("");
   const [itemTargetId, setItemTargetId] = useState("");
@@ -1947,28 +1948,42 @@ export default function CombatBoard(props: Props) {
                         ))}
                       </select>
                     ) : null}
+                    {selectedSpellCard?.mode === "DECLARATION" ? (
+                      <label className="flex items-center gap-1.5 text-[11px] text-sakura-200">
+                        <input
+                          type="checkbox"
+                          checked={declareLsc}
+                          onChange={(event) => setDeclareLsc(event.target.checked)}
+                        />
+                        LSC
+                      </label>
+                    ) : null}
                     <button
                       type="button"
                       disabled={
                         activeSpellCardId.length === 0 ||
+                        selectedActor?.lscUsed === true ||
                         (selectedSpellCard?.mode === "DECLARATION" && selectedActor?.hasDeclaration === true)
                       }
                       onClick={() =>
                         emitAction({
                           kind: "SPELLCARD",
                           spellCardId: activeSpellCardId,
+                          ...(selectedSpellCard?.mode === "DECLARATION" && declareLsc
+                            ? { declarationLsc: true }
+                            : {}),
                           ...(activeSpellCardTargetId.length > 0 ? { targetId: activeSpellCardTargetId } : {})
                         })
                       }
                       className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
                     >
-                      释放符卡
+                      {selectedActor?.lscUsed === true ? "已使用 LSC" : "释放符卡"}
                     </button>
                   </div>
                   {selectedSpellCard === null ? null : (
                     <p className="text-[10px] text-sakura-200/70">
                       {selectedSpellCard.mode === "DECLARATION"
-                        ? "展开型：独立 HP，展开时结算卡面效果；强化 " + selectedSpellCard.enhanceType + " 行动，击破时清弹。"
+                        ? "展开型：独立 HP，展开时结算卡面效果；强化 " + selectedSpellCard.enhanceType + " 行动，击破时清弹。勾选 LSC 后本场不能再使用符卡，被击破会立刻气绝。"
                         : "消费型：发动一次、结算卡面效果并消弹，演出播放一次。"}
                       {selectedSpellCard.mode === "DECLARATION" && selectedActor !== null && selectedSpellCard.hpRatio !== null
                         ? " 独立 HP 约 " + Math.max(1, Math.round((selectedActor.maxHp ?? 0) * selectedSpellCard.hpRatio)) + "。"

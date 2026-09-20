@@ -40,6 +40,8 @@ export interface SpellDeclaration {
   readonly enhanceType: "DANMAKU" | "MELEE" | "SPELL" | "AREA" | null;
   /** 强化倍率或加值；由卡牌数据提供，缺省 1。 */
   readonly enhanceValue: number;
+  /** 是否为 LSC（Last Spell Card）；被击破时立刻气绝。 */
+  readonly isLsc?: boolean;
 }
 
 export interface CombatParticipantState {
@@ -149,6 +151,10 @@ export interface CombatParticipantState {
   coverUsedThisRound?: boolean;
   /** DP 能力：本轮是否已经发动过能力（千幻抄原则上每回合一次）。 */
   abilityUsedThisRound?: boolean;
+  /** 已使用过 LSC：之后不能再使用任何符卡。 */
+  lscUsed?: boolean;
+  /** LSC 被击破：立刻气绝，30 分钟内 DP 上限视为 0。 */
+  lscBroken?: boolean;
   /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
   initiativeMod?: number;
 }
@@ -250,6 +256,8 @@ export interface ActionSubmission {
   /** 展开型符卡的独立 HP（由调用方按 RulePack 的 hpRatio 算好）。 */
   readonly declarationHp?: number;
   readonly declarationDurationTicks?: number;
+  /** 本次展开是否宣告为 LSC。 */
+  readonly declarationLsc?: boolean;
   /** 服务端从卡牌数据解析出的击破清弹范围。 */
   readonly declarationClearTargets?: "ALL" | "OTHERS_ONLY";
   /** 客户端不能直接决定强化数值；服务端从卡牌数据写入。 */
