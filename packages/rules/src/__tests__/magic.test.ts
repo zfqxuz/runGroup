@@ -139,6 +139,20 @@ describe("ELEMENTAL_WEAPON 武器生成指令", () => {
   });
 });
 
+describe("battleAttack 战斗系法术描述", () => {
+  it("battleAttack 补全默认值", () => {
+    const spell = spellOf({ battleAttack: { kind: "RANGED" } });
+    expect(spell.battleAttack).toEqual({
+      kind: "RANGED",
+      bonusDice: "0",
+      flatDamage: "0",
+      danmakuDpReduction: "0",
+      ignoreFormation: false,
+      multiTarget: false
+    });
+  });
+});
+
 describe("BARRIER 结界指令", () => {
   it("BARRIER 带默认 name / durationTicks", () => {
     const spell = spellOf({ effects: [{ type: "BARRIER", hp: "2d6" }] });

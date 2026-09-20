@@ -90,10 +90,16 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
       "ELEMENTAL_GENERATE",
       "ELEMENTAL_STRIKE",
       "ELEMENTAL_WEAPON",
+      "MAGIC_BUSTER",
       "MAGIC_CURE",
+      "MAGIC_DIVIDE",
       "MAGIC_HEAL",
+      "MAGIC_LASER",
+      "MAGIC_MISSILE",
+      "MAGIC_NAPALM",
       "MAGIC_SHIELD",
       "MAGIC_TRANSFER",
+      "MAGIC_WIDE_SHOT",
       "SPIRIT_BARRIER_BREAK",
       "SPIRIT_BLESSING"
     ]);

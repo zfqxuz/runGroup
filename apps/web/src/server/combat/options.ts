@@ -507,9 +507,36 @@ export function validateCombatAction(
     ) {
       return "在遮挡物中无法攻击他人";
     }
-    if (action.dpAction === "DANMAKU" || action.dpAction === "SKILL") return null;
+    // 魔法战斗系法术：校验存在性 / 行动种类 / 灵力。
+    if (action.attackSpellId !== undefined && action.attackSpellId.length > 0) {
+      const magic = context.pack.pack.magic;
+      if (context.pack.system !== "TOUHOU" || magic === undefined || magic.enabled === false) {
+        return "本规则包未启用魔法规则";
+      }
+      const spell = magic.spells.find((item) => item.id === action.attackSpellId);
+      if (spell === undefined || spell.battleAttack === undefined) {
+        return "没有找到这个战斗法术";
+      }
+      if (spell.battleAttack.kind !== action.dpAction) {
+        return "这个战斗法术不能用于当前行动";
+      }
+      const mpCost = Number(spell.mpCost);
+      if (Number.isFinite(mpCost) && mpCost > 0 && Math.max(0, Math.floor(actor.mp ?? 0)) < mpCost) {
+        return "灵力不足，无法发动这个战斗法术";
+      }
+    }
+    if (action.dpAction === "DANMAKU" || action.dpAction === "SKILL") {
+      if (action.dpAction === "SKILL" && action.attackSpellId !== undefined) {
+        return "其他判定不能使用战斗法术";
+      }
+      return null;
+    }
+    const useMultiTarget =
+      action.dpAction === "RANGED" &&
+      action.dpTargetIds !== undefined &&
+      action.dpTargetIds.length > 0;
     const targetIds =
-      action.dpAction === "CHASE"
+      action.dpAction === "CHASE" || useMultiTarget
         ? [...(action.dpTargetIds ?? [])]
         : action.targetId === undefined || action.targetId === null
           ? []

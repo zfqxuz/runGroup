@@ -345,6 +345,25 @@ export const MagicSpellSchema = z.object({
   sanCost: DiceExprSchema.default("0"),
   /** 兼容旧数据：等价于一个 DAMAGE 效果。 */
   damage: DiceExprSchema.optional(),
+  /**
+   * 战斗系法术：本身不是普通 MAGIC 效果，而是对应 DP 攻击（射击 / 追击 / 近战 / 弹幕）
+   * 的强化描述。玩家在 DP 攻击时携带 `attackSpellId`，引擎扣除灵力并应用这些修正。
+   */
+  battleAttack: z
+    .object({
+      kind: z.enum(["DANMAKU", "RANGED", "CHASE", "MELEE"]),
+      /** 追加伤害骰数量表达式（1 = +1D）；可引用 abilityLv。 */
+      bonusDice: ExprSchema.default("0"),
+      /** 追加固定伤害；可引用 abilityLv。 */
+      flatDamage: ExprSchema.default("0"),
+      /** 追加弹幕 DP 减少值。 */
+      danmakuDpReduction: ExprSchema.default("0"),
+      /** 是否无视前卫 / 后卫限制（爆射）。 */
+      ignoreFormation: z.boolean().default(false),
+      /** 是否可同时攻击多个目标（爆射 / 广域射击）。 */
+      multiTarget: z.boolean().default(false)
+    })
+    .optional(),
   /** 法术默认元素；单个效果可用自己的 element 覆盖。 */
   element: z.string().optional(),
   /** 千幻抄能力 id（对应 abilities.categories）；存在时走能力发动流程。 */

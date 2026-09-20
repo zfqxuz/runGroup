@@ -537,6 +537,90 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "ELEMENTAL_WEAPON", damageBonus: "abilityLv", durationTicks: "0", canRanged: false }]
     },
     {
+      id: "MAGIC_NAPALM",
+      name: "燃烧弹",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "5",
+      sanCost: "0",
+      target: "ALL",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 魔法强化的弹幕：DP 减少 +1、固定伤害 +2。
+      battleAttack: { kind: "DANMAKU", flatDamage: "2", danmakuDpReduction: "1" }
+    },
+    {
+      id: "MAGIC_LASER",
+      name: "光束",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "5",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 魔法强化的射击：追加 ceil(魔法 Lv ÷ 2)D。
+      battleAttack: { kind: "RANGED", bonusDice: "ceil(abilityLv / 2)" }
+    },
+    {
+      id: "MAGIC_MISSILE",
+      name: "飞弹",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "5",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 魔法强化的追击：追加 ceil(魔法 Lv ÷ 2)D。
+      battleAttack: { kind: "CHASE", bonusDice: "ceil(abilityLv / 2)" }
+    },
+    {
+      id: "MAGIC_DIVIDE",
+      name: "切裂术",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "8",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "20" },
+      // 生成魔法武器的近战攻击：追加 ceil(魔法 Lv ÷ 2)D。
+      battleAttack: { kind: "MELEE", bonusDice: "ceil(abilityLv / 2)" }
+    },
+    {
+      id: "MAGIC_BUSTER",
+      name: "爆射",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "15",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "25" },
+      // 扩大范围、无视前卫后卫的多目标射击：追加 ceil(魔法 Lv ÷ 2)D。
+      battleAttack: { kind: "RANGED", bonusDice: "ceil(abilityLv / 2)", multiTarget: true, ignoreFormation: true }
+    },
+    {
+      id: "MAGIC_WIDE_SHOT",
+      name: "广域射击",
+      skill: "MAGIC",
+      abilityId: "MAGIC",
+      requiredLevel: 1,
+      mpCost: "7",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ENEMY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "18" },
+      // 扩大范围的多目标射击；本身无追加伤害。
+      battleAttack: { kind: "RANGED", multiTarget: true }
+    },
+    {
       id: "MAGIC_SHIELD",
       name: "护盾术",
       skill: "MAGIC",

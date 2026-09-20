@@ -336,6 +336,8 @@ export interface ActionSubmission {
   readonly damageTrainingId?: string;
   /** DP 千幻抄伤害公式：提供固定加值的武器技能 id（射击 / 近战共用）。 */
   readonly damageWeaponSkill?: string;
+  /** 魔法战斗系法术 id：强化本次 DP 攻击（燃烧弹 / 光束 / 飞弹 / 切裂术 / 爆射 / 广域射击）。 */
+  readonly attackSpellId?: string;
   /** COC7 手枪连射：同一动作内的射击次数（1–3）。 */
   readonly shots?: number;
   /** COC7 战技：缴械 / 踢倒 / 擒拿。 */

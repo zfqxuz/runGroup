@@ -37,7 +37,13 @@ function skillMap(pack: CompiledRulePack): Record<string, number> {
 
 function main(): void {
   const coc = compileRulePack(resolveRulePack("coc7-baseline", builtinRegistry()));
-  const touhou = compileRulePack(resolveRulePack("touhou-ext", builtinRegistry()));
+  const touhouParsed = resolveRulePack("touhou-ext", builtinRegistry());
+  const touhou = compileRulePack(touhouParsed);
+  // 房间启用魔法时会在 pack 上打开 magic.enabled；这里构造同样的包用于战斗法术校验。
+  const touhouMagic = compileRulePack({
+    ...touhouParsed,
+    magic: { ...(touhouParsed.magic ?? {}), enabled: true }
+  });
   const cocPlayer = { id: "coc-pc", kind: "PLAYER" as const, characterId: "char-coc", skills: skillMap(coc) };
   const touhouPlayer = { id: "touhou-pc", kind: "PLAYER" as const, characterId: "char-touhou", skills: skillMap(touhou) };
 
@@ -260,6 +266,57 @@ function main(): void {
     damage: "1d6"
   });
   ensure(freeError === null, "无遮挡时应允许射击，实际 " + String(freeError));
+
+  // 魔法战斗系法术：种类匹配、灵力校验。
+  const battleSpellContext = {
+    ...freeContext,
+    pack: touhouMagic,
+    state: {
+      participants: [
+        { id: "touhou-pc", defeated: false, faction: "PC", cover: null, mp: 100 },
+        { id: "touhou-npc", defeated: false, faction: "BOSS" }
+      ]
+    }
+  };
+  const laserError = validateCombatAction(battleSpellContext, {
+    actorId: "touhou-pc",
+    kind: "DANMAKU",
+    dpAction: "RANGED",
+    targetId: "touhou-npc",
+    skill: "DANMAKU",
+    damage: "1d6",
+    attackSpellId: "MAGIC_LASER"
+  });
+  ensure(laserError === null, "光束应允许用于射击，实际 " + String(laserError));
+  const mismatchError = validateCombatAction(battleSpellContext, {
+    actorId: "touhou-pc",
+    kind: "DANMAKU",
+    dpAction: "RANGED",
+    targetId: "touhou-npc",
+    skill: "DANMAKU",
+    damage: "1d6",
+    attackSpellId: "MAGIC_NAPALM"
+  });
+  ensure(mismatchError === "这个战斗法术不能用于当前行动", "燃烧弹不能用于射击，实际 " + String(mismatchError));
+  const poorContext = {
+    ...battleSpellContext,
+    state: {
+      participants: [
+        { id: "touhou-pc", defeated: false, faction: "PC", cover: null, mp: 1 },
+        { id: "touhou-npc", defeated: false, faction: "BOSS" }
+      ]
+    }
+  };
+  const poorError = validateCombatAction(poorContext, {
+    actorId: "touhou-pc",
+    kind: "DANMAKU",
+    dpAction: "RANGED",
+    targetId: "touhou-npc",
+    skill: "DANMAKU",
+    damage: "1d6",
+    attackSpellId: "MAGIC_LASER"
+  });
+  ensure(poorError === "灵力不足，无法发动这个战斗法术", "灵力不足应被拦截，实际 " + String(poorError));
 
   console.log("PASS 战斗选项：COC7 反击=斗殴基础值、闪避与无防御、武器限制、非战斗技能过滤、东方事件开关、服务端行动校验、遮挡禁攻");
 }

@@ -3120,10 +3120,16 @@ export function reactionTargetIdsForAction(
     }
     // DP 其他判定：不进入应对窗口。
     if (action.dpAction === "SKILL") return [];
-    // DP 射击 / 近战：目标 + 目标队友的掩护窗口。
+    // DP 射击 / 近战：目标 + 目标队友的掩护窗口；射击可携带多目标（爆射 / 广域射击）。
     if (action.dpAction === "RANGED" || action.dpAction === "MELEE") {
-      if (requestedTargetId === null || requestedTargetId === actor.id) return [];
-      return withDpCoverAllies(state, actor, [requestedTargetId]);
+      const ids =
+        action.dpAction === "RANGED" && action.dpTargetIds !== undefined && action.dpTargetIds.length > 0
+          ? action.dpTargetIds.filter((id) => id !== actor.id)
+          : requestedTargetId === null || requestedTargetId === actor.id
+            ? []
+            : [requestedTargetId];
+      if (ids.length === 0) return [];
+      return withDpCoverAllies(state, actor, ids);
     }
     if (action.routine !== undefined && action.routine.length > 0) {
       const ids = new Set<string>();
@@ -4380,6 +4386,77 @@ function dpAttackDamageExpression(
   return submission.damage ?? "1d6";
 }
 
+/** 魔法战斗系法术的 DP 攻击修正。 */
+interface BattleAttackModifiers {
+  readonly spell: MagicSpell;
+  readonly kind: "DANMAKU" | "RANGED" | "CHASE" | "MELEE";
+  readonly bonusDice: number;
+  readonly flatDamage: number;
+  readonly danmakuDpReduction: number;
+  readonly ignoreFormation: boolean;
+  readonly multiTarget: boolean;
+}
+
+/** 解析本次 DP 攻击携带的魔法战斗系法术；未携带 / 不匹配时返回 null。 */
+function battleAttackModifiersFor(
+  pack: CompiledRulePack,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): BattleAttackModifiers | null {
+  const spellId = submission.attackSpellId;
+  if (spellId === undefined || spellId.length === 0) return null;
+  const spell = (pack.pack.magic?.spells ?? []).find((item) => item.id === spellId);
+  if (spell === undefined || spell.battleAttack === undefined) return null;
+  if (submission.dpAction !== spell.battleAttack.kind) return null;
+  const level = dpAbilityLevel(actor, spell.abilityId ?? "MAGIC");
+  const vars = { ...actor.vars, abilityLv: level };
+  return {
+    spell,
+    kind: spell.battleAttack.kind,
+    bonusDice: Math.max(0, Math.floor(evaluateEffectNumber(pack, spell.battleAttack.bonusDice, vars))),
+    flatDamage: Math.max(0, Math.floor(evaluateEffectNumber(pack, spell.battleAttack.flatDamage, vars))),
+    danmakuDpReduction: Math.max(0, Math.floor(evaluateEffectNumber(pack, spell.battleAttack.danmakuDpReduction, vars))),
+    ignoreFormation: spell.battleAttack.ignoreFormation,
+    multiTarget: spell.battleAttack.multiTarget
+  };
+}
+
+/** 支付战斗法术的灵力 / SAN；灵力不足时返回 false。 */
+function payBattleAttackSpell(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  mods: BattleAttackModifiers
+): boolean {
+  const cost = spellCostFor(ctx, actor, mods.spell, "battle-spell:" + actor.id + ":" + mods.spell.id);
+  if (ctx.pack.system === "TOUHOU" && actor.mp < cost.mpCost) {
+    pushLog(ctx.state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 的灵力不足，无法发动「" + mods.spell.name + "」",
+      data: { rollType: "BATTLE_SPELL_MP_SHORTAGE", spellId: mods.spell.id, mp: actor.mp, mpCost: cost.mpCost }
+    });
+    return false;
+  }
+  if (cost.sanCost > 0) actor.san = Math.max(0, actor.san - cost.sanCost);
+  const paid = spendCombatMagicPoints(ctx, actor, cost.mpCost, "战斗法术「" + mods.spell.name + "」");
+  if (paid === false) return false;
+  pushLog(ctx.state, {
+    kind: "STATUS",
+    actorId: actor.id,
+    targetId: null,
+    text: actor.name + " 发动战斗法术「" + mods.spell.name + "」（灵力 -" + cost.mpCost + "）",
+    data: { rollType: "BATTLE_SPELL_ACTIVATED", spellId: mods.spell.id, mpCost: cost.mpCost, sanCost: cost.sanCost }
+  });
+  return true;
+}
+
+/** 战斗法术追加伤害骰后缀（如 "+2d6"）。 */
+function battleAttackBonusDiceSuffix(mods: BattleAttackModifiers | null): string {
+  if (mods === null || mods.bonusDice <= 0) return "";
+  return "+" + mods.bonusDice + "d6";
+}
+
 interface DpRoll {
   readonly dice: number;
   readonly roll: number;
@@ -4785,6 +4862,18 @@ function resolveDpRangedAttack(
   defender: CombatParticipantState
 ): void {
   const state = ctx.state;
+  const battleMods = battleAttackModifiersFor(ctx.pack, actor, submission);
+  if (submission.attackSpellId !== undefined && battleMods === null) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: actor.name + " 无法将「" + submission.attackSpellId + "」用于射击",
+      data: { rollType: "BATTLE_SPELL_MISMATCH", spellId: submission.attackSpellId, dpAction: "RANGED" }
+    });
+    return;
+  }
+  if (battleMods !== null && payBattleAttackSpell(ctx, actor, battleMods) === false) return;
   const costs = ctx.pack.pack.dp.actionCosts;
   const dice = Math.max(1, Math.floor(submission.dpDice ?? 1));
   const perDie = Math.max(0, Math.floor(costs.rangedPerDie));
@@ -4833,11 +4922,13 @@ function resolveDpRangedAttack(
     damageTarget = cover.target;
   }
   const rangedBuffSuffix = attackBuffDiceSuffix(state, actor);
+  const rangedBattleSuffix = battleAttackBonusDiceSuffix(battleMods);
   const damageExpression = expandDamageBonus(
     dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED") +
       passiveDamageDiceSuffix(actor) +
       rangedBuffSuffix +
-      elementalWeaponDamageSuffix(actor, "RANGED"),
+      elementalWeaponDamageSuffix(actor, "RANGED") +
+      rangedBattleSuffix,
     actor.damageBonus
   );
   let rolled = 0;
@@ -4847,7 +4938,10 @@ function resolveDpRangedAttack(
     rolled = 0;
   }
   const flatBonus =
-    (enhance?.flatDamage ?? 0) + passiveBonus(actor, "damageBonus") + (elementAdjustment?.flat ?? 0);
+    (enhance?.flatDamage ?? 0) +
+    passiveBonus(actor, "damageBonus") +
+    (elementAdjustment?.flat ?? 0) +
+    (battleMods?.flatDamage ?? 0);
   const total = Math.max(0, Math.round((rolled + flatBonus) * (enhance?.damageMultiplier ?? 1)) - reduction);
   const armorResult = absorbWithArmor(damageTarget, total);
   const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining, actor);
@@ -4865,6 +4959,152 @@ function resolveDpRangedAttack(
       "）→ HP 结算 " + Math.max(0, total - armorResult.absorbed),
     data: { rollType: "DP_RANGED_DAMAGE", expression: damageExpression, roll: rolled, enhanceFlat: enhance?.flatDamage ?? 0, reduction, damage: total, armorAbsorbed: armorResult.absorbed, covered: cover !== null && damageTarget.id !== defender.id, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
   });
+}
+
+/**
+ * DP 射击多目标（爆射 / 广域射击）：一次判定打多个目标。
+ * DP 消费 = 判定骰数 × (目标数 + 1) ÷ 2（向上取整）。
+ */
+function resolveDpRangedMultiAttack(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  targetIds: readonly string[]
+): void {
+  const state = ctx.state;
+  const battleMods = battleAttackModifiersFor(ctx.pack, actor, submission);
+  if (submission.attackSpellId !== undefined && battleMods === null) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 无法将「" + submission.attackSpellId + "」用于射击",
+      data: { rollType: "BATTLE_SPELL_MISMATCH", spellId: submission.attackSpellId, dpAction: "RANGED" }
+    });
+    return;
+  }
+  if (battleMods !== null && payBattleAttackSpell(ctx, actor, battleMods) === false) return;
+  const targets = targetIds
+    .filter((id, index) => targetIds.indexOf(id) === index)
+    .map((id) => findParticipant(state, id))
+    .filter(
+      (item): item is CombatParticipantState =>
+        item !== undefined && item.defeated === false && item.id !== actor.id
+    );
+  if (targets.length === 0) {
+    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: actor.name + " 的射击目标已不在场" });
+    return;
+  }
+  const costs = ctx.pack.pack.dp.actionCosts;
+  const dice = Math.max(1, Math.floor(submission.dpDice ?? 1));
+  const perDie = Math.max(0, Math.floor(costs.rangedPerDie));
+  const costDice = Math.ceil((dice * (targets.length + 1)) / 2);
+  if (spendDp(ctx, actor, perDie * costDice, "射击 ×" + targets.length + "（" + costDice + "D）") === false) return;
+  const skillId = submission.skill ?? "DANMAKU";
+  const attributeKey = submission.dpAttribute ?? "dex";
+  const attack = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-ranged-multi:" + actor.id + ":" + state.round);
+  const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillId);
+  const attackAchievement =
+    attack.achievement + (enhance?.accuracyMod ?? 0) + passiveBonus(actor, "accuracyBonus") - barrierPenalty(actor);
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: targets[0]?.id ?? null,
+    text:
+      actor.name + " 广域射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attackAchievement +
+      " / 目标 " + targets.length + " 个" +
+      (battleMods === null ? "" : "（" + battleMods.spell.name + "）"),
+    data: {
+      rollType: "DP_RANGED_ATTACK",
+      dice,
+      roll: attack.roll,
+      base: attack.base,
+      achievement: attackAchievement,
+      skill: skillId,
+      attribute: attributeKey,
+      targets: targets.map((target) => target.id).join(","),
+      costDice,
+      multiTarget: true,
+      battleSpellId: battleMods?.spell.id ?? null
+    }
+  });
+  const attackElement = (submission.element ?? actor.grantedElement ?? elementalWeaponElement(actor, "RANGED"))?.trim();
+  const baseDamageExpression =
+    dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED") +
+    passiveDamageDiceSuffix(actor) +
+    attackBuffDiceSuffix(state, actor) +
+    elementalWeaponDamageSuffix(actor, "RANGED") +
+    battleAttackBonusDiceSuffix(battleMods);
+  const rolled = rollDpDamage(ctx, actor, baseDamageExpression, "dp-ranged-multi-damage:" + actor.id + ":" + state.round);
+  let hitCount = 0;
+  for (const target of targets) {
+    if (applyCoverFixedDamage(ctx, actor, target, baseDamageExpression)) continue;
+    const elementAdjustment = resolveElementAdjustment(
+      ctx.pack,
+      state,
+      attackElement,
+      target,
+      "dp-ranged-multi-elem:" + actor.id + ":" + target.id
+    );
+    const cover = resolveDpCover(ctx, actor, target, attackAchievement, "dp-ranged-multi-cover:" + actor.id + ":" + target.id);
+    let damageTarget = target;
+    let reduction = 0;
+    if (cover === null) {
+      const reaction = reactionFor(ctx, target.id);
+      const defense = resolveDpDefense(ctx, target, reaction, attackAchievement, elementAdjustment?.defenseMod ?? 0);
+      if (defense.success) {
+        pushLog(state, {
+          kind: "ACTION",
+          actorId: actor.id,
+          targetId: target.id,
+          text: target.name + " 成功应对，「" + (submission.name ?? battleMods?.spell.name ?? skillId) + "」未命中",
+          data: { rollType: "DP_RANGED_MISS", defense: reaction.type }
+        });
+        continue;
+      }
+      reduction = defense.reduction;
+    } else {
+      damageTarget = cover.target;
+    }
+    const flatBonus =
+      (enhance?.flatDamage ?? 0) +
+      passiveBonus(actor, "damageBonus") +
+      (elementAdjustment?.flat ?? 0) +
+      (battleMods?.flatDamage ?? 0);
+    const total = Math.max(0, Math.round((rolled + flatBonus) * (enhance?.damageMultiplier ?? 1)) - reduction);
+    const armorResult = absorbWithArmor(damageTarget, total);
+    const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining, actor);
+    const elementNote =
+      elementAdjustment === null
+        ? undefined
+        : "，属性 " + elementAdjustment.sourceElement + " " + elementAdjustment.relation + " +" + elementAdjustment.flat;
+    hitCount += 1;
+    pushLog(state, {
+      kind: "DAMAGE",
+      actorId: actor.id,
+      targetId: damageTarget.id,
+      text:
+        "射击伤害：" + damageTarget.name + " 受到 " + total + "（" + baseDamageExpression + " = " + rolled +
+        (elementNote ?? "") +
+        ((battleMods?.flatDamage ?? 0) > 0 ? "，战斗法术 +" + battleMods?.flatDamage : "") +
+        (reduction > 0 ? "，防御减伤 " + reduction : "") +
+        (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
+        "）→ HP 结算 " + Math.max(0, total - armorResult.absorbed),
+      data: {
+        rollType: "DP_RANGED_DAMAGE",
+        expression: baseDamageExpression,
+        roll: rolled,
+        battleSpellId: battleMods?.spell.id ?? null,
+        reduction,
+        damage: total,
+        armorAbsorbed: armorResult.absorbed,
+        covered: cover !== null && damageTarget.id !== target.id,
+        toDeclaration: applied.toDeclaration,
+        toHp: applied.toHp
+      }
+    });
+  }
+  if (hitCount > 0) consumeAttackBuff(state, actor, "广域射击");
 }
 
 /** 结算一次普通伤害表达式（伤害骰不消耗 DP）。 */
@@ -4919,6 +5159,18 @@ function resolveDpChase(
   submission: ActionSubmission
 ): void {
   const state = ctx.state;
+  const battleMods = battleAttackModifiersFor(ctx.pack, actor, submission);
+  if (submission.attackSpellId !== undefined && battleMods === null) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 无法将「" + submission.attackSpellId + "」用于追击",
+      data: { rollType: "BATTLE_SPELL_MISMATCH", spellId: submission.attackSpellId, dpAction: "CHASE" }
+    });
+    return;
+  }
+  if (battleMods !== null && payBattleAttackSpell(ctx, actor, battleMods) === false) return;
   const costs = ctx.pack.pack.dp.actionCosts;
   const targetIds = (submission.dpTargetIds ?? (submission.targetId === null || submission.targetId === undefined ? [] : [submission.targetId]))
     .filter((id, index, list) => list.indexOf(id) === index);
@@ -4950,13 +5202,16 @@ function resolveDpChase(
   const achievement =
     base + Math.min(escalation, maxEscalation) * 10 + (chaseEnhance?.accuracyMod ?? 0);
   const chaseBuffSuffix = attackBuffDiceSuffix(state, actor);
+  const chaseBattleSuffix = battleAttackBonusDiceSuffix(battleMods);
   const damageExpression =
     dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE") +
     passiveDamageDiceSuffix(actor) +
-    chaseBuffSuffix;
+    chaseBuffSuffix +
+    chaseBattleSuffix;
   const rolledChaseDamage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
   const damage = Math.round(
-    (rolledChaseDamage + (chaseEnhance?.flatDamage ?? 0)) * (chaseEnhance?.damageMultiplier ?? 1)
+    (rolledChaseDamage + (chaseEnhance?.flatDamage ?? 0) + (battleMods?.flatDamage ?? 0)) *
+      (chaseEnhance?.damageMultiplier ?? 1)
   );
   const hits: { target: CombatParticipantState; label: string; elementFlat: number }[] = [];
   for (const target of targets) {
@@ -5004,6 +5259,18 @@ function resolveDpMelee(
   defender: CombatParticipantState
 ): void {
   const state = ctx.state;
+  const battleMods = battleAttackModifiersFor(ctx.pack, actor, submission);
+  if (submission.attackSpellId !== undefined && battleMods === null) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: defender.id,
+      text: actor.name + " 无法将「" + submission.attackSpellId + "」用于近战",
+      data: { rollType: "BATTLE_SPELL_MISMATCH", spellId: submission.attackSpellId, dpAction: "MELEE" }
+    });
+    return;
+  }
+  if (battleMods !== null && payBattleAttackSpell(ctx, actor, battleMods) === false) return;
   const costs = ctx.pack.pack.dp.actionCosts;
   const approachDice = Math.max(1, Math.floor(submission.dpDice ?? 1));
   const hitDice = Math.max(1, Math.floor(submission.dpSecondaryDice ?? 1));
@@ -5062,16 +5329,19 @@ function resolveDpMelee(
     damageTarget = cover.target;
   }
   const meleeBuffSuffix = attackBuffDiceSuffix(state, actor);
+  const meleeBattleSuffix = battleAttackBonusDiceSuffix(battleMods);
   const damageExpression =
     dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE") +
     passiveDamageDiceSuffix(actor) +
     meleeBuffSuffix +
-    elementalWeaponDamageSuffix(actor, "MELEE");
+    elementalWeaponDamageSuffix(actor, "MELEE") +
+    meleeBattleSuffix;
   const rolledMeleeDamage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
   const damage = Math.max(
     0,
     Math.round(
-      (rolledMeleeDamage + (meleeElementAdjustment?.flat ?? 0)) * (meleeEnhance?.damageMultiplier ?? 1)
+      (rolledMeleeDamage + (meleeElementAdjustment?.flat ?? 0) + (battleMods?.flatDamage ?? 0)) *
+        (meleeEnhance?.damageMultiplier ?? 1)
     )
   );
   const hitLabel = cover !== null && damageTarget.id !== defender.id
@@ -5136,9 +5406,24 @@ function resolveDpDanmaku(
   submission: ActionSubmission
 ): void {
   const state = ctx.state;
+  const battleMods = battleAttackModifiersFor(ctx.pack, actor, submission);
+  if (submission.attackSpellId !== undefined && battleMods === null) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 无法将「" + submission.attackSpellId + "」用于弹幕",
+      data: { rollType: "BATTLE_SPELL_MISMATCH", spellId: submission.attackSpellId, dpAction: "DANMAKU" }
+    });
+    return;
+  }
+  if (battleMods !== null && payBattleAttackSpell(ctx, actor, battleMods) === false) return;
   const cost = Math.max(0, Math.floor(ctx.pack.pack.dp.actionCosts.danmaku));
   if (spendDp(ctx, actor, cost, "弹幕") === false) return;
-  const reduction = Math.max(0, Math.floor(submission.danmakuDpReduction ?? 1));
+  const reduction = Math.max(
+    0,
+    Math.floor(submission.danmakuDpReduction ?? 1) + (battleMods?.danmakuDpReduction ?? 0)
+  );
   const danmakuEnhance = spellcardEnhanceForAttack(ctx.pack, actor, "DANMAKU");
   const danmakuBuffBonus = attackBuffDanmakuBonus(state, actor);
   const baseDamage = Math.max(
@@ -5147,7 +5432,8 @@ function resolveDpDanmaku(
       (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1)) +
         (danmakuEnhance?.flatDamage ?? 0) +
         passiveBonus(actor, "danmakuDamageBonus") +
-        danmakuBuffBonus) *
+        danmakuBuffBonus +
+        (battleMods?.flatDamage ?? 0)) *
         (danmakuEnhance?.damageMultiplier ?? 1)
     )
   );
@@ -5252,13 +5538,24 @@ export function resolveDpActionForActor(
   if (submission.kind === "DANMAKU" && submission.dpAction === "DANMAKU") {
     resolveDpDanmaku(ctx, actor, submission);
   } else if (submission.kind === "DANMAKU" && submission.dpAction === "RANGED") {
-    const defender = submission.targetId === null || submission.targetId === undefined
-      ? undefined
-      : findParticipant(state, submission.targetId);
-    if (defender === undefined || defender.defeated) {
-      pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: submission.targetId ?? null, text: actor.name + " 的射击目标已不在场" });
+    const multiIds =
+      submission.dpTargetIds !== undefined && submission.dpTargetIds.length > 0
+        ? [...submission.dpTargetIds]
+        : submission.targetId === null || submission.targetId === undefined
+          ? []
+          : [submission.targetId];
+    const rangedMods = battleAttackModifiersFor(pack, actor, submission);
+    if (rangedMods?.multiTarget === true && multiIds.length > 1) {
+      resolveDpRangedMultiAttack(ctx, actor, submission, multiIds);
     } else {
-      resolveDpRangedAttack(ctx, actor, submission, defender);
+      const defender = submission.targetId === null || submission.targetId === undefined
+        ? undefined
+        : findParticipant(state, submission.targetId);
+      if (defender === undefined || defender.defeated) {
+        pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: submission.targetId ?? null, text: actor.name + " 的射击目标已不在场" });
+      } else {
+        resolveDpRangedAttack(ctx, actor, submission, defender);
+      }
     }
   } else if (submission.kind === "DANMAKU" && submission.dpAction === "CHASE") {
     resolveDpChase(ctx, actor, submission);

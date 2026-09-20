@@ -150,6 +150,8 @@ export interface CombatActionPayload {
   readonly damageAbilityId?: string;
   readonly damageTrainingId?: string;
   readonly damageWeaponSkill?: string;
+  /** 魔法战斗系法术 id：强化本次 DP 攻击。 */
+  readonly attackSpellId?: string;
 }
 
 export interface CombatReactionPayload {

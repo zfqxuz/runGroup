@@ -324,6 +324,132 @@ describe("常时被动在 DP 战斗中生效", () => {
     expect(empoweredDamage - gatedDamage).toBe(5);
   });
 
+  it("魔法战斗系·光束：射击追加 ceil(魔法 Lv÷2)D，并扣除灵力", () => {
+    const base = makeCombat("battle-laser-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(base.state, base.actor, base.e1);
+    ranged(base.state, "e1", "10");
+    resolveDpTurn(touhou, base.state, { e1: { type: "PASS" } });
+    const baseDamage = base.e1.maxHp - base.e1.hp;
+
+    const boosted = makeCombat("battle-laser-base", passive(), passive({ reactionBonus: -999 }));
+    startRound(boosted.state, boosted.actor, boosted.e1);
+    boosted.actor.abilityLevels = { MAGIC: 4 };
+    const boostedMpBefore = boosted.actor.mp;
+    boosted.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 1,
+      damage: "10",
+      attackSpellId: "MAGIC_LASER"
+    };
+    resolveDpTurn(touhou, boosted.state, { e1: { type: "PASS" } });
+    const boostedDamage = boosted.e1.maxHp - boosted.e1.hp;
+
+    // ceil(4 / 2) = 2D6，差值 2~12；灵力 -5。
+    expect(boostedDamage - baseDamage).toBeGreaterThanOrEqual(2);
+    expect(boostedDamage - baseDamage).toBeLessThanOrEqual(12);
+    expect(boosted.actor.mp).toBe(boostedMpBefore - 5);
+    expect(boosted.state.log.some((entry) => entry.data?.rollType === "BATTLE_SPELL_ACTIVATED")).toBe(true);
+  });
+
+  it("魔法战斗系·燃烧弹：弹幕回避 DP +1、伤害 +2", () => {
+    const setup = makeCombat("battle-napalm", passive(), passive());
+    setup.actor.abilityLevels = { MAGIC: 2 };
+    startRound(setup.state, setup.actor, setup.e1);
+    const setupMpBefore = setup.actor.mp;
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "DANMAKU",
+      danmakuDpReduction: 2,
+      danmakuBaseDamage: 5,
+      attackSpellId: "MAGIC_NAPALM"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    expect(setup.e1.hp).toBe(setup.e1.maxHp - 7);
+    expect(setup.actor.mp).toBe(setupMpBefore - 5);
+
+    const dodge = makeCombat("battle-napalm", passive(), passive());
+    dodge.actor.abilityLevels = { MAGIC: 2 };
+    startRound(dodge.state, dodge.actor, dodge.e1);
+    dodge.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "DANMAKU",
+      danmakuDpReduction: 2,
+      danmakuBaseDamage: 5,
+      attackSpellId: "MAGIC_NAPALM"
+    };
+    resolveDpTurn(touhou, dodge.state, { e1: { type: "DODGE" } });
+    // 基础 2 + 燃烧弹 1 = 3 DP。
+    expect(dodge.e1.dp).toBe(27);
+  });
+
+  it("魔法战斗系·爆射：多目标射击按 (目标数+1)÷2 消耗 DP", () => {
+    const setup = makeCombat("battle-buster", passive(), passive({ reactionBonus: -999 }));
+    const derived = computeDerived(touhou, { attributes: attrs }).derived;
+    const e2 = addParticipant(setup.state, {
+      id: "e2",
+      name: "e2",
+      kind: "NPC",
+      characterId: null,
+      faction: "BOSS",
+      attributes: attrs,
+      derived,
+      skills: { DANMAKU: 0, DODGE: 0 },
+      atbMax: computeAtbMax(touhou, { dex: attrs.dex }),
+      speed: computeBaseSpeed(touhou, { dex: attrs.dex })
+    });
+    e2.dp = 30;
+    setup.actor.abilityLevels = { MAGIC: 4 };
+    startRound(setup.state, setup.actor, setup.e1);
+    e2.dp = 30;
+    declareDp(setup.state, "e2", 0);
+    const busterMpBefore = setup.actor.mp;
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      dpTargetIds: ["e1", "e2"],
+      skill: "DANMAKU",
+      dpDice: 1,
+      damage: "1",
+      attackSpellId: "MAGIC_BUSTER"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" }, e2: { type: "PASS" } });
+    // 骰数 1 × (2+1) ÷ 2 = 2 DP；灵力 -15。
+    expect(setup.actor.dp).toBe(28);
+    expect(setup.actor.mp).toBe(busterMpBefore - 15);
+    expect(setup.e1.hp).toBeLessThan(setup.e1.maxHp);
+    expect(e2.hp).toBeLessThan(e2.maxHp);
+    expect(setup.state.log.some((entry) => entry.data?.multiTarget === true)).toBe(true);
+  });
+
+  it("魔法战斗系：行动种类不匹配时不消耗资源、不结算", () => {
+    const setup = makeCombat("battle-mismatch", passive(), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    const mismatchMpBefore = setup.actor.mp;
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 1,
+      damage: "10",
+      attackSpellId: "MAGIC_NAPALM"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
+    expect(setup.e1.hp).toBe(setup.e1.maxHp);
+    expect(setup.actor.dp).toBe(30);
+    expect(setup.actor.mp).toBe(mismatchMpBefore);
+    expect(setup.state.log.some((entry) => entry.data?.rollType === "BATTLE_SPELL_MISMATCH")).toBe(true);
+  });
+
   it("武器生成：到期轮开始时被清理", () => {
     const setup = makeCombat("weapon-expire", passive(), passive());
     startRound(setup.state, setup.actor, setup.e1);

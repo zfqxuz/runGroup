@@ -247,7 +247,23 @@ export default async function CombatDetailPage({
           damage: spell.damage,
           target: spell.target,
           targeting: spellTargeting(spell),
-          effects: magicSpellEffectLabels(spell)
+          effects: magicSpellEffectLabels(spell),
+          abilityId: spell.abilityId,
+          battleAttackKind: spell.battleAttack?.kind ?? null,
+          battleAttackLabel:
+            spell.battleAttack === undefined
+              ? undefined
+              : [
+                  spell.battleAttack.bonusDice !== "0" ? "追加 " + spell.battleAttack.bonusDice + "D" : null,
+                  spell.battleAttack.flatDamage !== "0" ? "伤害 +" + spell.battleAttack.flatDamage : null,
+                  spell.battleAttack.danmakuDpReduction !== "0"
+                    ? "回避 DP +" + spell.battleAttack.danmakuDpReduction
+                    : null,
+                  spell.battleAttack.multiTarget ? "多目标" : null,
+                  spell.battleAttack.ignoreFormation ? "无视前卫/后卫" : null
+                ]
+                  .filter((part): part is string => part !== null)
+                  .join(" / ") || undefined
         }))}
         attackOptionsByParticipant={attackOptionsByParticipant}
         itemOptionsByParticipant={itemOptionsByParticipant}

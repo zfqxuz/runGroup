@@ -46,6 +46,9 @@ interface MagicSpellOption {
   readonly target: "SELF" | "ONE" | "ALL";
   readonly targeting: "SELF" | "ALLY" | "ENEMY" | "ANY";
   readonly effects: readonly string[];
+  readonly abilityId?: string;
+  readonly battleAttackKind?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE" | null;
+  readonly battleAttackLabel?: string;
 }
 
 interface Props {
@@ -128,6 +131,7 @@ export default function CombatBoard(props: Props) {
   // DP（千幻抄）：宣言草稿与行动控件。
   const [dpDeclareDraft, setDpDeclareDraft] = useState<Record<string, number>>({});
   const [dpAction, setDpAction] = useState<"DANMAKU" | "RANGED" | "CHASE" | "MELEE" | "SKILL">("DANMAKU");
+  const [attackSpellId, setAttackSpellId] = useState("");
   const [dpSkillId, setDpSkillId] = useState("DODGE");
   const [dpAttribute, setDpAttribute] = useState("int");
   const [dpTargetValue, setDpTargetValue] = useState(12);
@@ -366,6 +370,15 @@ export default function CombatBoard(props: Props) {
   const allowedSpellIds =
     selectedActor === null ? [] : props.spellIdsByParticipant[selectedActor.id] ?? [];
   const actorMagicSpells = props.magicSpells.filter((spell) => allowedSpellIds.includes(spell.id));
+  const actorBattleSpells = props.magicSpells.filter((spell) => {
+    if (spell.battleAttackKind === null || spell.battleAttackKind === undefined) return false;
+    if (spell.battleAttackKind !== dpAction) return false;
+    const abilityId = spell.abilityId;
+    if (abilityId === undefined || abilityId.length === 0) return true;
+    const level = selectedActor?.abilityLevels?.[abilityId];
+    return typeof level === "number" && level > 0;
+  });
+  const activeAttackSpellId = actorBattleSpells.some((item) => item.id === attackSpellId) ? attackSpellId : "";
   const activeSpell = actorMagicSpells.some((item) => item.id === spellId) ? spellId : (actorMagicSpells[0]?.id ?? "");
   const selectedSpell = actorMagicSpells.find((item) => item.id === activeSpell) ?? null;
   const actorSpellCards =
@@ -632,7 +645,8 @@ export default function CombatBoard(props: Props) {
         kind: "DANMAKU",
         dpAction: "DANMAKU",
         danmakuDpReduction: dpDanmakuReduction,
-        danmakuBaseDamage: dpDanmakuDamage
+        danmakuBaseDamage: dpDanmakuDamage,
+        attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
       });
       return;
     }
@@ -654,7 +668,8 @@ export default function CombatBoard(props: Props) {
         targetId: activeTargetId,
         skill: "DANMAKU",
         dpDice,
-        damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined
+        damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined,
+        attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
       });
       return;
     }
@@ -666,7 +681,8 @@ export default function CombatBoard(props: Props) {
         dpTargetIds: activeTargetId.length > 0 ? [activeTargetId] : [],
         skill: "DANMAKU",
         dpEscalation,
-        damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined
+        damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined,
+        attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
       });
       return;
     }
@@ -677,7 +693,8 @@ export default function CombatBoard(props: Props) {
       skill: "MELEE",
       dpDice,
       dpSecondaryDice,
-      damageTrainingId: dpTrainingId.length > 0 ? dpTrainingId : "FEAT"
+      damageTrainingId: dpTrainingId.length > 0 ? dpTrainingId : "FEAT",
+      attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
     });
   }
 
@@ -1605,6 +1622,32 @@ export default function CombatBoard(props: Props) {
                         <option value="SKILL">其他判定（调查 / 感知等）</option>
                       </select>
                     </label>
+                    {actorBattleSpells.length === 0 || dpAction === "SKILL" ? null : (
+                      <label className="flex flex-col gap-1.5">
+                        <span className="text-[11px] text-white/40">战斗法术（可选）</span>
+                        <select
+                          value={activeAttackSpellId}
+                          onChange={(event) => {
+                            const id = event.target.value;
+                            setAttackSpellId(id);
+                            const selected = actorBattleSpells.find((item) => item.id === id);
+                            if (selected?.abilityId !== undefined && selected.abilityId.length > 0) {
+                              if (dpAction === "MELEE") setDpTrainingId(selected.abilityId);
+                              else setDpAbilityId(selected.abilityId);
+                            }
+                          }}
+                          className={inputClass}
+                        >
+                          <option value="">不使用</option>
+                          {actorBattleSpells.map((spell) => (
+                            <option key={spell.id} value={spell.id}>
+                              {spell.name}（MP {spell.mpCost}
+                              {spell.battleAttackLabel === undefined ? "" : " / " + spell.battleAttackLabel}）
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
                     {dpAction === "SKILL" ? (
                       <>
                         <label className="flex flex-col gap-1.5">

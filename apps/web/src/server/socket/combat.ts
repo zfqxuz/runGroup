@@ -439,7 +439,8 @@ async function handleAction(
     danmakuBaseDamage: asNumber(raw.danmakuBaseDamage),
     damageAbilityId: asString(raw.damageAbilityId),
     damageTrainingId: asString(raw.damageTrainingId),
-    damageWeaponSkill: asString(raw.damageWeaponSkill)
+    damageWeaponSkill: asString(raw.damageWeaponSkill),
+    attackSpellId: asString(raw.attackSpellId)
   };
 
   // U-6：地图上有双方 Token 时，由服务端按实际英尺距离覆盖距离档与近距离奖励。
