@@ -168,7 +168,8 @@ export const MAGIC_EFFECT_TYPES = [
   "DISPEL",
   "BARRIER",
   "TEMP_DP",
-  "ELEMENT_BUFF"
+  "ELEMENT_BUFF",
+  "CREATE_COVER"
 ] as const;
 
 /** 按能力等级缩放伤害 / 治疗的公共字段（LvD / +Lv）。 */
@@ -273,6 +274,19 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     sizeMeters: z.number().nonnegative().optional(),
     /** 锚定方式：SELF 贴在目标身上，AREA 占据一片区域（需要位置模型）。 */
     anchor: z.enum(["SELF", "AREA"]).default("SELF")
+  }),
+  z.object({
+    type: z.literal("CREATE_COVER"),
+    /** 遮挡物强度表达式（可引用 abilityLv）；击破后失去遮挡。 */
+    hp: ExprSchema,
+    /** 边长（米）；14.5 要求至少 2m×2m。 */
+    sizeMeters: ExprSchema.default("2"),
+    /** 持续轮次；0 表示直到击破 / 战斗结束。 */
+    durationTicks: ExprSchema.default("0"),
+    /** 是否完全阻挡里外攻击。 */
+    blocksLineOfSight: z.boolean().default(true),
+    /** 遮挡物名称。 */
+    name: z.string().default("生成物")
   }),
   z.object({
     type: z.literal("ELEMENT_BUFF"),

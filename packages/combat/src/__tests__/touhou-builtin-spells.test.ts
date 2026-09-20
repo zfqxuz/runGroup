@@ -86,6 +86,8 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     const base = resolveRulePack("touhou-ext", builtinRegistry());
     expect(base.magic?.enabled).toBe(false);
     expect(base.magic?.spells.map((spell) => spell.id).sort()).toEqual([
+      "ELEMENTAL_DESTROY",
+      "ELEMENTAL_GENERATE",
       "MAGIC_CURE",
       "MAGIC_HEAL",
       "MAGIC_SHIELD",
@@ -131,6 +133,33 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     resolvePending(pack, state, { enemy: { type: "PASS" } });
     expect(enemy.barrier).toBeNull();
     expect(state.log.some((entry) => entry.data?.brokeBarrier === true)).toBe(true);
+  });
+
+  it("生成：按 属性使 Lv×4 创建遮挡物", () => {
+    const { target } = cast("builtin-generate", "ELEMENTAL_GENERATE", { "ELEMENTALIST:FIRE": 3 });
+    expect(target.cover?.hp).toBe(12);
+    expect(target.cover?.blocksLineOfSight).toBe(true);
+    expect(target.grantedElement ?? null).toBeNull();
+  });
+
+  it("消灭：破坏目标的生成物", () => {
+    const state = createCombat({ id: "c-builtin-destroy", seed: "builtin-destroy", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", { abilityLevels: { "ELEMENTALIST:FIRE": 3 } });
+    const target = addUnit(state, "target", "PC");
+    target.cover = {
+      name: "生成物",
+      level: 0,
+      hp: 12,
+      maxHp: 12,
+      expiresAtRound: null,
+      blocksLineOfSight: true
+    };
+    forceReady(caster);
+    forceReady(target);
+    submitAction(state, { actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "ELEMENTAL_DESTROY", name: "ELEMENTAL_DESTROY" });
+    resolvePending(pack, state, { target: { type: "PASS" } });
+    expect(target.cover).toBeNull();
+    expect(state.log.some((entry) => entry.data?.brokeCover === true)).toBe(true);
   });
 
   it("恢复术：恢复 魔法 Lv×5 HP", () => {

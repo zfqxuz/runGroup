@@ -482,6 +482,33 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "DISPEL", keys: [] }]
     },
     {
+      id: "ELEMENTAL_GENERATE",
+      name: "生成",
+      skill: "ELEMENTAL_MAGIC",
+      abilityId: "ELEMENTALIST",
+      requiredLevel: 1,
+      mpCost: "4",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ANY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 14.5：生成物强度 = 属性使 Lv×4，至少 2m×2m，持续 1 小时。
+      effects: [{ type: "CREATE_COVER", hp: "abilityLv * 4", sizeMeters: "2", durationTicks: "0", name: "生成物" }]
+    },
+    {
+      id: "ELEMENTAL_DESTROY",
+      name: "消灭",
+      skill: "ELEMENTAL_MAGIC",
+      abilityId: "ELEMENTALIST",
+      requiredLevel: 1,
+      mpCost: "3",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ANY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      effects: [{ type: "DISPEL", keys: ["COVER"] }]
+    },
+    {
       id: "MAGIC_SHIELD",
       name: "护盾术",
       skill: "MAGIC",

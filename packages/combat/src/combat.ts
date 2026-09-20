@@ -32,6 +32,7 @@ import {
   clampTouhouDpDice,
   resolveAbilityCategory,
   resolveBarrierStats,
+  splitAbilityInstanceId,
   touhouChaseDamage,
   touhouLscRecoveryDue,
   touhouMeleeDamage,
@@ -3469,6 +3470,26 @@ function applyMagicEffect(
     return;
   }
 
+  if (effect.type === "CREATE_COVER") {
+    const hp = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.hp, { ...actor.vars, abilityLv: submission.abilityLevel ?? 0 })));
+    const sizeMeters = Math.max(0, evaluateEffectNumber(ctx.pack, effect.sizeMeters, actor.vars));
+    const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
+    target.cover = {
+      name: effect.name.length > 0 ? effect.name : "生成物",
+      level: 0,
+      hp,
+      maxHp: hp,
+      expiresAtRound: duration > 0 ? state.round + duration : null,
+      blocksLineOfSight: effect.blocksLineOfSight
+    };
+    log(
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 生成「" + target.cover.name +
+        "」（强度 " + hp + "，" + sizeMeters + "m" + (duration > 0 ? "，" + duration + " 轮" : "") + "）",
+      { rollType: "COVER_CREATED", name: target.cover.name, hp, sizeMeters, blocksLineOfSight: effect.blocksLineOfSight }
+    );
+    return;
+  }
+
   if (effect.type === "ELEMENT_BUFF") {
     const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
     target.grantedElement = effect.element;
@@ -3530,6 +3551,20 @@ function applyMagicEffect(
         brokeBarrier = true;
       }
     }
+    // 14.5：消灭 / 解除可破坏生成物（遮挡物）。
+    let brokeCover = false;
+    let coverName = "";
+    if (target.cover !== null && target.cover !== undefined) {
+      const wantsCover =
+        effect.keys.length === 0 ||
+        effect.keys.includes("COVER") ||
+        effect.keys.includes(target.cover.name);
+      if (wantsCover) {
+        coverName = target.cover.name;
+        target.cover = null;
+        brokeCover = true;
+      }
+    }
     log(
       actor.name +
         " " +
@@ -3545,8 +3580,9 @@ function applyMagicEffect(
         " 个" +
         (brokeDeclaration ? "，并击破其展开中的符卡" : "") +
         (brokeBarrier ? "，并解除结界" + (barrierTargetValue > 0 ? "（目标值 " + barrierTargetValue + "）" : "") : "") +
+        (brokeCover ? "，并破坏生成物「" + coverName + "」" : "") +
         "）",
-      { dispel: true, removedStatuses, brokeDeclaration, brokeBarrier, barrierTargetValue }
+      { dispel: true, removedStatuses, brokeDeclaration, brokeBarrier, barrierTargetValue, brokeCover, coverName }
     );
   }
 }
@@ -3780,7 +3816,7 @@ function resolveAbility(
     return;
   }
 
-  const level = Math.max(0, Math.floor(actor.abilityLevels?.[abilityId] ?? 0));
+  const level = dpAbilityLevel(actor, abilityId);
   const requiredLevel = Math.max(1, Math.floor(spell.requiredLevel ?? 1));
   if (level < requiredLevel) {
     pushLog(state, {
@@ -3795,7 +3831,7 @@ function resolveAbility(
 
   const activation = spell.activation;
   const usePercentile = activation?.dice === "1D100";
-  const instanceAttribute = abilityId === undefined ? undefined : actor.abilityAttributes?.[abilityId];
+  const instanceAttribute = dpAbilityAttribute(actor, abilityId);
   const fallbackActivationAttribute = category.activationAttribute;
 
   // DP 模式：能力发动改为消费 DP 骰的 {特性值}+Lv+ND6 判定（最多 maxDicePerCheck）。
@@ -4166,11 +4202,35 @@ function dpSkillLevel(pack: CompiledRulePack, participant: CombatParticipantStat
   return Math.max(0, Math.floor(raw / scale));
 }
 
-/** 千幻抄能力类别等级（默认 0）。 */
+/**
+ * 千幻抄能力等级（默认 0）。
+ *
+ * 先精确匹配实例 id（如 ELEMENTALIST:FIRE）；找不到时回退到同类别实例的最高等级
+ * （如 abilityId=ELEMENTALIST 时取任意 ELEMENTALIST:元素 的最高级）。
+ */
 function dpAbilityLevel(actor: CombatParticipantState, abilityId: string | undefined): number {
   if (abilityId === undefined) return 0;
-  const value = actor.abilityLevels?.[abilityId];
-  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+  const direct = actor.abilityLevels?.[abilityId];
+  if (typeof direct === "number" && Number.isFinite(direct)) return Math.max(0, Math.floor(direct));
+  let best = 0;
+  for (const [instanceId, value] of Object.entries(actor.abilityLevels ?? {})) {
+    if (splitAbilityInstanceId(instanceId).categoryId !== abilityId) continue;
+    if (typeof value === "number" && Number.isFinite(value)) best = Math.max(best, Math.floor(value));
+  }
+  return best;
+}
+
+/** 能力实例的发动特性值；类别 id 时回退到同类别的实例设置。 */
+function dpAbilityAttribute(actor: CombatParticipantState, abilityId: string | undefined): string | undefined {
+  if (abilityId === undefined) return undefined;
+  const direct = actor.abilityAttributes?.[abilityId];
+  if (typeof direct === "string" && direct.length > 0) return direct;
+  for (const instanceId of Object.keys(actor.abilityLevels ?? {})) {
+    if (splitAbilityInstanceId(instanceId).categoryId !== abilityId) continue;
+    const value = actor.abilityAttributes?.[instanceId];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return undefined;
 }
 
 /**
