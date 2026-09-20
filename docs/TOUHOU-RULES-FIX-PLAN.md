@@ -362,10 +362,10 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
      未自动化条目由 KP 按说明结算。
    - ✅ **wiki 法术 / 能力速查表**：`RulePack.spellReferences` + `packs/data/touhou-spell-references.ts`
      登记 85 条（神术·阴阳术 15、魔法 59、属性使 9、妖术 2），保留目标值 / 灵力 / 范围 / 时间 / 说明；
-     每条新增 `automation` 状态（BUILTIN / PARTIAL / KP，默认 KP）；当前 19 条 BUILTIN、1 条 PARTIAL、65 条 KP；
+     每条新增 `automation` 状态（BUILTIN / PARTIAL / KP，默认 KP）；当前 20 条 BUILTIN、0 条 PARTIAL、65 条 KP；
      房间页新增「法术·能力速查表」面板（分类 / 系别 / 搜索 / 自动化状态徽标 / 数量汇总）。
    - ✅ **内置可结算法术子集**：`touhou-ext.magic.spells` 登记 加持 / 恢复术 / 治愈术 / 转灵术 / 护盾术 / 破魔结界 /
-     属性使·生成 / 属性使·消灭 / 属性使·强化攻击 / 属性使·武器生成 / 属性使·觉醒 /
+     属性使·生成 / 属性使·消灭 / 属性使·强化攻击 / 属性使·武器生成 / 属性使·觉醒 / 属性使·属性赋予 /
      魔法战斗系·燃烧弹 / 光束 / 飞弹 / 切裂术 / 爆射 / 广域射击 /
      神术·祈福 / 灵缚 / 神凭（HEAL Lv×5、DISPEL、MP_RESTORE、
      TEMP_DP ceil(Lv×1.5)、CREATE_COVER 强度 Lv×4、解除状态/结界/生成物、ATTACK_BUFF +1D / 弹幕 +2、

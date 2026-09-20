@@ -226,7 +226,7 @@ export const TOUHOU_SPELL_REFERENCES: SpellReferenceInput[] = [
   {
     id: "ELEMENTAL_REF_005",
     name: "属性赋予（属性付与）",
-    automation: "PARTIAL",
+    automation: "BUILTIN",
     category: "属性使",
     school: "基本能力",
     targetValue: "16",

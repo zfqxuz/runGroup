@@ -580,6 +580,20 @@ TOUHOU_EXT.magic = {
       effects: [{ type: "ELEMENTAL_WEAPON", damageBonus: "abilityLv", durationTicks: "0", canRanged: false }]
     },
     {
+      id: "ELEMENTAL_IMBUE",
+      name: "属性赋予",
+      skill: "ELEMENTAL_MAGIC",
+      abilityId: "ELEMENTALIST",
+      requiredLevel: 1,
+      mpCost: "3",
+      sanCost: "0",
+      target: "ONE",
+      targeting: "ANY",
+      activation: { attribute: "int", dice: "3D6", modifier: "0", target: "16" },
+      // 赋予目标武器 / 拳头对应属性；元素由施法者的属性使实例后缀推导。
+      effects: [{ type: "ELEMENT_BUFF", abilityId: "ELEMENTALIST", durationTicks: "0" }]
+    },
+    {
       id: "ELEMENTAL_AWAKEN",
       name: "觉醒",
       skill: "ELEMENTAL_MAGIC",

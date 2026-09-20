@@ -89,6 +89,7 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
       "ELEMENTAL_AWAKEN",
       "ELEMENTAL_DESTROY",
       "ELEMENTAL_GENERATE",
+      "ELEMENTAL_IMBUE",
       "ELEMENTAL_STRIKE",
       "ELEMENTAL_WEAPON",
       "MAGIC_BUSTER",
@@ -128,6 +129,12 @@ describe("千幻抄内置法术（wiki 自动结算子集）", () => {
     expect(caster.attackBuff?.bonusDice).toBe(1);
     expect(caster.attackBuff?.danmakuDamage).toBe(2);
     expect(caster.attackBuff?.uses).toBe(1);
+  });
+
+  it("属性赋予：按属性使实例后缀给目标攻击附上属性", () => {
+    const { caster, target } = cast("builtin-imbue", "ELEMENTAL_IMBUE", { "ELEMENTALIST:FIRE": 2 });
+    expect(caster.mp).toBe(97);
+    expect(target.grantedElement).toBe("FIRE");
   });
 
   it("武器生成：按属性使 Lv 生成带属性的近战武器", () => {

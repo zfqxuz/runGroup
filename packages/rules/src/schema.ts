@@ -298,8 +298,10 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("ELEMENT_BUFF"),
-    /** 赋予的攻击元素 id（对应元素表），如 FIRE / WATER。 */
-    element: z.string(),
+    /** 赋予的攻击元素 id（对应元素表），如 FIRE / WATER；不填时由能力实例后缀推导。 */
+    element: z.string().optional(),
+    /** 推导属性用的能力类别 id（属性赋予：ELEMENTALIST）。 */
+    abilityId: z.string().optional(),
     /** 持续轮次；0 表示直到战斗结束。 */
     durationTicks: ExprSchema.default("0")
   }),

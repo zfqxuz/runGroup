@@ -39,9 +39,11 @@ describe("wiki 法术 / 能力速查表", () => {
   it("标注自动结算状态：内置法术 BUILTIN，纯描述默认 KP", () => {
     const counts = { BUILTIN: 0, PARTIAL: 0, KP: 0 };
     for (const entry of pack.spellReferences) counts[entry.automation] += 1;
-    expect(counts.BUILTIN).toBeGreaterThanOrEqual(19);
+    expect(counts.BUILTIN).toBeGreaterThanOrEqual(20);
+    expect(counts.PARTIAL).toBe(0);
     expect(counts.KP).toBeGreaterThan(0);
     expect(pack.spellReferences.find((entry) => entry.name === "祈福")?.automation).toBe("BUILTIN");
+    expect(pack.spellReferences.find((entry) => entry.name === "属性赋予（属性付与）")?.automation).toBe("BUILTIN");
     expect(pack.spellReferences.find((entry) => entry.name === "禁域结界")?.automation).toBe("KP");
   });
 

@@ -3607,12 +3607,17 @@ function applyMagicEffect(
 
   if (effect.type === "ELEMENT_BUFF") {
     const duration = Math.max(0, Math.floor(evaluateEffectNumber(ctx.pack, effect.durationTicks, actor.vars)));
-    target.grantedElement = effect.element;
+    const element = effect.element ?? deriveElementFromAbility(ctx.pack, actor, effect.abilityId ?? spell.abilityId);
+    if (element === null) {
+      log(actor.name + " " + verb + "「" + spell.name + "」失败：无法确定属性", { rollType: "ELEMENT_BUFF_FAIL" });
+      return;
+    }
+    target.grantedElement = element;
     target.grantedElementExpiresAtRound = duration > 0 ? state.round + duration : null;
     log(
-      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 的攻击附带属性「" + effect.element + "」" +
+      actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 的攻击附带属性「" + element + "」" +
         (duration > 0 ? "（" + duration + " 轮）" : ""),
-      { rollType: "ELEMENT_BUFF", element: effect.element, duration }
+      { rollType: "ELEMENT_BUFF", element, duration }
     );
     return;
   }
