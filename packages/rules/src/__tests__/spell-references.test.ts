@@ -36,6 +36,15 @@ describe("wiki 法术 / 能力速查表", () => {
     expect(生成?.school).toBe("基本能力");
   });
 
+  it("标注自动结算状态：内置法术 BUILTIN，纯描述默认 KP", () => {
+    const counts = { BUILTIN: 0, PARTIAL: 0, KP: 0 };
+    for (const entry of pack.spellReferences) counts[entry.automation] += 1;
+    expect(counts.BUILTIN).toBeGreaterThanOrEqual(19);
+    expect(counts.KP).toBeGreaterThan(0);
+    expect(pack.spellReferences.find((entry) => entry.name === "祈福")?.automation).toBe("BUILTIN");
+    expect(pack.spellReferences.find((entry) => entry.name === "禁域结界")?.automation).toBe("KP");
+  });
+
   it("COC7 基线没有东方速查表", () => {
     const coc7 = resolveRulePack("coc7-baseline", builtinRegistry());
     expect(coc7.spellReferences).toEqual([]);

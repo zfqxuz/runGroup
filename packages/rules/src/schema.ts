@@ -638,7 +638,14 @@ export const SpellReferenceSchema = z.object({
   /** 效果说明。 */
   description: z.string(),
   /** 备注（习得条件 / 消耗表等）。 */
-  note: z.string().optional()
+  note: z.string().optional(),
+  /**
+   * 自动结算状态：
+   * - BUILTIN：规则包已有内置法术 / 指令可直接结算；
+   * - PARTIAL：部分数值 / 子效果已自动化，其余由 KP 裁定；
+   * - KP：纯正文描述，按 KP 行为 / 自由掷骰处理。
+   */
+  automation: z.enum(["BUILTIN", "PARTIAL", "KP"]).default("KP")
 });
 
 /** 14.10 / 14.11 重量与财产规则；数值表由规则包 / 模组提供。 */
@@ -956,6 +963,7 @@ export type BarrierConfinement = z.output<typeof BarrierConfinementSchema>;
 export type BarrierRules = z.output<typeof BarrierRulesSchema>;
 export type InventoryRules = z.output<typeof InventoryRulesSchema>;
 export type SpellReference = z.output<typeof SpellReferenceSchema>;
+export type SpellReferenceInput = z.input<typeof SpellReferenceSchema>;
 export type MagicSpell = z.output<typeof MagicSpellSchema>;
 export type MagicRules = z.output<typeof MagicRulesSchema>;
 export type MagicEffect = z.output<typeof MagicEffectSchema>;

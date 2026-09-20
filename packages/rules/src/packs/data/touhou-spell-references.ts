@@ -1,9 +1,11 @@
+import type { SpellReferenceInput } from "../../schema";
+
 /**
  * 千幻抄 wiki 法术 / 能力速查表（2026-09 抓取）。
  *
  * 仅做结构化存档；需要自动结算时再映射为 MagicSpell.effects。
  */
-export const TOUHOU_SPELL_REFERENCES = [
+export const TOUHOU_SPELL_REFERENCES: SpellReferenceInput[] = [
   {
     id: "SPIRIT_REF_001",
     name: "禁域结界",
@@ -51,6 +53,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "SPIRIT_REF_005",
     name: "破魔结界",
+    automation: "BUILTIN",
     category: "神术·阴阳术",
     school: "结界系",
     targetValue: "见说明",
@@ -84,6 +87,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "SPIRIT_REF_008",
     name: "加持",
+    automation: "BUILTIN",
     category: "神术·阴阳术",
     school: "其他",
     targetValue: "16",
@@ -95,6 +99,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "SPIRIT_REF_009",
     name: "神凭",
+    automation: "BUILTIN",
     category: "神术·阴阳术",
     school: "其他",
     targetValue: "16/21",
@@ -150,6 +155,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "SPIRIT_REF_014",
     name: "祈福",
+    automation: "BUILTIN",
     category: "神术·阴阳术",
     school: "其他",
     targetValue: "18",
@@ -161,6 +167,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "SPIRIT_REF_015",
     name: "灵缚",
+    automation: "BUILTIN",
     category: "神术·阴阳术",
     school: "其他",
     targetValue: "15+大小（m）",
@@ -172,6 +179,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "ELEMENTAL_REF_001",
     name: "觉醒（覚醒）",
+    automation: "BUILTIN",
     category: "属性使",
     school: "基本能力",
     targetValue: "见说明",
@@ -194,6 +202,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "ELEMENTAL_REF_003",
     name: "消灭（消滅）",
+    automation: "BUILTIN",
     category: "属性使",
     school: "基本能力",
     targetValue: "见说明",
@@ -205,6 +214,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "ELEMENTAL_REF_004",
     name: "生成（生成）",
+    automation: "BUILTIN",
     category: "属性使",
     school: "基本能力",
     targetValue: "见说明",
@@ -216,6 +226,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "ELEMENTAL_REF_005",
     name: "属性赋予（属性付与）",
+    automation: "PARTIAL",
     category: "属性使",
     school: "基本能力",
     targetValue: "16",
@@ -227,6 +238,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "ELEMENTAL_REF_006",
     name: "武器生成（武器生成）",
+    automation: "BUILTIN",
     category: "属性使",
     school: "基本能力",
     targetValue: "16",
@@ -291,6 +303,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_001",
     name: "护盾术（シールド、Shield）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "16",
@@ -302,6 +315,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_002",
     name: "切裂术（ディバイド、Divide）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "20",
@@ -313,6 +327,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_003",
     name: "燃烧弹（ナパーム、Napalm）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "16",
@@ -324,6 +339,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_004",
     name: "爆射（バスター、Buster）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "25",
@@ -335,6 +351,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_005",
     name: "飞弹（ミサイル、Missile）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "16",
@@ -346,6 +363,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_006",
     name: "光束（レーザー、Laser）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "16",
@@ -357,6 +375,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_007",
     name: "广域射击（ワイドショット、Wide Shoot）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "战斗系",
     targetValue: "18",
@@ -665,6 +684,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_035",
     name: "治愈术（キュアー、Cure）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "治愈＋生物系",
     targetValue: "18",
@@ -709,6 +729,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_039",
     name: "转灵术（トランスファー、Transfer）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "治愈＋生物系",
     targetValue: "16",
@@ -720,6 +741,7 @@ export const TOUHOU_SPELL_REFERENCES = [
   {
     id: "MAGIC_REF_040",
     name: "恢复术（ヒール、Heal）",
+    automation: "BUILTIN",
     category: "魔法",
     school: "治愈＋生物系",
     targetValue: "16",
