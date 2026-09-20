@@ -67,7 +67,7 @@ describe("RACE_MOD 伤害管线隔离", () => {
       raceMultiplier: 1.5
     });
     expect(outcome.damage).toBe(15);
-    expect(outcome.steps.some((step) => step.includes("race/元素"))).toBe(true);
+    expect(outcome.steps.some((step) => step.includes("race x1.5"))).toBe(true);
   });
 
   it("COC7 基线管线不含 RACE_MOD，传入乘数也不改变伤害", () => {
@@ -77,6 +77,6 @@ describe("RACE_MOD 伤害管线隔离", () => {
       raceMultiplier: 1.5
     });
     expect(outcome.damage).toBe(10);
-    expect(outcome.steps.some((step) => step.includes("race/元素"))).toBe(false);
+    expect(outcome.steps.some((step) => step.includes("race x1.5"))).toBe(false);
   });
 });

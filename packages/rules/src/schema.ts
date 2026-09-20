@@ -15,6 +15,7 @@ export const PIPELINE_STEPS = [
   "SPELLCARD_MULT",
   "ENHANCE_MOD",
   "RACE_MOD",
+  "ELEMENT_MOD",
   "DEFEND_REDUCE",
   "COUNTER_RESOLVE",
   "GRAZE_RESOLVE",
@@ -111,6 +112,8 @@ export const RaceSchema = z.object({
   interestPoints: ExprSchema.optional(),
   /** 结构化种族能力。 */
   abilities: z.array(RaceAbilitySchema).default([]),
+  /** 先天元素亲和 / 抗性；用于属性相克判定。 */
+  elements: z.array(z.string()).default([]),
   /** 旧字段：仍被 UI/其他逻辑读取的扁平 flag 列表。 */
   flags: z.array(z.string()).default([])
 });
@@ -164,7 +167,9 @@ export const MAGIC_EFFECT_TYPES = [
 export const MagicEffectSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("DAMAGE"),
-    amount: DiceExprSchema
+    amount: DiceExprSchema,
+    /** 元素属性 id；命中弱点 / 同属性时由战斗层应用属性相克。 */
+    element: z.string().optional()
   }),
   z.object({
     type: z.literal("HEAL"),
@@ -245,6 +250,8 @@ export const MagicSpellSchema = z.object({
   sanCost: DiceExprSchema.default("0"),
   /** 兼容旧数据：等价于一个 DAMAGE 效果。 */
   damage: DiceExprSchema.optional(),
+  /** 法术默认元素；单个效果可用自己的 element 覆盖。 */
+  element: z.string().optional(),
   target: z.enum(["SELF", "ONE", "ALL"]).default("ONE"),
   /** 目标阵营；不填时根据效果自动推断。 */
   targeting: z.enum(MAGIC_TARGETINGS).optional(),
@@ -256,6 +263,31 @@ export const MagicRulesSchema = z.object({
   enabled: z.boolean().default(false),
   system: z.enum(["COC7", "TOUHOU"]).optional(),
   spells: z.array(MagicSpellSchema).default([])
+});
+
+/** 元素定义；相克关系用 id 描述，天然支持模组自定义属性表。 */
+export const ElementSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  description: z.string().optional(),
+  /** 此属性克制（对目标造成弱点伤害）的属性 id。 */
+  strongAgainst: z.array(z.string()).default([]),
+  /** 此属性被哪些属性克制；用于反向查询，可与 strongAgainst 互为补充。 */
+  weakTo: z.array(z.string()).default([])
+});
+
+/**
+ * 属性相克规则。伤害加减值由战斗层掷好后写入管线，
+ * 这里只保存「用什么骰 / 固定值」。
+ */
+export const ElementRulesSchema = z.object({
+  enabled: z.boolean().default(true),
+  /** 弱点攻击附加的伤害骰；无法掷骰时回退到 weaknessFlat。 */
+  weaknessDamage: DiceExprSchema.default("2d6"),
+  weaknessFlat: ExprSchema.default("5"),
+  /** 同属性攻击的伤害惩罚骰；无法掷骰时回退到 sameElementFlat。 */
+  sameElementDamage: DiceExprSchema.default("2d6"),
+  sameElementFlat: ExprSchema.default("5")
 });
 
 export const SpellCardRulesSchema = z.object({
@@ -441,6 +473,9 @@ export const RulePackSchema = z.object({
 
   combat: CombatRulesSchema,
   damage: DamageRulesSchema,
+  /** 元素表：key 为元素 id（推荐大写，如 FIRE / WATER）。 */
+  elements: z.record(z.string(), ElementSchema).default({}),
+  elementRules: ElementRulesSchema.default({}),
   races: z.record(z.string(), RaceSchema).default({}),
 
   presets: z.array(PresetCharacterSchema).default([]),
@@ -473,6 +508,8 @@ export const RulePackSchema = z.object({
 
 export type RulePack = z.output<typeof RulePackSchema>;
 export type RulePackInput = z.input<typeof RulePackSchema>;
+export type Element = z.output<typeof ElementSchema>;
+export type ElementRules = z.output<typeof ElementRulesSchema>;
 export type RaceAbility = z.output<typeof RaceAbilitySchema>;
 export type Race = z.output<typeof RaceSchema>;
 export type StatusEffectRule = z.output<typeof StatusEffectSchema>;

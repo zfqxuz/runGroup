@@ -9,7 +9,11 @@ const SUPPORTIVE_EFFECTS = new Set(["HEAL", "MP_RESTORE", "SAN_RESTORE", "STATUS
 export function spellEffectsOf(spell: MagicSpell): readonly MagicEffect[] {
   if (spell.effects.length > 0) return spell.effects;
   if (spell.damage !== undefined && spell.damage.length > 0 && spell.damage !== "0") {
-    return [{ type: "DAMAGE", amount: spell.damage }];
+    return [
+      spell.element === undefined
+        ? { type: "DAMAGE", amount: spell.damage }
+        : { type: "DAMAGE", amount: spell.damage, element: spell.element }
+    ];
   }
   return [];
 }

@@ -76,7 +76,7 @@ describe("种族自动化能力：弱点", () => {
     expect(youkai.maxHp).toBe(100);
     expect(youkai.hp).toBe(94);
     expect(
-      state.log.some((entry) => String(entry.data?.steps ?? "").includes("race/元素 x1.5"))
+      state.log.some((entry) => String(entry.data?.steps ?? "").includes("race x1.5"))
     ).toBe(true);
   });
 

@@ -44,6 +44,7 @@ export const TOUHOU_EXT: RulePackOverlay = {
       "SPELLCARD_MULT",
       "ENHANCE_MOD",
       "RACE_MOD",
+      "ELEMENT_MOD",
       "DEFEND_REDUCE",
       "COUNTER_RESOLVE",
       "GRAZE_RESOLVE",
@@ -108,6 +109,7 @@ TOUHOU_EXT.races = {
     ]
   },
   KAPPA: {
+    elements: ["WATER"],
     tier: "C",
     name: "河童",
     description: "住在水里的妖怪，掌握外界科技，擅长水系元素法。",
@@ -132,6 +134,7 @@ TOUHOU_EXT.races = {
     ]
   },
   GHOST: {
+    elements: ["DARK"],
     tier: "B",
     name: "亡灵",
     description: "死者的亡灵，可以幽体化。体质偏低，意志极高，擅长【妖术】。",
@@ -172,6 +175,7 @@ TOUHOU_EXT.races = {
     ]
   },
   TENGU: {
+    elements: ["WIND"],
     tier: "B",
     name: "天狗",
     description: "妖怪山上势力最大的种族之一，高速飞行与风系元素法的大师。",
@@ -185,6 +189,7 @@ TOUHOU_EXT.races = {
     ]
   },
   VAMPIRE: {
+    elements: ["DARK"],
     tier: "A",
     name: "吸血鬼",
     description: "能力很强但弱点也多的妖怪。力量、体质与意志优秀，擅长【妖术·吸血】。",
@@ -222,6 +227,7 @@ TOUHOU_EXT.races = {
     ]
   },
   DEMON: {
+    elements: ["DARK"],
     tier: "A",
     name: "恶魔",
     description: "来自异界的高位存在，擅长订立契约与黑暗视觉，但受契约内容约束。",
@@ -256,6 +262,32 @@ TOUHOU_EXT.races = {
       { id: "HALF_YOUKAI", name: "半妖体质", description: "可修习妖术，但受人类与妖怪双方的排斥；由 KP 在叙事中处理。", automated: false }
     ]
   }
+};
+
+/**
+ * 千幻抄属性表。相克关系集中在这里，模组可整体覆盖。
+ * strongAgainst: 本属性克制谁；weakTo: 本属性被谁克制（由相克关系反向生成）。
+ */
+TOUHOU_EXT.elements = {
+  WOOD: { id: "WOOD", name: "木", strongAgainst: ["EARTH"], weakTo: ["METAL"] },
+  FIRE: { id: "FIRE", name: "火", strongAgainst: ["METAL"], weakTo: ["WATER"] },
+  EARTH: { id: "EARTH", name: "土", strongAgainst: ["WATER"], weakTo: ["WOOD", "WIND"] },
+  METAL: { id: "METAL", name: "金", strongAgainst: ["WOOD"], weakTo: ["FIRE"] },
+  WATER: { id: "WATER", name: "水", strongAgainst: ["FIRE"], weakTo: ["EARTH", "THUNDER", "ICE"] },
+  WIND: { id: "WIND", name: "风", strongAgainst: ["EARTH"], weakTo: ["THUNDER", "ICE"] },
+  THUNDER: { id: "THUNDER", name: "雷", strongAgainst: ["WIND", "WATER"], weakTo: [] },
+  ICE: { id: "ICE", name: "冷气", strongAgainst: ["WATER", "WIND"], weakTo: [] },
+  LIGHT: { id: "LIGHT", name: "光", strongAgainst: ["DARK"], weakTo: ["DARK"] },
+  DARK: { id: "DARK", name: "暗", strongAgainst: ["LIGHT"], weakTo: ["LIGHT"] },
+};
+
+TOUHOU_EXT.elementRules = {
+  enabled: true,
+  // 弱点攻击 +2D；同属性攻击 -2D（千幻抄：固定伤害情形用 flat 值）。
+  weaknessDamage: "2d6",
+  weaknessFlat: "5",
+  sameElementDamage: "2d6",
+  sameElementFlat: "5"
 };
 TOUHOU_EXT.statusEffects = {
   // 阳光暴露标记：吸血鬼的 SUNLIGHT_WEAKNESS 会读取这个 key。

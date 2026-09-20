@@ -10,6 +10,9 @@ export interface DamageInput {
   readonly enhanceFlat?: number;
   /** 种族 / 属性相克等来源的最终伤害乘数；由战斗层算好，管线只负责应用。 */
   readonly raceMultiplier?: number;
+  /** 属性相克的伤害乘数与固定加减值；弱点为正、同属性为负。 */
+  readonly elementMultiplier?: number;
+  readonly elementFlat?: number;
   readonly shieldMultiplier?: number;
   readonly vars?: Readonly<Record<string, number>>;
 }
@@ -69,7 +72,20 @@ export function applyDamagePipeline(
         const multiplier = input.raceMultiplier;
         if (multiplier !== undefined && multiplier !== 1) {
           damage *= multiplier;
-          steps.push(`race/元素 x${multiplier} -> ${damage}`);
+          steps.push(`race x${multiplier} -> ${damage}`);
+        }
+        break;
+      }
+      case "ELEMENT_MOD": {
+        const multiplier = input.elementMultiplier;
+        if (multiplier !== undefined && multiplier !== 1) {
+          damage *= multiplier;
+          steps.push(`element x${multiplier} -> ${damage}`);
+        }
+        const flat = input.elementFlat;
+        if (flat !== undefined && flat !== 0) {
+          damage += flat;
+          steps.push(`element ${flat >= 0 ? "+" : ""}${flat} -> ${damage}`);
         }
         break;
       }

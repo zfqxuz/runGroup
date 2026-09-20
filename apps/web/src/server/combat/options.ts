@@ -25,6 +25,8 @@ export interface CombatAttackOption {
   readonly damageBands: readonly WeaponDamageBand[];
   readonly shots?: readonly number[];
   readonly weaponName: string | null;
+  /** 武器自带元素属性 id；没有时为 undefined。 */
+  readonly element?: string;
   readonly source: "WEAPON" | "UNARMED" | "DEFAULT";
 }
 
@@ -133,6 +135,11 @@ function nonEmptyString(value: unknown): string | null {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function weaponElement(weapon: WeaponLike): string | undefined {
+  const stats = (weapon.stats ?? {}) as { readonly element?: unknown };
+  return nonEmptyString(stats.element) ?? undefined;
+}
+
 function inferWeaponSkillId(pack: CompiledRulePack, weapon: WeaponLike): string | null {
   const known = knownSkillIds(pack);
   const stats = (weapon.stats ?? {}) as { skillId?: unknown; range?: unknown };
@@ -233,12 +240,14 @@ export function attackOptionsForParticipant(
       ? (skillId === "FIGHTING_BRAWL" ? "BLUNT" : "NONE")
       : inferWeaponDamageType(weapon, skillId);
     const shots = weapon === null ? undefined : shotsForWeapon(weapon, skillId);
+    const element = weapon === null ? undefined : weaponElement(weapon);
     return {
       skillId,
       damage,
       damageType,
       damageBands: bands,
       ...(shots === undefined ? {} : { shots }),
+      ...(element === undefined ? {} : { element }),
       weaponName: weapon?.name ?? (unarmed ? "徒手" : null),
       source: weapon === null ? (unarmed ? ("UNARMED" as const) : ("DEFAULT" as const)) : ("WEAPON" as const)
     };

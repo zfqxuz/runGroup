@@ -181,6 +181,8 @@ const WeaponStatsCoreSchema = z.object({
     .optional(),
   /** 允许的射击次数；仅手枪等连射武器使用。 */
   shots: z.array(z.number().int().positive()).optional(),
+  /** 元素属性 id（对应规则包 elements，如 FIRE / WATER）；用于属性相克。 */
+  element: z.string().max(40).nullable().default(null),
   /** 武器类型；damage / range / skillId 由它自动带出。 */
   weaponType: z.string().max(40).default("BRAWL")
 });

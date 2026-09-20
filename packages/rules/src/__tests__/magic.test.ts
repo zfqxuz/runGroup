@@ -12,6 +12,19 @@ describe("法术通用指令", () => {
     expect(spellEffectsOf(spell)).toEqual([{ type: "DAMAGE", amount: "2d6" }]);
   });
 
+  it("法术默认元素会写入旧 damage 字段生成的 DAMAGE 指令", () => {
+    const spell = spellOf({ damage: "2d6", element: "FIRE" });
+    expect(spellEffectsOf(spell)).toEqual([{ type: "DAMAGE", amount: "2d6", element: "FIRE" }]);
+  });
+
+  it("效果级元素优先于法术默认元素", () => {
+    const spell = spellOf({
+      element: "FIRE",
+      effects: [{ type: "DAMAGE", amount: "1d6", element: "WATER" }]
+    });
+    expect(spellEffectsOf(spell)[0]).toMatchObject({ type: "DAMAGE", element: "WATER" });
+  });
+
   it("可以组合多个效果指令", () => {
     const spell = spellOf({
       effects: [

@@ -118,6 +118,8 @@ export interface ParticipantInit {
   readonly race?: string | null;
   /** 种族扁平 flags；通常由 computeDerived 提供。 */
   readonly raceFlags?: readonly string[];
+  /** 先天 / 装备元素亲和与抗性（元素 id 列表）。 */
+  readonly elements?: readonly string[];
   readonly skills?: Record<string, number>;
   /** 该单位允许施放的法术 id。 */
   readonly spells?: readonly string[];
@@ -241,6 +243,7 @@ export function addParticipant(
     derived: init.derived,
     race: init.race ?? null,
     raceFlags: [...(init.raceFlags ?? [])],
+    elements: [...(init.elements ?? [])],
     skills: init.skills ?? {},
     spells: [...(init.spells ?? [])],
     damageBonus: init.damageBonus ?? "0",
@@ -825,6 +828,72 @@ function raceIncomingMultiplier(
     multiplier *= raceAbilityNumber(pack, target, ability, "multiplier", 1.5);
   }
   return multiplier;
+}
+
+interface ElementAdjustment {
+  readonly relation: "WEAKNESS" | "SAME";
+  readonly multiplier: number;
+  readonly flat: number;
+  readonly sourceElement: string;
+}
+
+/**
+ * 属性相克：把「弱点 +2D / 同属性 -2D」换算成管线需要的乘数与固定值。
+ *
+ * 只对 TOUHOU 且开启 elementRules 的规则包生效；目标没有元素时返回 null。
+ * 弱点与同属性同时成立时，按千幻抄「不重复叠加」取弱点。
+ */
+function resolveElementAdjustment(
+  pack: CompiledRulePack,
+  state: CombatState,
+  attackElement: string | undefined,
+  target: CombatParticipantState,
+  salt: string
+): ElementAdjustment | null {
+  if (pack.system !== "TOUHOU") return null;
+  const rules = pack.pack.elementRules;
+  if (rules.enabled === false) return null;
+  const element = attackElement?.trim();
+  if (element === undefined || element.length === 0) return null;
+  const registry = pack.pack.elements;
+  const attackerDef = registry[element];
+  if (attackerDef === undefined) return null;
+  const targetElements = target.elements ?? [];
+  if (targetElements.length === 0) return null;
+
+  const weakness = targetElements.some((targetElement) => {
+    if (attackerDef.strongAgainst.includes(targetElement)) return true;
+    const targetDef = registry[targetElement];
+    return targetDef !== undefined && targetDef.weakTo.includes(element);
+  });
+  const same = targetElements.includes(element);
+  if (weakness === false && same === false) return null;
+
+  const relation = weakness ? "WEAKNESS" : "SAME";
+  const diceExpression = weakness ? rules.weaknessDamage : rules.sameElementDamage;
+  const flatExpression = weakness ? rules.weaknessFlat : rules.sameElementFlat;
+  let amount = 0;
+  try {
+    const rng = nextRollRng(state, `element:${salt}:${element}:${relation}`);
+    amount = rollDice(parseDice(diceExpression), rng).total;
+  } catch {
+    amount = 0;
+  }
+  if (Number.isFinite(amount) === false || amount <= 0) {
+    try {
+      amount = evaluateSource(pack, flatExpression, target.vars);
+    } catch {
+      amount = 0;
+    }
+  }
+  const magnitude = Math.max(0, Math.floor(Number.isFinite(amount) ? amount : 0));
+  if (magnitude <= 0) return null;
+  return {
+    relation,
+    multiplier: 1,
+    flat: relation === "WEAKNESS" ? magnitude : -magnitude,
+    sourceElement: element
+  };
 }
 
 /** 存活单位每轮开始时的种族再生量；无能力时为 0。 */
@@ -1870,6 +1939,13 @@ function resolveAttack(
 
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
   const raceMultiplier = raceIncomingMultiplier(ctx.pack, defender, skillName);
+  const elementAdjustment = resolveElementAdjustment(
+    ctx.pack,
+    state,
+    submission.element,
+    defender,
+    `attack:${actor.id}:${submission.shotIndex ?? 0}`
+  );
 
   const outcome = applyDamagePipeline(ctx.pack, {
     baseDamage: damageTotal,
@@ -1878,6 +1954,8 @@ function resolveAttack(
     spellcardMultiplier: enhance?.damageMultiplier,
     enhanceFlat: (enhance?.flatDamage ?? 0) + grazeDamageBonus,
     raceMultiplier,
+    elementMultiplier: elementAdjustment?.multiplier,
+    elementFlat: elementAdjustment?.flat,
     shieldMultiplier,
     vars: defender.vars
   });
@@ -2565,14 +2643,23 @@ function applyMagicEffect(
       data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: rolled, enhanceFlat: spellEnhance.flat }
     });
     const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
-    const spellSkill = ctx.pack.pack.magic?.spells.find((entry) => entry.id === spell.id)?.skill;
-    const raceMultiplier = raceIncomingMultiplier(ctx.pack, target, spellSkill);
+    const spellDef = ctx.pack.pack.magic?.spells.find((entry) => entry.id === spell.id);
+    const raceMultiplier = raceIncomingMultiplier(ctx.pack, target, spellDef?.skill);
+    const elementAdjustment = resolveElementAdjustment(
+      ctx.pack,
+      state,
+      effect.element ?? spellDef?.element,
+      target,
+      `magic:${actor.id}:${spell.id}`
+    );
     const outcome = applyDamagePipeline(ctx.pack, {
       baseDamage: base,
       defense: defense.type,
       defenseSuccess: defense.success,
       spellcardMultiplier: spellEnhance.multiplier,
       raceMultiplier,
+      elementMultiplier: elementAdjustment?.multiplier,
+      elementFlat: elementAdjustment?.flat,
       shieldMultiplier,
       vars: target.vars
     });
@@ -3119,6 +3206,7 @@ function resolveOne(
                 skill: stepSkill,
                 damage: step.damage ?? submission.damage,
                 damageType: step.damageType ?? submission.damageType,
+                element: step.element ?? submission.element,
                 accuracyMod: step.accuracyMod,
                 bonusDice: step.bonusDice,
                 bonusDiceSource: step.bonusDiceSource,

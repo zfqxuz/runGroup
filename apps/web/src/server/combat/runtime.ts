@@ -100,6 +100,11 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     participant.grazeDamageBonus = Math.max(0, Math.floor(participant.grazeDamageBonus ?? 0));
     participant.race = participant.race ?? null;
     participant.raceFlags = Array.isArray(participant.raceFlags) ? participant.raceFlags : [];
+    const raceElements =
+      participant.race === null ? [] : (pack.pack.races[participant.race]?.elements ?? []);
+    participant.elements = Array.isArray(participant.elements) && participant.elements.length > 0
+      ? participant.elements
+      : [...raceElements];
   }
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();

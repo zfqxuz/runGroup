@@ -378,6 +378,7 @@ async function handleAction(
     // 伤害不由客户端决定：服务端按角色实际装备 / 规则包覆盖客户端传来的表达式。
     damage: selectedDamageBand?.expression ?? actualAttack?.damage ?? asString(raw.damage),
     damageType: actualAttack?.damageType,
+    element: actualAttack?.element,
     shots,
     maneuver:
       raw.maneuver === "DISARM" || raw.maneuver === "TRIP" || raw.maneuver === "GRAPPLE"
@@ -496,6 +497,7 @@ async function handleAction(
         skill: stepSkill,
         damage: selectedStepBand?.expression ?? stepAttack?.damage,
         damageType: stepAttack?.damageType,
+        element: stepAttack?.element,
         shots: stepShots,
         accuracyMod: asNumber(step.accuracyMod),
         bonusDice: stepBonus,

@@ -110,6 +110,8 @@ export interface CombatParticipantState {
   race?: string | null;
   /** 种族扁平 flags（旧口径，UI 与规则都会读）。 */
   raceFlags?: string[];
+  /** 先天 / 装备元素亲和与抗性；用于属性相克。 */
+  elements?: string[];
   skills: Record<string, number>;
   /** 该单位允许施放的法术 id；玩家来自角色卡，NPC 来自 NPC 卡。 */
   spells: string[];
@@ -164,6 +166,8 @@ export interface RoutineAttackStep {
   readonly skill?: string;
   readonly damage?: string;
   readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
+  /** 本次攻击的元素属性 id；服务端从武器卡解析。 */
+  readonly element?: string;
   readonly shots?: number;
   readonly accuracyMod?: number;
   readonly bonusDice?: number;
@@ -183,6 +187,8 @@ export interface ActionSubmission {
   readonly damage?: string;
   /** COC7 武器伤害类型：极限成功时决定是否额外掷武器骰。 */
   readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
+  /** 攻击 / 法术的元素属性 id；服务端从装备或规则包解析，客户端不可伪造。 */
+  readonly element?: string;
   /** COC7 手枪连射：同一动作内的射击次数（1–3）。 */
   readonly shots?: number;
   /** COC7 战技：缴械 / 踢倒 / 擒拿。 */

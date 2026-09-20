@@ -116,7 +116,35 @@
 幽体化、灵力回 HP、动物会话 / 变身、本体绑定、水栖、契约 / 黑暗视觉、吸血 / 魅惑、妖精月再生、
 技能学习限制（人类不可学妖术）等。这些依赖能力系统或叙事裁定，不在本轮硬编码。
 
-### 2.2 后续条目（未铺开）
+### 2.2 已完成（第二批）：属性相克（v2: 5.1、5.2 部分）
+
+**数据层**
+- 新增 `ElementSchema`（`id` / `name` / `strongAgainst` / `weakTo`）与 `RulePackSchema.elements`，
+  模组可整体覆盖属性表。
+- `touhou-ext` 定义十属性：木、火、土、金、水、风、雷、冷气、光、暗；
+  登记五行相克与风雷 / 冷气 / 光暗关系，`weakTo` 由相克关系反向对齐并加测试。
+- 新增 `ElementRulesSchema`（`weaknessDamage` / `weaknessFlat` / `sameElementDamage` / `sameElementFlat`）。
+- `RaceSchema.elements`：河童水、天狗风、亡灵 / 吸血鬼 / 恶魔暗等先天元素。
+- `MagicSpellSchema.element` 与 DAMAGE 效果的 `element`：法术默认元素 + 效果级覆盖。
+- 武器卡 `stats.element`：`WeaponStatsSchema` 新增字段，服务端 `attackOptionsForParticipant` 解析。
+
+**战斗结算（仅 TOUHOU）**
+- 伤害管线新增 `ELEMENT_MOD` 步骤；只有 `touhou-ext` pipeline 包含它。
+- `resolveElementAdjustment()`：攻击元素克制目标元素时附加 `2d6`（掷骰失败回退 `+5`），
+  同属性时附加 `-2d6`；弱点与同属性同时成立时按千幻抄「不重复叠加」取弱点。
+- 攻击 / 法术 / 道具 DAMAGE 效果都走同一属性判定；routine 多段攻击逐段携带元素。
+- 参战单位新增 `elements`，旧快照在 `runtime.ts` 按 race 回填。
+
+**测试与隔离**
+- `packages/rules/src/__tests__/touhou-elements.test.ts`：6 条（属性表、相克双向一致、种族元素、
+  ELEMENT_MOD 与 COC7 隔离）。
+- `packages/combat/src/__tests__/touhou-elements.test.ts`：5 条（弱点、同属性、不叠加、无元素不触发）。
+- COC7 基线 `elements` 为空且 pipeline 不含 `ELEMENT_MOD`，传入属性值也不改变伤害。
+
+**仍未覆盖的 5.2 / 5.3**：弱点「抵抗 -3」与「全判定 -1」、同属性「抵抗 +3 / 判定 +1」，
+以及属性使能力（每种属性独立等级、基本 / 追加能力、与妖术组合、范围与脱离）——留待能力系统批次。
+
+### 2.3 后续条目（未铺开）
 
 1. **千幻抄能力体系**（v2: 2.14、2.17、2.18、7.x–11.x）
    - 神术·阴阳术 / 魔法 / 属性使 / 妖力 / 妖术 / 特技的能力等级、能力点、法术表、习得与成长。
@@ -125,8 +153,8 @@
    - 如果要做完整 DP 战斗，需要独立于现有 ATB 的“回合 + DP 宣言 + 消费骰”模式；建议做成 TOUHOU 可选战斗模式，保留 ATB 作为现有房规。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
    - 开卡 3 张、战斗前 SC 宣言数、展开任意时机、展开/消费回复 DP、LSC、符卡战胜负条件。
-4. **属性相克**（v2: 5.x）
-   - 新增元素字段与弱点/同属性修正；建议作为规则包 effect modifier，不影响 COC7 无元素伤害。
+4. **属性相克 · 剩余部分**（v2: 5.2 判定 / 抵抗修正、5.3 属性使能力）
+   - 在已有元素表上补抵抗 / 全判定修正与属性使的能力等级、法术表；建议随能力系统一起做。
 5. **成长体系**（v2: 13.x）
    - A-F 成长等级、特性值/技能/能力/HP系数与SC成长表、妖术与锻炼 60% 上限。
 6. **其他规则**（v2: 14.x）
@@ -160,6 +188,17 @@
 - 新增测试：
   - `packages/rules/src/__tests__/touhou-races.test.ts`：6 条；
   - `packages/combat/src/__tests__/touhou-races.test.ts`：7 条。
+
+### 4.3 P1 第二批：属性相克
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（rules 113、combat 122、formula 54、web 5）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS。
+- 新增测试：
+  - `packages/rules/src/__tests__/touhou-elements.test.ts`：6 条；
+  - `packages/combat/src/__tests__/touhou-elements.test.ts`：5 条；
+  - `packages/rules/src/__tests__/magic.test.ts` 追加 2 条元素继承测试。
 
 ## 5. 风险与回滚
 
