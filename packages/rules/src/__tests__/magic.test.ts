@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { MagicSpellSchema } from "../schema";
+import { MAGIC_EFFECT_TYPES, MagicSpellSchema } from "../schema";
 import { canCastOutsideCombat, isHostileSpell, outOfCombatBlockReason, spellEffectsOf, spellTargeting } from "../magic";
 
 function spellOf(input: Record<string, unknown>) {
@@ -23,6 +23,28 @@ describe("法术通用指令", () => {
       effects: [{ type: "DAMAGE", amount: "1d6", element: "WATER" }]
     });
     expect(spellEffectsOf(spell)[0]).toMatchObject({ type: "DAMAGE", element: "WATER" });
+  });
+
+  it("DISPEL 指令带默认 keys / declaration", () => {
+    const spell = spellOf({ effects: [{ type: "DISPEL" }] });
+    expect(spellEffectsOf(spell)).toEqual([{ type: "DISPEL", keys: [], declaration: false }]);
+    expect(MAGIC_EFFECT_TYPES).toContain("DISPEL");
+  });
+
+  it("DAMAGE / HEAL 支持 LvD 与 +Lv 等级缩放", () => {
+    const spell = spellOf({
+      effects: [
+        { type: "DAMAGE", amount: "1d6", levelDice: { die: 6 }, levelBonus: "abilityLv * 2" },
+        { type: "HEAL", amount: "1d3", levelDice: { die: 4, perLevel: 2 } }
+      ]
+    });
+    const [damage, heal] = spellEffectsOf(spell);
+    expect(damage).toMatchObject({
+      type: "DAMAGE",
+      levelDice: { die: 6, perLevel: 1 },
+      levelBonus: "abilityLv * 2"
+    });
+    expect(heal).toMatchObject({ type: "HEAL", levelDice: { die: 4, perLevel: 2 } });
   });
 
   it("可以组合多个效果指令", () => {

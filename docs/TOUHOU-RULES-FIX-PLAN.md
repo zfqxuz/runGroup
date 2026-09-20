@@ -173,13 +173,24 @@
 - COC7 基线 `abilities.enabled=false`，且 dispatcher 仅对 `pack.system==="TOUHOU"` 分流，COC7 仍走原 `resolveMagic`。
 
 **本批未覆盖的能力体系内容**：能力点与车卡 A-D 分配、每级习得法术数量校验、成长消费（13.4）、
-DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层、
-`MagicEffect` 的 `DISPEL` / `BARRIER` / 变骰等级缩放（`LvD`）。
+DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层、`BARRIER` 结界（需要范围 / 位置模型）。
 
-### 2.4 后续条目（未铺开）
+### 2.4 已完成（第四批）：能力效果缺口 DISPEL / LvD（v2: 7.x–11.x 效果部分）
+
+- `MagicEffect` 新增 `DISPEL`：按 `keys` 驱散状态（空数组驱散全部），可选 `declaration` 同时击破
+  目标展开中的符卡（复用既有 `breakDeclaration` 清弹逻辑）。
+- `DAMAGE` / `HEAL` 新增等级缩放字段：
+  - `levelDice: { die, perLevel }`：每 `perLevel` 级追加 1 颗 `die` 面骰（LvD）；
+  - `levelBonus`：固定值表达式，可用 `abilityLv` 变量（+Lv / ×Lv）。
+- `resolveAbility` 把能力等级写入 `submission.abilityLevel`；普通 COC7 / TOUHOU 魔法路径为空，
+  因此缩放字段对非能力法术不生效。
+- 测试：rules `magic.test.ts` 追加 DISPEL / 缩放解析；combat `touhou-abilities.test.ts` 追加
+  `+Lv`、`LvD`、普通路径不缩放、DISPEL 指定 key / 全部状态 / 击破符卡。
+
+### 2.5 后续条目（未铺开）
 
 1. **千幻抄能力体系 · 剩余部分**（v2: 2.17、2.18、7.x–11.x）
-   - 能力点与等级的车卡 / 成长流程、每级习得数量、妖力 / 特技常时被动、`LvD` 缩放、结界 / 驱散。
+   - 能力点与等级的车卡 / 成长流程、每级习得数量、妖力 / 特技常时被动、`BARRIER` 结界。
 2. **DP 机制**（v2: 2.8、3.5、6.5、6.6、6.9、6.13、6.17、6.18、6.21、6.22、6.33 等）
    - 如果要做完整 DP 战斗，需要独立于现有 ATB 的“回合 + DP 宣言 + 消费骰”模式；建议做成 TOUHOU 可选战斗模式，保留 ATB 作为现有房规。
 3. **SC 完整规则**（v2: 4.1、4.2、4.4、4.8、4.9、4.11、4.13–4.17）
@@ -240,6 +251,15 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 - 新增测试：
   - `packages/rules/src/__tests__/touhou-abilities.test.ts`：7 条（类别、消费表、工具函数、习得数量、COC7 隔离、〈抵抗〉）；
   - `packages/combat/src/__tests__/touhou-abilities.test.ts`：5 条（成功、失败仍扣灵、等级门槛、抵抗成功 / 失败）。
+
+### 4.5 P1 第四批：DISPEL / LvD
+
+- `npm run typecheck`：rules / combat / web 均通过。
+- `npm test`：全部 workspace 通过（rules 122、combat 135、formula 54、web 5）。
+- `npm run build --workspace @touhou/web`：通过。
+- COC7 回归四个脚本全部 PASS。
+- 新增测试：combat `touhou-abilities.test.ts` 扩到 10 条（含 `+Lv` / `LvD` / 普通路径不缩放 / DISPEL）；
+  rules `magic.test.ts` 追加 DISPEL 与缩放解析断言。
 
 ## 5. 风险与回滚
 

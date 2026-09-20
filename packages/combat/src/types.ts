@@ -209,6 +209,8 @@ export interface ActionSubmission {
   /** 符卡 / 法术。 */
   readonly name?: string;
   readonly spellId?: string;
+  /** 本次能力发动的能力等级；由 resolveAbility 写入，LvD / +Lv 缩放使用。 */
+  readonly abilityLevel?: number;
   /** 玩家卡库中的符卡 id；服务端会用它反查卡牌数值。 */
   readonly spellCardId?: string;
   readonly mpCost?: number;

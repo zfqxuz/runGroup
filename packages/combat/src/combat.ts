@@ -2436,6 +2436,51 @@ function rollEffectDice(source: string, state: CombatState, salt: string): numbe
   }
 }
 
+interface LevelScalingSpec {
+  readonly levelDice?: { readonly die: number; readonly perLevel: number };
+  readonly levelBonus?: string;
+}
+
+/**
+ * 能力等级缩放（LvD / +Lv）。
+ * - levelDice：每 perLevel 级追加 1 颗 die 面骰；
+ * - levelBonus：固定值表达式，可用 abilityLv 变量。
+ */
+function levelScalingFor(
+  ctx: ResolveContext,
+  state: CombatState,
+  spec: LevelScalingSpec,
+  abilityLevel: number,
+  target: CombatParticipantState,
+  salt: string
+): { dice: number; flat: number } {
+  const level = Math.max(0, Math.floor(abilityLevel));
+  let diceTotal = 0;
+  if (level > 0 && spec.levelDice !== undefined) {
+    const perLevel = Math.max(1, Math.floor(spec.levelDice.perLevel));
+    const count = Math.floor(level / perLevel);
+    if (count > 0) {
+      try {
+        diceTotal = Math.max(
+          0,
+          rollDice(parseDice(count + "d" + spec.levelDice.die), nextRollRng(state, "level-dice:" + salt)).total
+        );
+      } catch {
+        diceTotal = 0;
+      }
+    }
+  }
+  let flat = 0;
+  if (spec.levelBonus !== undefined) {
+    try {
+      flat = Math.floor(evaluateEffectNumber(ctx.pack, spec.levelBonus, { ...target.vars, abilityLv: level }));
+    } catch {
+      flat = 0;
+    }
+  }
+  return { dice: diceTotal, flat };
+}
+
 /** 没有独立召唤物卡片时使用的通用兜底模板。 */
 function genericSummonTemplate(pack: CompiledRulePack, name: string): SummonTemplate {
   const attributes: AttributeSet = {
@@ -2652,13 +2697,25 @@ function applyMagicEffect(
   if (effect.type === "DAMAGE") {
     const spellEnhance = spellcardEnhanceForSpell(ctx.pack, actor);
     const rolled = rollEffectDice(effect.amount, state, "magic-damage:" + actor.id + ":" + spell.id + ":" + target.id);
-    const base = rolled + spellEnhance.flat;
+    const levelScaling = levelScalingFor(
+      ctx,
+      state,
+      effect,
+      submission.abilityLevel ?? 0,
+      target,
+      actor.id + ":" + spell.id + ":" + target.id
+    );
+    const base = rolled + spellEnhance.flat + levelScaling.dice + levelScaling.flat;
+    const scalingText =
+      levelScaling.dice + levelScaling.flat === 0
+        ? ""
+        : "，能力等级 +" + (levelScaling.dice + levelScaling.flat);
     pushLog(state, {
       kind: "DAMAGE",
       actorId: actor.id,
       targetId: target.id,
-      text: "伤害骰：「" + spell.name + "」对 " + target.name + " 的 " + effect.amount + " = " + rolled + (spellEnhance.flat > 0 ? "，符卡强化 +" + spellEnhance.flat : "") + "，合计 " + base,
-      data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: rolled, enhanceFlat: spellEnhance.flat }
+      text: "伤害骰：「" + spell.name + "」对 " + target.name + " 的 " + effect.amount + " = " + rolled + (spellEnhance.flat > 0 ? "，符卡强化 +" + spellEnhance.flat : "") + scalingText + "，合计 " + base,
+      data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: rolled, enhanceFlat: spellEnhance.flat, levelDice: levelScaling.dice, levelBonus: levelScaling.flat }
     });
     const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
     const spellDef = ctx.pack.pack.magic?.spells.find((entry) => entry.id === spell.id);
@@ -2698,10 +2755,21 @@ function applyMagicEffect(
   if (effect.type === "HEAL") {
     const spellEnhance = spellcardEnhanceForSpell(ctx.pack, actor);
     const rolled = rollEffectDice(effect.amount, state, "magic-heal:" + actor.id + ":" + spell.id + ":" + target.id);
-    const amount = Math.max(0, Math.floor((rolled + spellEnhance.flat) * spellEnhance.multiplier));
+    const levelScaling = levelScalingFor(
+      ctx,
+      state,
+      effect,
+      submission.abilityLevel ?? 0,
+      target,
+      actor.id + ":" + spell.id + ":" + target.id
+    );
+    const amount = Math.max(
+      0,
+      Math.floor((rolled + spellEnhance.flat + levelScaling.dice + levelScaling.flat) * spellEnhance.multiplier)
+    );
     const before = target.hp;
     target.hp = Math.min(target.maxHp, target.hp + amount);
-    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP" + (spellEnhance.flat + (spellEnhance.multiplier !== 1 ? 1 : 0) > 0 ? "（符卡强化）" : ""), { heal: target.hp - before, enhanceFlat: spellEnhance.flat, enhanceMultiplier: spellEnhance.multiplier });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP" + (spellEnhance.flat + levelScaling.dice + levelScaling.flat + (spellEnhance.multiplier !== 1 ? 1 : 0) > 0 ? "（强化）" : ""), { heal: target.hp - before, enhanceFlat: spellEnhance.flat, levelDice: levelScaling.dice, levelBonus: levelScaling.flat, enhanceMultiplier: spellEnhance.multiplier });
     return;
   }
 
@@ -2853,6 +2921,43 @@ function applyMagicEffect(
   if (effect.type === "CLEANSE") {
     clearStatuses(target, effect.keys);
     log(actor.name + " " + verb + "「" + spell.name + "」 → 净化 " + target.name + " 的 " + (effect.keys.length === 0 ? "持续伤害 / 控制" : effect.keys.join("、")), { cleanse: true });
+    return;
+  }
+
+  if (effect.type === "DISPEL") {
+    let removedStatuses = 0;
+    if (effect.keys.length === 0) {
+      removedStatuses = (target.statusEffects ?? []).length;
+      target.statusEffects = [];
+      target.stunActions = 0;
+      target.controlActions = 0;
+    } else {
+      const before = (target.statusEffects ?? []).length;
+      clearStatuses(target, effect.keys);
+      removedStatuses = before - (target.statusEffects ?? []).length;
+    }
+    let brokeDeclaration = false;
+    if (effect.declaration && target.declaration !== null) {
+      breakDeclaration(ctx, target);
+      brokeDeclaration = true;
+    }
+    log(
+      actor.name +
+        " " +
+        verb +
+        "「" +
+        spell.name +
+        "」 → 驱散 " +
+        target.name +
+        " 的 " +
+        (effect.keys.length === 0 ? "全部状态" : effect.keys.join("、")) +
+        "（移除 " +
+        removedStatuses +
+        " 个" +
+        (brokeDeclaration ? "，并击破其展开中的符卡" : "") +
+        "）",
+      { dispel: true, removedStatuses, brokeDeclaration }
+    );
   }
 }
 
@@ -3111,7 +3216,14 @@ function resolveAbility(
     }
   }
 
-  executeSpellEffects(ctx, actor, submission, spell, cost, { logKind: "SPELLCARD", verb: "发动" });
+  executeSpellEffects(
+    ctx,
+    actor,
+    { ...submission, abilityLevel: level },
+    spell,
+    cost,
+    { logKind: "SPELLCARD", verb: "发动" }
+  );
 }
 
 /**

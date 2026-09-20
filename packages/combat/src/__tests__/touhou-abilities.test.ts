@@ -72,6 +72,63 @@ function buildAbilityPack() {
             effects: [{ type: "DAMAGE", amount: "4" }],
             activation: { dice: "3D6", modifier: "0", target: "1" },
             resist: { attribute: "str", skill: "RESIST", dice: "3D6" }
+          },
+          {
+            id: "SPIRIT_LEVEL_BONUS",
+            name: "灵符·等级加值",
+            abilityId: "SPIRIT_ARTS",
+            requiredLevel: 1,
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ENEMY",
+            effects: [{ type: "DAMAGE", amount: "4", levelBonus: "abilityLv * 2" }],
+            activation: { dice: "3D6", modifier: "0", target: "1" }
+          },
+          {
+            id: "SPIRIT_LEVEL_DICE",
+            name: "灵符·等级骰",
+            abilityId: "SPIRIT_ARTS",
+            requiredLevel: 1,
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ENEMY",
+            effects: [{ type: "DAMAGE", amount: "4", levelDice: { die: 6, perLevel: 1 } }],
+            activation: { dice: "3D6", modifier: "0", target: "1" }
+          },
+          {
+            id: "SPIRIT_DISPEL",
+            name: "灵符·驱散",
+            abilityId: "SPIRIT_ARTS",
+            requiredLevel: 1,
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ANY",
+            effects: [{ type: "DISPEL", keys: ["HASTE"], declaration: true }],
+            activation: { dice: "3D6", modifier: "0", target: "1" }
+          },
+          {
+            id: "SPIRIT_DISPEL_ALL",
+            name: "灵符·大驱散",
+            abilityId: "SPIRIT_ARTS",
+            requiredLevel: 1,
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ANY",
+            effects: [{ type: "DISPEL", keys: [] }],
+            activation: { dice: "3D6", modifier: "0", target: "1" }
+          },
+          {
+            id: "PLAIN_LEVEL_BONUS",
+            name: "普通法术·等级加值",
+            mpCost: "5",
+            sanCost: "0",
+            target: "ONE",
+            targeting: "ENEMY",
+            effects: [{ type: "DAMAGE", amount: "4", levelBonus: "abilityLv * 2" }]
           }
         ]
       }
@@ -190,5 +247,88 @@ describe("千幻抄能力发动", () => {
       }
     });
     expect(target.hp).toBe(target.maxHp - 4);
+  });
+});
+
+describe("能力等级缩放（LvD / +Lv）", () => {
+  it("levelBonus 按能力等级追加固定值", () => {
+    const { target } = castAbility("ability-level-bonus", "SPIRIT_LEVEL_BONUS", {
+      casterLevels: { SPIRIT_ARTS: 3 }
+    });
+    // 4 + Lv3×2 = 10
+    expect(target.hp).toBe(target.maxHp - 10);
+  });
+
+  it("levelDice 每级追加 1 颗骰（Lv3 ⇒ 3d6）", () => {
+    const { target } = castAbility("ability-level-dice", "SPIRIT_LEVEL_DICE", {
+      casterLevels: { SPIRIT_ARTS: 3 }
+    });
+    // 4 + 3d6(3~18) => 损失 7~22
+    expect(target.hp).toBeLessThanOrEqual(target.maxHp - 7);
+    expect(target.hp).toBeGreaterThanOrEqual(target.maxHp - 22);
+  });
+
+  it("普通魔法路径没有 abilityLevel，levelBonus 不生效", () => {
+    // PLAIN_LEVEL_BONUS 没有 abilityId，走 resolveMagic，submission.abilityLevel 为空。
+    const state = createCombat({ id: "c-no-level", seed: "ability-no-level", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", { abilityLevels: { SPIRIT_ARTS: 99 } });
+    const target = addUnit(state, "target", "BOSS", {});
+    forceReady(caster);
+    forceReady(target);
+    submitAction(state, {
+      actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "PLAIN_LEVEL_BONUS"
+    });
+    resolvePending(abilityPack, state, { target: { type: "PASS" } });
+    expect(target.hp).toBe(target.maxHp - 4);
+  });
+});
+
+describe("DISPEL 驱散", () => {
+  it("按 key 驱散状态并击破展开中的符卡", () => {
+    const state = createCombat({ id: "c-dispel", seed: "ability-dispel", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", { abilityLevels: { SPIRIT_ARTS: 1 } });
+    const target = addUnit(state, "target", "BOSS", {});
+    target.statusEffects.push(
+      { key: "HASTE", stacks: 1, remainingTicks: 100 },
+      { key: "SHIELD", stacks: 1, remainingTicks: 100 }
+    );
+    target.declaration = {
+      name: "测试符卡",
+      hp: 10,
+      maxHp: 10,
+      expiresAtTick: 9999,
+      clearTargets: "ALL",
+      cardId: null,
+      damageMultiplier: 1,
+      enhanceType: null,
+      enhanceValue: 1
+    };
+    forceReady(caster);
+    forceReady(target);
+    submitAction(state, {
+      actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "SPIRIT_DISPEL"
+    });
+    resolvePending(abilityPack, state, { target: { type: "PASS" } });
+    expect(target.statusEffects.some((effect) => effect.key === "HASTE")).toBe(false);
+    expect(target.statusEffects.some((effect) => effect.key === "SHIELD")).toBe(true);
+    expect(target.declaration).toBeNull();
+    expect(state.log.some((entry) => entry.text.includes("驱散"))).toBe(true);
+  });
+
+  it("keys 为空时驱散全部状态", () => {
+    const state = createCombat({ id: "c-dispel-all", seed: "ability-dispel-all", tickMs: 250 });
+    const caster = addUnit(state, "caster", "PC", { abilityLevels: { SPIRIT_ARTS: 1 } });
+    const target = addUnit(state, "target", "BOSS", {});
+    target.statusEffects.push(
+      { key: "HASTE", stacks: 1, remainingTicks: 100 },
+      { key: "SHIELD", stacks: 1, remainingTicks: 100 }
+    );
+    forceReady(caster);
+    forceReady(target);
+    submitAction(state, {
+      actorId: "caster", kind: "MAGIC", targetId: "target", spellId: "SPIRIT_DISPEL_ALL"
+    });
+    resolvePending(abilityPack, state, { target: { type: "PASS" } });
+    expect(target.statusEffects).toHaveLength(0);
   });
 });

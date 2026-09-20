@@ -160,8 +160,22 @@ export const MAGIC_EFFECT_TYPES = [
   "DOT",
   "STUN",
   "CONTROL",
-  "CLEANSE"
+  "CLEANSE",
+  "DISPEL"
 ] as const;
+
+/** 按能力等级缩放伤害 / 治疗的公共字段（LvD / +Lv）。 */
+const LevelScalingShape = {
+  /** 每 perLevel 级追加 1 颗 die 面骰。 */
+  levelDice: z
+    .object({
+      die: z.number().int().min(2).max(100),
+      perLevel: z.number().int().min(1).default(1)
+    })
+    .optional(),
+  /** 按能力等级追加固定值表达式；可用 abilityLv 变量。 */
+  levelBonus: ExprSchema.optional()
+};
 
 /** 通用法术效果指令。规则包只描述「做什么」，战斗引擎负责结算。 */
 export const MagicEffectSchema = z.discriminatedUnion("type", [
@@ -169,11 +183,13 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
     type: z.literal("DAMAGE"),
     amount: DiceExprSchema,
     /** 元素属性 id；命中弱点 / 同属性时由战斗层应用属性相克。 */
-    element: z.string().optional()
+    element: z.string().optional(),
+    ...LevelScalingShape
   }),
   z.object({
     type: z.literal("HEAL"),
-    amount: DiceExprSchema
+    amount: DiceExprSchema,
+    ...LevelScalingShape
   }),
   z.object({
     type: z.literal("MP_RESTORE"),
@@ -237,6 +253,13 @@ export const MagicEffectSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("CLEANSE"),
     keys: z.array(z.string()).default([])
+  }),
+  z.object({
+    type: z.literal("DISPEL"),
+    /** 要驱散的状态 key；空数组表示驱散目标身上所有状态。 */
+    keys: z.array(z.string()).default([]),
+    /** 是否同时击破目标正在展开的符卡。 */
+    declaration: z.boolean().default(false)
   })
 ]);
 
