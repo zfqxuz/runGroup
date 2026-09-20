@@ -209,6 +209,15 @@ export interface ActionSubmission {
   readonly danmakuDpReduction?: number;
   /** 弹幕回避者 DP 不足时的固定伤害。 */
   readonly danmakuBaseDamage?: number;
+  /**
+   * DP 千幻抄伤害公式：用作 LvD 的能力类别 id（射击 / 追击 / 能力伤害）。
+   * 提供时引擎按「能力 LvD + 特性值」计算伤害，忽略卡面 damage。
+   */
+  readonly damageAbilityId?: string;
+  /** DP 千幻抄近战伤害公式：用作 LvD 的锻炼类别 id（通常 "FEAT"）。 */
+  readonly damageTrainingId?: string;
+  /** DP 千幻抄伤害公式：提供固定加值的武器技能 id（射击 / 近战共用）。 */
+  readonly damageWeaponSkill?: string;
   /** COC7 手枪连射：同一动作内的射击次数（1–3）。 */
   readonly shots?: number;
   /** COC7 战技：缴械 / 踢倒 / 擒拿。 */

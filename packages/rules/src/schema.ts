@@ -504,6 +504,10 @@ export const DpActionCostsSchema = z.object({
   dodgePerDie: z.number().int().nonnegative().default(1),
   /** 防御：每颗判定骰的 DP 消耗。 */
   defendPerDie: z.number().int().nonnegative().default(1),
+  /** 能力发动：每颗判定骰的 DP 消耗（千幻抄能力判定最多 3D）。 */
+  abilityPerDie: z.number().int().nonnegative().default(1),
+  /** 抵抗：每颗判定骰的 DP 消耗。 */
+  resistPerDie: z.number().int().nonnegative().default(1),
   /** 抵抗：一次最多可用的 DP 骰。 */
   resistMaxDice: z.number().int().nonnegative().default(3)
 });

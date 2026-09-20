@@ -51,5 +51,5 @@ export const CHECK_RANK: Readonly<Record<CheckResult, number>> = {
   CRITICAL: 5
 };
 
-export const DEFENSE_TYPES = ["PASS", "DEFEND", "DODGE", "COUNTER", "SEEK_COVER"] as const;
+export const DEFENSE_TYPES = ["PASS", "DEFEND", "DODGE", "COUNTER", "SEEK_COVER", "RESIST", "COVER"] as const;
 export type DefenseType = (typeof DEFENSE_TYPES)[number];

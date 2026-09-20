@@ -28,6 +28,11 @@ import {
   speedMultiplierOf,
   spellEffectsOf,
   spellTargeting,
+  clampTouhouDpDice,
+  touhouChaseDamage,
+  touhouMeleeDamage,
+  touhouRangedDamage,
+  touhouResistTargetValue,
   type ActiveStatusEffect,
   type AttributeSet,
   type CheckOutcome,
@@ -3139,38 +3144,74 @@ function rollAbilityResist(
 ): boolean {
   const resist = spell.resist;
   if (resist === undefined) return false;
-  const attributeValue = target.attributes[resist.attribute as keyof AttributeSet] ?? target.vars[resist.attribute] ?? 0;
-  const skill = skillValueOf(ctx.pack, target, resist.skill, attributeValue);
+  const isDp = ctx.state.mode === "DP";
+
+  // 千幻抄抵抗：{意志}或{耐久}+〈抵抗〉Lv+ND6（最多 resistMaxDice 颗，消耗 DP）。
+  let dpDice = 0;
+  let dpInsufficient = false;
+  if (isDp && resist.dice !== "1D100") {
+    const dpRules = ctx.pack.pack.dp;
+    const perDie = Math.max(0, Math.floor(dpRules.actionCosts.resistPerDie));
+    const requested = clampTouhouDpDice(
+      reactionFor(ctx, target.id).dpDice ?? dpRules.actionCosts.resistMaxDice,
+      dpRules.actionCosts.resistMaxDice
+    );
+    if (perDie > 0) {
+      const affordable = Math.floor(target.dp / perDie);
+      dpDice = Math.max(0, Math.min(requested, affordable));
+      dpInsufficient = dpDice <= 0;
+      if (dpInsufficient === false) spendDp(ctx, target, perDie * dpDice, "抵抗 " + dpDice + "D");
+    } else {
+      dpDice = requested;
+    }
+  }
+
+  const rawAttribute = target.attributes[resist.attribute as keyof AttributeSet] ?? target.vars[resist.attribute] ?? 0;
+  const attributeValue = isDp ? dpAttribute(ctx.pack, target, resist.attribute) : rawAttribute;
+  const skill = isDp
+    ? dpSkillLevel(ctx.pack, target, resist.skill)
+    : skillValueOf(ctx.pack, target, resist.skill, attributeValue);
   const base = attributeValue + skill;
-  const targetValue = 10 + casterLevel + Math.floor((casterAchievement * 2) / 10);
+  const targetValue = touhouResistTargetValue(casterLevel, casterAchievement);
   const rng = nextRollRng(ctx.state, `ability-resist:${caster.id}:${target.id}:${spell.id}`);
   let roll = 0;
-  let total = 0;
+  let total = base;
   let success = false;
-  if (resist.dice === "1D100") {
+  let diceText = "";
+  if (dpInsufficient) {
+    diceText = "DP 不足，无法抵抗";
+    success = false;
+  } else if (resist.dice === "1D100") {
     roll = rollDie(rng, 100);
     total = base;
     success = roll <= base;
+    diceText = "1d100=" + roll + " / 目标 " + base;
+  } else if (isDp) {
+    roll = dpDice > 0 ? rollDice(parseDice(dpDice + "d6"), rng).total : 0;
+    total = base + roll;
+    success = total >= targetValue;
+    diceText = dpDice + "d6=" + roll + " + " + base + " = " + total + " / 目标 " + targetValue;
   } else {
     roll = rollDice(parseDice("3d6"), rng).total;
     total = base + roll;
     success = total >= targetValue;
+    diceText = "3d6=" + roll + " + " + base + " = " + total + " / 目标 " + targetValue;
   }
   pushLog(ctx.state, {
     kind: "CHECK",
     actorId: target.id,
     targetId: caster.id,
-    text:
-      target.name +
-      " 抵抗「" +
-      spell.name +
-      "」：" +
-      (resist.dice === "1D100"
-        ? "1d100=" + roll + " / 目标 " + base
-        : "3d6=" + roll + " + " + base + " = " + total + " / 目标 " + targetValue) +
-      " → " +
-      (success ? "抵抗成功" : "抵抗失败"),
-    data: { rollType: "ABILITY_RESIST", roll, base, total, targetValue, success }
+    text: target.name + " 抵抗「" + spell.name + "」：" + diceText + " → " + (success ? "抵抗成功" : "抵抗失败"),
+    data: {
+      rollType: isDp ? "DP_ABILITY_RESIST" : "ABILITY_RESIST",
+      roll,
+      base,
+      total,
+      targetValue,
+      success,
+      dpDice: isDp ? dpDice : 0,
+      dpInsufficient
+    }
   });
   return success;
 }
@@ -3210,8 +3251,21 @@ function resolveAbility(
   }
 
   const activation = spell.activation;
+  const usePercentile = activation?.dice === "1D100";
+
+  // DP 模式：能力发动改为消费 DP 骰的 {特性值}+Lv+ND6 判定（最多 maxDicePerCheck）。
+  const isDp = state.mode === "DP";
+  let dpDice = 0;
+  if (isDp && usePercentile === false) {
+    const dpRules = ctx.pack.pack.dp;
+    const perDie = Math.max(0, Math.floor(dpRules.actionCosts.abilityPerDie));
+    dpDice = clampTouhouDpDice(submission.dpDice ?? dpRules.maxDicePerCheck, dpRules.maxDicePerCheck);
+    if (spendDp(ctx, actor, perDie * dpDice, "能力发动 " + dpDice + "D") === false) return;
+  }
+
   const attributeKey = activation?.attribute ?? category.activationAttribute;
-  const attributeValue = actor.attributes[attributeKey as keyof AttributeSet] ?? actor.vars[attributeKey] ?? 0;
+  const rawAttribute = actor.attributes[attributeKey as keyof AttributeSet] ?? actor.vars[attributeKey] ?? 0;
+  const attributeValue = isDp ? dpAttribute(ctx.pack, actor, attributeKey) : rawAttribute;
   let modifier = 0;
   try {
     modifier = Math.floor(evaluateSource(ctx.pack, activation?.modifier ?? "0", actor.vars));
@@ -3220,14 +3274,17 @@ function resolveAbility(
   }
   const base = attributeValue + level + modifier;
   const rng = nextRollRng(state, `ability:${actor.id}:${spell.id}`);
-  const usePercentile = activation?.dice === "1D100";
-  const roll = usePercentile ? rollDie(rng, 100) : rollDice(parseDice("3d6"), rng).total;
+  let roll = 0;
   let target = base;
   let achievement = base;
   let success = false;
+  let diceText = "";
   if (usePercentile) {
+    roll = rollDie(rng, 100);
     success = roll <= base;
-  } else {
+    diceText = "1d100=" + roll + " / 目标 " + base;
+  } else if (isDp) {
+    roll = dpDice > 0 ? rollDice(parseDice(dpDice + "d6"), rng).total : 0;
     achievement = base + roll;
     try {
       target = Math.floor(evaluateSource(ctx.pack, activation?.target ?? "12", actor.vars));
@@ -3235,22 +3292,35 @@ function resolveAbility(
       target = 12;
     }
     success = achievement >= target;
+    diceText = dpDice + "d6=" + roll + " + " + base + " = " + achievement + " / 目标 " + target;
+  } else {
+    roll = rollDice(parseDice("3d6"), rng).total;
+    achievement = base + roll;
+    try {
+      target = Math.floor(evaluateSource(ctx.pack, activation?.target ?? "12", actor.vars));
+    } catch {
+      target = 12;
+    }
+    success = achievement >= target;
+    diceText = "3d6=" + roll + " + " + base + " = " + achievement + " / 目标 " + target;
   }
   pushLog(state, {
     kind: "CHECK",
     actorId: actor.id,
     targetId: submission.targetId ?? null,
-    text:
-      actor.name +
-      " 发动「" +
-      spell.name +
-      "」：" +
-      (usePercentile
-        ? "1d100=" + roll + " / 目标 " + base
-        : "3d6=" + roll + " + " + base + " = " + achievement + " / 目标 " + target) +
-      " → " +
-      (success ? "成功" : "失败"),
-    data: { rollType: "ABILITY_ACTIVATION", abilityId, level, roll, base, achievement, target, success }
+    text: actor.name + " 发动「" + spell.name + "」：" + diceText + " → " + (success ? "成功" : "失败"),
+    data: {
+      rollType: "ABILITY_ACTIVATION",
+      abilityId,
+      level,
+      roll,
+      base,
+      achievement,
+      target,
+      success,
+      dpDice: isDp ? dpDice : 0,
+      mode: isDp ? "DP" : "STANDARD"
+    }
   });
 
   const cost = spellCostFor(ctx, actor, spell, "ability-san:" + actor.id);
@@ -3538,6 +3608,51 @@ function dpSkillLevel(pack: CompiledRulePack, participant: CombatParticipantStat
   return Math.max(0, Math.floor(raw / scale));
 }
 
+/** 千幻抄能力类别等级（默认 0）。 */
+function dpAbilityLevel(actor: CombatParticipantState, abilityId: string | undefined): number {
+  if (abilityId === undefined) return 0;
+  const value = actor.abilityLevels?.[abilityId];
+  return typeof value === "number" && Number.isFinite(value) ? Math.max(0, Math.floor(value)) : 0;
+}
+
+/**
+ * DP 攻击伤害表达式。
+ *
+ * 千幻抄攻击伤害不是卡面固定值，而是公式：
+ * - 射击 / 能力：能力 LvD + 特性值（用武器技能时额外 +〈射击武器〉Lv）；
+ * - 追击：能力 Lv÷2 D + 特性值；
+ * - 近战：{身体} + 锻炼 LvD + 武器 Lv。
+ *
+ * 服务端在 submission 里写入 `damageAbilityId` / `damageTrainingId` / `damageWeaponSkill`
+ * 即启用公式；未提供时回退到卡面 `damage`（兼容旧数据 / 非能力武器）。
+ */
+function dpAttackDamageExpression(
+  pack: CompiledRulePack,
+  actor: CombatParticipantState,
+  submission: ActionSubmission,
+  kind: "RANGED" | "CHASE" | "MELEE"
+): string {
+  if (kind === "MELEE" && submission.damageTrainingId !== undefined) {
+    // 近战「武器 Lv」默认取本次命中使用的武器技能；未提供任何技能时按 0。
+    const weaponSkillId = submission.damageWeaponSkill ?? submission.skill;
+    const weaponLevel = weaponSkillId === undefined ? 0 : dpSkillLevel(pack, actor, weaponSkillId);
+    const body = dpAttribute(pack, actor, "str");
+    return touhouMeleeDamage(body, dpAbilityLevel(actor, submission.damageTrainingId), weaponLevel).expression;
+  }
+  const weaponLevel = submission.damageWeaponSkill === undefined
+    ? 0
+    : dpSkillLevel(pack, actor, submission.damageWeaponSkill);
+  if ((kind === "RANGED" || kind === "CHASE") && submission.damageAbilityId !== undefined) {
+    const attributeKey = submission.dpAttribute ?? (kind === "RANGED" ? "dex" : "dex");
+    const attribute = dpAttribute(pack, actor, attributeKey);
+    const level = dpAbilityLevel(actor, submission.damageAbilityId);
+    return kind === "CHASE"
+      ? touhouChaseDamage(attribute, level).expression
+      : touhouRangedDamage(attribute, level, weaponLevel).expression;
+  }
+  return submission.damage ?? "1d6";
+}
+
 interface DpRoll {
   readonly dice: number;
   readonly roll: number;
@@ -3684,7 +3799,10 @@ function resolveDpRangedAttack(
     });
     return;
   }
-  const damageExpression = expandDamageBonus(submission.damage ?? "1d6", actor.damageBonus);
+  const damageExpression = expandDamageBonus(
+    dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED"),
+    actor.damageBonus
+  );
   let rolled = 0;
   try {
     rolled = Math.max(0, rollDice(parseDice(damageExpression), nextRollRng(state, "dp-ranged-damage:" + actor.id + ":" + defender.id)).total);
@@ -3728,7 +3846,8 @@ function applyDpDamage(
   target: CombatParticipantState,
   amount: number,
   label: string,
-  reduction = 0
+  reduction = 0,
+  expression?: string
 ): void {
   const total = Math.max(0, amount - Math.max(0, reduction));
   const armorResult = absorbWithArmor(target, total);
@@ -3742,7 +3861,7 @@ function applyDpDamage(
       (reduction > 0 ? "（原 " + amount + "，应对减伤 " + reduction + "）" : "") +
       (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
       " → HP 结算 " + Math.max(0, total - armorResult.absorbed),
-    data: { rollType: "DP_DAMAGE", amount, reduction, damage: total, armorAbsorbed: armorResult.absorbed, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    data: { rollType: "DP_DAMAGE", amount, reduction, damage: total, armorAbsorbed: armorResult.absorbed, expression: expression ?? "", toDeclaration: applied.toDeclaration, toHp: applied.toHp }
   });
 }
 
@@ -3783,7 +3902,8 @@ function resolveDpChase(
   const extraDp = Math.min(escalation, maxEscalation) * 2;
   if (extraDp > 0 && spendDp(ctx, actor, extraDp, "追击强化 +" + Math.min(escalation, maxEscalation) * 10) === false) return;
   const achievement = base + Math.min(escalation, maxEscalation) * 10;
-  const damage = rollDpDamage(ctx, actor, submission.damage ?? "1d6", "dp-chase-damage:" + actor.id + ":" + state.round);
+  const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE");
+  const damage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
   const hits: CombatParticipantState[] = [];
   for (const target of targets) {
     const reaction = reactionFor(ctx, target.id);
@@ -3795,7 +3915,7 @@ function resolveDpChase(
     return;
   }
   for (const target of hits) {
-    applyDpDamage(ctx, actor, target, damage, "追击命中（达成值 " + achievement + "）");
+    applyDpDamage(ctx, actor, target, damage, "追击命中（达成值 " + achievement + "）", 0, damageExpression);
   }
 }
 
@@ -3846,8 +3966,9 @@ function resolveDpMelee(
     pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: defender.id, text: defender.name + " 成功应对近战攻击" });
     return;
   }
-  const damage = rollDpDamage(ctx, actor, submission.damage ?? "1d6", "dp-melee-damage:" + actor.id + ":" + defender.id);
-  applyDpDamage(ctx, actor, defender, damage, "近战命中", defense.reduction);
+  const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE");
+  const damage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
+  applyDpDamage(ctx, actor, defender, damage, "近战命中", defense.reduction, damageExpression);
 }
 
 /**

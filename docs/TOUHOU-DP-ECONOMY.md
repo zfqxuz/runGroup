@@ -17,7 +17,10 @@ DP 行动消耗全部放在规则包 `dp.actionCosts`，支持「基线包 → t
 | `dp.actionCosts.meleeHitPerDie` | 1 | 近战「命中判定」每颗骰的消耗 |
 | `dp.actionCosts.dodgePerDie` | 1 | 回避每颗骰的消耗 |
 | `dp.actionCosts.defendPerDie` | 1 | 防御每颗骰的消耗 |
+| `dp.actionCosts.abilityPerDie` | 1 | 能力发动每颗判定骰的消耗（能力判定最多 3D） |
+| `dp.actionCosts.resistPerDie` | 1 | 抵抗每颗判定骰的消耗 |
 | `dp.actionCosts.resistMaxDice` | 3 | 抵抗一次最多可用骰数 |
+| `dp.maxDicePerCheck` | 3 | 能力 / 抵抗单次判定的骰数上限 |
 | `dp.maxDicePerCheck` | 3 | 能力 / 抵抗一次判定的骰数上限 |
 | `dp.regen` | `ceil((int+dex)/3)` | 每回合 DP 回复；最低 2 |
 | `dp.minRegen` | 2 | DP 回复下限 |

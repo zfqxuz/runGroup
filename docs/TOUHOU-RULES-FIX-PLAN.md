@@ -262,7 +262,14 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
    - ✅ 追击：每目标 2 DP、固定达成值 `{特性值}+〈追击〉+10`、每 +2DP +10、目标数上限 `ceil(Lv/2)+1`。
    - ✅ 近战：接近判定（{身体}+〈回避〉 vs 目标 {身体}+max(〈回避〉,〈弹幕〉+15)）→ 命中判定 →
      应对 → 伤害；接近与命中各自消费 DP 骰。
-   - ⏳ 能力（最多 3D）、掩护、抵抗；千幻抄伤害公式（`能力 LvD + 特性`、`锻炼 Lv`）接入。
+   - ✅ 能力发动：DP 模式改为消费 DP 骰的 `{特性值}+Lv+ND6`（`dp.maxDicePerCheck`，默认 3），
+     失败仍扣灵力；`dp.actionCosts.abilityPerDie` 可配。
+   - ✅ 抵抗：DP 模式 `{意志/耐久}+〈抵抗〉+ND6`（`resistMaxDice`，默认 3），消耗 `resistPerDie`×骰数；
+     目标值 `10+施术者 Lv+达成值×2 的十位数`；DP 不足自动抵抗失败。
+   - ✅ 千幻抄伤害公式（规则层 `packages/rules/src/touhou-dp.ts`）：射击/能力 `能力 LvD+特性`、
+     追击 `能力 Lv÷2 D+特性`、近战 `{身体}+锻炼 LvD+武器 Lv`；submission 提供
+     `damageAbilityId` / `damageTrainingId` / `damageWeaponSkill` 时启用，否则回退卡面 damage。
+   - ⏳ 掩护 / 身代（前卫、一回合一次、替他人承受伤害）。
 2. ⏳ 接线：`setup.ts` / `socket/combat.ts` 增加 DP 分支（回合一 → 宣言 → 逐个行动 →
    反应窗口 → 轮转），并把 TOUHOU 的 `combat.mode` 切到 `"DP"`、迁移现有东方战斗测试。
 3. SC 宣言流程：DB 记录「章节内可用 / 已用 SC」，战斗创建时双方提交选牌，服务端按人数校验上限。

@@ -179,6 +179,18 @@ export type {
 } from "./touhou";
 
 export {
+  TOUHOU_MAX_DICE_PER_CHECK_FALLBACK,
+  TOUHOU_RESIST_MAX_DICE_FALLBACK,
+  clampTouhouDpDice,
+  touhouAbilityDamage,
+  touhouChaseDamage,
+  touhouMeleeDamage,
+  touhouRangedDamage,
+  touhouResistTargetValue
+} from "./touhou-dp";
+export type { TouhouDamageFormula } from "./touhou-dp";
+
+export {
   abilityCostForLevel,
   abilityLevelForPoints,
   abilityPointBudget,
