@@ -111,6 +111,10 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
         : {};
     participant.mpExhausted = participant.mpExhausted === true;
   }
+  state.spellcardBattle =
+    state.spellcardBattle !== null && typeof state.spellcardBattle === "object"
+      ? state.spellcardBattle
+      : null;
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();
   const kpIds: string[] = [];

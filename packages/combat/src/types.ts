@@ -331,6 +331,12 @@ export interface DpRoundState {
   acted: string[];
 }
 
+/** 千幻抄符卡战斗：一方本场可用的 SC 总数。 */
+export interface SpellcardBattleState {
+  /** faction -> 本场可用 SC 总数（按「能使用 SC 的人数」自动计算）。 */
+  sideUsable: Record<string, number>;
+}
+
 export interface CombatState {
   readonly id: string;
   readonly seed: string;
@@ -339,6 +345,8 @@ export interface CombatState {
   readonly mode: CombatMode;
   /** DP 模式专用的一轮状态；其他模式为 null。 */
   dp?: DpRoundState | null;
+  /** 千幻抄符卡战斗的每方 SC 池；仅 TOUHOU + 有符卡规则时非空。 */
+  spellcardBattle?: SpellcardBattleState | null;
   initiativeOrder: string[];
   activeIndex: number;
   tick: number;

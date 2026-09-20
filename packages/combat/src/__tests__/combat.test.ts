@@ -1037,3 +1037,48 @@ describe("持续型效果按行动轮次到期", () => {
   });
 });
 
+describe("符卡战斗 SC 池", () => {
+  function consume(state: CombatState, actor: CombatParticipantState, cardId: string, name: string): void {
+    forceReady(actor);
+    submitAction(state, {
+      actorId: actor.id,
+      kind: "SPELLCARD",
+      name,
+      spellCardId: cardId,
+      spellcardMode: "CONSUMPTION",
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+  }
+
+  it("一方 SC 池用完时无法再发动符卡", () => {
+    const { state, a } = makeCombat("spellcard-pool");
+    a.mp = 100;
+    state.spellcardBattle = { sideUsable: { PC: 1, BOSS: 0 } };
+    consume(state, a, "card-1", "符卡一");
+    expect(a.usedSpellCards).toContain("card-1");
+
+    consume(state, a, "card-2", "符卡二");
+    expect(a.usedSpellCards).not.toContain("card-2");
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_POOL_EMPTY")).toBe(true);
+  });
+
+  it("友方共用同一 SC 池", () => {
+    const { state, a, b } = makeCombat("spellcard-pool-shared");
+    a.mp = 100;
+    b.mp = 100;
+    state.spellcardBattle = { sideUsable: { PC: 1, BOSS: 0 } };
+    consume(state, a, "card-1", "符卡一");
+    consume(state, b, "card-b", "魔理沙符卡");
+    expect(b.usedSpellCards).not.toContain("card-b");
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_POOL_EMPTY")).toBe(true);
+  });
+
+  it("没有 SC 池信息时保持旧行为（不额外限制）", () => {
+    const { state, a } = makeCombat("spellcard-pool-legacy");
+    a.mp = 100;
+    consume(state, a, "card-1", "符卡一");
+    consume(state, a, "card-2", "符卡二");
+    expect(a.usedSpellCards).toContain("card-2");
+  });
+});

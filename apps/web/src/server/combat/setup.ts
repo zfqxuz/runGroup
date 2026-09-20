@@ -17,6 +17,8 @@ import {
   computeBaseSpeed,
   computeDerived,
   parseConditions,
+  spellcardBattleDeclarationRules,
+  spellcardSideUsableCount,
   type AttributeSet,
   type CompiledRulePack,
   type DerivedStats,
@@ -668,6 +670,36 @@ export async function createCombatRecord(
       }
     }
   }
+  // 千幻抄符卡战斗：按「能使用 SC 的人数」算出每一方本场可用 SC 总数。
+  if (pack.system === "TOUHOU" && pack.pack.spellcard !== undefined && characterIds.length > 0) {
+    const equippedSpellcards = await prisma.card.findMany({
+      where: {
+        characterId: { in: [...new Set(characterIds)] },
+        type: "SPELLCARD",
+        isEquipped: true,
+        system: "TOUHOU"
+      },
+      select: { characterId: true }
+    });
+    const usableCharacterIds = new Set(
+      equippedSpellcards
+        .map((card) => card.characterId)
+        .filter((id): id is string => typeof id === "string" && id.length > 0)
+    );
+    const rules = spellcardBattleDeclarationRules(pack.pack.spellcard);
+    const sideUsable: Record<string, number> = {};
+    for (const faction of ["ALLY", "ENEMY"]) {
+      const usableMembers = state.participants.filter(
+        (participant) =>
+          participant.faction === faction &&
+          participant.characterId !== null &&
+          usableCharacterIds.has(participant.characterId)
+      ).length;
+      sideUsable[faction] = spellcardSideUsableCount(usableMembers, rules);
+    }
+    state.spellcardBattle = { sideUsable };
+  }
+
   if (pack.combat.mode === "INITIATIVE") beginInitiativeRound(pack, state);
   else if (pack.combat.mode === "DP") beginDpRound(pack, state);
   else advanceToNextEvent(pack, state);

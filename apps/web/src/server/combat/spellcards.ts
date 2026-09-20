@@ -1,4 +1,4 @@
-import type { ActionSubmission, CombatParticipantState } from "@touhou/combat";
+import type { ActionSubmission, CombatParticipantState, CombatState } from "@touhou/combat";
 import type { CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
 import { SpellCardStatsSchema, activeCardEffects } from "@/shared/card";
@@ -88,13 +88,24 @@ export function prepareSpellcardAction(
   pack: CompiledRulePack,
   actor: CombatParticipantState,
   cards: readonly CombatSpellCardOption[],
-  action: ActionSubmission
+  action: ActionSubmission,
+  state?: CombatState
 ): PrepareSpellCardResult {
   if (pack.system !== "TOUHOU" || pack.pack.spellcard === undefined) {
     return { ok: false, error: "只有東方拓展房间可以使用符卡" };
   }
   if (actor.defeated) {
     return { ok: false, error: "施法者已退场" };
+  }
+  if (state?.spellcardBattle !== null && state?.spellcardBattle !== undefined) {
+    const side = actor.faction ?? "ALLY";
+    const cap = Math.max(0, Math.floor(state.spellcardBattle.sideUsable[side] ?? 0));
+    const used = state.participants
+      .filter((participant) => (participant.faction ?? "ALLY") === side)
+      .reduce((sum, participant) => sum + participant.usedSpellCards.length, 0);
+    if (used >= cap) {
+      return { ok: false, error: "本场一方的符卡已用完（" + used + "/" + cap + "）" };
+    }
   }
   const cardId = action.spellCardId;
   if (typeof cardId !== "string" || cardId.length === 0) {

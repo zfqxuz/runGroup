@@ -291,7 +291,11 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
    - `CombatBoard` 新增 DP 宣言面板、DP 行动面板（弹幕 / 射击 / 追击 / 近战 + 骰数 + 能力 / 锻炼）、
      应对窗口 DP 骰数与掩护目标选择。
    - 新增 web 回归脚本 `verify:dp-combat`。
-3. SC 宣言流程：DB 记录「章节内可用 / 已用 SC」，战斗创建时双方提交选牌，服务端按人数校验上限。
+3. SC 宣言流程（部分完成）：
+   - ✅ 每方 SC 池：`CombatState.spellcardBattle.sideUsable`，由 `setup.ts` 在创建战斗时按
+     「有装备 SC 的角色人数」用 `spellcardSideUsableCount()` 计算；引擎与
+     `prepareSpellcardAction` 在池用完时拦截（`SPELLCARD_POOL_EMPTY`）。
+   - ⏳ 战斗创建前由双方提交选牌（UI + 服务端上限校验）、DB 记录「章节内可用 / 已用 SC」。
 4. SC 完整规则：LSC、任意时机展开、符卡战胜负条件。
 
 ### 2.8 后续条目（未铺开）

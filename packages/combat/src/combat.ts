@@ -97,6 +97,7 @@ export function createCombat(init: CombatInit): CombatState {
     tickMs: init.tickMs,
     mode: init.mode ?? 'ATB',
     dp: (init.mode ?? 'ATB') === 'DP' ? { declared: {}, regenBonus: {}, acted: [] } : null,
+    spellcardBattle: null,
     initiativeOrder: [],
     activeIndex: 0,
     tick: 0,
@@ -2303,6 +2304,25 @@ function resolveSpellcard(
   const mpCost = Math.max(0, submission.mpCost ?? 0);
   const cardId = submission.spellCardId ?? null;
   const usedKey = cardId ?? name;
+
+  // 千幻抄 6.1.2：一方本场可用的 SC 总数有限，用完即无法再展开 / 消费。
+  if (ctx.pack.system === "TOUHOU" && state.spellcardBattle !== null && state.spellcardBattle !== undefined) {
+    const side = actor.faction ?? "ALLY";
+    const cap = Math.max(0, Math.floor(state.spellcardBattle.sideUsable[side] ?? 0));
+    const used = state.participants
+      .filter((participant) => (participant.faction ?? "ALLY") === side)
+      .reduce((sum, participant) => sum + participant.usedSpellCards.length, 0);
+    if (used >= cap) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: actor.id,
+        targetId: null,
+        text: (side === "ALLY" ? "我方" : "敌方") + "本场可用符卡已用完（" + used + "/" + cap + "），无法发动「" + name + "」",
+        data: { rollType: "SPELLCARD_POOL_EMPTY", side, used, cap }
+      });
+      return;
+    }
+  }
 
   if (rules.consumption.oncePerCombat === true && actor.usedSpellCards.includes(usedKey)) {
     pushLog(state, {

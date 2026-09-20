@@ -595,7 +595,7 @@ async function handleAction(
       return;
     }
     const cards = runtime.spellcardsByParticipant.get(actor.id) ?? [];
-    const prepared = prepareSpellcardAction(runtime.pack, actor, cards, action);
+    const prepared = prepareSpellcardAction(runtime.pack, actor, cards, action, runtime.state);
     if (prepared.ok === false) {
       ack({ ok: false, error: prepared.error });
       return;
