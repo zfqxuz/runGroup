@@ -162,7 +162,7 @@ async function main(): Promise<void> {
         name: "DP灵梦",
         race: "HUMAN",
         str: 50, con: 50, siz: 50, dex: 70, app: 60, int: 55, pow: 70, edu: 55, luck: 50,
-        skills: { DANMAKU: 80, DODGE: 60, MELEE: 55 }
+        skills: { DANMAKU: 80, DODGE: 100, MELEE: 55 }
       }
     });
     await prisma.roomCharacterEntry.create({
@@ -177,7 +177,7 @@ async function main(): Promise<void> {
         gameId: game.id,
         characterId: character.id,
         userId,
-        currentHp: Math.max(1, character.hp),
+        currentHp: character.hp > 1 ? character.hp : 100,
         currentMp: character.mp,
         currentSan: character.san,
         currentDp: character.dp
@@ -190,7 +190,7 @@ async function main(): Promise<void> {
       rarity: "UNCOMMON",
       race: "FAIRY",
       attributes: { str: 20, con: 25, siz: 20, dex: 65, app: 45, int: 25, pow: 55, edu: 5, luck: 60 },
-      skills: { DANMAKU: 60, DODGE: 45, FLIGHT: 60 },
+      skills: { DANMAKU: 0, DODGE: 45, FLIGHT: 60 },
       maxHp: 50,
       maxMp: 220,
       maxSan: 55,
@@ -297,8 +297,49 @@ async function main(): Promise<void> {
     assert(persistedPc.dp === dpBefore - 3, "PC 应消耗 3 DP，实际 " + persistedPc.dp + " / 原 " + dpBefore);
     assert(resolved.view.participants.find((item) => item.id === pc.id)?.dp === dpBefore - 3, "视图 DP 未同步");
 
+    // 第二段：轮到 NPC 向 PC 射击，PC 用 3D DP 回避并获得擦弹。
+    assert(
+      resolved.view.dp?.currentActorId === enemy.id,
+      "第一段结算后应轮到 NPC 行动，实际 " + String(resolved.view.dp?.currentActorId)
+    );
+    const pcReaction = waitEvent<CombatReactionRequest>(connected, "combat:reaction-request");
+    const enemyAttack = await emitAck<Ack>(connected, "combat:action", {
+      combatId,
+      actorId: enemy.id,
+      action: {
+        kind: "DANMAKU",
+        dpAction: "RANGED",
+        targetId: pc.id,
+        skill: "DANMAKU",
+        dpDice: 1,
+        damage: "10"
+      }
+    });
+    assert(enemyAttack.ok === true, enemyAttack.error ?? "NPC 射击提交失败");
+    const pcRequest = await pcReaction;
+    assert(pcRequest.targetId === pc.id, "应对目标应为 PC");
+    const round2 = waitForView(connected, combatId, (update) => update.view.phase === "DP_DECLARATION");
+    const dodgeAck = await emitAck<Ack>(connected, "combat:reaction", {
+      combatId,
+      targetId: pc.id,
+      reaction: { type: "DODGE", dpDice: 3 }
+    });
+    assert(dodgeAck.ok === true, dodgeAck.error ?? "PC 回避提交失败");
+    const round2Update = await round2;
+    const pcAfterDodge = round2Update.view.participants.find((item) => item.id === pc.id);
+    assert(pcAfterDodge !== undefined, "第二轮视图缺少 PC");
+    assert(pcAfterDodge.hp === 100, "PC 回避成功不应受伤，实际 HP " + String(pcAfterDodge.hp));
+    assert((pcAfterDodge.grazePoints ?? 0) >= 3, "PC 回避成功应获得擦弹，实际 " + String(pcAfterDodge.grazePoints));
+
+    // 快照恢复：第二轮宣言阶段应已持久化。
+    clearCombatRuntime(combatId);
+    const persistedRound2 = await loadCombatRuntime(combatId);
+    assert(persistedRound2 !== null, "第二轮快照缺失");
+    assert(persistedRound2.state.phase === "DP_DECLARATION", "第二轮快照应为宣言阶段");
+    assert(persistedRound2.state.round === 2, "第二轮快照 round 应为 2");
+
     console.log(
-      "PASS DP 战斗 E2E：宣言 → 行动 → 应对 → 弹幕结算 → 快照恢复（战斗 " + combatId + "）"
+      "PASS DP 战斗 E2E：宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
     );
   } finally {
     if (socket !== null) socket.close();
