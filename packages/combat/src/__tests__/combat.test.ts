@@ -19,6 +19,7 @@ import {
   reactionTargetIdsForAction,
   recoverTouhouLscLimits,
   resolvePending,
+  resolveSpellcardImmediate,
   submitAction,
   type CombatParticipantState,
   type CombatState
@@ -1301,5 +1302,53 @@ describe("LSC 30 分钟后恢复 DP 上限", () => {
     const recovered = recoverTouhouLscLimits(touhou, state, Date.now());
     expect(recovered).toEqual([]);
     expect(a.maxDp).toBe(0);
+  });
+});
+
+describe("任意时机展开（4.9）", () => {
+  it("反应窗口即时展开的 SC 会先承受本次攻击伤害", () => {
+    const { state, a, npc } = makeCombat("immediate-sc");
+    a.mp = 100;
+    resolveSpellcardImmediate(touhou, state, "a", {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "即时展开",
+      spellcardMode: "DECLARATION",
+      declarationHp: 10,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    expect(a.declaration).not.toBeNull();
+    expect(a.usedSpellCards).toContain("即时展开");
+
+    forceReady(npc);
+    submitAction(state, {
+      actorId: "npc",
+      kind: "DANMAKU",
+      targetId: "a",
+      skill: "DANMAKU",
+      damage: "5"
+    });
+    resolvePending(touhou, state, { a: { type: "PASS" } });
+    expect(a.hp).toBe(a.maxHp);
+    expect(a.declaration?.hp).toBe(5);
+  });
+
+  it("池上限 / 未宣言等校验与普通符卡一致", () => {
+    const { state, a } = makeCombat("immediate-sc-limited");
+    a.mp = 100;
+    state.spellcardBattle = { sideUsable: { PC: 1, BOSS: 0 }, declaredCardIds: { PC: ["card-ok"] } };
+    resolveSpellcardImmediate(touhou, state, "a", {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "未宣言即时卡",
+      spellCardId: "card-no",
+      spellcardMode: "DECLARATION",
+      declarationHp: 10,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    expect(a.declaration).toBeNull();
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_NOT_DECLARED")).toBe(true);
   });
 });

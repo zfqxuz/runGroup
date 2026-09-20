@@ -24,6 +24,7 @@ import {
   resolveChaseAttack,
   thrownRangeFeet,
   resolveDpTurn,
+  resolveSpellcardImmediate,
   resolveInitiativeTurn,
   resolvePending,
   setInitiativeOrder,
@@ -1363,6 +1364,74 @@ async function handleDpDeclare(
   ack({ ok: true });
 }
 
+async function handleImmediateSpellcard(
+  io: SocketServer,
+  socket: Socket,
+  payload: unknown,
+  ack: AckCallback<Ack>
+): Promise<void> {
+  const userId = userIdOf(socket);
+  const input = (payload ?? {}) as { combatId?: unknown; actorId?: unknown; spellCardId?: unknown; targetId?: unknown };
+  if (userId === null || typeof input.combatId !== "string") {
+    ack({ ok: false, error: "参数不合法" });
+    return;
+  }
+  const runtime = await loadCombatRuntime(input.combatId);
+  if (runtime === null) {
+    ack({ ok: false, error: "战斗不存在" });
+    return;
+  }
+  if (runtime.pack.system !== "TOUHOU" || runtime.pack.combat.mode !== "DP") {
+    ack({ ok: false, error: "只有东方 DP 战斗支持任意时机展开符卡" });
+    return;
+  }
+  const actorId = typeof input.actorId === "string" ? input.actorId : null;
+  if (actorId === null || canControl(runtime, userId, actorId) === false) {
+    ack({ ok: false, error: "你不能操控这个单位" });
+    return;
+  }
+  if (typeof input.spellCardId !== "string" || input.spellCardId.length === 0) {
+    ack({ ok: false, error: "请选择要展开的符卡" });
+    return;
+  }
+  if (runtime.pendingReactions.has(actorId) === false) {
+    ack({ ok: false, error: "当前不在该单位的应对窗口" });
+    return;
+  }
+  const actor = findParticipant(runtime.state, actorId);
+  if (actor === undefined || actor.defeated) {
+    ack({ ok: false, error: "单位不在场" });
+    return;
+  }
+  const cards = runtime.spellcardsByParticipant.get(actorId) ?? [];
+  const prepared = prepareSpellcardAction(
+    runtime.pack,
+    actor,
+    cards,
+    {
+      actorId,
+      kind: "SPELLCARD",
+      spellCardId: input.spellCardId,
+      spellcardMode: "DECLARATION",
+      targetId: typeof input.targetId === "string" ? input.targetId : actorId
+    },
+    runtime.state
+  );
+  if (prepared.ok === false) {
+    ack({ ok: false, error: prepared.error });
+    return;
+  }
+  resolveSpellcardImmediate(runtime.pack, runtime.state, actorId, prepared.action);
+  // 展开后按「不应对」继续结算本次攻击；伤害会先由新展开的 SC 承受。
+  runtime.pendingReactions.delete(actorId);
+  runtime.reactions[actorId] = { type: "PASS" };
+  const resolved = await tryResolveCombat(io, runtime);
+  if (resolved === false) {
+    await persistAndBroadcast(io, runtime);
+  }
+  ack({ ok: true });
+}
+
 export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   socket.on("combat:join", (combatId: unknown, ack: AckCallback<CombatJoinAck>) => {
     void handleJoin(socket, combatId, ack);
@@ -1375,6 +1444,9 @@ export function registerCombatHandlers(io: SocketServer, socket: Socket): void {
   });
   socket.on("combat:dp-declare", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleDpDeclare(io, socket, payload, ack);
+  });
+  socket.on("combat:immediate-spellcard", (payload: unknown, ack: AckCallback<Ack>) => {
+    void handleImmediateSpellcard(io, socket, payload, ack);
   });
   socket.on("combat:chase-move", (payload: unknown, ack: AckCallback<Ack>) => {
     void handleChaseMove(io, socket, payload, ack);

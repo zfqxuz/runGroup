@@ -48,6 +48,7 @@ export {
   reactionTargetIdsForAction,
   resolvePending,
   resolveRoundRaceAbilities,
+  resolveSpellcardImmediate,
   submitAction
 } from "./combat";
 export type {

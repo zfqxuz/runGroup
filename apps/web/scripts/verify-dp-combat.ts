@@ -25,6 +25,7 @@ import {
   declareDp,
   reactionTargetIdsForAction,
   resolveDpTurn,
+  resolveSpellcardImmediate,
   type CombatParticipantState,
   type CombatState
 } from "@touhou/combat";
@@ -138,13 +139,28 @@ function main(): void {
   ensure(state.pending["actor"] === undefined, "行动后应清空 pending");
   ensure(state.phase === "AWAITING_ACTION" || state.phase === "DP_DECLARATION", "结算后应推进回合");
 
-  // 5. 应对 / 抵抗选项
+  // 5. 任意时机展开：反应窗口即时展开符卡（4.9）
+  const immediateTarget = buildUnit(state, "immediate", "BOSS", "NPC", pack, { DODGE: 0 });
+  immediateTarget.mp = 100;
+  resolveSpellcardImmediate(pack, state, immediateTarget.id, {
+    actorId: immediateTarget.id,
+    kind: "SPELLCARD",
+    name: "即时展开验证",
+    spellcardMode: "DECLARATION",
+    declarationHp: 10,
+    declarationDurationTicks: 240,
+    mpCost: 0
+  });
+  ensure(immediateTarget.declaration !== null, "即时展开应建立 declaration");
+  ensure(immediateTarget.usedSpellCards.includes("即时展开验证"), "即时展开应记录已使用");
+
+  // 6. 应对 / 抵抗选项
   const dpOptions = dpReactionTypesForParticipant(false);
   ensure(dpOptions.includes("COVER") && dpOptions.includes("DODGE"), "DP 应对应含掩护与回避");
   const resistOptions = dpReactionTypesForParticipant(true);
   ensure(resistOptions.includes("RESIST"), "DP 能力应对应含抵抗");
 
-  console.log("PASS DP 战斗接线：宣言 → 行动 → 应对 → 结算，含掩护候选与行动校验");
+  console.log("PASS DP 战斗接线：宣言 → 行动 → 应对 → 任意时机展开 → 结算，含掩护候选与行动校验");
 }
 
 main();

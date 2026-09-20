@@ -156,6 +156,14 @@ export interface CombatReactionPayload {
   readonly coverTargetId?: string;
 }
 
+export interface CombatImmediateSpellcardPayload {
+  readonly combatId: string;
+  /** 展开者（必须是当前应对窗口的目标单位）。 */
+  readonly actorId: string;
+  readonly spellCardId: string;
+  readonly targetId?: string | null;
+}
+
 export interface CombatDpDeclarePayload {
   readonly combatId: string;
   readonly participantId?: string;

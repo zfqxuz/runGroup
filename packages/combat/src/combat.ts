@@ -3460,6 +3460,31 @@ function rollAbilityResist(
 }
 
 /**
+ * 千幻抄 4.9：在反应窗口等任意时机即时展开符卡。
+ *
+ * 与普通 SPELLCARD 行动共用 resolveSpellcard 的校验与结算（含宣言限制 / 池上限），
+ * 但不占用行动者的回合行动；调用方负责把它接在反应窗口里。
+ */
+export function resolveSpellcardImmediate(
+  pack: CompiledRulePack,
+  state: CombatState,
+  actorId: string,
+  submission: ActionSubmission
+): void {
+  const actor = findParticipant(state, actorId);
+  if (actor === undefined || actor.defeated) return;
+  const ctx: ResolveContext = {
+    pack,
+    state,
+    reactions: {},
+    queue: [],
+    cancelled: new Set<string>(),
+    coverCache: new Map()
+  };
+  resolveSpellcard(ctx, actor, { ...submission, actorId });
+}
+
+/**
  * 千幻抄能力发动。
  *
  * 与 resolveMagic 的区别：需要已习得等级、掷发动判定、失败也消耗灵力、可被抵抗；

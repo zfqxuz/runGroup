@@ -313,7 +313,11 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
      日志 `LSC_DECLARED` / `LSC_BROKEN`；`CombatBoard` 增加 LSC 勾选。
      30 分钟后 `recoverTouhouLscLimits()` 恢复 DP 上限与初始值（回合开始 / 载入检查，
      日志 `LSC_DP_RECOVERED`）。
-   - ⏳ 任意时机展开（4.9）、符卡战胜负条件（4.16）、主动放弃 SC、30 分钟后 DP 上限恢复。
+   - ✅ 4.9 任意时机展开：`resolveSpellcardImmediate()` 复用符卡校验与结算；
+     socket 新增 `combat:immediate-spellcard`（只允许当前应对窗口的目标），
+     展开后按 PASS 继续结算，攻击伤害先由新展开的 SC 承受；
+     `CombatBoard` 应对窗口列出可展开的符卡按钮。
+   - ⏳ 符卡战胜负条件（4.16）、DB 跨战斗「章节内可用 / 已用 SC」（4.17）。
 
 ### 2.8 后续条目（未铺开）
 

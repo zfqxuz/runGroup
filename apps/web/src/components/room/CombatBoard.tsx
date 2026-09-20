@@ -589,6 +589,22 @@ export default function CombatBoard(props: Props) {
     });
   }
 
+  function emitImmediateSpellcard(actorIdValue: string, cardId: string, targetIdValue: string | null): void {
+    const socket = socketRef.current;
+    if (socket === null || socket.connected === false) {
+      setError("连接已断开，请刷新后重试。");
+      return;
+    }
+    setError(null);
+    socket.emit(
+      "combat:immediate-spellcard",
+      { combatId: props.combatId, actorId: actorIdValue, spellCardId: cardId, targetId: targetIdValue },
+      (result: Ack) => {
+        if (result.ok === false) setError(result.error ?? "展开符卡失败");
+      }
+    );
+  }
+
   function emitDpDeclare(participantIdValue: string, value: number): void {
     const socket = socketRef.current;
     if (socket === null || socket.connected === false) {
@@ -1359,6 +1375,28 @@ export default function CombatBoard(props: Props) {
                         提交应对
                       </button>
                     </div>
+                    {view?.mode === "DP" ? (
+                      <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-white/10 pt-2">
+                        <span className="text-[11px] text-white/40">任意时机展开：</span>
+                        {(props.spellCardsByParticipant[pending.targetId] ?? [])
+                          .filter((card) => card.mode === "DECLARATION")
+                          .map((card) => (
+                            <button
+                              key={card.cardId}
+                              type="button"
+                              onClick={() => emitImmediateSpellcard(pending.targetId, card.cardId, pending.actorId)}
+                              className="rounded border border-purple-400/40 px-2 py-1 text-[11px] text-purple-200 transition hover:bg-purple-400/10"
+                            >
+                              {card.name}
+                            </button>
+                          ))}
+                        {(props.spellCardsByParticipant[pending.targetId] ?? []).some(
+                          (card) => card.mode === "DECLARATION"
+                        ) ? null : (
+                          <span className="text-[11px] text-white/30">没有可展开的符卡</span>
+                        )}
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
