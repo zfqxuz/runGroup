@@ -9,6 +9,8 @@ import KpToolsPanel from "@/components/room/KpToolsPanel";
 import RoomRealtimeRefresh from "@/components/room/RoomRealtimeRefresh";
 import RoomConfigPanel from "@/components/room/RoomConfigPanel";
 import RoomDpEconomyPanel, { type DpEconomyCharacter } from "@/components/room/RoomDpEconomyPanel";
+import TouhouGrowthPanel from "@/components/room/TouhouGrowthPanel";
+import { readTouhouGrowth } from "@/server/game/touhou-growth";
 import {
   selectRoomModuleAction,
   setActiveCharacterAction,
@@ -35,6 +37,21 @@ interface StoredContent {
   dice?: ChatMessage["dice"];
 }
 
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && Array.isArray(value) === false
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function numberRecord(value: unknown): Record<string, number> {
+  const raw = jsonRecord(value);
+  const output: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (typeof entry === "number" && Number.isFinite(entry)) output[key] = entry;
+  }
+  return output;
+}
+
 const ADVANCEMENT_KIND_LABELS: Record<string, string> = {
   ATTRIBUTE: "属性",
   SKILL: "技能",
@@ -56,6 +73,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     clues?: string;
     encounters?: string;
     magic?: string;
+    growth?: string;
   } }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -244,6 +262,29 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     : activeCharacter.character.advancements.map((item) =>
         advancementView({ ...item, character: { name: activeCharacter.character.name } })
       );
+  const growthCharacters =
+    room.system === "TOUHOU" && activeCharacter !== undefined
+      ? [
+          {
+            id: activeCharacter.character.id,
+            name: activeCharacter.character.name,
+            attributes: {
+              str: activeCharacter.character.str,
+              con: activeCharacter.character.con,
+              siz: activeCharacter.character.siz,
+              dex: activeCharacter.character.dex,
+              app: activeCharacter.character.app,
+              int: activeCharacter.character.int,
+              pow: activeCharacter.character.pow,
+              edu: activeCharacter.character.edu,
+              luck: activeCharacter.character.luck
+            },
+            skills: numberRecord(activeCharacter.character.skills),
+            abilities: numberRecord(jsonRecord(activeCharacter.character.backstory).abilities),
+            points: readTouhouGrowth(activeCharacter.character.sourceData)
+          }
+        ]
+      : [];
   const canStart = allReady && allPlayersHaveApprovedCharacter && presetReady;
 
   const cardEntries = await prisma.roomCardEntry.findMany({
@@ -776,6 +817,19 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
             还没有通过审核的角色。先新建角色并等待 KP 审核。
           </p>
         ) : null}
+        {growthCharacters.length === 0 ? null : (
+          <div className="mt-4">
+            <TouhouGrowthPanel
+              roomId={room.id}
+              returnTo={"/rooms/" + room.id + "/prepare"}
+              isKP={isKP}
+              rules={{ growthRanks: pack.abilities.growthRanks, categories: pack.abilities.categories }}
+              characters={growthCharacters}
+              notice={searchParams?.growth ?? null}
+              error={searchParams?.error ?? null}
+            />
+          </div>
+        )}
         {activeAdvancements.length === 0 ? null : (
           <div className="mt-4 rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
             <p className="text-[11px] font-medium text-white/55">当前角色最近成长</p>

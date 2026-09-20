@@ -224,8 +224,15 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
 - `touhouHpCoefficientAfter` / `touhouHpFromCoefficient`：HP 系数从 ×4 起累计，HP = ceil(10 + 耐久×系数)。
 - `touhouYoujutsuCountCap` / `touhouYoujutsuCountIssue`：妖术总数上限 = 最高级 Lv+2。
 
-**本批未覆盖**：成长流程的 UI / DB 接线、术式版神术（3/6/9…）与妖弹化妖术（2/3/5…）的变体消费表、
-HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品确认）。
+**本批未覆盖**：术式版神术（3/6/9…）与妖弹化妖术（2/3/5…）的变体消费表。
+
+**后续已补（本批之后）**：
+- ✅ 成长 UI / DB 接线：`Character.sourceData.touhouGrowth` 记录成长点池，
+  KP 在结束页按 A-F 分配四类成长量，玩家在准备页消费（特性值 / 技能 / 能力），
+  写入 `CharacterAdvancement`；妖术 / 锻炼单项 60% 限制生效。
+- ✅ HP 系数接入 `maxHp`：`computeDerived` 支持 `constOverrides.HP_COEFFICIENT`，
+  角色按 `sourceData.touhouGrowth.hpCoefficient`（开卡 4）计算最大 HP；
+  成长 HP 系数时同步更新 `maxHp` / `hp`。
 
 ### 2.7 已完成（第七批）：千幻抄 HP/宣言公式 + DP 模式核心
 

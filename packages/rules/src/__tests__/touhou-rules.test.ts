@@ -125,3 +125,23 @@ describe("千幻抄 HP 公式与符卡宣言（2.3.1 / 6.1.2）", () => {
     expect(spellcardSideUsableCount(0, rules)).toBe(0);
   });
 });
+
+describe("派生常量覆盖（千幻抄 HP 系数成长）", () => {
+  const compiled = compileParsedRulePack(resolveRulePack("touhou-ext", builtinRegistry()));
+  it("constOverrides.HP_COEFFICIENT 只影响本次计算", () => {
+    const attrs: AttributeSet = {
+      str: 50, con: 50, siz: 60, dex: 55,
+      app: 50, int: 60, pow: 40, edu: 70, luck: 45
+    };
+    const base = computeDerived(compiled, { attributes: attrs });
+    expect(base.derived.maxHp).toBe(210);
+    const grown = computeDerived(compiled, {
+      attributes: attrs,
+      constOverrides: { HP_COEFFICIENT: 5 }
+    });
+    // ceil(10 + 50 × 5) = 260
+    expect(grown.derived.maxHp).toBe(260);
+    // 未覆盖的调用方不受影响
+    expect(computeDerived(compiled, { attributes: attrs }).derived.maxHp).toBe(210);
+  });
+});

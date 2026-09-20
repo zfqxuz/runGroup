@@ -266,6 +266,15 @@ function numberRecordOf(value: unknown): Record<string, number> {
 }
 
 /** 千幻抄能力等级：优先读角色 sourceData.abilities，其次 backstory.abilities。 */
+/** 千幻抄 HP 系数：优先读成长记录 sourceData.touhouGrowth.hpCoefficient，缺省 4。 */
+export function characterHpCoefficientOf(character: Character): number {
+  const sourceData = (character.sourceData ?? {}) as Record<string, unknown>;
+  const growth = sourceData.touhouGrowth;
+  if (growth === null || typeof growth !== "object" || Array.isArray(growth)) return 4;
+  const value = (growth as Record<string, unknown>).hpCoefficient;
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : 4;
+}
+
 export function characterAbilityLevelsOf(character: Character): Record<string, number> {
   // 车卡编辑器把能力写进 backstory.abilities；导入角色可能只有 sourceData.abilities。
   // backstory 优先，保证编辑器的修改生效。
@@ -303,10 +312,12 @@ function buildCharacterInit(
     luck: character.luck
   };
   const skills = buildEffectiveSkills(pack, character);
+  const hpCoefficient = pack.system === "TOUHOU" ? characterHpCoefficientOf(character) : undefined;
   const outcome = computeDerived(pack, {
     attributes,
     race: character.race ?? null,
-    skills
+    skills,
+    constOverrides: hpCoefficient === undefined ? undefined : { HP_COEFFICIENT: hpCoefficient }
   });
   const vars: Record<string, number> = { ...outcome.attributes, ...outcome.derived };
   return {

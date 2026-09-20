@@ -20,6 +20,8 @@ export interface DerivedInput {
    * 未传时默认视为 0，保证旧调用方仍可工作。
    */
   readonly skills?: Readonly<Record<string, number>>;
+  /** 只对本次派生计算生效的常量覆盖（例如千幻抄成长后的 HP_COEFFICIENT）。 */
+  readonly constOverrides?: Readonly<Record<string, number>>;
 }
 
 export interface DerivedOutcome {
@@ -57,6 +59,13 @@ export function computeDerived(
   pack: CompiledRulePack,
   input: DerivedInput
 ): DerivedOutcome {
+  const effectivePack: CompiledRulePack =
+    input.constOverrides === undefined
+      ? pack
+      : {
+          ...pack,
+          pack: { ...pack.pack, const: { ...pack.pack.const, ...input.constOverrides } }
+        };
   const raceKey = input.race ?? null;
   let race: CompiledRace | null = null;
 
@@ -75,7 +84,7 @@ export function computeDerived(
 
   if (race !== null) {
     for (const [key, expression] of Object.entries(race.attrMods)) {
-      attrs[key] = (attrs[key] ?? 0) + evalIn(pack, expression, attrs);
+      attrs[key] = (attrs[key] ?? 0) + evalIn(effectivePack, expression, attrs);
     }
   }
 
@@ -88,20 +97,20 @@ export function computeDerived(
   for (const key of pack.derivedOrder) {
     const expression = pack.derived[key];
     if (expression === undefined) continue;
-    derived[key] = evalIn(pack, expression, { ...skillVars, ...attrs, ...derived });
+    derived[key] = evalIn(effectivePack, expression, { ...skillVars, ...attrs, ...derived });
   }
 
   if (race !== null) {
     const base: Record<string, number> = { ...skillVars, ...attrs, ...derived };
     for (const [key, expression] of Object.entries(race.derivedOverrides)) {
-      derived[key] = (derived[key] ?? 0) + evalIn(pack, expression, base);
+      derived[key] = (derived[key] ?? 0) + evalIn(effectivePack, expression, base);
     }
   }
 
   const skillBonuses: Record<string, number> = {};
   if (race !== null) {
     for (const [key, expression] of Object.entries(race.skillBonuses)) {
-      skillBonuses[key] = evalIn(pack, expression, attrs);
+      skillBonuses[key] = evalIn(effectivePack, expression, attrs);
     }
   }
 

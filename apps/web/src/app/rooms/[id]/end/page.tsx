@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { ATTRIBUTE_KEYS } from "@touhou/rules";
 import EndGamePanel from "@/components/room/EndGamePanel";
+import TouhouGrowthPanel from "@/components/room/TouhouGrowthPanel";
+import { readTouhouGrowth } from "@/server/game/touhou-growth";
 import { cancelGrowthCheckAction, resolveGrowthCheckAction, revertAdvancementAction } from "@/server/actions/advancement";
 import { auth } from "@/server/auth";
 import { buildEffectiveSkills } from "@/server/character/skills";
@@ -34,6 +36,21 @@ const ATTRIBUTE_LABELS: Record<string, string> = {
   edu: "教育",
   luck: "幸运"
 };
+
+function jsonRecord(value: unknown): Record<string, unknown> {
+  return value !== null && typeof value === "object" && Array.isArray(value) === false
+    ? (value as Record<string, unknown>)
+    : {};
+}
+
+function numberRecord(value: unknown): Record<string, number> {
+  const raw = jsonRecord(value);
+  const output: Record<string, number> = {};
+  for (const [key, entry] of Object.entries(raw)) {
+    if (typeof entry === "number" && Number.isFinite(entry)) output[key] = entry;
+  }
+  return output;
+}
 
 function deltaText(delta: number | null): string {
   if (delta === null) return "";
@@ -146,6 +163,24 @@ export default async function EndGamePage({
       pendingChecks: checks
     };
   });
+
+  const growthCharacters =
+    room.system === "TOUHOU"
+      ? (activeGame?.characters ?? []).map((item) => {
+          const character = item.character;
+          return {
+            id: character.id,
+            name: character.name,
+            attributes: {
+              str: character.str, con: character.con, siz: character.siz, dex: character.dex,
+              app: character.app, int: character.int, pow: character.pow, edu: character.edu, luck: character.luck
+            },
+            skills: numberRecord(character.skills),
+            abilities: numberRecord(jsonRecord(character.backstory).abilities),
+            points: readTouhouGrowth(character.sourceData)
+          };
+        })
+      : [];
 
   const characters = previews.map((item) => ({
     id: item.id,
@@ -369,6 +404,18 @@ export default async function EndGamePage({
           ))
         )}
       </section>
+
+      {growthCharacters.length === 0 ? null : (
+        <TouhouGrowthPanel
+          roomId={room.id}
+          returnTo={"/rooms/" + room.id + "/end"}
+          isKP
+          rules={{ growthRanks: pack.compiled.pack.abilities.growthRanks, categories: pack.compiled.pack.abilities.categories }}
+          characters={growthCharacters}
+          notice={searchParams?.growth ?? null}
+          error={searchParams?.error ?? null}
+        />
+      )}
 
       {advancements.length === 0 ? null : (
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
