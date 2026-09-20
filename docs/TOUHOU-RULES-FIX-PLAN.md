@@ -269,7 +269,10 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
    - ✅ 千幻抄伤害公式（规则层 `packages/rules/src/touhou-dp.ts`）：射击/能力 `能力 LvD+特性`、
      追击 `能力 Lv÷2 D+特性`、近战 `{身体}+锻炼 LvD+武器 Lv`；submission 提供
      `damageAbilityId` / `damageTrainingId` / `damageWeaponSkill` 时启用，否则回退卡面 damage。
-   - ⏳ 掩护 / 身代（前卫、一回合一次、替他人承受伤害）。
+   - ✅ 掩护 / 身代：队友声明 `COVER` + `coverTargetId`，掷 `{感觉}+〈回避〉+ND6`（`coverPerDie`×骰数）
+     对抗攻击达成值；成功由掩护者代替承受伤害，失败原目标无减伤承受；同一掩护者一轮一次
+     （`coverUsedThisRound`，`beginDpRound` 重置）。作用于射击 / 追击 / 近战；能力伤害走抵抗流程。
+     前卫位置暂由 KP / 后续位置模型约束。
 2. ⏳ 接线：`setup.ts` / `socket/combat.ts` 增加 DP 分支（回合一 → 宣言 → 逐个行动 →
    反应窗口 → 轮转），并把 TOUHOU 的 `combat.mode` 切到 `"DP"`、迁移现有东方战斗测试。
 3. SC 宣言流程：DB 记录「章节内可用 / 已用 SC」，战斗创建时双方提交选牌，服务端按人数校验上限。

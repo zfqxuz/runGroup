@@ -508,6 +508,8 @@ export const DpActionCostsSchema = z.object({
   abilityPerDie: z.number().int().nonnegative().default(1),
   /** 抵抗：每颗判定骰的 DP 消耗。 */
   resistPerDie: z.number().int().nonnegative().default(1),
+  /** 掩护 / 身代：每颗判定骰的 DP 消耗。 */
+  coverPerDie: z.number().int().nonnegative().default(1),
   /** 抵抗：一次最多可用的 DP 骰。 */
   resistMaxDice: z.number().int().nonnegative().default(3)
 });

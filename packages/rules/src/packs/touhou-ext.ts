@@ -467,6 +467,7 @@ TOUHOU_EXT.dp = {
     defendPerDie: 1,
     abilityPerDie: 1,
     resistPerDie: 1,
+    coverPerDie: 1,
     resistMaxDice: 3
   }
 };

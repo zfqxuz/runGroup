@@ -145,6 +145,8 @@ export interface CombatParticipantState {
   disarmed?: boolean;
   /** 本轮已经进行过的应对次数（寡不敌众）。 */
   reactionsThisRound?: number;
+  /** DP 掩护：本轮是否已经掩护过他人（前卫一回合一次）。 */
+  coverUsedThisRound?: boolean;
   /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
   initiativeMod?: number;
 }

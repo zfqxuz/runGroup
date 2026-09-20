@@ -63,6 +63,7 @@ export function beginDpRound(pack: CompiledRulePack, state: CombatState): void {
       });
     }
     participant.reactionsThisRound = 0;
+    participant.coverUsedThisRound = false;
     participant.isReady = false;
   }
   state.phase = "DP_DECLARATION";

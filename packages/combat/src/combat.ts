@@ -445,6 +445,8 @@ export interface DefenseReaction {
   readonly skill?: string;
   /** DP 模式防御行动消费的骰数。 */
   readonly dpDice?: number;
+  /** DP 掩护 / 身代：本次掩护的队友 id。 */
+  readonly coverTargetId?: string;
   /** COC7 反击成功时反击者对攻击者使用的武器伤害表达式（由服务端按装备解析）。 */
   readonly damage?: string;
   readonly weaponName?: string;
@@ -3764,6 +3766,64 @@ function resolveDpDefense(
   return { success, reduction: 0 };
 }
 
+interface DpCoverOutcome {
+  readonly target: CombatParticipantState;
+  readonly reduction: number;
+}
+
+/**
+ * DP 掩护 / 身代：队友声明 COVER 并指定 coverTargetId。
+ *
+ * {感觉}+〈回避〉+ND6 对抗攻击达成值：成功由掩护者代替承受伤害，失败则原目标无减伤承受。
+ * 同一掩护者一轮只能掩护一次（前卫规则由 KP / 后续位置模型约束）；DP 不足则无法掩护。
+ */
+function resolveDpCover(
+  ctx: ResolveContext,
+  attacker: CombatParticipantState,
+  target: CombatParticipantState,
+  attackAchievement: number,
+  salt: string
+): DpCoverOutcome | null {
+  const state = ctx.state;
+  if (state.mode !== "DP") return null;
+  const costs = ctx.pack.pack.dp.actionCosts;
+  const perDie = Math.max(0, Math.floor(costs.coverPerDie));
+  const maxDice = ctx.pack.pack.dp.maxDicePerCheck;
+  for (const [covererId, reaction] of Object.entries(ctx.reactions)) {
+    if (reaction.type !== "COVER" || reaction.coverTargetId !== target.id) continue;
+    const coverer = findParticipant(state, covererId);
+    if (coverer === undefined || coverer.defeated || coverer.id === target.id) continue;
+    if (coverer.faction !== target.faction) continue;
+    if (coverer.coverUsedThisRound === true) continue;
+    const dice = clampTouhouDpDice(reaction.dpDice ?? 1, maxDice);
+    if (spendDp(ctx, coverer, perDie * dice, "掩护 " + dice + "D") === false) continue;
+    coverer.coverUsedThisRound = true;
+    const roll = dpRoll(ctx.pack, state, coverer, "dex", reaction.skill ?? "DODGE", dice, salt + ":" + coverer.id);
+    const success = roll.achievement >= attackAchievement;
+    pushLog(state, {
+      kind: "CHECK",
+      actorId: coverer.id,
+      targetId: attacker.id,
+      text:
+        coverer.name + " 掩护 " + target.name + "：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " + roll.achievement +
+        " / 攻击达成 " + attackAchievement + " → " + (success ? "代替承受伤害" : "掩护失败，原目标无减伤承受"),
+      data: {
+        rollType: "DP_COVER",
+        dice,
+        roll: roll.roll,
+        base: roll.base,
+        achievement: roll.achievement,
+        attackAchievement,
+        success,
+        coverTargetId: target.id,
+        attackerId: attacker.id
+      }
+    });
+    return success ? { target: coverer, reduction: 0 } : { target, reduction: 0 };
+  }
+  return null;
+}
+
 /** DP 射击：消费判定骰 DP，{特性值}+〈射击/射击武器〉+N D6 对抗目标应对。 */
 function resolveDpRangedAttack(
   ctx: ResolveContext,
@@ -3787,17 +3847,25 @@ function resolveDpRangedAttack(
       actor.name + " 射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attack.achievement,
     data: { rollType: "DP_RANGED_ATTACK", dice, roll: attack.roll, base: attack.base, achievement: attack.achievement, skill: skillId, attribute: attributeKey }
   });
-  const reaction = reactionFor(ctx, defender.id);
-  const defense = resolveDpDefense(ctx, defender, reaction, attack.achievement);
-  if (defense.success) {
-    pushLog(state, {
-      kind: "ACTION",
-      actorId: actor.id,
-      targetId: defender.id,
-      text: defender.name + " 成功应对，「" + (submission.name ?? skillId) + "」未命中",
-      data: { rollType: "DP_RANGED_MISS", defense: reaction.type }
-    });
-    return;
+  const cover = resolveDpCover(ctx, actor, defender, attack.achievement, "dp-ranged-cover:" + actor.id + ":" + defender.id);
+  let damageTarget = defender;
+  let reduction = 0;
+  if (cover === null) {
+    const reaction = reactionFor(ctx, defender.id);
+    const defense = resolveDpDefense(ctx, defender, reaction, attack.achievement);
+    if (defense.success) {
+      pushLog(state, {
+        kind: "ACTION",
+        actorId: actor.id,
+        targetId: defender.id,
+        text: defender.name + " 成功应对，「" + (submission.name ?? skillId) + "」未命中",
+        data: { rollType: "DP_RANGED_MISS", defense: reaction.type }
+      });
+      return;
+    }
+    reduction = defense.reduction;
+  } else {
+    damageTarget = cover.target;
   }
   const damageExpression = expandDamageBonus(
     dpAttackDamageExpression(ctx.pack, actor, submission, "RANGED"),
@@ -3809,19 +3877,19 @@ function resolveDpRangedAttack(
   } catch {
     rolled = 0;
   }
-  const total = Math.max(0, rolled - defense.reduction);
-  const armorResult = absorbWithArmor(defender, total);
-  const applied = applyDamageToParticipant(ctx, defender, armorResult.remaining);
+  const total = Math.max(0, rolled - reduction);
+  const armorResult = absorbWithArmor(damageTarget, total);
+  const applied = applyDamageToParticipant(ctx, damageTarget, armorResult.remaining);
   pushLog(state, {
     kind: "DAMAGE",
     actorId: actor.id,
-    targetId: defender.id,
+    targetId: damageTarget.id,
     text:
-      "射击伤害：" + defender.name + " 受到 " + total + "（" + damageExpression + " = " + rolled +
-      (defense.reduction > 0 ? "，防御减伤 " + defense.reduction : "") +
+      "射击伤害：" + damageTarget.name + " 受到 " + total + "（" + damageExpression + " = " + rolled +
+      (reduction > 0 ? "，防御减伤 " + reduction : "") +
       (armorResult.absorbed > 0 ? "，护甲吸收 " + armorResult.absorbed : "") +
       "）→ HP 结算 " + Math.max(0, total - armorResult.absorbed),
-    data: { rollType: "DP_RANGED_DAMAGE", expression: damageExpression, roll: rolled, reduction: defense.reduction, damage: total, armorAbsorbed: armorResult.absorbed, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
+    data: { rollType: "DP_RANGED_DAMAGE", expression: damageExpression, roll: rolled, reduction, damage: total, armorAbsorbed: armorResult.absorbed, covered: cover !== null && damageTarget.id !== defender.id, toDeclaration: applied.toDeclaration, toHp: applied.toHp }
   });
 }
 
@@ -3904,18 +3972,28 @@ function resolveDpChase(
   const achievement = base + Math.min(escalation, maxEscalation) * 10;
   const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "CHASE");
   const damage = rollDpDamage(ctx, actor, damageExpression, "dp-chase-damage:" + actor.id + ":" + state.round);
-  const hits: CombatParticipantState[] = [];
+  const hits: { target: CombatParticipantState; label: string }[] = [];
   for (const target of targets) {
+    const cover = resolveDpCover(ctx, actor, target, achievement, "dp-chase-cover:" + actor.id + ":" + target.id);
+    if (cover !== null) {
+      hits.push({
+        target: cover.target,
+        label: cover.target.id === target.id ? "追击命中（掩护失败，无减伤）" : "追击命中（" + cover.target.name + " 掩护 " + target.name + "）"
+      });
+      continue;
+    }
     const reaction = reactionFor(ctx, target.id);
     const defense = resolveDpDefense(ctx, target, reaction, achievement);
-    if (defense.success === false) hits.push(target);
+    if (defense.success === false) {
+      hits.push({ target, label: "追击命中（达成值 " + achievement + "）" });
+    }
   }
   if (hits.length === 0) {
     pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: actor.name + " 的追击被全部应对" });
     return;
   }
-  for (const target of hits) {
-    applyDpDamage(ctx, actor, target, damage, "追击命中（达成值 " + achievement + "）", 0, damageExpression);
+  for (const hit of hits) {
+    applyDpDamage(ctx, actor, hit.target, damage, hit.label, 0, damageExpression);
   }
 }
 
@@ -3960,20 +4038,29 @@ function resolveDpMelee(
     text: actor.name + " 近战命中：" + hitDice + "d6=" + hit.roll + " + " + hit.base + " = " + hit.achievement,
     data: { rollType: "DP_MELEE_HIT", dice: hitDice, roll: hit.roll, base: hit.base, achievement: hit.achievement }
   });
-  const reaction = reactionFor(ctx, defender.id);
-  const defense = resolveDpDefense(ctx, defender, reaction, hit.achievement);
-  if (defense.success) {
-    pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: defender.id, text: defender.name + " 成功应对近战攻击" });
-    return;
+  const cover = resolveDpCover(ctx, actor, defender, hit.achievement, "dp-melee-cover:" + actor.id + ":" + defender.id);
+  let damageTarget = defender;
+  let reduction = 0;
+  if (cover === null) {
+    const reaction = reactionFor(ctx, defender.id);
+    const defense = resolveDpDefense(ctx, defender, reaction, hit.achievement);
+    if (defense.success) {
+      pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: defender.id, text: defender.name + " 成功应对近战攻击" });
+      return;
+    }
+    reduction = defense.reduction;
+  } else {
+    damageTarget = cover.target;
   }
   const damageExpression = dpAttackDamageExpression(ctx.pack, actor, submission, "MELEE");
   const damage = rollDpDamage(ctx, actor, damageExpression, "dp-melee-damage:" + actor.id + ":" + defender.id);
-  applyDpDamage(ctx, actor, defender, damage, "近战命中", defense.reduction, damageExpression);
+  const hitLabel = cover !== null && damageTarget.id !== defender.id
+    ? "近战命中（" + damageTarget.name + " 掩护 " + defender.name + "）"
+    : "近战命中";
+  applyDpDamage(ctx, actor, damageTarget, damage, hitLabel, reduction, damageExpression);
 }
 
 /**
- * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。/**
- * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。/**
  * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。
  * 目标选择「回避弹幕」时消耗规定 DP，不受伤；DP 不足则受到固定伤害。
  */
@@ -4365,7 +4452,10 @@ export function resolvePending(
 
   state.round += 1;
   resolveRoundRaceAbilities(pack, state);
-  for (const participant of state.participants) participant.reactionsThisRound = 0;
+  for (const participant of state.participants) {
+    participant.reactionsThisRound = 0;
+    participant.coverUsedThisRound = false;
+  }
   resolveRoundEndDotDamage(pack, state);
   expireRoundTimers(state);
   resolveDyingChecks(pack, state);
@@ -4427,7 +4517,10 @@ function syncInitiativeReady(state: CombatState): void {
 
 /** 开一轮：重排顺序、把指针归零。 */
 export function beginInitiativeRound(pack: CompiledRulePack, state: CombatState): void {
-  for (const participant of state.participants) participant.reactionsThisRound = 0;
+  for (const participant of state.participants) {
+    participant.reactionsThisRound = 0;
+    participant.coverUsedThisRound = false;
+  }
   state.initiativeOrder = buildInitiativeOrder(pack, state);
   state.activeIndex = 0;
   state.phase = checkEnd(state) ? 'ENDED' : 'AWAITING_ACTION';

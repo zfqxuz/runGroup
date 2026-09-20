@@ -22,6 +22,7 @@ describe("DP 行动消耗配置", () => {
       defendPerDie: 1,
       abilityPerDie: 1,
       resistPerDie: 1,
+      coverPerDie: 1,
       resistMaxDice: 3
     });
   });
