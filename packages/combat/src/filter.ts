@@ -48,6 +48,8 @@ export interface ParticipantView {
   readonly mp: number | null;
   readonly san: number | null;
   readonly dp: number | null;
+  /** 千幻抄擦弹点数；仅对可见单位下发。 */
+  readonly grazePoints: number | null;
   readonly armor: number | null;
   readonly maxArmor: number | null;
   readonly isSummon: boolean;
@@ -183,6 +185,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       mp: showNumbers ? participant.mp : null,
       san: showNumbers ? participant.san : null,
       dp: showNumbers ? participant.dp : null,
+      grazePoints: showNumbers ? Math.max(0, Math.floor(participant.grazePoints ?? 0)) : null,
       armor: showNumbers ? participant.armor : null,
       maxArmor: showNumbers ? participant.maxArmor : null,
       isSummon: participant.summonedBy !== null && participant.summonedBy !== undefined,

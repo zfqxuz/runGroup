@@ -22,7 +22,11 @@ export interface CompiledAtb {
 
 export interface CompiledDamageRules {
   readonly pipeline: DamageRules["pipeline"];
-  readonly defend: { readonly cost: CompiledExpr; readonly reduceMultiplier: CompiledExpr };
+  readonly defend: {
+    readonly cost: CompiledExpr;
+    readonly reduceMultiplier: CompiledExpr;
+    readonly failReduce?: CompiledExpr;
+  };
   readonly dodge: { readonly cost: CompiledExpr; readonly grazeMpGainRatio: CompiledExpr };
   readonly counter: { readonly cost: CompiledExpr; readonly failDamageRatio: CompiledExpr };
 }
@@ -227,7 +231,17 @@ export function compileParsedRulePack(pack: RulePack): CompiledRulePack {
           vars: baseVars,
           consts: constantNames
         })
-      )
+      ),
+      ...(pack.damage.defend.failReduce === undefined
+        ? {}
+        : {
+            failReduce: wrap("damage.defend.failReduce", () =>
+              compileExpr(pack.damage.defend.failReduce as string, {
+                vars: combatVars,
+                consts: constantNames
+              })
+            )
+          })
     },
     dodge: {
       cost: wrap("damage.dodge.cost", () =>

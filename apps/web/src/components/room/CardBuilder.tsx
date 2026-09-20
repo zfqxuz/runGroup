@@ -89,7 +89,7 @@ export default function CardBuilder(props: Props) {
   );
   const [danmaku, setDanmaku] = useState(stringOr(stats0.danmaku, ""));
   const [mpCost, setMpCost] = useState(numberOr(stats0.mpCost, defaults?.declarationMpCost ?? 10));
-  const [hpRatio, setHpRatio] = useState(numberOr(stats0.hpRatio, defaults?.hpRatio ?? 2));
+  const [hpRatio, setHpRatio] = useState(numberOr(stats0.hpRatio, defaults?.hpRatio ?? 1));
   const [clearTargets, setClearTargets] = useState<"ALL" | "OTHERS_ONLY">(
     stringOr(stats0.clearTargets, defaults?.clearTargets ?? "ALL") === "OTHERS_ONLY" ? "OTHERS_ONLY" : "ALL"
   );
@@ -356,7 +356,7 @@ export default function CardBuilder(props: Props) {
           {mode === "CONSUMPTION" ? null : (
             <div className="mt-4 grid gap-4 sm:grid-cols-2">
               <label className="flex flex-col gap-1.5">
-                <span className="text-xs text-white/50">独立 HP 倍率（最大 HP × N）</span>
+                <span className="text-xs text-white/50">独立 HP 倍率（最大 HP × N；千幻抄默认为 1）</span>
                 <input type="number" step="0.5" value={hpRatio} onChange={(event) => setHpRatio(Number(event.target.value) || 1)} className={inputClass} />
               </label>
               <label className="flex flex-col gap-1.5">
@@ -371,7 +371,7 @@ export default function CardBuilder(props: Props) {
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs text-white/50">强化方向</span>
+              <span className="text-xs text-white/50">强化方向（展开型生效；消费型请用下方效果）</span>
               <select value={enhanceType} onChange={(event) => setEnhanceType(event.target.value as EnhanceType)} className={inputClass}>
                 {ENHANCE_TYPES.map((item) => (
                   <option key={item} value={item}>{ENHANCE_LABELS[item]}</option>

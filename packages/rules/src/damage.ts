@@ -65,6 +65,20 @@ export function applyDamagePipeline(
       }
       case "DEFEND_REDUCE": {
         if (input.defense !== "DEFEND") break;
+        if (input.defenseSuccess === true) {
+          damage = 0;
+          steps.push("defend success -> 0");
+          break;
+        }
+        const failReduce =
+          pack.damage.defend.failReduce === undefined
+            ? undefined
+            : Math.max(0, evaluate(pack.damage.defend.failReduce, context));
+        if (failReduce !== undefined) {
+          damage -= failReduce;
+          steps.push(`defend fail -${failReduce} -> ${damage}`);
+          break;
+        }
         const cost = costOf(pack.damage.defend.cost);
         const multiplier = evaluate(pack.damage.defend.reduceMultiplier, context);
         const reduction = cost * multiplier;

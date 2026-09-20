@@ -132,25 +132,33 @@ describe("伤害管线由 RulePack 决定顺序", () => {
     expect(outcome.mpCost).toBe(0);
   });
 
-  it("东方：防御消耗灵力并按倍率减伤", () => {
-    const outcome = applyDamagePipeline(touhou, { baseDamage: 10, defense: "DEFEND" });
-    expect(outcome.mpCost).toBe(10);
+  it("东方：防御成功免伤且不消耗灵力", () => {
+    const outcome = applyDamagePipeline(touhou, {
+      baseDamage: 40,
+      defense: "DEFEND",
+      defenseSuccess: true
+    });
+    expect(outcome.mpCost).toBe(0);
     expect(outcome.damage).toBe(0);
   });
 
-  it("东方：伤害高于减伤时留下余量", () => {
-    const outcome = applyDamagePipeline(touhou, { baseDamage: 40, defense: "DEFEND" });
+  it("东方：防御失败按 failReduce 固定减伤", () => {
+    const outcome = applyDamagePipeline(touhou, {
+      baseDamage: 40,
+      defense: "DEFEND",
+      defenseSuccess: false
+    });
     expect(outcome.damage).toBe(10);
   });
 
-  it("擦弹成功：免伤并回复一半灵力", () => {
+  it("擦弹成功：伤害管线只负责免伤，不再直接回灵", () => {
     const outcome = applyDamagePipeline(touhou, {
       baseDamage: 21,
       defense: "DODGE",
       defenseSuccess: true
     });
     expect(outcome.damage).toBe(0);
-    expect(outcome.mpGained).toBe(10);
+    expect(outcome.mpGained).toBe(0);
   });
 
   it("擦弹失败：吃满伤害", () => {

@@ -128,6 +128,8 @@ export interface CombatActionPayload {
   /** 战斗内使用道具：只传 cardId，效果 / 消耗由服务端按卡牌数据解析。 */
   readonly itemCardId?: string;
   readonly status?: { readonly key: string; readonly stacks: number };
+  /** 擦弹点消费：随 PASS 行动提交。 */
+  readonly grazeSpend?: "MP" | "MELEE_DAMAGE" | "RANGED_DAMAGE";
 }
 
 export interface CombatReactionPayload {

@@ -36,6 +36,10 @@ export interface SpellDeclaration {
   readonly cardId: string | null;
   /** 展开期间本体获得的比例减伤，1 表示不减。 */
   readonly damageMultiplier: number;
+  /** 展开型 SC 的强化方向；null 表示没有强化数据。 */
+  readonly enhanceType: "DANMAKU" | "MELEE" | "SPELL" | "AREA" | null;
+  /** 强化倍率或加值；由卡牌数据提供，缺省 1。 */
+  readonly enhanceValue: number;
 }
 
 export interface CombatParticipantState {
@@ -75,6 +79,11 @@ export interface CombatParticipantState {
   maxSan: number;
   dp: number;
   maxDp: number;
+  /** 千幻抄擦弹点数；战斗结束后消失。 */
+  grazePoints: number;
+  /** 已消费擦弹点预存的伤害加值；下一次对应攻击结算后清零。 */
+  grazeDamageBonus?: number;
+  grazeDamageBonusKind?: "MELEE" | "RANGED" | undefined;
   /** 可消耗护甲：按 1:1 吸收伤害，吸收后扣减。 */
   armor: number;
   maxArmor: number;
@@ -198,7 +207,12 @@ export interface ActionSubmission {
   readonly declarationDurationTicks?: number;
   /** 服务端从卡牌数据解析出的击破清弹范围。 */
   readonly declarationClearTargets?: "ALL" | "OTHERS_ONLY";
+  /** 客户端不能直接决定强化数值；服务端从卡牌数据写入。 */
+  readonly spellcardEnhanceType?: "DANMAKU" | "MELEE" | "SPELL" | "AREA";
+  readonly spellcardEnhanceValue?: number;
   readonly status?: { readonly key: string; readonly stacks: number };
+  /** 擦弹点消费：PASS 行动可携带；由服务端校验点数。 */
+  readonly grazeSpend?: "MP" | "MELEE_DAMAGE" | "RANGED_DAMAGE";
   /** SUMMON 法术的服务端解析结果；没有时由引擎使用通用兜底召唤物。 */
   readonly summonTemplate?: SummonTemplate;
   /** 道具卡：服务端按卡牌数据解析出的通用效果。 */

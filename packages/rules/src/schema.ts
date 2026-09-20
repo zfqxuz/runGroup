@@ -98,7 +98,9 @@ export const DamageRulesSchema = z.object({
   pipeline: z.array(z.enum(PIPELINE_STEPS)).nonempty(),
   defend: z.object({
     cost: ExprSchema,
-    reduceMultiplier: ExprSchema
+    reduceMultiplier: ExprSchema,
+    /** 防御失败时的固定减伤表达式；缺省时沿用 cost×reduceMultiplier 的旧行为。 */
+    failReduce: ExprSchema.optional()
   }),
   dodge: z.object({
     cost: ExprSchema,

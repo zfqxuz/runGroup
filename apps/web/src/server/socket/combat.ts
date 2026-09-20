@@ -395,7 +395,11 @@ async function handleAction(
     spellcardMode: raw.spellcardMode === "DECLARATION" || raw.spellcardMode === "CONSUMPTION" ? raw.spellcardMode : undefined,
     declarationHp: asNumber(raw.declarationHp),
     declarationDurationTicks: asNumber(raw.declarationDurationTicks),
-    itemCardId: asString(raw.itemCardId)
+    itemCardId: asString(raw.itemCardId),
+    grazeSpend:
+      raw.grazeSpend === "MP" || raw.grazeSpend === "MELEE_DAMAGE" || raw.grazeSpend === "RANGED_DAMAGE"
+        ? raw.grazeSpend
+        : undefined
   };
 
   // U-6：地图上有双方 Token 时，由服务端按实际英尺距离覆盖距离档与近距离奖励。

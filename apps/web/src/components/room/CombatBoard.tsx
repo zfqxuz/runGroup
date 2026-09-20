@@ -104,6 +104,7 @@ export default function CombatBoard(props: Props) {
   const [spellId, setSpellId] = useState("");
   const [spellTargetId, setSpellTargetId] = useState("");
   const [spellCardId, setSpellCardId] = useState("");
+  const [spellCardTargetId, setSpellCardTargetId] = useState("");
   const [itemCardId, setItemCardId] = useState("");
   const [itemTargetId, setItemTargetId] = useState("");
   const [actorId, setActorId] = useState("");
@@ -336,6 +337,25 @@ export default function CombatBoard(props: Props) {
     : (actorSpellCards[0]?.cardId ?? "");
   const selectedSpellCard =
     actorSpellCards.find((item) => item.cardId === activeSpellCardId) ?? null;
+  const spellcardEffectTargets =
+    selectedSpellCard === null || selectedActor === null || selectedSpellCard.effects.length === 0
+      ? []
+      : selectedSpellCard.targetScope === "SELF" || selectedSpellCard.targeting === "SELF"
+        ? [selectedActor]
+        : selectedSpellCard.targetScope === "ALL"
+          ? []
+          : alive.filter((participant) => {
+              if (selectedSpellCard.targeting === "ENEMY") {
+                return participant.id !== selectedActor.id && participant.kind !== selectedActor.kind;
+              }
+              if (selectedSpellCard.targeting === "ALLY") {
+                return participant.id === selectedActor.id || participant.kind === selectedActor.kind;
+              }
+              return true;
+            });
+  const activeSpellCardTargetId = spellcardEffectTargets.some((participant) => participant.id === spellCardTargetId)
+    ? spellCardTargetId
+    : (spellcardEffectTargets[0]?.id ?? "");
   const spellTargetOptions = selectedSpell === null || selectedActor === null
     ? []
     : selectedSpell.target === "SELF" || selectedSpell.targeting === "SELF"
@@ -1377,6 +1397,35 @@ export default function CombatBoard(props: Props) {
                 {props.system === "TOUHOU" ? (
                   <button type="button" onClick={() => emitAction({ kind: "DEFEND" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">防御姿态</button>
                 ) : null}
+                {props.system === "TOUHOU" && (selectedActor?.grazePoints ?? 0) > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2 rounded-lg border border-sky-400/30 bg-sky-400/5 px-2 py-1.5 text-[11px] text-sky-100">
+                    <span className="font-mono">擦弹 {selectedActor?.grazePoints ?? 0}</span>
+                    <button
+                      type="button"
+                      disabled={(selectedActor?.grazePoints ?? 0) < 5}
+                      onClick={() => emitAction({ kind: "PASS", grazeSpend: "MP" })}
+                      className="rounded border border-sky-400/40 px-2 py-1 transition hover:bg-sky-400/10 disabled:opacity-40"
+                    >
+                      回灵 5:1
+                    </button>
+                    <button
+                      type="button"
+                      disabled={(selectedActor?.grazePoints ?? 0) < 1}
+                      onClick={() => emitAction({ kind: "PASS", grazeSpend: "MELEE_DAMAGE" })}
+                      className="rounded border border-sky-400/40 px-2 py-1 transition hover:bg-sky-400/10 disabled:opacity-40"
+                    >
+                      近战强化 1:1
+                    </button>
+                    <button
+                      type="button"
+                      disabled={(selectedActor?.grazePoints ?? 0) < 2}
+                      onClick={() => emitAction({ kind: "PASS", grazeSpend: "RANGED_DAMAGE" })}
+                      className="rounded border border-sky-400/40 px-2 py-1 transition hover:bg-sky-400/10 disabled:opacity-40"
+                    >
+                      射击强化 2:1
+                    </button>
+                  </div>
+                ) : null}
                 <button type="button" onClick={() => emitAction({ kind: "DODGE" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
                   {props.system === "COC7" ? "闪避姿态" : "闪避 / 擦弹姿态"}
                 </button>
@@ -1523,13 +1572,32 @@ export default function CombatBoard(props: Props) {
                         </option>
                       ))}
                     </select>
+                    {spellcardEffectTargets.length > 1 ? (
+                      <select
+                        value={activeSpellCardTargetId}
+                        onChange={(event) => setSpellCardTargetId(event.target.value)}
+                        className={inputClass}
+                      >
+                        {spellcardEffectTargets.map((participant) => (
+                          <option key={participant.id} value={participant.id}>
+                            {participant.name}{participant.id === selectedActorId ? "（自己）" : ""}
+                          </option>
+                        ))}
+                      </select>
+                    ) : null}
                     <button
                       type="button"
                       disabled={
                         activeSpellCardId.length === 0 ||
                         (selectedSpellCard?.mode === "DECLARATION" && selectedActor?.hasDeclaration === true)
                       }
-                      onClick={() => emitAction({ kind: "SPELLCARD", spellCardId: activeSpellCardId })}
+                      onClick={() =>
+                        emitAction({
+                          kind: "SPELLCARD",
+                          spellCardId: activeSpellCardId,
+                          ...(activeSpellCardTargetId.length > 0 ? { targetId: activeSpellCardTargetId } : {})
+                        })
+                      }
                       className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400 disabled:opacity-40"
                     >
                       释放符卡
@@ -1538,8 +1606,8 @@ export default function CombatBoard(props: Props) {
                   {selectedSpellCard === null ? null : (
                     <p className="text-[10px] text-sakura-200/70">
                       {selectedSpellCard.mode === "DECLARATION"
-                        ? "展开型：独立 HP，击破时清弹；演出循环播放。"
-                        : "消费型：发动一次并消弹，演出播放一次。"}
+                        ? "展开型：独立 HP，展开时结算卡面效果；强化 " + selectedSpellCard.enhanceType + " 行动，击破时清弹。"
+                        : "消费型：发动一次、结算卡面效果并消弹，演出播放一次。"}
                       {selectedSpellCard.mode === "DECLARATION" && selectedActor !== null && selectedSpellCard.hpRatio !== null
                         ? " 独立 HP 约 " + Math.max(1, Math.round((selectedActor.maxHp ?? 0) * selectedSpellCard.hpRatio)) + "。"
                         : ""}

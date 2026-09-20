@@ -453,6 +453,8 @@ export interface CombatActionContext {
       readonly spells?: readonly string[];
       readonly mp?: number;
       readonly hp?: number;
+      readonly dp?: number;
+      readonly grazePoints?: number;
       readonly disarmed?: boolean;
     }[];
   };
@@ -464,6 +466,12 @@ export function validateCombatAction(
   action: ActionSubmission
 ): string | null {
   const events = context.pack.combat.events;
+  if (action.grazeSpend !== undefined) {
+    if (context.pack.system !== "TOUHOU") return "只有东方拓展房间可以消费擦弹点";
+    const actor = context.state.participants.find((item) => item.id === action.actorId);
+    if (actor === undefined) return "行动单位不在场";
+    if ((actor.grazePoints ?? 0) <= 0) return "没有擦弹点数可以消费";
+  }
   if (action.kind === "SPELLCARD") {
     if (context.pack.system !== "TOUHOU") return "只有東方拓展房间可以使用符卡";
     if (context.pack.pack.spellcard === undefined) return "本规则包不支持符卡";

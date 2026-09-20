@@ -218,6 +218,7 @@ export function addParticipant(
     maxSan,
     dp,
     maxDp,
+    grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     summonedBy: init.summonedBy ?? null,
@@ -758,14 +759,30 @@ function applyDamageToParticipant(
 
   const declaration = target.declaration;
   if (declaration !== null) {
-    const absorbed = Math.min(declaration.hp, remaining);
-    declaration.hp -= absorbed;
-    toDeclaration = absorbed;
-    remaining -= absorbed;
+    // 千幻抄：展开型 SC 展开期间，受到的伤害全部由 SC 承受；
+    // SC 被击破时的溢出伤害无效，不会继续打到本体。
+    const hpBefore = declaration.hp;
+    const applied = Math.max(0, Math.floor(remaining));
+    declaration.hp = Math.max(0, hpBefore - applied);
+    toDeclaration = applied;
     if (declaration.hp <= 0) breakDeclaration(ctx, target);
+    if (applied > hpBefore) {
+      pushLog(ctx.state, {
+        kind: "DAMAGE",
+        actorId: target.id,
+        targetId: target.id,
+        text:
+          target.name +
+          " 的符卡承受 " +
+          hpBefore +
+          " 点伤害后被击破，溢出 " +
+          (applied - hpBefore) +
+          " 点伤害无效",
+        data: { rollType: "SC_OVERFLOW_DISCARD", overflow: applied - hpBefore }
+      });
+    }
+    return { toDeclaration, toHp: 0 };
   }
-
-  if (remaining <= 0) return { toDeclaration, toHp: 0 };
 
   const bodyDamage = remaining;
   const hpBefore = target.hp;
@@ -1149,6 +1166,87 @@ function physicalDamageForAttack(
   };
 }
 
+function spellcardEnhanceForAttack(
+  pack: CompiledRulePack,
+  actor: CombatParticipantState,
+  skillName: string
+): { readonly accuracyMod: number; readonly damageMultiplier: number; readonly flatDamage: number } | null {
+  const declaration = actor.declaration;
+  if (declaration === null || declaration.enhanceType === null) return null;
+  const type = declaration.enhanceType;
+  const isMelee = skillName.startsWith("FIGHTING_") || skillName === "MELEE";
+  const isDanmaku =
+    skillName === "DANMAKU" || skillName.startsWith("FIREARMS_") || skillName === "THROW";
+  if (type === "MELEE" && isMelee === false) return null;
+  if (type === "DANMAKU" && isDanmaku === false) return null;
+  if (type !== "MELEE" && type !== "DANMAKU" && type !== "AREA") return null;
+
+  const enhance = pack.pack.spellcard?.enhance?.[type];
+  const evalOr = (expression: string | undefined, fallback: number): number => {
+    if (expression === undefined) return fallback;
+    try {
+      const value = evaluateSource(pack, expression, actor.vars);
+      return Number.isFinite(value) ? value : fallback;
+    } catch {
+      return fallback;
+    }
+  };
+
+  if (type === "MELEE") {
+    return {
+      accuracyMod: evalOr(enhance?.accuracyMod, 0),
+      damageMultiplier: evalOr(enhance?.damageMultiplier, declaration.enhanceValue > 0 ? declaration.enhanceValue : 1),
+      flatDamage: 0
+    };
+  }
+  if (type === "DANMAKU") {
+    return {
+      accuracyMod: 0,
+      damageMultiplier: 1,
+      flatDamage: evalOr(enhance?.damageFlat, declaration.enhanceValue > 0 ? declaration.enhanceValue : 0)
+    };
+  }
+  return {
+    accuracyMod: 0,
+    damageMultiplier: declaration.enhanceValue > 0 ? declaration.enhanceValue : 1,
+    flatDamage: 0
+  };
+}
+
+function spellcardEnhanceForSpell(
+  pack: CompiledRulePack,
+  actor: CombatParticipantState
+): { readonly flat: number; readonly multiplier: number } {
+  const declaration = actor.declaration;
+  if (declaration === null || declaration.enhanceType !== "SPELL") {
+    return { flat: 0, multiplier: 1 };
+  }
+  const enhance = pack.pack.spellcard?.enhance?.SPELL;
+  let flat = 0;
+  try {
+    flat = enhance?.abilityMod !== undefined ? evaluateSource(pack, enhance.abilityMod, actor.vars) : 0;
+  } catch {
+    flat = 0;
+  }
+  return {
+    flat: Number.isFinite(flat) ? flat : 0,
+    multiplier: declaration.enhanceValue > 0 ? declaration.enhanceValue : 1
+  };
+}
+
+function consumeGrazeDamageBonus(actor: CombatParticipantState, skillName: string): number {
+  const bonus = Math.max(0, Math.floor(actor.grazeDamageBonus ?? 0));
+  if (bonus <= 0) return 0;
+  const isMelee = skillName.startsWith("FIGHTING_") || skillName === "MELEE";
+  const kind = actor.grazeDamageBonusKind;
+  if ((kind === "MELEE" && isMelee) || (kind === "RANGED" && isMelee === false)) {
+    actor.grazeDamageBonus = 0;
+    actor.grazeDamageBonusKind = undefined;
+    return bonus;
+  }
+  return 0;
+}
+
 function resolveAttack(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -1159,7 +1257,12 @@ function resolveAttack(
   const rng = nextRollRng(state, `attack:${actor.id}`);
   const isCoc7 = ctx.pack.system === "COC7";
   const skillName = submission.skill ?? "DANMAKU";
-  const target = skillValueOf(ctx.pack, actor, skillName, 0) + (submission.accuracyMod ?? 0);
+  const enhance = spellcardEnhanceForAttack(ctx.pack, actor, skillName);
+  const grazeDamageBonus = consumeGrazeDamageBonus(actor, skillName);
+  const target =
+    skillValueOf(ctx.pack, actor, skillName, 0) +
+    (submission.accuracyMod ?? 0) +
+    (enhance?.accuracyMod ?? 0);
 
   let reaction = reactionFor(ctx, defender.id);
   const blockedEvent = disabledReactionFor(ctx.pack, reaction.type);
@@ -1392,6 +1495,42 @@ function resolveAttack(
         modifiers: dodgeModifierText
       }
     });
+  } else if (reaction.type === "DEFEND" && isCoc7 === false) {
+    // 千幻抄防御：用近战技能与攻击方对抗；成功免伤，失败按规则包 failReduce 减伤。
+    const defendTarget = skillValueOf(
+      ctx.pack,
+      defender,
+      reaction.skill ?? "MELEE",
+      defender.attributes.str
+    );
+    const defend = rollCombatCheck(ctx.pack, rng, defendTarget);
+    defenseSuccess = defend.check.rank >= attackCheck.rank;
+    pushLog(state, {
+      kind: "CHECK",
+      actorId: defender.id,
+      targetId: actor.id,
+      text:
+        "防御对抗：" +
+        defender.name +
+        " 掷 1d100 = " +
+        defend.roll +
+        "，目标值 " +
+        defendTarget +
+        " → " +
+        defend.check.result +
+        "（攻击 " +
+        attackCheck.result +
+        "）→ " +
+        (defenseSuccess ? "防御成功" : "防御失败"),
+      data: {
+        rollType: "DEFEND",
+        roll: defend.roll,
+        target: defendTarget,
+        result: defend.check.result,
+        attackResult: attackCheck.result,
+        success: defenseSuccess
+      }
+    });
   } else if (reaction.type === "COUNTER") {
     const counterTarget = skillValueOf(
       ctx.pack,
@@ -1568,12 +1707,27 @@ function resolveAttack(
     });
   }
 
+  if (isCoc7 === false && reaction.type === "DODGE" && defenseSuccess) {
+    // 千幻抄：成功回避不再直接回灵，而是积攒擦弹点数；点数由玩家用 PASS 行动消费。
+    const grazeGain = Math.max(1, Math.floor(damageTotal / 2));
+    defender.grazePoints = Math.max(0, Math.floor(defender.grazePoints ?? 0)) + grazeGain;
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: defender.id,
+      targetId: actor.id,
+      text: defender.name + " 擦弹 +" + grazeGain + "（当前 " + defender.grazePoints + "）",
+      data: { rollType: "GRAZE_GAIN", grazeGain, grazePoints: defender.grazePoints }
+    });
+  }
+
   const shieldMultiplier = damageMultiplierOf(ctx.pack, defender.statusEffects, defender.vars);
 
   const outcome = applyDamagePipeline(ctx.pack, {
     baseDamage: damageTotal,
     defense: reaction.type,
     defenseSuccess,
+    spellcardMultiplier: enhance?.damageMultiplier,
+    enhanceFlat: (enhance?.flatDamage ?? 0) + grazeDamageBonus,
     shieldMultiplier,
     vars: defender.vars
   });
@@ -1849,16 +2003,21 @@ function resolveSpellcard(
   const cardId = submission.spellCardId ?? null;
   const usedKey = cardId ?? name;
 
+  if (rules.consumption.oncePerCombat === true && actor.usedSpellCards.includes(usedKey)) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: `${actor.name} 的符卡「${name}」本场已使用过`
+    });
+    return;
+  }
+
+  const effects = submission.effects ?? [];
+  const targetScope = submission.targetScope ?? "ONE";
+  const targeting = submission.targeting ?? (targetScope === "SELF" ? "SELF" : "ENEMY");
+
   if (mode === "CONSUMPTION") {
-    if (rules.consumption.oncePerCombat === true && actor.usedSpellCards.includes(usedKey)) {
-      pushLog(state, {
-        kind: "SYSTEM",
-        actorId: actor.id,
-        targetId: null,
-        text: `${actor.name} 的消费型符卡「${name}」本场已使用过`
-      });
-      return;
-    }
     actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
     actor.mp = Math.max(0, actor.mp - mpCost);
     pushLog(state, {
@@ -1878,6 +2037,22 @@ function resolveSpellcard(
       if (queued.kind !== "DANMAKU") continue;
       if (queued.actorId === actor.id) continue;
       ctx.cancelled.add(queued.actorId);
+    }
+    if (effects.length > 0) {
+      const spell: MagicSpell = {
+        id: cardId ?? ("spellcard:" + name),
+        name,
+        skill: "SPELLCARD_CRAFT",
+        mpCost: "0",
+        sanCost: "0",
+        target: targetScope,
+        targeting,
+        effects: [...effects]
+      };
+      resolveTargetedEffects(ctx, actor, submission, spell, { mpCost: 0, sanCost: 0 }, {
+        logKind: "SPELLCARD",
+        verb: "发动"
+      });
     }
     return;
   }
@@ -1911,6 +2086,7 @@ function resolveSpellcard(
     return;
   }
 
+  actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
   actor.mp -= mpCost;
   const rawDuration = Math.max(0, Math.floor(submission.declarationDurationTicks ?? 0));
   // 不传持续 tick 视为“持续到被击破”。不能用 Infinity：CombatState 会写入
@@ -1919,6 +2095,10 @@ function resolveSpellcard(
   const durationTicks = perpetual ? 1_000_000_000 : Math.max(1, rawDuration);
 
   const clearTargets = submission.declarationClearTargets ?? rules.declaration.clearTargets;
+  const enhanceValue =
+    submission.spellcardEnhanceValue !== undefined && submission.spellcardEnhanceValue > 0
+      ? submission.spellcardEnhanceValue
+      : 1;
   actor.declaration = {
     name,
     hp: declarationHp,
@@ -1926,7 +2106,9 @@ function resolveSpellcard(
     expiresAtTick: state.tick + durationTicks,
     clearTargets,
     cardId,
-    damageMultiplier: 1
+    damageMultiplier: 1,
+    enhanceType: submission.spellcardEnhanceType ?? null,
+    enhanceValue
   };
 
   pushLog(state, {
@@ -1943,6 +2125,23 @@ function resolveSpellcard(
       cardId
     }
   });
+
+  if (effects.length > 0) {
+    const spell: MagicSpell = {
+      id: cardId ?? ("spellcard:" + name),
+      name,
+      skill: "SPELLCARD_CRAFT",
+      mpCost: "0",
+      sanCost: "0",
+      target: targetScope,
+      targeting,
+      effects: [...effects]
+    };
+    resolveTargetedEffects(ctx, actor, submission, spell, { mpCost: 0, sanCost: 0 }, {
+      logKind: "SPELLCARD",
+      verb: "展开"
+    });
+  }
 }
 
 function resolveOutOfRule(ctx: ResolveContext, actor: CombatParticipantState, submission: ActionSubmission): void {
@@ -2205,19 +2404,22 @@ function applyMagicEffect(
   };
 
   if (effect.type === "DAMAGE") {
-    const base = rollEffectDice(effect.amount, state, "magic-damage:" + actor.id + ":" + spell.id + ":" + target.id);
+    const spellEnhance = spellcardEnhanceForSpell(ctx.pack, actor);
+    const rolled = rollEffectDice(effect.amount, state, "magic-damage:" + actor.id + ":" + spell.id + ":" + target.id);
+    const base = rolled + spellEnhance.flat;
     pushLog(state, {
       kind: "DAMAGE",
       actorId: actor.id,
       targetId: target.id,
-      text: "伤害骰：「" + spell.name + "」对 " + target.name + " 的 " + effect.amount + " = " + base,
-      data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: base }
+      text: "伤害骰：「" + spell.name + "」对 " + target.name + " 的 " + effect.amount + " = " + rolled + (spellEnhance.flat > 0 ? "，符卡强化 +" + spellEnhance.flat : "") + "，合计 " + base,
+      data: { ...meta, rollType: "DAMAGE_ROLL", expression: effect.amount, roll: rolled, enhanceFlat: spellEnhance.flat }
     });
     const shieldMultiplier = damageMultiplierOf(ctx.pack, target.statusEffects, target.vars);
     const outcome = applyDamagePipeline(ctx.pack, {
       baseDamage: base,
       defense: defense.type,
       defenseSuccess: defense.success,
+      spellcardMultiplier: spellEnhance.multiplier,
       shieldMultiplier,
       vars: target.vars
     });
@@ -2236,10 +2438,12 @@ function applyMagicEffect(
   }
 
   if (effect.type === "HEAL") {
-    const amount = rollEffectDice(effect.amount, state, "magic-heal:" + actor.id + ":" + spell.id + ":" + target.id);
+    const spellEnhance = spellcardEnhanceForSpell(ctx.pack, actor);
+    const rolled = rollEffectDice(effect.amount, state, "magic-heal:" + actor.id + ":" + spell.id + ":" + target.id);
+    const amount = Math.max(0, Math.floor((rolled + spellEnhance.flat) * spellEnhance.multiplier));
     const before = target.hp;
     target.hp = Math.min(target.maxHp, target.hp + amount);
-    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP", { heal: target.hp - before });
+    log(actor.name + " " + verb + "「" + spell.name + "」 → " + target.name + " 恢复 " + (target.hp - before) + " HP" + (spellEnhance.flat + (spellEnhance.multiplier !== 1 ? 1 : 0) > 0 ? "（符卡强化）" : ""), { heal: target.hp - before, enhanceFlat: spellEnhance.flat, enhanceMultiplier: spellEnhance.multiplier });
     return;
   }
 
@@ -2590,6 +2794,82 @@ function resolveTargetedEffects(
   }
 }
 
+function resolveGrazeSpend(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  spend: "MP" | "MELEE_DAMAGE" | "RANGED_DAMAGE"
+): void {
+  const state = ctx.state;
+  const points = Math.max(0, Math.floor(actor.grazePoints ?? 0));
+  if (points <= 0) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 没有擦弹点数"
+    });
+    return;
+  }
+  if (spend === "MP") {
+    const use = Math.floor(points / 5) * 5;
+    if (use < 5) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: actor.id,
+        targetId: null,
+        text: actor.name + " 的擦弹点数不足 5 点，无法回复灵力"
+      });
+      return;
+    }
+    actor.grazePoints = points - use;
+    const restored = use / 5;
+    actor.mp = Math.min(actor.maxMp, actor.mp + restored);
+    actor.vars.mp = actor.mp;
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 消费擦弹 " + use + " 点，回复灵力 " + restored + "（剩余擦弹 " + actor.grazePoints + "）",
+      data: { rollType: "GRAZE_SPEND_MP", spent: use, mpRestored: restored, grazePoints: actor.grazePoints }
+    });
+    return;
+  }
+  if (spend === "MELEE_DAMAGE") {
+    actor.grazePoints = 0;
+    actor.grazeDamageBonus = (actor.grazeDamageBonus ?? 0) + points;
+    actor.grazeDamageBonusKind = "MELEE";
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 消费擦弹 " + points + " 点，下次近战伤害 +" + points,
+      data: { rollType: "GRAZE_SPEND_MELEE", spent: points, damageBonus: points }
+    });
+    return;
+  }
+  const bonus = Math.floor(points / 2);
+  if (bonus <= 0) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 的擦弹点数不足 2 点，无法强化射击"
+    });
+    return;
+  }
+  const spent = bonus * 2;
+  actor.grazePoints = points - spent;
+  actor.grazeDamageBonus = (actor.grazeDamageBonus ?? 0) + bonus;
+  actor.grazeDamageBonusKind = "RANGED";
+  pushLog(state, {
+    kind: "STATUS",
+    actorId: actor.id,
+    targetId: null,
+    text: actor.name + " 消费擦弹 " + spent + " 点，下次远程伤害 +" + bonus + "（剩余擦弹 " + actor.grazePoints + "）",
+    data: { rollType: "GRAZE_SPEND_RANGED", spent, damageBonus: bonus, grazePoints: actor.grazePoints }
+  });
+}
+
 function resolveOne(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -2605,9 +2885,14 @@ function resolveOne(
     case "OUT_OF_RULE":
       resolveOutOfRule(ctx, actor, submission);
       return;
-    case "PASS":
+    case "PASS": {
+      if (submission.grazeSpend !== undefined) {
+        resolveGrazeSpend(ctx, actor, submission.grazeSpend);
+        return;
+      }
       pushLog(state, { kind: "ACTION", actorId: actor.id, targetId: null, text: `${actor.name} 跳过本回合` });
       return;
+    }
     case "FLEE":
       actor.defeated = true;
       actor.isReady = false;

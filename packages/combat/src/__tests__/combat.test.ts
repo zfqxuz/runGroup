@@ -101,19 +101,32 @@ describe("弹幕攻防结算", () => {
     expect(b.hp).toBeGreaterThanOrEqual(b.maxHp - 12);
   });
 
-  it("防御消耗灵力并完全吸收低伤害", () => {
+  it("防御对抗成功时免伤且不消耗灵力", () => {
     const { state, b } = makeCombat();
     advanceToNextEvent(touhou, state);
+    b.skills.MELEE = 999;
     submitAction(state, {
       actorId: "a", kind: "DANMAKU", targetId: "b", skill: "DANMAKU", damage: "2d6"
     });
     const mpBefore = b.mp;
     resolvePending(touhou, state, { b: { type: "DEFEND" } });
     expect(b.hp).toBe(b.maxHp);
-    expect(b.mp).toBe(mpBefore - 10);
+    expect(b.mp).toBe(mpBefore);
   });
 
-  it("擦弹成功免伤并回复灵力", () => {
+  it("防御对抗失败时按 failReduce 固定减伤", () => {
+    const { state, b } = makeCombat();
+    advanceToNextEvent(touhou, state);
+    b.skills.MELEE = 0;
+    submitAction(state, {
+      actorId: "a", kind: "DANMAKU", targetId: "b", skill: "DANMAKU", damage: "40"
+    });
+    resolvePending(touhou, state, { b: { type: "DEFEND" } });
+    expect(b.hp).toBe(Math.max(0, b.maxHp - 10));
+    expect(state.log.some((entry) => entry.text.includes("防御失败"))).toBe(true);
+  });
+
+  it("擦弹成功免伤并积攒擦弹点数", () => {
     const { state, b } = makeCombat();
     advanceToNextEvent(touhou, state);
     submitAction(state, {
@@ -122,7 +135,38 @@ describe("弹幕攻防结算", () => {
     b.mp = 10;
     resolvePending(touhou, state, { b: { type: "DODGE", skill: "DODGE" } });
     expect(b.hp).toBe(b.maxHp);
-    expect(b.mp).toBeGreaterThan(10);
+    expect(b.mp).toBe(10);
+    expect(b.grazePoints).toBeGreaterThan(0);
+  });
+
+  it("可用擦弹点数兑换灵力", () => {
+    const { state, a } = makeCombat();
+    a.grazePoints = 5;
+    a.mp = 10;
+    forceReady(a);
+    submitAction(state, { actorId: "a", kind: "PASS", grazeSpend: "MP" });
+    resolvePending(touhou, state);
+    expect(a.grazePoints).toBe(0);
+    expect(a.mp).toBe(11);
+    expect(state.log.some((entry) => entry.text.includes("回复灵力"))).toBe(true);
+  });
+
+  it("可用擦弹点数强化下一次近战伤害", () => {
+    const { state, a, b } = makeCombat();
+    a.grazePoints = 3;
+    a.skills.MELEE = 100;
+    forceReady(a);
+    submitAction(state, { actorId: "a", kind: "PASS", grazeSpend: "MELEE_DAMAGE" });
+    resolvePending(touhou, state);
+    expect(a.grazePoints).toBe(0);
+    expect(a.grazeDamageBonus).toBe(3);
+
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a", kind: "DANMAKU", targetId: "b", skill: "MELEE", damage: "6"
+    });
+    resolvePending(touhou, state, { b: { type: "PASS" } });
+    expect(b.hp).toBe(b.maxHp - 9);
   });
 
   it("未提交行动的人不会行动", () => {
@@ -160,8 +204,10 @@ describe("符卡", () => {
 
     expect(result.cleared).toContain("npc");
     expect(a.declaration).toBeNull();
-    expect(a.hp).toBeLessThan(a.maxHp);
+    // 千幻抄：SC 被击破时溢出伤害无效，不会打到本体。
+    expect(a.hp).toBe(a.maxHp);
     expect(state.log.some((entry) => entry.text.includes("被击破"))).toBe(true);
+    expect(state.log.some((entry) => entry.text.includes("溢出"))).toBe(true);
   });
 
   it("展开型保存卡牌 id 与自定义清弹范围", () => {
@@ -215,6 +261,88 @@ describe("符卡", () => {
     resolvePending(touhou, state);
     expect(a.declaration).toBeNull();
     expect(state.log.some((entry) => entry.text.includes("灵力不足"))).toBe(true);
+  });
+
+  it("同一张符卡每场只能使用一次", () => {
+    const { state, a } = makeCombat();
+    a.mp = 100;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想封印",
+      spellCardId: "card-once",
+      spellcardMode: "DECLARATION",
+      declarationHp: 5,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.usedSpellCards).toContain("card-once");
+    expect(a.declaration).not.toBeNull();
+
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想封印",
+      spellCardId: "card-once",
+      spellcardMode: "DECLARATION",
+      declarationHp: 5,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.usedSpellCards.filter((item) => item === "card-once")).toHaveLength(1);
+    expect(state.log.some((entry) => entry.text.includes("本场已使用过"))).toBe(true);
+  });
+
+  it("展开型符卡强化近战伤害", () => {
+    const { state, a, b } = makeCombat();
+    a.mp = 100;
+    a.skills.MELEE = 100;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "梦想封印",
+      spellCardId: "card-melee",
+      spellcardMode: "DECLARATION",
+      declarationHp: 5,
+      declarationDurationTicks: 240,
+      spellcardEnhanceType: "MELEE",
+      spellcardEnhanceValue: 2,
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a", kind: "DANMAKU", targetId: "b", skill: "MELEE", damage: "6"
+    });
+    resolvePending(touhou, state, { b: { type: "PASS" } });
+    // 规则包 MELEE.damageMultiplier = 1.5；固定伤害 6 -> 9。
+    expect(b.hp).toBe(b.maxHp - 9);
+  });
+
+  it("消费型符卡会结算卡面效果", () => {
+    const { state, a, npc } = makeCombat();
+    a.mp = 100;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "指向性激光",
+      spellCardId: "card-effect",
+      spellcardMode: "CONSUMPTION",
+      targetId: "npc",
+      targetScope: "ONE",
+      targeting: "ENEMY",
+      effects: [{ type: "DAMAGE", amount: "5" }],
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(npc.hp).toBe(npc.maxHp - 5);
   });
 });
 

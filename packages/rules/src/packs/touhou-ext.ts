@@ -49,8 +49,10 @@ export const TOUHOU_EXT: RulePackOverlay = {
       "SHIELD_REDUCE",
       "CLAMP_MIN_ZERO"
     ],
-    defend: { cost: "10", reduceMultiplier: "DEFEND_REDUCE" },
-    dodge: { cost: "0", grazeMpGainRatio: "GRAZE_GAIN_RATIO" },
+    // 东方防御：先做近战技能对抗；成功免伤，失败按固定值减伤。cost 仅保留给旧规则包兼容。
+    defend: { cost: "0", reduceMultiplier: "1", failReduce: "30" },
+    // 擦弹不再直接回灵：成功回避在战斗层累积擦弹点数，玩家用 PASS 行动消费。
+    dodge: { cost: "0", grazeMpGainRatio: "0" },
     counter: { cost: "20", failDamageRatio: "0.5" }
   }
 };
@@ -147,7 +149,8 @@ TOUHOU_EXT.statusEffects = {
 
 TOUHOU_EXT.spellcard = {
   declaration: {
-    hpRatio: "2",
+    // 千幻抄：展开型 SC 的 HP 上限与使用者 HP 上限相同。
+    hpRatio: "1",
     durationTicks: "720",
     onBreakClearDanmaku: true,
     clearTargets: "ALL"

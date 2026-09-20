@@ -1,7 +1,7 @@
 import type { ActionSubmission, CombatParticipantState } from "@touhou/combat";
 import type { CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
-import { SpellCardStatsSchema } from "@/shared/card";
+import { SpellCardStatsSchema, activeCardEffects } from "@/shared/card";
 import type {
   CombatSpellCardOption,
   SpellCardClearTargets
@@ -57,7 +57,10 @@ export async function loadSpellcardsByParticipant(
       clearTargets: stats.clearTargets,
       enhanceType: stats.enhanceType,
       enhanceValue: stats.enhanceValue,
-      pattern: stats.pattern ?? null
+      pattern: stats.pattern ?? null,
+      effects: activeCardEffects(stats),
+      targeting: stats.targeting,
+      targetScope: stats.targetScope
     };
     const list = byCharacter.get(card.characterId) ?? [];
     list.push(option);
@@ -108,12 +111,24 @@ export function prepareSpellcardAction(
     return { ok: false, error: "该角色已有展开中的符卡" };
   }
   if (
-    card.mode === "CONSUMPTION" &&
     pack.pack.spellcard.consumption.oncePerCombat === true &&
     (actor.usedSpellCards.includes(card.cardId) || actor.usedSpellCards.includes(card.name))
   ) {
-    return { ok: false, error: "这张消费型符卡本场已经使用过" };
+    return { ok: false, error: "这张符卡本场已经使用过" };
   }
+
+  const targetScope: "SELF" | "ONE" | "ALL" =
+    card.targetScope === "SELF" || card.targeting === "SELF"
+      ? "SELF"
+      : card.targetScope === "ALL"
+        ? "ALL"
+        : "ONE";
+  const targetId =
+    targetScope === "SELF"
+      ? actor.id
+      : targetScope === "ALL"
+        ? null
+        : action.targetId ?? null;
 
   if (card.mode === "CONSUMPTION") {
     return {
@@ -123,8 +138,14 @@ export function prepareSpellcardAction(
         kind: "SPELLCARD",
         name: card.name,
         spellCardId: card.cardId,
+        targetId,
         mpCost: card.mpCost,
-        spellcardMode: "CONSUMPTION"
+        spellcardMode: "CONSUMPTION",
+        effects: card.effects,
+        targeting: card.targeting,
+        targetScope,
+        spellcardEnhanceType: card.enhanceType,
+        spellcardEnhanceValue: card.enhanceValue
       }
     };
   }
@@ -145,9 +166,15 @@ export function prepareSpellcardAction(
       spellCardId: card.cardId,
       mpCost: card.mpCost,
       spellcardMode: "DECLARATION",
+      targetId,
       declarationHp: Math.max(1, Math.round(actor.maxHp * card.hpRatio)),
       declarationDurationTicks: card.durationTicks ?? undefined,
-      declarationClearTargets: clearTargets
+      declarationClearTargets: clearTargets,
+      effects: card.effects,
+      targeting: card.targeting,
+      targetScope,
+      spellcardEnhanceType: card.enhanceType,
+      spellcardEnhanceValue: card.enhanceValue
     }
   };
 }

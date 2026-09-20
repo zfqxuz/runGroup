@@ -1,3 +1,4 @@
+import type { MagicEffect, MagicTargeting } from "@touhou/rules";
 import type { DanmakuPattern } from "./schema";
 
 export type SpellCardMode = "DECLARATION" | "CONSUMPTION";
@@ -20,4 +21,8 @@ export interface CombatSpellCardOption {
   readonly enhanceType: SpellCardEnhanceType;
   readonly enhanceValue: number;
   readonly pattern: DanmakuPattern | null;
+  /** 卡牌声明的效果；符卡可以像法术/道具一样结算这些效果。 */
+  readonly effects: readonly MagicEffect[];
+  readonly targeting: MagicTargeting;
+  readonly targetScope: "SELF" | "ONE" | "ALL";
 }
