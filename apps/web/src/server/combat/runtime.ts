@@ -2,6 +2,7 @@ import {
   filterCombatForViewer,
   findParticipant,
   recoverTouhouLscLimits,
+  syncCombatPositions,
   type ActionSubmission,
   type ChaseAttackInput,
   type CombatState,
@@ -50,7 +51,7 @@ export interface CombatRuntime {
     readonly gridType: string;
   } | null;
   /** U-6：participant.id → 该单位在当前场景的 Token 坐标。 */
-  readonly tokenPositions: ReadonlyMap<string, { readonly x: number; readonly y: number }>;
+  readonly tokenPositions: Map<string, { readonly x: number; readonly y: number }>;
 }
 
 const cache = new Map<string, CombatRuntime>();
@@ -336,6 +337,8 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     }
   }
 
+  syncCombatPositions(state, sceneGrid, tokenPositions);
+
   const runtime: CombatRuntime = {
     combatId,
     roomId: combat.roomId,
@@ -423,6 +426,59 @@ export function controlledReadyParticipantId(runtime: CombatRuntime, userId: str
     if (participant.isReady && canControl(runtime, userId, participant.id)) return participant.id;
   }
   return null;
+}
+
+/**
+ * Token 移动后，把当前场景所有进行中战斗的坐标重新同步进纯战斗状态。
+ * 返回被更新的 runtime，调用方负责广播 combat:update。
+ */
+export async function refreshCombatPositionsForScene(
+  roomId: string,
+  sceneId: string
+): Promise<CombatRuntime[]> {
+  const combats = await prisma.combat.findMany({
+    where: { roomId, sceneId, endedAt: null },
+    select: { id: true }
+  });
+  const updated: CombatRuntime[] = [];
+  for (const combat of combats) {
+    const runtime = await loadCombatRuntime(combat.id);
+    if (runtime === null) continue;
+    const tokens = await prisma.token.findMany({
+      where: { roomId, map: { sceneId } },
+      select: {
+        characterId: true,
+        cardId: true,
+        x: true,
+        y: true,
+        map: { select: { width: true, height: true, gridSize: true, gridType: true } }
+      }
+    });
+    const positions = new Map<string, { readonly x: number; readonly y: number }>();
+    let grid = runtime.sceneGrid;
+    for (const token of tokens) {
+      const participant = runtime.state.participants.find(
+        (item) =>
+          (item.characterId !== null && item.characterId === token.characterId) ||
+          (item.characterId === null && token.cardId !== null && item.id === token.cardId)
+      );
+      if (participant === undefined) continue;
+      positions.set(participant.id, { x: token.x, y: token.y });
+      if (grid === null) {
+        grid = {
+          width: token.map.width,
+          height: token.map.height,
+          gridSize: token.map.gridSize,
+          gridType: token.map.gridType
+        };
+      }
+    }
+    syncCombatPositions(runtime.state, grid, positions);
+    runtime.tokenPositions.clear();
+    for (const [id, position] of positions) runtime.tokenPositions.set(id, position);
+    updated.push(runtime);
+  }
+  return updated;
 }
 
 export type { ActionSubmission, DefenseReaction };

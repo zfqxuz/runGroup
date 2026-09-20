@@ -9,6 +9,20 @@ import type {
 } from "@touhou/rules";
 
 export type CombatMode = 'INITIATIVE' | 'ATB' | 'DP';
+
+/** 战斗使用的场景网格（直接复用房间 Scene/Map/Token 数据）。 */
+export interface CombatGrid {
+  readonly width: number;
+  readonly height: number;
+  readonly gridSize: number;
+  readonly gridType: "SQUARE" | "HEX" | "NONE" | string;
+}
+
+/** 单位在当前场景的 Token 坐标（像素，与 Scene/Map 一致）。 */
+export interface CombatPosition {
+  readonly x: number;
+  readonly y: number;
+}
 export type CombatPhase = "ATB_CHARGING" | "AWAITING_ACTION" | "ENDED" | "DP_DECLARATION";
 export type ParticipantKind = "PLAYER" | "NPC";
 export type ActionKind =
@@ -263,6 +277,8 @@ export interface CombatParticipantState {
   attackBuff?: AttackBuffState | null;
   /** 属性使・武器生成：当前生成的近战武器；null 表示没有。 */
   elementalWeapon?: ElementalWeaponState | null;
+  /** 当前场景 Token 坐标；未绑定地图 / 未同步时为 undefined。 */
+  position?: CombatPosition | null;
   /** 祈福：所有行动达成值加值；null 表示没有。 */
   checkBuff?: CheckBuffState | null;
   /** 神凭：每轮 DP 回复加值；null 表示没有。 */
@@ -489,6 +505,8 @@ export interface CombatState {
   dp?: DpRoundState | null;
   /** 千幻抄符卡战斗的每方 SC 池；仅 TOUHOU + 有符卡规则时非空。 */
   spellcardBattle?: SpellcardBattleState | null;
+  /** 当前战斗场景网格；没有绑定地图 / 未同步时为 null。 */
+  grid?: CombatGrid | null;
   initiativeOrder: string[];
   activeIndex: number;
   tick: number;

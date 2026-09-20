@@ -49,13 +49,113 @@ import {
   type MagicSpell
 } from "@touhou/rules";
 import { rngFor } from "./rng";
+
+/** 1 米 ≈ 3.28084 英尺（战斗距离统一用英尺存储 / 展示）。 */
+const FEET_PER_METER = 3.28084;
+
+function combatFeetPerCell(): number {
+  return 5;
+}
+
+/** 网格坐标 → 格坐标（SQUARE 用 col/row，HEX 用 q/r）。 */
+function combatCellOf(
+  grid: CombatGrid,
+  x: number,
+  y: number
+): { readonly col?: number; readonly row?: number; readonly q?: number; readonly r?: number } {
+  if (grid.gridType === "HEX") {
+    const size = Math.max(1, grid.gridSize / 2);
+    const qf = ((Math.sqrt(3) / 3) * x - y / 3) / size;
+    const rf = ((2 / 3) * y) / size;
+    const sf = -qf - rf;
+    let q = Math.round(qf);
+    let r = Math.round(rf);
+    let s = Math.round(sf);
+    const qDiff = Math.abs(q - qf);
+    const rDiff = Math.abs(r - rf);
+    const sDiff = Math.abs(s - sf);
+    if (qDiff > rDiff && qDiff > sDiff) {
+      q = -r - s;
+    } else if (rDiff > sDiff) {
+      r = -q - s;
+    }
+    return { q, r };
+  }
+  return {
+    col: Math.floor(x / Math.max(1, grid.gridSize)),
+    row: Math.floor(y / Math.max(1, grid.gridSize))
+  };
+}
+
+function combatCellDistance(a: ReturnType<typeof combatCellOf>, b: ReturnType<typeof combatCellOf>): number {
+  if (a.q !== undefined && a.r !== undefined && b.q !== undefined && b.r !== undefined) {
+    const dq = a.q - b.q;
+    const dr = a.r - b.r;
+    return (Math.abs(dq) + Math.abs(dr) + Math.abs(dq + dr)) / 2;
+  }
+  return Math.max(Math.abs((a.col ?? 0) - (b.col ?? 0)), Math.abs((a.row ?? 0) - (b.row ?? 0)));
+}
+
+/** 战斗内两个单位按当前场景网格计算的实际距离（英尺）；缺坐标或网格时返回 null。 */
+export function combatDistanceFeet(
+  state: CombatState,
+  actorId: string,
+  targetId: string
+): number | null {
+  const grid = state.grid;
+  if (grid === null || grid === undefined) return null;
+  const actor = state.participants.find((participant) => participant.id === actorId);
+  const target = state.participants.find((participant) => participant.id === targetId);
+  if (
+    actor?.position === null ||
+    actor?.position === undefined ||
+    target?.position === null ||
+    target?.position === undefined
+  ) {
+    return null;
+  }
+  if (grid.gridType === "NONE") {
+    const feetPerCell = combatFeetPerCell();
+    const scale = feetPerCell / Math.max(1, grid.gridSize);
+    return Math.hypot(actor.position.x - target.position.x, actor.position.y - target.position.y) * scale;
+  }
+  return combatCellDistance(
+    combatCellOf(grid, actor.position.x, actor.position.y),
+    combatCellOf(grid, target.position.x, target.position.y)
+  ) * combatFeetPerCell();
+}
+
+/** 战斗内两个单位的距离（米）；缺坐标或网格时返回 null。 */
+export function combatDistanceMeters(
+  state: CombatState,
+  actorId: string,
+  targetId: string
+): number | null {
+  const feet = combatDistanceFeet(state, actorId, targetId);
+  return feet === null ? null : feet / FEET_PER_METER;
+}
+
+/** 把房间地图的网格与 Token 坐标同步进纯战斗状态（由服务端 runtime 调用）。 */
+export function syncCombatPositions(
+  state: CombatState,
+  grid: CombatGrid | null,
+  positions: ReadonlyMap<string, CombatPosition>
+): void {
+  state.grid = grid;
+  for (const participant of state.participants) {
+    const position = positions.get(participant.id);
+    participant.position = position === undefined ? null : { x: position.x, y: position.y };
+  }
+}
 import { loadParticipantConditions, possessInitFromConditions } from "./conditions";
 import type {
   ActionSubmission,
   AttackBuffState,
+  CombatGrid,
   CombatMode,
   CombatParticipantState,
   CombatPassiveMods,
+  CombatPosition,
   CombatState,
   LogEntry,
   SummonTemplate

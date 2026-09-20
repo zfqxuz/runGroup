@@ -4,6 +4,8 @@ import { emitSceneFogUpdate, emitSceneMapUpdate } from "@/server/realtime";
 import { loadSceneMapView, loadSceneTokenView, loadSceneView } from "@/server/scene/load";
 import { findFreeTokenPosition } from "@/server/scene/placement";
 import { consumePossessCharge, possessChargeForToken } from "@/server/magic/conditions";
+import { refreshCombatPositionsForScene } from "@/server/combat/runtime";
+import { broadcastCombat } from "./combat";
 import type { Ack } from "@/shared/socket";
 
 const roomChannel = (roomId: string): string => "room:" + roomId;
@@ -184,6 +186,9 @@ export function registerSceneHandlers(io: SocketServer, socket: Socket): void {
       where: { id: token.id },
       data: { x: freePoint.x, y: freePoint.y }
     });
+    // 当前场景有进行中战斗时，把 Token 坐标同步进纯战斗状态并广播。
+    const combatRuntimes = await refreshCombatPositionsForScene(input.roomId, token.map.scene.id);
+    for (const runtime of combatRuntimes) await broadcastCombat(io, runtime);
     const updated = await loadSceneTokenView(token.id);
     if (updated !== null) {
       io.to(roomChannel(input.roomId)).emit("scene:token:updated", { roomId: input.roomId, token: updated.token });

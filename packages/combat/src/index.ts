@@ -30,6 +30,8 @@ export {
   beginInitiativeRound,
   buildInitiativeOrder,
   checkEnd,
+  combatDistanceFeet,
+  combatDistanceMeters,
   currentActorId,
   endTurn,
   expireBarriers,
@@ -53,7 +55,8 @@ export {
   resolveRoundRaceAbilities,
   resolveSpellcardImmediate,
   spellcardBattleSummary,
-  submitAction
+  submitAction,
+  syncCombatPositions
 } from "./combat";
 export type {
   AdvanceResult,
