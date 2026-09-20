@@ -610,10 +610,12 @@ model SpellcardUsage {
   cardId      String
   /// 章节标识；null 表示按房间整体记账。
   chapterId   String?
+  /// 记账分组键：chapterId 或空字符串；参与唯一约束，保证不同章节可各用一次。
+  chapterKey  String   @default("")
   usedAt      DateTime @default(now()) @db.Timestamptz(3)
 
-  @@unique([roomId, characterId, cardId])
-  @@index([roomId, characterId])
+  @@unique([roomId, chapterKey, characterId, cardId])
+  @@index([roomId, chapterKey, characterId])
 }
 
 model Asset {

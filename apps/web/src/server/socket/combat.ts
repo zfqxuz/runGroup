@@ -44,7 +44,7 @@ import {
 import { allowedReactionTypes, allowedReactionTypesForParticipant, attackOptionsForParticipant, dpReactionTypesForParticipant, reactionTypesForAttack, validateCombatAction, type WeaponLike } from "@/server/combat/options";
 import { consumeItemUse, prepareItemAction, type CombatItemOption } from "@/server/combat/items";
 import { prepareSpellcardAction } from "@/server/combat/spellcards";
-import { loadUsedSpellcardKeys, markSpellcardUsed } from "@/server/combat/spellcard-usage";
+import { currentChapterIdOfRoom, loadUsedSpellcardKeys, markSpellcardUsed } from "@/server/combat/spellcard-usage";
 import { loadCombatDistance } from "@/server/combat/range";
 import type { RoutineAttackStep } from "@touhou/combat";
 import { saveCombatState } from "@/server/combat/setup";
@@ -601,7 +601,8 @@ async function handleAction(
       return;
     }
     if (actor.characterId !== null && typeof action.spellCardId === "string" && action.spellCardId.length > 0) {
-      const used = await loadUsedSpellcardKeys(runtime.roomId, [actor.characterId]);
+      const chapterId = await currentChapterIdOfRoom(runtime.roomId);
+      const used = await loadUsedSpellcardKeys(runtime.roomId, [actor.characterId], chapterId);
       if (used.has(actor.characterId + ":" + action.spellCardId)) {
         ack({ ok: false, error: "这张符卡在本章节已经使用过" });
         return;
@@ -691,7 +692,12 @@ async function handleAction(
   if (action.kind === "SPELLCARD" && typeof action.spellCardId === "string" && action.spellCardId.length > 0) {
     const spellActor = findParticipant(runtime.state, requestedActor);
     if (spellActor?.characterId !== null && spellActor?.characterId !== undefined) {
-      await markSpellcardUsed(runtime.roomId, spellActor.characterId, action.spellCardId);
+      await markSpellcardUsed(
+        runtime.roomId,
+        spellActor.characterId,
+        action.spellCardId,
+        await currentChapterIdOfRoom(runtime.roomId)
+      );
     }
   }
   if (preparedItem !== null) {
@@ -1482,7 +1488,8 @@ async function handleImmediateSpellcard(
     return;
   }
   if (actor.characterId !== null) {
-    const used = await loadUsedSpellcardKeys(runtime.roomId, [actor.characterId]);
+    const chapterId = await currentChapterIdOfRoom(runtime.roomId);
+    const used = await loadUsedSpellcardKeys(runtime.roomId, [actor.characterId], chapterId);
     if (used.has(actor.characterId + ":" + input.spellCardId)) {
       ack({ ok: false, error: "这张符卡在本章节已经使用过" });
       return;
@@ -1508,7 +1515,12 @@ async function handleImmediateSpellcard(
   }
   resolveSpellcardImmediate(runtime.pack, runtime.state, actorId, prepared.action);
   if (actor.characterId !== null) {
-    await markSpellcardUsed(runtime.roomId, actor.characterId, input.spellCardId);
+    await markSpellcardUsed(
+      runtime.roomId,
+      actor.characterId,
+      input.spellCardId,
+      await currentChapterIdOfRoom(runtime.roomId)
+    );
   }
   // 展开后按「不应对」继续结算本次攻击；伤害会先由新展开的 SC 承受。
   runtime.pendingReactions.delete(actorId);

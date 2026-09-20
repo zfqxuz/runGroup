@@ -32,7 +32,7 @@ import { prisma } from "@/server/db/prisma";
 import type { EffectivePack } from "@/server/rules/loader";
 import { NpcStatsSchema } from "@/shared/npc";
 import { SpellCardStatsSchema } from "@/shared/card";
-import { loadUsedSpellcardKeys } from "@/server/combat/spellcard-usage";
+import { currentChapterIdOfRoom, loadUsedSpellcardKeys } from "@/server/combat/spellcard-usage";
 import { buildEffectiveSkills } from "@/server/character/skills";
 import { emitCombatEnded } from "@/server/realtime";
 import { armorExpressionFromValue } from "@/server/combat/armor";
@@ -77,7 +77,8 @@ export async function listSelectableSpellcards(
     .map((unit) => (unit.ref.startsWith("character:") ? unit.ref.slice("character:".length) : null))
     .filter((id): id is string => id !== null && id.length > 0);
   if (characterIds.length === 0) return {};
-  const usedKeys = await loadUsedSpellcardKeys(roomId, characterIds);
+  const chapterId = await currentChapterIdOfRoom(roomId);
+  const usedKeys = await loadUsedSpellcardKeys(roomId, characterIds, chapterId);
   const cards = await prisma.card.findMany({
     where: {
       characterId: { in: [...new Set(characterIds)] },
@@ -890,11 +891,13 @@ export async function createCombatRecord(
       },
       select: { id: true, characterId: true }
     });
+    const chapterId = await currentChapterIdOfRoom(roomId);
     const usedKeys = await loadUsedSpellcardKeys(
       roomId,
       equippedSpellcards
         .map((card) => card.characterId)
-        .filter((id): id is string => typeof id === "string" && id.length > 0)
+        .filter((id): id is string => typeof id === "string" && id.length > 0),
+      chapterId
     );
     const cardOwnerById = new Map<string, string>();
     for (const card of equippedSpellcards) {

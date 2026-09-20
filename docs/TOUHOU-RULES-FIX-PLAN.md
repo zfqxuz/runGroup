@@ -317,7 +317,9 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - ✅ 4.17 跨战斗消耗：新增 `SpellcardUsage(roomId, characterId, cardId)` 表与迁移；
      战前候选与战斗创建都会过滤本章节已用 SC（按房间记账），
      提交 / 任意时机展开成功时写入使用记录。
-   - ⏳ 严格「章节」边界（按模组章节而非房间）仍待做。
+   - ✅ 严格「章节」边界：`SpellcardUsage.chapterKey` 参与唯一约束（迁移 `20260920130000_spellcard_chapter`）；
+     `currentChapterIdOfRoom()` 读取 GameState.currentChapterId，候选 / 结算 / 记录都按章节分组，
+     不同章节可各使用一次同一张符卡；房间级旧记录（chapterKey=""）继续兼容。
 4. SC 完整规则（部分完成）：
    - ✅ 4.8 / 4.12：展开型 SC 展开、消费型 SC 发动时回复 `ceil(DP 上限/2)` DP
      （`recoverSpellcardDp`，日志 `SPELLCARD_DP_RECOVER`）。

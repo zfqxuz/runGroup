@@ -215,6 +215,10 @@ async function main(): Promise<void> {
       data: { roomId: room.id, status: "PLAYING", title: "DP E2E", createdBy: userId },
       select: { id: true }
     });
+    // 严格章节边界：SC 使用记录按 currentChapterId 分组。
+    await prisma.gameState.create({
+      data: { gameId: game.id, currentChapterId: "chapter-a" }
+    });
     await prisma.gameCharacter.create({
       data: {
         gameId: game.id,
@@ -406,19 +410,39 @@ async function main(): Promise<void> {
     assert(persistedRound2.state.phase === "DP_DECLARATION", "第二轮快照应为宣言阶段");
     assert(persistedRound2.state.round === 2, "第二轮快照 round 应为 2");
 
-    // 章节内已用 SC：记录后不应再出现在战前宣言候选里（create 也会过滤）。
-    await markSpellcardUsed(room.id, character.id, declaredCard.id);
-    const usedKeys = await loadUsedSpellcardKeys(room.id, [character.id]);
-    assert(usedKeys.has(character.id + ":" + declaredCard.id), "应记录已用符卡");
+    // 严格章节边界：SC 使用记录按章节分组，不同章节可各使用一次。
+    await markSpellcardUsed(room.id, character.id, declaredCard.id, "chapter-a");
+    const usedA = await loadUsedSpellcardKeys(room.id, [character.id], "chapter-a");
+    assert(usedA.has(character.id + ":" + declaredCard.id), "chapter-a 应记录已用符卡");
+    const usedB = await loadUsedSpellcardKeys(room.id, [character.id], "chapter-b");
+    assert(usedB.has(character.id + ":" + declaredCard.id) === false, "chapter-b 不应看到 chapter-a 的记录");
+
     const selectableCards = await listSelectableSpellcards(room.id, [
       { ref: "character:" + character.id } as never
     ]);
     const remainingIds = (selectableCards["character:" + character.id] ?? []).map((card) => card.cardId);
     assert(remainingIds.includes(undeclaredCard.id), "未使用符卡应保留在候选里");
-    assert(remainingIds.includes(declaredCard.id) === false, "已用符卡不应再出现在候选里");
+    assert(remainingIds.includes(declaredCard.id) === false, "本章节已用符卡不应再出现在候选里");
+
+    // 切到 chapter-b：该符卡重新可用；各章节记录互不覆盖。
+    await prisma.gameState.update({ where: { gameId: game.id }, data: { currentChapterId: "chapter-b" } });
+    const selectableB = await listSelectableSpellcards(room.id, [
+      { ref: "character:" + character.id } as never
+    ]);
+    const remainingB = (selectableB["character:" + character.id] ?? []).map((card) => card.cardId);
+    assert(remainingB.includes(declaredCard.id), "chapter-b 候选应恢复该符卡");
+    await markSpellcardUsed(room.id, character.id, declaredCard.id, "chapter-b");
+    assert(
+      (await loadUsedSpellcardKeys(room.id, [character.id], "chapter-a")).has(character.id + ":" + declaredCard.id),
+      "chapter-a 的记录应保留"
+    );
+    assert(
+      (await loadUsedSpellcardKeys(room.id, [character.id], "chapter-b")).has(character.id + ":" + declaredCard.id),
+      "chapter-b 的记录应写入"
+    );
 
     console.log(
-      "PASS DP 战斗 E2E：章节内已用 SC → SC 战前宣言 → DP 宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
+      "PASS DP 战斗 E2E：章节隔离 SC → SC 战前宣言 → DP 宣言 → 弹幕 → 应对 → 射击 / 回避擦弹 → 轮转 → 快照恢复（战斗 " + combatId + "）"
     );
   } finally {
     if (socket !== null) socket.close();
