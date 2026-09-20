@@ -134,10 +134,13 @@ export interface CombatActionPayload {
   readonly grazeSpend?: "MP" | "MELEE_DAMAGE" | "RANGED_DAMAGE";
   /** PASS 行动用于主动放弃展开中的符卡。 */
   readonly abandonDeclaration?: boolean;
-  /** DP（千幻抄）行动种类：弹幕 / 射击 / 追击 / 近战。 */
-  readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE";
+  /** DP（千幻抄）行动种类：弹幕 / 射击 / 追击 / 近战 / 其他判定。 */
+  readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE" | "SKILL";
+  /** DP 其他行动：目标达成值。 */
+  readonly dpTargetValue?: number;
   readonly dpDice?: number;
   readonly dpSecondaryDice?: number;
+  readonly dpAttribute?: string;
   readonly dpTargetIds?: readonly string[];
   readonly dpEscalation?: number;
   readonly danmakuDpReduction?: number;

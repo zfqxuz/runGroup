@@ -127,7 +127,10 @@ export default function CombatBoard(props: Props) {
   const [reactionDrafts, setReactionDrafts] = useState<Record<string, ReactionDraft>>({});
   // DP（千幻抄）：宣言草稿与行动控件。
   const [dpDeclareDraft, setDpDeclareDraft] = useState<Record<string, number>>({});
-  const [dpAction, setDpAction] = useState<"DANMAKU" | "RANGED" | "CHASE" | "MELEE">("DANMAKU");
+  const [dpAction, setDpAction] = useState<"DANMAKU" | "RANGED" | "CHASE" | "MELEE" | "SKILL">("DANMAKU");
+  const [dpSkillId, setDpSkillId] = useState("DODGE");
+  const [dpAttribute, setDpAttribute] = useState("int");
+  const [dpTargetValue, setDpTargetValue] = useState(12);
   const [dpDice, setDpDice] = useState(3);
   const [dpSecondaryDice, setDpSecondaryDice] = useState(3);
   const [dpEscalation, setDpEscalation] = useState(0);
@@ -578,6 +581,7 @@ export default function CombatBoard(props: Props) {
     if (
       action.kind === "DANMAKU" &&
       action.dpAction !== "DANMAKU" &&
+      action.dpAction !== "SKILL" &&
       (action.targetId ?? "").length === 0
     ) {
       setError("请先选择攻击目标");
@@ -629,6 +633,17 @@ export default function CombatBoard(props: Props) {
         dpAction: "DANMAKU",
         danmakuDpReduction: dpDanmakuReduction,
         danmakuBaseDamage: dpDanmakuDamage
+      });
+      return;
+    }
+    if (dpAction === "SKILL") {
+      emitAction({
+        kind: "DANMAKU",
+        dpAction: "SKILL",
+        skill: dpSkillId,
+        dpAttribute,
+        dpDice,
+        dpTargetValue
       });
       return;
     }
@@ -1539,9 +1554,59 @@ export default function CombatBoard(props: Props) {
                         <option value="RANGED">射击</option>
                         <option value="CHASE">追击</option>
                         <option value="MELEE">近战</option>
+                        <option value="SKILL">其他判定（调查 / 感知等）</option>
                       </select>
                     </label>
-                    {dpAction === "DANMAKU" ? (
+                    {dpAction === "SKILL" ? (
+                      <>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">技能</span>
+                          <select
+                            value={dpSkillId}
+                            onChange={(event) => setDpSkillId(event.target.value)}
+                            className={inputClass}
+                          >
+                            {props.skillOptions.map((option) => (
+                              <option key={option.id} value={option.id}>{option.name}</option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">特性值</span>
+                          <select
+                            value={dpAttribute}
+                            onChange={(event) => setDpAttribute(event.target.value)}
+                            className={inputClass}
+                          >
+                            <option value="int">知性</option>
+                            <option value="dex">感觉</option>
+                            <option value="pow">意志</option>
+                            <option value="str">身体</option>
+                          </select>
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">目标达成值</span>
+                          <input
+                            type="number"
+                            min={0}
+                            value={dpTargetValue}
+                            onChange={(event) => setDpTargetValue(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">判定骰数</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={3}
+                            value={dpDice}
+                            onChange={(event) => setDpDice(Math.max(1, Math.floor(Number(event.target.value) || 1)))}
+                            className={inputClass}
+                          />
+                        </label>
+                      </>
+                    ) : dpAction === "DANMAKU" ? (
                       <>
                         <label className="flex flex-col gap-1.5">
                           <span className="text-[11px] text-white/40">回避消耗 DP</span>

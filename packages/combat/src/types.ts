@@ -207,12 +207,14 @@ export interface ActionSubmission {
   readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
   /** 攻击 / 法术的元素属性 id；服务端从装备或规则包解析，客户端不可伪造。 */
   readonly element?: string;
-  /** DP 模式攻击种类：弹幕 / 射击 / 追击 / 近战。 */
-  readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE";
+  /** DP 模式行动种类：弹幕 / 射击 / 追击 / 近战 / 其他技能判定。 */
+  readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE" | "SKILL";
   /** DP 模式本次判定消费的骰数（1 骰 = 1 DP × 规则包单价）。 */
   readonly dpDice?: number;
   /** DP 模式判定使用的特性值 key；缺省由行动种类决定。 */
   readonly dpAttribute?: string;
+  /** DP 其他行动：目标达成值（技能判定用）。 */
+  readonly dpTargetValue?: number;
   /** DP 近战：命中判定的骰数（接近判定用 dpDice）。 */
   readonly dpSecondaryDice?: number;
   /** DP 追击：多目标 id 列表。 */

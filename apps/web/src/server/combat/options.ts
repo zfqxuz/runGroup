@@ -495,7 +495,7 @@ export function validateCombatAction(
   if (action.kind === "DANMAKU" && action.dpAction !== undefined) {
     const actor = context.state.participants.find((item) => item.id === action.actorId);
     if (actor === undefined) return "行动单位不在场";
-    if (action.dpAction === "DANMAKU") return null;
+    if (action.dpAction === "DANMAKU" || action.dpAction === "SKILL") return null;
     const targetIds =
       action.dpAction === "CHASE"
         ? [...(action.dpTargetIds ?? [])]

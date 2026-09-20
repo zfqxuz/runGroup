@@ -324,3 +324,39 @@ describe("DP 擦弹 / 待机", () => {
     void actor;
   });
 });
+
+describe("DP 其他行动判定（6.18）", () => {
+  it("消费 DP 骰进行技能判定，不进入应对窗口", () => {
+    const setup = makeDpCombat("dp-skill", { DANMAKU: 100 });
+    const { state, actor } = setup;
+    startRound(setup);
+    state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "SKILL",
+      skill: "DANMAKU",
+      dpAttribute: "int",
+      dpDice: 3,
+      dpTargetValue: 1
+    };
+    resolveDpTurn(touhou, state, {});
+    expect(actor.dp).toBe(27);
+    const check = state.log.find((entry) => entry.data?.rollType === "DP_SKILL_CHECK");
+    expect(check?.data?.success).toBe(true);
+    expect(check?.data?.dice).toBe(3);
+  });
+
+  it("请求骰数夹到 maxDicePerCheck", () => {
+    const setup = makeDpCombat("dp-skill-clamp", { DANMAKU: 100 });
+    const { state, actor } = setup;
+    startRound(setup);
+    state.pending["actor"] = {
+      actorId: "actor", kind: "DANMAKU", dpAction: "SKILL",
+      skill: "DANMAKU", dpAttribute: "int", dpDice: 99, dpTargetValue: 1
+    };
+    resolveDpTurn(touhou, state, {});
+    const check = state.log.find((entry) => entry.data?.rollType === "DP_SKILL_CHECK");
+    expect(check?.data?.dice).toBe(3);
+    expect(actor.dp).toBe(27);
+  });
+});

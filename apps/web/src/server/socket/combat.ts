@@ -423,7 +423,7 @@ async function handleAction(
     abandonDeclaration: raw.abandonDeclaration === true,
     // DP（千幻抄）：行动种类、骰数与目标由客户端声明，服务端仍会夹取骰数上限。
     dpAction:
-      raw.dpAction === "DANMAKU" || raw.dpAction === "RANGED" || raw.dpAction === "CHASE" || raw.dpAction === "MELEE"
+      raw.dpAction === "DANMAKU" || raw.dpAction === "RANGED" || raw.dpAction === "CHASE" || raw.dpAction === "MELEE" || raw.dpAction === "SKILL"
         ? raw.dpAction
         : undefined,
     dpDice: asNumber(raw.dpDice),
@@ -432,6 +432,7 @@ async function handleAction(
       ? raw.dpTargetIds.filter((id): id is string => typeof id === "string")
       : undefined,
     dpEscalation: asNumber(raw.dpEscalation),
+    dpTargetValue: asNumber(raw.dpTargetValue),
     danmakuDpReduction: asNumber(raw.danmakuDpReduction),
     danmakuBaseDamage: asNumber(raw.danmakuBaseDamage),
     damageAbilityId: asString(raw.damageAbilityId),

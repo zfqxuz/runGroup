@@ -2918,6 +2918,8 @@ export function reactionTargetIdsForAction(
       });
       return withDpCoverAllies(state, actor, ids);
     }
+    // DP 其他判定：不进入应对窗口。
+    if (action.dpAction === "SKILL") return [];
     // DP 射击 / 近战：目标 + 目标队友的掩护窗口。
     if (action.dpAction === "RANGED" || action.dpAction === "MELEE") {
       if (requestedTargetId === null || requestedTargetId === actor.id) return [];
@@ -4366,6 +4368,46 @@ function resolveDpMelee(
 }
 
 /**
+ * DP 其他行动（千幻抄 6.18）：调查 / 感知等也可判定，
+ * 最多消费 maxDicePerCheck 颗骰，也可选择不判定（直接 PASS）。
+ */
+function resolveDpSkillCheck(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
+  const state = ctx.state;
+  const dpRules = ctx.pack.pack.dp;
+  const perDie = Math.max(0, Math.floor(dpRules.actionCosts.abilityPerDie));
+  const dice = clampTouhouDpDice(submission.dpDice ?? 1, dpRules.maxDicePerCheck);
+  if (spendDp(ctx, actor, perDie * dice, "其他判定 " + dice + "D") === false) return;
+  const skillId = submission.skill ?? "DANMAKU";
+  const attributeKey = submission.dpAttribute ?? "int";
+  const target = Math.max(0, Math.floor(submission.dpTargetValue ?? 12));
+  const roll = dpRoll(ctx.pack, state, actor, attributeKey, skillId, dice, "dp-skill:" + actor.id + ":" + skillId);
+  const success = roll.achievement >= target;
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: submission.targetId ?? null,
+    text:
+      actor.name + " 其他判定〈" + skillId + "〉：" + dice + "d6=" + roll.roll + " + " + roll.base + " = " +
+      roll.achievement + " / 目标 " + target + " → " + (success ? "成功" : "失败"),
+    data: {
+      rollType: "DP_SKILL_CHECK",
+      dice,
+      roll: roll.roll,
+      base: roll.base,
+      achievement: roll.achievement,
+      target,
+      success,
+      skill: skillId,
+      attribute: attributeKey
+    }
+  });
+}
+
+/**
  * DP 弹幕：固定 DP 消耗、无判定、影响全体敌人。
  * 目标选择「回避弹幕」时消耗规定 DP，不受伤；DP 不足则受到固定伤害。
  */
@@ -4478,6 +4520,8 @@ export function resolveDpActionForActor(
     }
   } else if (submission.kind === "DANMAKU" && submission.dpAction === "CHASE") {
     resolveDpChase(ctx, actor, submission);
+  } else if (submission.kind === "DANMAKU" && submission.dpAction === "SKILL") {
+    resolveDpSkillCheck(ctx, actor, submission);
   } else if (submission.kind === "DANMAKU" && submission.dpAction === "MELEE") {
     const defender = submission.targetId === null || submission.targetId === undefined
       ? undefined
