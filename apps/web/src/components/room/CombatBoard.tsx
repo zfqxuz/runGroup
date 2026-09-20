@@ -1795,6 +1795,15 @@ export default function CombatBoard(props: Props) {
                     {props.system === "COC7" ? "反击姿态" : "消弹姿态"}
                   </button>
                 ) : null}
+                {selectedActor?.hasDeclaration === true ? (
+                  <button
+                    type="button"
+                    onClick={() => emitAction({ kind: "PASS", abandonDeclaration: true })}
+                    className="rounded-lg border border-purple-400/40 px-3 py-2 text-xs text-purple-200 transition hover:bg-purple-400/10"
+                  >
+                    主动放弃符卡
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => emitAction({ kind: "PASS" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
                   {view?.mode === "DP" ? "待机（下回合 DP +2）" : "跳过"}
                 </button>

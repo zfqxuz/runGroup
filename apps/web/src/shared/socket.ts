@@ -132,6 +132,8 @@ export interface CombatActionPayload {
   readonly status?: { readonly key: string; readonly stacks: number };
   /** 擦弹点消费：随 PASS 行动提交。 */
   readonly grazeSpend?: "MP" | "MELEE_DAMAGE" | "RANGED_DAMAGE";
+  /** PASS 行动用于主动放弃展开中的符卡。 */
+  readonly abandonDeclaration?: boolean;
   /** DP（千幻抄）行动种类：弹幕 / 射击 / 追击 / 近战。 */
   readonly dpAction?: "DANMAKU" | "RANGED" | "CHASE" | "MELEE";
   readonly dpDice?: number;

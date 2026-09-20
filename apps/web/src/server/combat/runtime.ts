@@ -1,6 +1,7 @@
 import {
   filterCombatForViewer,
   findParticipant,
+  recoverTouhouLscLimits,
   type ActionSubmission,
   type ChaseAttackInput,
   type CombatState,
@@ -112,11 +113,14 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
     participant.mpExhausted = participant.mpExhausted === true;
     participant.lscUsed = participant.lscUsed === true;
     participant.lscBroken = participant.lscBroken === true;
+    participant.lscBrokenAt = typeof participant.lscBrokenAt === "string" ? participant.lscBrokenAt : null;
   }
   state.spellcardBattle =
     state.spellcardBattle !== null && typeof state.spellcardBattle === "object"
       ? state.spellcardBattle
       : null;
+  // LSC 后遗症：载入时检查是否已过 30 分钟，若是则恢复 DP 上限。
+  recoverTouhouLscLimits(pack, state);
   const members = combat.room.members;
   const roles = new Map<string, RuntimeRole>();
   const kpIds: string[] = [];

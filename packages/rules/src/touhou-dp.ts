@@ -95,3 +95,17 @@ export function clampTouhouDpDice(dice: number, maxDice = TOUHOU_MAX_DICE_PER_CH
   const requested = finiteInt(dice);
   return Math.max(1, Math.min(max, requested > 0 ? requested : max));
 }
+
+/** LSC 被击破后 DP 上限视为 0 的时长（分钟）。 */
+export const TOUHOU_LSC_DP_RECOVERY_MINUTES = 30;
+
+/**
+ * LSC 被击破后，经过 `TOUHOU_LSC_DP_RECOVERY_MINUTES` 分钟，DP 初始值与上限恢复。
+ * `brokenAt` 为 ISO 时间字符串；解析失败时视为已到期（避免永久锁死）。
+ */
+export function touhouLscRecoveryDue(brokenAt: string | null | undefined, nowMs: number): boolean {
+  if (typeof brokenAt !== "string" || brokenAt.length === 0) return true;
+  const parsed = Date.parse(brokenAt);
+  if (Number.isFinite(parsed) === false) return true;
+  return nowMs - parsed >= TOUHOU_LSC_DP_RECOVERY_MINUTES * 60_000;
+}

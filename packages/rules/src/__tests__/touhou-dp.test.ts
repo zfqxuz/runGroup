@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  TOUHOU_LSC_DP_RECOVERY_MINUTES,
   TOUHOU_MAX_DICE_PER_CHECK_FALLBACK,
   TOUHOU_RESIST_MAX_DICE_FALLBACK,
   clampTouhouDpDice,
@@ -7,6 +8,7 @@ import {
   touhouChaseDamage,
   touhouMeleeDamage,
   touhouRangedDamage,
+  touhouLscRecoveryDue,
   touhouResistTargetValue
 } from "../touhou-dp";
 
@@ -70,5 +72,21 @@ describe("DP 骰数夹取", () => {
     expect(clampTouhouDpDice(2, 3)).toBe(2);
     expect(TOUHOU_MAX_DICE_PER_CHECK_FALLBACK).toBe(3);
     expect(TOUHOU_RESIST_MAX_DICE_FALLBACK).toBe(3);
+  });
+});
+
+describe("LSC DP 恢复时长", () => {
+  it("30 分钟内未到期，超过后到期", () => {
+    const now = Date.parse("2026-09-20T00:00:00.000Z");
+    const recent = new Date(now - 10 * 60_000).toISOString();
+    const old = new Date(now - (TOUHOU_LSC_DP_RECOVERY_MINUTES + 1) * 60_000).toISOString();
+    expect(touhouLscRecoveryDue(recent, now)).toBe(false);
+    expect(touhouLscRecoveryDue(old, now)).toBe(true);
+  });
+
+  it("缺失 / 非法时间视为已到期，避免永久锁死", () => {
+    const now = Date.parse("2026-09-20T00:00:00.000Z");
+    expect(touhouLscRecoveryDue(null, now)).toBe(true);
+    expect(touhouLscRecoveryDue("bad-date", now)).toBe(true);
   });
 });

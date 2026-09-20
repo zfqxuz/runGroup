@@ -179,9 +179,11 @@ export type {
 } from "./touhou";
 
 export {
+  TOUHOU_LSC_DP_RECOVERY_MINUTES,
   TOUHOU_MAX_DICE_PER_CHECK_FALLBACK,
   TOUHOU_RESIST_MAX_DICE_FALLBACK,
   clampTouhouDpDice,
+  touhouLscRecoveryDue,
   touhouAbilityDamage,
   touhouChaseDamage,
   touhouMeleeDamage,

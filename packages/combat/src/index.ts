@@ -41,6 +41,7 @@ export {
   pushLog,
   readyParticipants,
   recomputeSpeed,
+  recoverTouhouLscLimits,
   resolveImmediateAction,
   resolveDyingChecks,
   resolveInitiativeTurn,

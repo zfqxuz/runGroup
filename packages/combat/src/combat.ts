@@ -30,6 +30,7 @@ import {
   spellTargeting,
   clampTouhouDpDice,
   touhouChaseDamage,
+  touhouLscRecoveryDue,
   touhouMeleeDamage,
   touhouRangedDamage,
   touhouResistTargetValue,
@@ -519,6 +520,71 @@ function grantDeclarationBreakerDp(
   });
 }
 
+/** 千幻抄 4.11：主动放弃展开中的 SC 时，由敌对阵营一人回复 DP 自然回复量。 */
+function abandonSpellcard(ctx: ResolveContext, actor: CombatParticipantState): void {
+  const declaration = actor.declaration;
+  if (declaration === null) {
+    pushLog(ctx.state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 没有展开中的符卡可以放弃"
+    });
+    return;
+  }
+  actor.declaration = null;
+  pushLog(ctx.state, {
+    kind: "SPELLCARD",
+    actorId: actor.id,
+    targetId: null,
+    text: actor.name + " 主动放弃了符卡「" + declaration.name + "」",
+    data: { rollType: "SPELLCARD_ABANDONED", name: declaration.name, cardId: declaration.cardId }
+  });
+  const enemy = ctx.state.participants.find(
+    (participant) => participant.defeated === false && participant.faction !== actor.faction
+  );
+  if (enemy !== undefined) {
+    grantDeclarationBreakerDp(ctx, enemy, actor, declaration.name);
+  }
+}
+
+/**
+ * 千幻抄 4.15：LSC 被击破 30 分钟后，DP 初始值与上限恢复。
+ * 由回合开始 / 战斗恢复时调用；气绝状态不自动解除。
+ */
+export function recoverTouhouLscLimits(
+  pack: CompiledRulePack,
+  state: CombatState,
+  nowMs: number = Date.now()
+): string[] {
+  if (pack.system !== "TOUHOU") return [];
+  const recovered: string[] = [];
+  for (const participant of state.participants) {
+    if (participant.lscBroken !== true) continue;
+    if (touhouLscRecoveryDue(participant.lscBrokenAt, nowMs) === false) continue;
+    const expression = pack.pack.derived.maxDp ?? "0";
+    let maxDp = 0;
+    try {
+      maxDp = Math.max(0, Math.floor(evaluateSource(pack, expression, participant.vars)));
+    } catch {
+      maxDp = 0;
+    }
+    participant.maxDp = maxDp;
+    participant.dp = maxDp;
+    participant.lscBroken = false;
+    participant.lscBrokenAt = null;
+    recovered.push(participant.id);
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: participant.id,
+      targetId: null,
+      text: participant.name + " 的 LSC 后遗症恢复：DP 上限回到 " + maxDp,
+      data: { rollType: "LSC_DP_RECOVERED", maxDp }
+    });
+  }
+  return recovered;
+}
+
 function breakDeclaration(
   ctx: ResolveContext,
   owner: CombatParticipantState,
@@ -544,6 +610,7 @@ function breakDeclaration(
     owner.unconscious = true;
     owner.defeated = true;
     owner.lscBroken = true;
+    owner.lscBrokenAt = new Date().toISOString();
     owner.dp = 0;
     owner.maxDp = 0;
     pushLog(ctx.state, {
@@ -4354,6 +4421,7 @@ export function resolveDpActionForActor(
   if (
     submission.kind === "PASS" &&
     submission.grazeSpend === undefined &&
+    submission.abandonDeclaration !== true &&
     state.dp !== null &&
     state.dp !== undefined
   ) {
@@ -4426,6 +4494,10 @@ function resolveOne(
       resolveOutOfRule(ctx, actor, submission);
       return;
     case "PASS": {
+      if (submission.abandonDeclaration === true) {
+        abandonSpellcard(ctx, actor);
+        return;
+      }
       if (submission.grazeSpend !== undefined) {
         resolveGrazeSpend(ctx, actor, submission.grazeSpend);
         return;

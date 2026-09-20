@@ -305,10 +305,14 @@ HP 系数接入 TOUHOU `maxHp` 公式（会偏离当前 COC7 基线，需产品�
    - ✅ 4.8 / 4.12：展开型 SC 展开、消费型 SC 发动时回复 `ceil(DP 上限/2)` DP
      （`recoverSpellcardDp`，日志 `SPELLCARD_DP_RECOVER`）。
    - ✅ 4.11：击破展开型 SC 的一方按自己的 DP 自然回复量回复 DP
-     （`grantDeclarationBreakerDp`，日志 `SPELLCARD_BREAK_DP_RECOVER`）；主动放弃 SC / 渐进消失仍待做。
+     （`grantDeclarationBreakerDp`，日志 `SPELLCARD_BREAK_DP_RECOVER`）；
+     主动放弃展开中的 SC 由敌对阵营一人回复 DP（PASS + `abandonDeclaration`，
+     日志 `SPELLCARD_ABANDONED`）。
    - ✅ 4.15 LSC：展开时可勾选 LSC；使用后 `lscUsed` 阻止本场再用符卡；
      LSC 被击破时立刻气绝（`unconscious` / `defeated`）、DP 与 DP 上限归零（30 分钟口径），
      日志 `LSC_DECLARED` / `LSC_BROKEN`；`CombatBoard` 增加 LSC 勾选。
+     30 分钟后 `recoverTouhouLscLimits()` 恢复 DP 上限与初始值（回合开始 / 载入检查，
+     日志 `LSC_DP_RECOVERED`）。
    - ⏳ 任意时机展开（4.9）、符卡战胜负条件（4.16）、主动放弃 SC、30 分钟后 DP 上限恢复。
 
 ### 2.8 后续条目（未铺开）

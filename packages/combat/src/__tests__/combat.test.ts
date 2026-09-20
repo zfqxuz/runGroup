@@ -17,6 +17,7 @@ import {
   createCombat,
   filterCombatForViewer,
   reactionTargetIdsForAction,
+  recoverTouhouLscLimits,
   resolvePending,
   submitAction,
   type CombatParticipantState,
@@ -1246,5 +1247,59 @@ describe("战前 SC 宣言", () => {
     consume(state, a, "card-2", "符卡二");
     expect(a.usedSpellCards).toContain("card-1");
     expect(a.usedSpellCards).toContain("card-2");
+  });
+});
+
+describe("主动放弃 SC（4.11）", () => {
+  it("放弃展开中的符卡时，敌对阵营一人回复 DP", () => {
+    const { state, a, npc } = makeCombat("abandon-sc");
+    a.mp = 100;
+    npc.dp = 0;
+    forceReady(a);
+    submitAction(state, {
+      actorId: "a",
+      kind: "SPELLCARD",
+      name: "放弃测试",
+      spellcardMode: "DECLARATION",
+      declarationHp: 10,
+      declarationDurationTicks: 240,
+      mpCost: 0
+    });
+    resolvePending(touhou, state);
+    expect(a.declaration).not.toBeNull();
+
+    forceReady(a);
+    submitAction(state, { actorId: "a", kind: "PASS", abandonDeclaration: true });
+    resolvePending(touhou, state);
+    expect(a.declaration).toBeNull();
+    expect(npc.dp).toBeGreaterThan(0);
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_ABANDONED")).toBe(true);
+  });
+});
+
+describe("LSC 30 分钟后恢复 DP 上限", () => {
+  it("到期的 LSC 后遗症恢复 DP 上限与初始值", () => {
+    const { state, a } = makeCombat("lsc-recover");
+    a.lscBroken = true;
+    a.lscBrokenAt = new Date(Date.now() - 31 * 60_000).toISOString();
+    a.dp = 0;
+    a.maxDp = 0;
+    const recovered = recoverTouhouLscLimits(touhou, state, Date.now());
+    expect(recovered).toContain("a");
+    expect(a.lscBroken).toBe(false);
+    expect(a.maxDp).toBeGreaterThan(0);
+    expect(a.dp).toBe(a.maxDp);
+    expect(state.log.some((entry) => entry.data?.rollType === "LSC_DP_RECOVERED")).toBe(true);
+  });
+
+  it("未到期的 LSC 后遗症不恢复", () => {
+    const { state, a } = makeCombat("lsc-not-due");
+    a.lscBroken = true;
+    a.lscBrokenAt = new Date(Date.now() - 5 * 60_000).toISOString();
+    a.dp = 0;
+    a.maxDp = 0;
+    const recovered = recoverTouhouLscLimits(touhou, state, Date.now());
+    expect(recovered).toEqual([]);
+    expect(a.maxDp).toBe(0);
   });
 });

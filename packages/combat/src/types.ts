@@ -155,6 +155,8 @@ export interface CombatParticipantState {
   lscUsed?: boolean;
   /** LSC 被击破：立刻气绝，30 分钟内 DP 上限视为 0。 */
   lscBroken?: boolean;
+  /** LSC 被击破的时间（ISO 字符串）；用于 30 分钟后恢复 DP 上限。 */
+  lscBrokenAt?: string | null;
   /** INITIATIVE 先攻修正（准备火器 +50 等）。 */
   initiativeMod?: number;
 }
@@ -258,6 +260,8 @@ export interface ActionSubmission {
   readonly declarationDurationTicks?: number;
   /** 本次展开是否宣告为 LSC。 */
   readonly declarationLsc?: boolean;
+  /** PASS 行动是否用于主动放弃展开中的符卡。 */
+  readonly abandonDeclaration?: boolean;
   /** 服务端从卡牌数据解析出的击破清弹范围。 */
   readonly declarationClearTargets?: "ALL" | "OTHERS_ONLY";
   /** 客户端不能直接决定强化数值；服务端从卡牌数据写入。 */
