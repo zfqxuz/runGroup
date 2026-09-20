@@ -357,7 +357,8 @@ DP 骰上限（依赖 DP 机制）、妖力 / 特技 / 锻炼的常时被动层�
    - ✅ **妖力 / 特技列表**（wiki 抓取）：`packs/data/touhou-abilities.ts` 登记 19 个条目
      （名称 / 消费点数 / 说明）；`AbilityDefinitionSchema.cost` / `costPerLevel` / `costNote`
      接入能力点预算与车卡 UI；高速飞行（移动 +Lv）、擦弹判定大（每 3 点擦弹 +1）、
-     被弹判定小（弹幕 DP 消耗与伤害 -1）、气功（射击/近战 +LvD、弹幕 +Lv）已自动化。
+     被弹判定小（弹幕 DP 消耗与伤害 -1）、气功（射击/近战 +LvD、弹幕 +Lv）、
+     集中力（PASS 宣言，下次防御/回避 DP 减免 max(3, floor(maxDp/6)×每骰)）已自动化。
      未自动化条目由 KP 按说明结算。
    - ✅ **wiki 法术 / 能力速查表**：`RulePack.spellReferences` + `packs/data/touhou-spell-references.ts`
      登记 85 条（神术·阴阳术 15、魔法 59、属性使 9、妖术 2），保留目标值 / 灵力 / 范围 / 时间 / 说明；

@@ -182,6 +182,8 @@ export interface CombatParticipantState {
   abilityLevels?: Record<string, number>;
   /** 千幻抄能力实例指定的发动特性值（如属性使选 {知性}/{感觉}）。 */
   abilityAttributes?: Record<string, string>;
+  /** 已习得的具体能力条目（妖力 / 特技，id -> Lv）。 */
+  abilityDefinitions?: Record<string, number>;
   /** 常时被动加值（妖力 / 常时特技）；战斗准备时由规则层算出。 */
   passiveMods?: CombatPassiveMods;
   /** 千幻抄 14.3：灵力归零导致昏迷；灵力恢复后清除。 */
@@ -219,6 +221,8 @@ export interface CombatParticipantState {
   coverUsedThisRound?: boolean;
   /** DP 能力：本轮是否已经发动过能力（千幻抄原则上每回合一次）。 */
   abilityUsedThisRound?: boolean;
+  /** 集中力：已宣言，下次防御 / 回避 DP 消耗降低，结算后清除。 */
+  focusDefense?: boolean;
   /** 展开中的结界；null 表示没有。 */
   barrier?: BarrierState | null;
   /** 14.12 当前所处掩体；null / undefined 表示无掩体。 */
@@ -336,6 +340,8 @@ export interface ActionSubmission {
   readonly declarationLsc?: boolean;
   /** PASS 行动是否用于主动放弃展开中的符卡。 */
   readonly abandonDeclaration?: boolean;
+  /** PASS 行动是否宣言「集中力」：下次防御 DP 消耗降低（最低 3 DP）。 */
+  readonly focusDefense?: boolean;
   /** 服务端从卡牌数据解析出的击破清弹范围。 */
   readonly declarationClearTargets?: "ALL" | "OTHERS_ONLY";
   /** 客户端不能直接决定强化数值；服务端从卡牌数据写入。 */

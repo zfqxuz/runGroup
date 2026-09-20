@@ -422,6 +422,7 @@ async function handleAction(
         ? raw.grazeSpend
         : undefined,
     abandonDeclaration: raw.abandonDeclaration === true,
+    focusDefense: raw.focusDefense === true,
     // DP（千幻抄）：行动种类、骰数与目标由客户端声明，服务端仍会夹取骰数上限。
     dpAction:
       raw.dpAction === "DANMAKU" || raw.dpAction === "RANGED" || raw.dpAction === "CHASE" || raw.dpAction === "MELEE" || raw.dpAction === "SKILL"

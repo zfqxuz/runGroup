@@ -1947,6 +1947,15 @@ export default function CombatBoard(props: Props) {
                     主动放弃符卡
                   </button>
                 ) : null}
+                {selectedActor !== null && (selectedActor.abilityDefinitions?.FEAT_FOCUS ?? 0) > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => emitAction({ kind: "PASS", focusDefense: true })}
+                    className="rounded-lg border border-emerald-400/40 px-3 py-2 text-xs text-emerald-200 transition hover:bg-emerald-400/10"
+                  >
+                    集中力（放弃攻击，下次防御降耗）
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => emitAction({ kind: "PASS" })} className="rounded-lg border border-white/15 px-3 py-2 text-xs text-white/60 transition hover:border-white/35">
                   {view?.mode === "DP" ? "待机（下回合 DP +2）" : "跳过"}
                 </button>

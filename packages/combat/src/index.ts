@@ -44,6 +44,7 @@ export {
   readyParticipants,
   recomputeSpeed,
   recoverTouhouLscLimits,
+  resolveDpActionForActor,
   resolveImmediateAction,
   resolveDyingChecks,
   resolveInitiativeTurn,

@@ -137,6 +137,8 @@ export interface ParticipantInit {
   readonly abilityLevels?: Readonly<Record<string, number>>;
   /** 能力实例的发动特性值覆盖，例如 { "ELEMENTALIST:FIRE": "dex" }。 */
   readonly abilityAttributes?: Readonly<Record<string, string>>;
+  /** 已习得的具体能力条目（妖力 / 特技，id -> Lv）。 */
+  readonly abilityDefinitions?: Readonly<Record<string, number>>;
   /** 常时被动加值；由规则层在战斗准备阶段算出。 */
   readonly passiveMods?: CombatPassiveMods;
   readonly skills?: Record<string, number>;
@@ -249,6 +251,7 @@ export function addParticipant(
     tempDpExpiresAtRound: null,
     grantedElement: null,
     grantedElementExpiresAtRound: null,
+    focusDefense: false,
     grazePoints: 0,
     armor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
     maxArmor: Math.max(0, Math.floor(init.armor ?? conditionArmor)),
@@ -272,6 +275,7 @@ export function addParticipant(
     barrier: null,
     cover: null,
     abilityAttributes: { ...(init.abilityAttributes ?? {}) },
+    abilityDefinitions: { ...(init.abilityDefinitions ?? {}) },
     passiveMods: {
       damageBonus: init.passiveMods?.damageBonus ?? 0,
       reactionBonus: init.passiveMods?.reactionBonus ?? 0,
@@ -4436,6 +4440,21 @@ function spendDp(
   return true;
 }
 
+/**
+ * 特技「集中力」：已宣言时降低本次防御 / 回避的 DP 消耗。
+ * 减免 = max(3, floor(最大DP / 6) × 每骰消耗)，消耗最低为 0。
+ */
+function focusDefenseCost(
+  defender: CombatParticipantState,
+  baseCost: number,
+  perDie: number
+): { readonly cost: number; readonly focused: boolean } {
+  if (defender.focusDefense !== true) return { cost: baseCost, focused: false };
+  defender.focusDefense = false;
+  const reduction = Math.max(3, Math.floor(Math.max(0, defender.maxDp) / 6) * Math.max(0, perDie));
+  return { cost: Math.max(0, baseCost - reduction), focused: true };
+}
+
 /** DP 防御应对：回避（{感觉}+〈回避〉）/ 防御（{身体}+〈近战武器〉）。 */
 function resolveDpDefense(
   ctx: ResolveContext,
@@ -4449,7 +4468,8 @@ function resolveDpDefense(
   const dice = Math.max(1, Math.floor(reaction.dpDice ?? 1));
   if (reaction.type === "DEFEND") {
     const perDie = Math.max(0, Math.floor(costs.defendPerDie));
-    if (spendReactionDp(ctx, defender, perDie * dice, "防御 " + dice + "D") === false) {
+    const focus = focusDefenseCost(defender, perDie * dice, perDie);
+    if (spendReactionDp(ctx, defender, focus.cost, "防御 " + dice + "D" + (focus.focused ? "（集中力）" : "")) === false) {
       return { success: false, reduction: 0 };
     }
     const roll = dpRoll(ctx.pack, ctx.state, defender, "str", reaction.skill ?? "MELEE", dice, "dp-defend:" + defender.id);
@@ -4470,7 +4490,8 @@ function resolveDpDefense(
   }
   // 默认回避：对射击 / 追击 / 近战可用
   const perDie = Math.max(0, Math.floor(costs.dodgePerDie));
-  if (spendReactionDp(ctx, defender, perDie * dice, "回避 " + dice + "D") === false) {
+  const focus = focusDefenseCost(defender, perDie * dice, perDie);
+  if (spendReactionDp(ctx, defender, focus.cost, "回避 " + dice + "D" + (focus.focused ? "（集中力）" : "")) === false) {
     return { success: false, reduction: 0 };
   }
   const roll = dpRoll(ctx.pack, ctx.state, defender, "dex", reaction.skill ?? "DODGE", dice, "dp-dodge:" + defender.id);
@@ -4992,6 +5013,17 @@ export function resolveDpActionForActor(
       targetId: null,
       text: actor.name + " 待机，下回合 DP 回复 +2",
       data: { rollType: "DP_WAIT", regenBonus: state.dp.regenBonus[actor.id] ?? 0 }
+    });
+  }
+  // 千幻抄特技「集中力」：PASS 宣言，下一次防御 / 回避的 DP 消耗降低。
+  if (submission.kind === "PASS" && submission.focusDefense === true) {
+    actor.focusDefense = true;
+    pushLog(state, {
+      kind: "STATUS",
+      actorId: actor.id,
+      targetId: null,
+      text: actor.name + " 宣言集中力：下次防御 / 回避的 DP 消耗降低",
+      data: { rollType: "FOCUS_DEFENSE_DECLARED" }
     });
   }
   if (submission.kind === "DANMAKU" && submission.dpAction === "DANMAKU") {

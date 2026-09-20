@@ -454,6 +454,7 @@ function buildCharacterInit(
         : [...(pack.pack.races[raceKey]?.elements ?? [])],
     abilityLevels,
     abilityAttributes: characterAbilityAttributesOf(character),
+    abilityDefinitions: characterAbilityDefinitionsOf(character),
     passiveMods: {
       damageBonus: passiveMods.damageBonus,
       reactionBonus: passiveMods.reactionBonus,
@@ -519,6 +520,7 @@ function buildNpcInit(
         : [...(pack.pack.races[raceKey]?.elements ?? [])],
     abilityLevels,
     abilityAttributes: { ...parsed.data.abilityAttributes },
+    abilityDefinitions: { ...parsed.data.abilityDefinitions },
     passiveMods: {
       damageBonus: passiveMods.damageBonus,
       reactionBonus: passiveMods.reactionBonus,

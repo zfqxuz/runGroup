@@ -78,6 +78,8 @@ export interface ParticipantView {
   readonly skills: Readonly<Record<string, number>> | null;
   /** 千幻抄能力等级（类别 id -> Lv）；仅对可见单位下发，DP 伤害公式需要。 */
   readonly abilityLevels: Readonly<Record<string, number>> | null;
+  /** 千幻抄具体能力条目（妖力 / 特技，id -> Lv）；用于判断集中力等。 */
+  readonly abilityDefinitions: Readonly<Record<string, number>> | null;
   /** 结界 HP / 上限；没有结界时均为 null。 */
   readonly barrierHp: number | null;
   readonly barrierMaxHp: number | null;
@@ -87,6 +89,8 @@ export interface ParticipantView {
   readonly barrierRequiredLevel: number | null;
   readonly barrierSizeId: string | null;
   readonly barrierPenalty: number | null;
+  /** 集中力：已宣言，下次防御 / 回避 DP 消耗降低。 */
+  readonly focusDefense: boolean;
   /** 属性赋予：当前攻击附带元素；无则为 null。 */
   readonly grantedElement: string | null;
   /** 护盾术追加 DP；仅数字可见时下发。 */
@@ -275,6 +279,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       speed: participant.speed,
       skills: showNumbers ? participant.skills : null,
       abilityLevels: showNumbers ? { ...(participant.abilityLevels ?? {}) } : null,
+      abilityDefinitions: showNumbers ? { ...(participant.abilityDefinitions ?? {}) } : null,
       barrierHp: showNumbers ? (participant.barrier?.hp ?? null) : null,
       barrierMaxHp: showNumbers ? (participant.barrier?.maxHp ?? null) : null,
       barrierName: showNumbers ? (participant.barrier?.name ?? null) : null,
@@ -282,6 +287,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       barrierRequiredLevel: showNumbers ? (participant.barrier?.requiredLevel ?? null) : null,
       barrierSizeId: showNumbers ? (participant.barrier?.sizeId ?? null) : null,
       barrierPenalty: showNumbers ? (participant.barrier?.penalty ?? null) : null,
+      focusDefense: participant.focusDefense === true,
       grantedElement: showNumbers ? (participant.grantedElement ?? null) : null,
       tempDp: showNumbers ? Math.max(0, participant.tempDp ?? 0) : null,
       tempDpMax: showNumbers ? Math.max(0, participant.tempDpMax ?? 0) : null,

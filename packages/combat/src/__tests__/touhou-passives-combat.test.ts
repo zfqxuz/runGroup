@@ -13,6 +13,7 @@ import {
   beginDpRound,
   createCombat,
   declareDp,
+  resolveDpActionForActor,
   resolveDpTurn,
   type CombatPassiveMods,
   type CombatParticipantState,
@@ -249,6 +250,30 @@ describe("常时被动在 DP 战斗中生效", () => {
     resolveDpTurn(touhou, setup.state, { e1: { type: "PASS" } });
     const damageLog = setup.state.log.find((entry) => entry.data?.rollType === "DP_RANGED_DAMAGE");
     expect(damageLog?.text).toContain("WEAKNESS");
+  });
+
+  it("集中力：PASS 宣言后降低下次回避 DP 消耗并清除宣言", () => {
+    const setup = makeCombat("focus-defense", passive(), passive());
+    startRound(setup.state, setup.actor, setup.e1);
+    setup.e1.maxDp = 30;
+    setup.e1.dp = 30;
+    setup.state.pending["e1"] = { actorId: "e1", kind: "PASS", focusDefense: true };
+    resolveDpActionForActor(touhou, setup.state, {}, "e1");
+    expect(setup.e1.focusDefense).toBe(true);
+
+    // 回避 3D 基础消耗 3 DP；集中力减免 max(3, floor(30/6)×1)=5 → 实际 0。
+    setup.state.pending["actor"] = {
+      actorId: "actor",
+      kind: "DANMAKU",
+      dpAction: "RANGED",
+      targetId: "e1",
+      skill: "DANMAKU",
+      dpDice: 1,
+      damage: "10"
+    };
+    resolveDpTurn(touhou, setup.state, { e1: { type: "DODGE", dpDice: 3 } });
+    expect(setup.e1.focusDefense).toBe(false);
+    expect(setup.e1.dp).toBe(30);
   });
 
   it("accuracyBonus 能提高攻击达成值（日志中的 achievement 对照）", () => {
