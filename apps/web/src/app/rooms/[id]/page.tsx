@@ -787,7 +787,7 @@ export default async function RoomPage({
           <p className="rounded-xl border border-sakura-500/30 bg-sakura-500/5 px-4 py-2 text-xs text-sakura-200">
             左侧为 KP 准备区，右侧为玩家视角。
           </p>
-          <div className="grid items-start gap-6 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+          <div className="grid items-start gap-6 lg:grid-cols-[minmax(170px,210px)_minmax(0,1fr)]">
             <aside className="flex flex-col gap-6 lg:sticky lg:top-20 lg:z-[120] lg:max-h-[calc(100vh-6rem)] lg:overflow-y-auto lg:pr-1">
               {kpActionPanel}
               {activeGame === null || gameState === null ? (

@@ -151,18 +151,50 @@ async function requireRoomMember(roomId: string, userId: string) {
 }
 
 /** 把库里的一张卡装备给某个角色（卡从库中移入该角色）。 */
+async function canKpManageRoomCard(
+  roomId: string,
+  userId: string,
+  cardId: string,
+  characterId: string
+): Promise<boolean> {
+  if (roomId.length === 0) return false;
+  const [membership, cardEntry, characterEntry] = await Promise.all([
+    prisma.roomMember.findUnique({
+      where: { roomId_userId: { roomId, userId } },
+      select: { role: true }
+    }),
+    prisma.roomCardEntry.findUnique({
+      where: { roomId_cardId: { roomId, cardId } },
+      select: { status: true }
+    }),
+    prisma.roomCharacterEntry.findUnique({
+      where: { roomId_characterId: { roomId, characterId } },
+      select: { status: true }
+    })
+  ]);
+  return (
+    membership?.role === "KP" &&
+    cardEntry?.status === "APPROVED" &&
+    characterEntry?.status === "APPROVED"
+  );
+}
+
 export async function equipCardAction(formData: FormData): Promise<void> {
   const session = await auth();
   if (session === null) return;
 
   const cardId = String(formData.get("cardId") ?? "");
   const characterId = String(formData.get("characterId") ?? "");
+  const roomId = String(formData.get("roomId") ?? "").trim();
   if (cardId.length === 0 || characterId.length === 0) return;
 
   const card = await prisma.card.findUnique({ where: { id: cardId } });
   const character = await prisma.character.findUnique({ where: { id: characterId } });
   if (card === null || character === null) return;
-  if (card.ownerId !== session.user.id || character.userId !== session.user.id) return;
+  const isOwner = card.ownerId === session.user.id && character.userId === session.user.id;
+  const isKp = isOwner === false ? await canKpManageRoomCard(roomId, session.user.id, card.id, character.id) : false;
+  if (isOwner === false && isKp === false) return;
+  if (card.system !== undefined && character.system !== undefined && card.system !== character.system) return;
   // 物品卡是唯一的：已经装备给某个角色的卡不能直接改绑到另一个角色，必须先卸下。
   if (card.characterId !== null && card.characterId !== characterId) return;
 
@@ -172,6 +204,11 @@ export async function equipCardAction(formData: FormData): Promise<void> {
   });
   revalidatePath("/cards");
   revalidatePath("/characters/" + characterId);
+  if (roomId.length > 0) {
+    revalidatePath("/rooms/" + roomId);
+    revalidatePath("/rooms/" + roomId + "/prepare");
+    revalidatePath("/rooms/" + roomId + "/characters/" + characterId);
+  }
 }
 
 function cardStatsRecord(value: unknown): Record<string, unknown> {
@@ -186,12 +223,18 @@ export async function unequipCardAction(formData: FormData): Promise<void> {
   if (session === null) return;
 
   const cardId = String(formData.get("cardId") ?? "");
+  const roomId = String(formData.get("roomId") ?? "").trim();
   if (cardId.length === 0) return;
 
   const card = await prisma.card.findUnique({ where: { id: cardId } });
-  if (card === null || card.ownerId !== session.user.id) return;
-
+  if (card === null) return;
   const characterId = card.characterId;
+  const isOwner = card.ownerId === session.user.id;
+  const isKp =
+    isOwner === false && characterId !== null
+      ? await canKpManageRoomCard(roomId, session.user.id, card.id, characterId)
+      : false;
+  if (isOwner === false && isKp === false) return;
 
   await prisma.card.update({
     where: { id: card.id },
@@ -200,6 +243,11 @@ export async function unequipCardAction(formData: FormData): Promise<void> {
 
   revalidatePath("/cards");
   if (characterId !== null) revalidatePath("/characters/" + characterId);
+  if (roomId.length > 0) {
+    revalidatePath("/rooms/" + roomId);
+    revalidatePath("/rooms/" + roomId + "/prepare");
+    if (characterId !== null) revalidatePath("/rooms/" + roomId + "/characters/" + characterId);
+  }
 }
 
 /** 删除一张卡（仅本人的角色卡或 KP）。 */

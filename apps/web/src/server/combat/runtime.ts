@@ -12,7 +12,7 @@ import {
 import { compileRulePack, type CompiledRulePack } from "@touhou/rules";
 import { loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "./options";
 import { loadItemsByParticipant, type CombatItemOption } from "./items";
-import { loadSpellcardsByParticipant } from "./spellcards";
+import { loadNpcSpellcardsByParticipant, loadSpellcardsByParticipant } from "./spellcards";
 import { prisma } from "@/server/db/prisma";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 
@@ -292,12 +292,15 @@ export async function loadCombatRuntime(combatId: string): Promise<CombatRuntime
       options.map((option) => option.skillId)
     ])
   );
+  const participantRefs = state.participants.map((participant) => ({
+    id: participant.id,
+    characterId: participant.characterId
+  }));
+  const npcSpellcardsByParticipant = await loadNpcSpellcardsByParticipant(combatId, participantRefs);
   const spellcardsByParticipant = await loadSpellcardsByParticipant(
     combat.room.system === "TOUHOU" && pack.system === "TOUHOU" ? "TOUHOU" : "COC7",
-    state.participants.map((participant) => ({
-      id: participant.id,
-      characterId: participant.characterId
-    }))
+    participantRefs,
+    npcSpellcardsByParticipant
   );
   const itemsByParticipant = await loadItemsByParticipant(
     state.participants.map((participant) => ({

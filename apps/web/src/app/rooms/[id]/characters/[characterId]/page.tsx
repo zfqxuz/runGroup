@@ -14,7 +14,7 @@ import {
   type AttributeSet
 } from "@touhou/rules";
 import BackstoryPanel from "@/components/character/BackstoryPanel";
-import { unequipCardAction } from "@/server/actions/card";
+import { equipCardAction, unequipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { creditRatingLabel } from "@/shared/occupation";
 import { prisma } from "@/server/db/prisma";
@@ -98,12 +98,20 @@ export default async function CharacterPage({
         }
       : null;
 
-  const pool = canManage
-    ? await prisma.card.findMany({
-        where: { roomId: room.id, scope: "ROOM", type: { not: "NPC" } },
-        orderBy: { createdAt: "desc" }
+  const approvedCardEntries = isOwner || isKP
+    ? await prisma.roomCardEntry.findMany({
+        where: {
+          roomId: room.id,
+          status: "APPROVED",
+          card: { ownerId: character.userId }
+        },
+        include: { card: true },
+        orderBy: { submittedAt: "asc" }
       })
     : [];
+  const equipableCards = approvedCardEntries
+    .map((entry) => entry.card)
+    .filter((card) => card.characterId === null && card.type !== "NPC");
 
 
 
@@ -255,6 +263,7 @@ export default async function CharacterPage({
                   <p className="mt-0.5 truncate text-[11px] text-white/35">{card.subtitle}</p>
                 )}
                 <form action={unequipCardAction} className="mt-2">
+                    <input type="hidden" name="roomId" value={room.id} />
                     <input type="hidden" name="cardId" value={card.id} />
                     <button
                       type="submit"
@@ -274,6 +283,36 @@ export default async function CharacterPage({
       </section>
       )}
 
+      {canManage && equipableCards.length > 0 ? (
+        <section className="rounded-xl border border-white/10 bg-ink-800/50 p-5">
+          <h2 className="text-sm font-medium text-white/80">可装备（已通过审核，{equipableCards.length}）</h2>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {equipableCards.map((card) => (
+              <form
+                key={card.id}
+                action={equipCardAction}
+                className={"flex flex-col gap-2 rounded-lg border-2 bg-ink-900/60 px-3 py-2.5 " + cardRarityBorderClass(card.rarity)}
+              >
+                <input type="hidden" name="roomId" value={room.id} />
+                <input type="hidden" name="cardId" value={card.id} />
+                <input type="hidden" name="characterId" value={character.id} />
+                <div className="flex items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm text-white/70">{card.name}</p>
+                    <p className="text-[11px] text-white/30">{card.type} · {RARITY_LABELS[card.rarity]}</p>
+                  </div>
+                  <button
+                    type="submit"
+                    className="shrink-0 rounded-md border border-sakura-500/40 px-2 py-1 text-[11px] text-sakura-400 transition hover:bg-sakura-500/10"
+                  >
+                    装备
+                  </button>
+                </div>
+              </form>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </main>
   );
 }

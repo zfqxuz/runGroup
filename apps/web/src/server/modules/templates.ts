@@ -8,6 +8,7 @@ import {
 } from "@touhou/rules";
 import type { AttributeSet } from "@touhou/rules";
 import { dedupeNpcRecords } from "@/server/ai/npc-dedupe";
+import { NpcSpellcardSchema } from "@/shared/npc";
 import { enrichNpcStatsFromSources } from "@/server/ai/npc-stats";
 import { prisma } from "@/server/db/prisma";
 import {
@@ -567,6 +568,10 @@ export async function syncModuleTemplates(
         derived = null;
       }
 
+      const spellcardsParsed = NpcSpellcardSchema.array().safeParse(entry.data.spellcards ?? []);
+      if (spellcardsParsed.success === false) {
+        warnings.push(label + " 的符卡数据不合法，已忽略：" + (spellcardsParsed.error.issues[0]?.message ?? "未知错误"));
+      }
       const data = {
         moduleId,
         sourceKey,
@@ -580,6 +585,7 @@ export async function syncModuleTemplates(
         attributes,
         skills,
         weapons: weapons as never,
+        spellcards: (spellcardsParsed.success ? spellcardsParsed.data : []) as never,
         armor: textOf(entry.data, ["armor", "armorExpression"], textOf(statsValue, ["armor", "armorExpression"], "0")),
         maxHp: numberWithFallback(entry.data.maxHp ?? statsValue.maxHp, derived?.maxHp ?? 10, 1, 9999),
         maxMp: numberWithFallback(entry.data.maxMp ?? statsValue.maxMp, derived?.maxMp ?? 0, 0, 99999),

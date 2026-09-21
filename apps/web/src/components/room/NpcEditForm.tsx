@@ -101,6 +101,18 @@ export default function NpcEditForm({ roomId, card, returnTo }: Props) {
           <span className="text-[10px] text-white/35">技能（每行一项，如 格斗:60、闪避:40）</span>
           <input name="skills" defaultValue={skillsText(stats.skills)} className={inputClass + " font-mono"} />
         </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-[10px] text-white/35">
+            符卡（JSON 数组；cardId + name + stats；stats 与玩家符卡格式一致）
+          </span>
+          <textarea
+            name="spellcards"
+            rows={8}
+            defaultValue={JSON.stringify(stats.spellcards, null, 2)}
+            placeholder='[{"cardId":"npc-sc-1","name":"月符「静默之月」","stats":{"mode":"CONSUMPTION","danmaku":"月光弹幕","mpCost":5,"hpRatio":null,"durationTicks":null,"clearTargets":null,"enhanceType":"SPELL","enhanceValue":1,"effects":[{"type":"DAMAGE","amount":"2d6"}],"targeting":"ENEMY","targetScope":"ONE","combat":{"mode":"SPELL","skillId":"DANMAKU","activationTarget":15,"resistAttribute":"pow"}}}]'
+            className={inputClass + " min-h-[140px] font-mono text-[10px] leading-relaxed"}
+          />
+        </label>
         <button type="submit" className="self-start rounded bg-sakura-500 px-3 py-1.5 text-[11px] font-medium text-white">
           保存 NPC
         </button>

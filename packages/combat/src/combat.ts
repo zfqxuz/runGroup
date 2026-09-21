@@ -3144,7 +3144,9 @@ function resolveSpellcard(
   }
 
   // 千幻抄 6.1.2：一方本场可用的 SC 总数有限，用完即无法再展开 / 消费。
-  if (ctx.pack.system === "TOUHOU" && state.spellcardBattle !== null && state.spellcardBattle !== undefined) {
+  // NPC 自带符卡不占玩家 SC 池，也不受战前宣言限制。
+  const isNpcSpellcard = actor.kind === "NPC" || actor.characterId === null;
+  if (isNpcSpellcard === false && ctx.pack.system === "TOUHOU" && state.spellcardBattle !== null && state.spellcardBattle !== undefined) {
     const side = actor.faction ?? "ALLY";
     const declared = state.spellcardBattle.declaredCardIds?.[side];
     if (declared !== undefined && cardId !== null && declared.includes(cardId) === false) {

@@ -20,6 +20,7 @@ import {
 } from "@/server/actions/room";
 import { applyModulePresetAction } from "@/server/actions/preset";
 import { reviewCardEntries, reviewEntry, submitCardToRoom, submitCharacterToRoom, withdrawEntry } from "@/server/actions/room-entry";
+import { equipCardAction } from "@/server/actions/card";
 import { auth } from "@/server/auth";
 import { loadGameModuleView } from "@/server/modules/revision";
 import { loadSceneView } from "@/server/scene/load";
@@ -324,6 +325,7 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
   cardEntries.sort((a, b) => (priority[a.status] ?? 9) - (priority[b.status] ?? 9));
   const pendingCharacterCount = characterEntries.filter((e) => e.status === "PENDING_REVIEW").length;
   const pendingCardCount = cardEntries.filter((e) => e.status === "PENDING_REVIEW").length;
+  const approvedCharactersForCards = characterEntries.filter((entry) => entry.status === "APPROVED");
 
   const initialMembers: RoomMemberView[] = room.members.map((member) => ({
     userId: member.userId,
@@ -1079,12 +1081,70 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
                         <span className="text-[10px] text-white/25">勾选后批量处理</span>
                       ) : null}
                     </div>
+
                   </div>
                 ))}
               </div>
             </div>
           )}
         </form>
+
+        {cardEntries.some((entry) => {
+          const candidates = approvedCharactersForCards.filter(
+            (characterEntry) => isKP || characterEntry.character.userId === session.user.id
+          );
+          return (
+            entry.status === "APPROVED" &&
+            entry.card.characterId === null &&
+            candidates.length > 0 &&
+            (isKP || entry.card.ownerId === session.user.id)
+          );
+        }) ? (
+          <div className="mt-6 border-t border-white/10 pt-4">
+            <h3 className="text-xs font-medium text-white/70">装备已通过卡牌</h3>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {cardEntries.map((entry) => {
+                const candidates = approvedCharactersForCards.filter(
+                  (characterEntry) => isKP || characterEntry.character.userId === session.user.id
+                );
+                const canEquip =
+                  entry.status === "APPROVED" &&
+                  entry.card.characterId === null &&
+                  candidates.length > 0 &&
+                  (isKP || entry.card.ownerId === session.user.id);
+                if (canEquip === false) return null;
+                return (
+                  <form key={entry.id} action={equipCardAction} className="rounded-lg border border-white/10 bg-ink-900/60 px-3 py-2.5">
+                    <input type="hidden" name="roomId" value={room.id} />
+                    <input type="hidden" name="cardId" value={entry.card.id} />
+                    <p className="truncate text-xs text-white/75">{entry.card.name}</p>
+                    <p className="mt-0.5 truncate text-[10px] text-white/35">
+                      {entry.card.owner?.displayName ?? entry.card.owner?.username ?? "未知"}
+                    </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <select
+                        name="characterId"
+                        className="min-w-0 flex-1 rounded border border-white/15 bg-ink-900 px-2 py-1 text-[10px] text-white/70"
+                      >
+                        {candidates.map((characterEntry) => (
+                          <option key={characterEntry.character.id} value={characterEntry.character.id}>
+                            {characterEntry.character.name}
+                          </option>
+                        ))}
+                      </select>
+                      <button
+                        type="submit"
+                        className="shrink-0 rounded border border-sakura-500/40 px-2 py-1 text-[10px] text-sakura-300 transition hover:bg-sakura-500/10"
+                      >
+                        装备
+                      </button>
+                    </div>
+                  </form>
+                );
+              })}
+            </div>
+          </div>
+        ) : null}
       </section>
 
 

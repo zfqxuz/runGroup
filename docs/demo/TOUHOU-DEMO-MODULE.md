@@ -107,6 +107,28 @@ maxMp: 140
 maxSan: 40
 maxDp: 90
 isPublic: false
+spellcards:
+  - cardId: npc-moon-fairy-sc-spell
+    name: 月符「静默之月」
+    stats:
+      mode: CONSUMPTION
+      danmaku: 月光化作无声的弹幕，从假月方向倾泻而下。
+      mpCost: 5
+      hpRatio: null
+      durationTicks: null
+      clearTargets: null
+      enhanceType: SPELL
+      enhanceValue: 1
+      effects:
+        - type: DAMAGE
+          amount: 2d6
+      targeting: ENEMY
+      targetScope: ONE
+      combat:
+        mode: SPELL
+        skillId: DANMAKU
+        activationTarget: 15
+        resistAttribute: pow
 ```
 
 ```yaml module-npc
@@ -131,6 +153,44 @@ maxMp: 200
 maxSan: 0
 maxDp: 150
 isPublic: true
+spellcards:
+  - cardId: npc-false-moon-sc-weapon
+    name: 月兽符「银牙」
+    stats:
+      mode: CONSUMPTION
+      danmaku: 假月兽挥出一排银色月光獠牙。
+      mpCost: 3
+      hpRatio: null
+      durationTicks: null
+      clearTargets: null
+      enhanceType: MELEE
+      enhanceValue: 1
+      effects: []
+      targeting: ENEMY
+      targetScope: ONE
+      combat:
+        mode: WEAPON
+        skillId: MELEE
+        damage: "2d6+db"
+        damageType: IMPALING
+        range: MELEE
+  - cardId: npc-false-moon-sc-armor
+    name: 月兽符「守护之月」
+    stats:
+      mode: DECLARATION
+      danmaku: 一层薄薄的月光覆盖在假月兽身上。
+      mpCost: 4
+      hpRatio: 1
+      durationTicks: 60
+      clearTargets: ALL
+      enhanceType: SPELL
+      enhanceValue: 1
+      effects: []
+      targeting: SELF
+      targetScope: SELF
+      combat:
+        mode: ARMOR
+        armorRatio: 1
 ```
 
 ## 地点与场景

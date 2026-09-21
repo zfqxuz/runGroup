@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { GameConditionSchema, PRESET_TIERS, RARITIES } from "@touhou/rules";
+import { SpellCardStatsSchema } from "./card";
 
 export const NPC_ATTRIBUTE_KEYS = [
   "str",
@@ -20,6 +21,13 @@ export const NpcWeaponSchema = z.object({
   skillId: z.string().max(80).default(""),
   attacks: z.union([z.string(), z.number()]).optional(),
   notes: z.string().max(300).default("")
+});
+
+/** NPC / Boss 自带的符卡档案；cardId 在战斗里只作为本地 key，不会查玩家卡库。 */
+export const NpcSpellcardSchema = z.object({
+  cardId: z.string().min(1).max(120),
+  name: z.string().min(1).max(120),
+  stats: SpellCardStatsSchema
 });
 
 export const NpcStatsSchema = z.object({
@@ -50,6 +58,8 @@ export const NpcStatsSchema = z.object({
   armor: z.string().max(40).default("0"),
   /** 该 NPC 可以施放的法术 id；团本物化时自动写入该团本的法术。 */
   spells: z.array(z.string().max(120)).max(200).default([]),
+  /** NPC 自带符卡：与玩家符卡共用 CombatSpellCardOption / prepareSpellcardAction 流程。 */
+  spellcards: z.array(NpcSpellcardSchema).max(50).default([]),
   maxHp: z.number().int().min(1).max(9999),
   maxMp: z.number().int().min(0).max(99999),
   maxSan: z.number().int().min(0).max(999),

@@ -1,13 +1,14 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { z } from "zod";
 import { redirect } from "next/navigation";
 import { computeDerived, PRESET_TIERS, RARITIES, type PresetCharacter } from "@touhou/rules";
 import { auth } from "@/server/auth";
 import { prisma } from "@/server/db/prisma";
 import { emitRoomRefresh } from "@/server/realtime";
 import { loadEffectivePack, type EffectivePack } from "@/server/rules/loader";
-import { NPC_ATTRIBUTE_KEYS, NpcStatsSchema, type NpcStats } from "@/shared/npc";
+import { NPC_ATTRIBUTE_KEYS, NpcSpellcardSchema, NpcStatsSchema, type NpcStats } from "@/shared/npc";
 
 function redirectError(roomId: string, message: string): never {
   redirect("/rooms/" + roomId + "/npcs/new?error=" + encodeURIComponent(message));
@@ -45,6 +46,7 @@ function materializePreset(preset: PresetCharacter, effective: EffectivePack): N
     maxDp: preset.maxDp ?? fallback.derived.maxDp,
     tags: [...preset.tags],
     spells: [],
+    spellcards: [],
     rarity: preset.rarity,
     conditions: []
   };
@@ -162,6 +164,22 @@ function parseSkills(formData: FormData, effective: EffectivePack): { skills: Re
   return { skills };
 }
 
+function parseSpellcards(formData: FormData): { spellcards: NpcStats["spellcards"] } | string {
+  const raw = String(formData.get("spellcards") ?? "").trim();
+  if (raw.length === 0) return { spellcards: [] };
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return "NPC 符卡 JSON 格式错误";
+  }
+  const result = z.array(NpcSpellcardSchema).safeParse(parsed);
+  if (result.success === false) {
+    return "NPC 符卡数据不合法：" + (result.error.issues[0]?.message ?? "未知错误");
+  }
+  return { spellcards: result.data };
+}
+
 function parseTags(formData: FormData): string[] {
   return String(formData.get("tags") ?? "")
     .split(/[,，]/)
@@ -195,6 +213,8 @@ export async function createCustomNpcAction(formData: FormData): Promise<void> {
   });
   const skillsResult = parseSkills(formData, effective);
   if (typeof skillsResult === "string") redirectError(roomId, skillsResult);
+  const spellcardsResult = parseSpellcards(formData);
+  if (typeof spellcardsResult === "string") redirectError(roomId, spellcardsResult);
   const tierRaw = String(formData.get("tier") ?? "STANDARD");
   const knownTiers = PRESET_TIERS as readonly string[];
   const tier = knownTiers.includes(tierRaw) ? tierRaw : "STANDARD";
@@ -207,6 +227,7 @@ export async function createCustomNpcAction(formData: FormData): Promise<void> {
     race: raceRaw.length === 0 ? null : raceRaw,
     attributes,
     skills: skillsResult.skills,
+    spellcards: spellcardsResult.spellcards,
     maxHp,
     maxMp,
     maxSan,
@@ -301,6 +322,8 @@ export async function updateNpcAction(formData: FormData): Promise<void> {
   });
   const skillsResult = parseSkills(formData, effective);
   if (typeof skillsResult === "string") redirectError(roomId, skillsResult);
+  const spellcardsResult = parseSpellcards(formData);
+  if (typeof spellcardsResult === "string") redirectError(roomId, spellcardsResult);
 
   const existingParsed = NpcStatsSchema.safeParse(card.stats);
   const existing = existingParsed.success ? existingParsed.data : null;
@@ -316,6 +339,8 @@ export async function updateNpcAction(formData: FormData): Promise<void> {
     race: raceRaw.length === 0 ? null : raceRaw,
     attributes,
     skills: skillsResult.skills,
+    spells: existing?.spells ?? [],
+    spellcards: spellcardsResult.spellcards,
     maxHp,
     maxMp,
     maxSan,

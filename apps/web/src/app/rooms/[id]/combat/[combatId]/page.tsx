@@ -11,7 +11,7 @@ import { auth } from "@/server/auth";
 import { combatFeatureFlags, loadAttackOptionsByParticipant, loadNpcWeaponsByParticipant, type CombatAttackOption } from "@/server/combat/options";
 import { loadItemsByParticipant } from "@/server/combat/items";
 import type { CombatItemOption } from "@/shared/combat-items";
-import { loadSpellcardsByParticipant } from "@/server/combat/spellcards";
+import { loadNpcSpellcardsByParticipant, loadSpellcardsByParticipant } from "@/server/combat/spellcards";
 import type { CombatSpellCardOption } from "@/shared/danmaku/spellcards";
 import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
@@ -84,13 +84,12 @@ export default async function CombatDetailPage({
     }
 
     if (room.system === "TOUHOU") {
-      const spellCards = await loadSpellcardsByParticipant(
-        "TOUHOU",
-        state.participants.map((participant) => ({
-          id: participant.id,
-          characterId: participant.characterId
-        }))
-      );
+      const participantRefs = state.participants.map((participant) => ({
+        id: participant.id,
+        characterId: participant.characterId
+      }));
+      const npcSpellcardsByParticipant = await loadNpcSpellcardsByParticipant(combat.id, participantRefs);
+      const spellCards = await loadSpellcardsByParticipant("TOUHOU", participantRefs, npcSpellcardsByParticipant);
       for (const [participantId, cards] of spellCards) {
         spellCardsByParticipant[participantId] = cards;
       }

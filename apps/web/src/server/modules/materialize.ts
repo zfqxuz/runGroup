@@ -333,6 +333,7 @@ export async function applyModulePresetToRoom(input: {
               attributes: template.attributes as never,
               skills: template.skills as never,
               weapons: template.weapons as never,
+              spellcards: template.spellcards as never,
               armor: template.armor,
               maxHp: template.maxHp,
               maxMp: template.maxMp,

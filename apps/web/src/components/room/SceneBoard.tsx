@@ -119,6 +119,7 @@ function TokenHoverCard(props: TokenHoverCardProps) {
       onMouseEnter={props.onCardEnter}
       onMouseLeave={props.onCardLeave}
       onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="flex items-start gap-2.5">
         {imageUrl === null ? (
@@ -379,6 +380,10 @@ export default function SceneBoard(props: Props) {
 
   function onTokenPointerDown(event: React.PointerEvent<HTMLDivElement>, token: SceneTokenView): void {
     if (canMove(token) === false) return;
+    // 悬浮卡里的开战 / 交换 / 分享按钮不应该触发 Token 拖拽，
+    // 否则 pointerup 会把 Token 拖到按钮所在的鼠标位置。
+    const target = event.target as HTMLElement | null;
+    if (target !== null && target.closest("a,button,input,select,textarea,summary,label") !== null) return;
     event.stopPropagation();
     event.currentTarget.setPointerCapture(event.pointerId);
     dragRef.current = { tokenId: token.id, pointerId: event.pointerId };

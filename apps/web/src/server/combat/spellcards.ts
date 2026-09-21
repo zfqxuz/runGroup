@@ -1,7 +1,8 @@
 import type { ActionSubmission, CombatParticipantState, CombatState } from "@touhou/combat";
 import type { CompiledRulePack } from "@touhou/rules";
 import { prisma } from "@/server/db/prisma";
-import { SpellCardStatsSchema, activeCardEffects } from "@/shared/card";
+import { SpellCardStatsSchema, activeCardEffects, type SpellCardStats } from "@/shared/card";
+import { NpcStatsSchema } from "@/shared/npc";
 import type {
   CombatSpellCardOption,
   SpellCardClearTargets
@@ -12,15 +13,35 @@ export interface SpellCardParticipantRef {
   readonly characterId: string | null;
 }
 
+function spellCardOptionFromStats(cardId: string, name: string, stats: SpellCardStats): CombatSpellCardOption {
+  return {
+    cardId,
+    name,
+    mode: stats.mode,
+    mpCost: stats.mpCost,
+    hpRatio: stats.hpRatio,
+    durationTicks: stats.durationTicks,
+    clearTargets: stats.clearTargets,
+    enhanceType: stats.enhanceType,
+    enhanceValue: stats.enhanceValue,
+    pattern: stats.pattern ?? null,
+    combat: stats.combat ?? null,
+    effects: activeCardEffects(stats),
+    targeting: stats.targeting,
+    targetScope: stats.targetScope
+  };
+}
+
 /**
  * 载入参战角色装备的符卡。
  *
  * 只在 TOUHOU 房间调用；COC7 或自定义规则包直接返回空 Map。
- * 符卡属于“个人库装备到角色”的卡，NPC 目前不参与。
+ * 玩家符卡来自个人库装备；NPC 符卡来自 npcData.spellcards（见 loadNpcSpellcardsByParticipant）。
  */
 export async function loadSpellcardsByParticipant(
   system: string,
-  participants: readonly SpellCardParticipantRef[]
+  participants: readonly SpellCardParticipantRef[],
+  npcSpellcardsByParticipant: ReadonlyMap<string, readonly CombatSpellCardOption[]> = new Map()
 ): Promise<Map<string, readonly CombatSpellCardOption[]>> {
   const result = new Map<string, readonly CombatSpellCardOption[]>();
   if (system !== "TOUHOU") return result;
@@ -28,51 +49,70 @@ export async function loadSpellcardsByParticipant(
   const characterIds = participants
     .map((participant) => participant.characterId)
     .filter((id): id is string => typeof id === "string" && id.length > 0);
-  if (characterIds.length === 0) return result;
-
-  const cards = await prisma.card.findMany({
-    where: {
-      characterId: { in: characterIds },
-      type: "SPELLCARD",
-      isEquipped: true,
-      system: "TOUHOU"
-    },
-    select: { id: true, name: true, stats: true, characterId: true },
-    orderBy: { createdAt: "asc" }
-  });
 
   const byCharacter = new Map<string, CombatSpellCardOption[]>();
-  for (const card of cards) {
-    if (card.characterId === null) continue;
-    const parsed = SpellCardStatsSchema.safeParse(card.stats);
-    if (parsed.success === false) continue;
-    const stats = parsed.data;
-    const option: CombatSpellCardOption = {
-      cardId: card.id,
-      name: card.name,
-      mode: stats.mode,
-      mpCost: stats.mpCost,
-      hpRatio: stats.hpRatio,
-      durationTicks: stats.durationTicks,
-      clearTargets: stats.clearTargets,
-      enhanceType: stats.enhanceType,
-      enhanceValue: stats.enhanceValue,
-      pattern: stats.pattern ?? null,
-      combat: stats.combat ?? null,
-      effects: activeCardEffects(stats),
-      targeting: stats.targeting,
-      targetScope: stats.targetScope
-    };
-    const list = byCharacter.get(card.characterId) ?? [];
-    list.push(option);
-    byCharacter.set(card.characterId, list);
+  if (characterIds.length > 0) {
+    const cards = await prisma.card.findMany({
+      where: {
+        characterId: { in: characterIds },
+        type: "SPELLCARD",
+        isEquipped: true,
+        system: "TOUHOU"
+      },
+      select: { id: true, name: true, stats: true, characterId: true },
+      orderBy: { createdAt: "asc" }
+    });
+
+    for (const card of cards) {
+      if (card.characterId === null) continue;
+      const parsed = SpellCardStatsSchema.safeParse(card.stats);
+      if (parsed.success === false) continue;
+      const option = spellCardOptionFromStats(card.id, card.name, parsed.data);
+      const list = byCharacter.get(card.characterId) ?? [];
+      list.push(option);
+      byCharacter.set(card.characterId, list);
+    }
   }
 
   for (const participant of participants) {
-    if (participant.characterId === null) continue;
-    const list = byCharacter.get(participant.characterId);
-    if (list === undefined) continue;
-    result.set(participant.id, list);
+    const playerList = participant.characterId === null ? [] : byCharacter.get(participant.characterId) ?? [];
+    const npcList = npcSpellcardsByParticipant.get(participant.id) ?? [];
+    const list = [...playerList, ...npcList];
+    if (list.length > 0) result.set(participant.id, list);
+  }
+  return result;
+}
+
+/**
+ * 从 CombatParticipant.npcData 读取 NPC 自带符卡。
+ *
+ * NPC 卡没有 characterId，符卡存在 stats.spellcards 里；开战时 npcData 会保存整份 stats。
+ */
+export async function loadNpcSpellcardsByParticipant(
+  combatId: string,
+  participants: readonly SpellCardParticipantRef[]
+): Promise<Map<string, readonly CombatSpellCardOption[]>> {
+  const result = new Map<string, readonly CombatSpellCardOption[]>();
+  const npcIds = new Set(participants.map((participant) => participant.id));
+  if (npcIds.size === 0) return result;
+
+  const rows = await prisma.combatParticipant.findMany({
+    where: { combatId, isNPC: true },
+    select: { id: true, npcData: true }
+  });
+  for (const row of rows) {
+    const data =
+      row.npcData !== null && typeof row.npcData === "object" && Array.isArray(row.npcData) === false
+        ? (row.npcData as Record<string, unknown>)
+        : {};
+    const participantId = typeof data.__participantId === "string" ? data.__participantId : row.id;
+    if (npcIds.has(participantId) === false) continue;
+    const parsed = NpcStatsSchema.safeParse(row.npcData);
+    if (parsed.success === false) continue;
+    const options = parsed.data.spellcards
+      .map((entry) => spellCardOptionFromStats(entry.cardId, entry.name, entry.stats))
+      .filter((option) => option.effects.length > 0 || option.combat !== null);
+    if (options.length > 0) result.set(participantId, options);
   }
   return result;
 }
@@ -123,7 +163,9 @@ export function prepareSpellcardAction(
   if (card === undefined) {
     return { ok: false, error: "该角色没有装备这张符卡" };
   }
-  if (state?.spellcardBattle !== null && state?.spellcardBattle !== undefined) {
+  // NPC 自带符卡不占玩家 SC 宣言池，也不走战前宣言限制；只按自身每场次数结算。
+  const isNpcSpellcard = actor.kind === "NPC" || actor.characterId === null;
+  if (isNpcSpellcard === false && state?.spellcardBattle !== null && state?.spellcardBattle !== undefined) {
     const side = actor.faction ?? "ALLY";
     const declared = state.spellcardBattle.declaredCardIds?.[side];
     if (declared !== undefined && declared.includes(cardId) === false) {
