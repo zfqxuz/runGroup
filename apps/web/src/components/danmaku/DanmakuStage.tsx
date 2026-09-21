@@ -55,14 +55,22 @@ export default function DanmakuStage(props: Props) {
     const participants = props.view?.participants ?? [];
     const living = participants.filter((participant) => participant.defeated === false);
     const pool = living.length > 0 ? living : participants;
-    const usPool = pool.filter(
-      (participant) =>
-        participant.isSelf ||
-        (participant.faction !== null && participant.faction === "PC") ||
-        (participant.faction === null && participant.kind === "PLAYER")
-    );
+    // 服务端下发的相对侧别最可靠：A = 己方，B = 对手。
+    // 旧快照没有 duelSide 时，退回按「自己 / 玩家 / NPC」粗略分边。
+    const hasDuelSide = pool.some((participant) => participant.duelSide !== null);
+    const usPool = hasDuelSide
+      ? pool.filter((participant) => participant.duelSide === "A")
+      : pool.filter(
+          (participant) =>
+            participant.isSelf ||
+            (participant.faction !== null && participant.faction === "PC") ||
+            (participant.faction === null && participant.kind === "PLAYER")
+        );
     let us = usPool;
-    let them = pool.filter((participant) => usPool.includes(participant) === false);
+    const themPool = hasDuelSide
+      ? pool.filter((participant) => participant.duelSide === "B")
+      : pool.filter((participant) => usPool.includes(participant) === false);
+    let them = themPool;
     if (us.length === 0 || them.length === 0) {
       // KP 视角或纯 NPC 对局：按当前展开符卡的一方分边，保证舞台始终有左右两边。
       const anchor = activeParticipant ?? pool[0] ?? null;
@@ -180,7 +188,11 @@ export default function DanmakuStage(props: Props) {
 
       {/* 消费型符卡：全舞台覆盖播放一次 */}
       {oneShot === null ? null : (
-        <div className="pointer-events-none absolute inset-0 z-20 bg-ink-950/70">
+        <div
+          data-testid="danmaku-oneshot"
+          data-pattern={oneShot.pattern.layers.map((layer) => layer.type).join(",")}
+          className="pointer-events-none absolute inset-0 z-20 bg-ink-950/70"
+        >
           <DanmakuCanvas
             key={"consume-" + oneShot.key}
             pattern={oneShot.pattern}
@@ -219,6 +231,7 @@ function DuelSide(props: DuelSideProps) {
   return (
     <div
       data-testid={"danmaku-side-" + props.side}
+      data-pattern={props.pattern.layers.map((layer) => layer.type).join(",")}
       className={"relative overflow-hidden border-b md:border-b-0 " + border + " " + ring + (isUs ? " md:border-r" : "")}
     >
       <DanmakuCanvas

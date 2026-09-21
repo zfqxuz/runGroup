@@ -434,6 +434,16 @@ export default function CombatBoard(props: Props) {
   const spellcardNeedsTarget =
     selectedSpellCard !== null &&
     (selectedSpellCard.effects.length > 0 || selectedSpellCard.combat?.mode === "WEAPON");
+  // 目标阵营用服务端下发的 duelSide 判断；两个玩家角色分属不同阵营时，
+  // 不能再按 kind === "PLAYER" / "NPC" 粗略区分（会把敌方 PC 当成友方）。
+  const sameSideAsActor = (participant: ParticipantView): boolean =>
+    participant.duelSide !== null
+      ? participant.duelSide === "A"
+      : participant.id === selectedActor?.id || participant.kind === selectedActor?.kind;
+  const enemyOfActor = (participant: ParticipantView): boolean =>
+    participant.duelSide !== null
+      ? participant.duelSide === "B"
+      : participant.id !== selectedActor?.id && participant.kind !== selectedActor?.kind;
   const spellcardEffectTargets =
     selectedSpellCard === null || selectedActor === null || spellcardNeedsTarget === false
       ? []
@@ -442,12 +452,8 @@ export default function CombatBoard(props: Props) {
         : selectedSpellCard.targetScope === "ALL"
           ? []
           : alive.filter((participant) => {
-              if (selectedSpellCard.targeting === "ENEMY") {
-                return participant.id !== selectedActor.id && participant.kind !== selectedActor.kind;
-              }
-              if (selectedSpellCard.targeting === "ALLY") {
-                return participant.id === selectedActor.id || participant.kind === selectedActor.kind;
-              }
+              if (selectedSpellCard.targeting === "ENEMY") return enemyOfActor(participant);
+              if (selectedSpellCard.targeting === "ALLY") return sameSideAsActor(participant);
               return true;
             });
   const activeSpellCardTargetId = spellcardEffectTargets.some((participant) => participant.id === spellCardTargetId)
@@ -460,12 +466,8 @@ export default function CombatBoard(props: Props) {
       : selectedSpell.target === "ALL"
         ? []
         : alive.filter((participant) => {
-            if (selectedSpell.targeting === "ENEMY") {
-              return participant.id !== selectedActor.id && participant.kind !== selectedActor.kind;
-            }
-            if (selectedSpell.targeting === "ALLY") {
-              return participant.id === selectedActor.id || participant.kind === selectedActor.kind;
-            }
+            if (selectedSpell.targeting === "ENEMY") return enemyOfActor(participant);
+            if (selectedSpell.targeting === "ALLY") return sameSideAsActor(participant);
             return true;
           });
   const activeSpellTargetId = spellTargetOptions.some((participant) => participant.id === spellTargetId)

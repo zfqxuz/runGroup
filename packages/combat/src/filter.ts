@@ -31,6 +31,8 @@ export interface ParticipantView {
   readonly name: string;
   readonly kind: "PLAYER" | "NPC";
   readonly faction: string | null;
+  /** 弹幕对决分屏用的相对侧别：A = 自己 / 己方，B = 对手；无法判断时为 null。不泄露真实阵营名。 */
+  readonly duelSide: "A" | "B" | null;
   readonly isSelf: boolean;
   /** 当前视角用户是否实际能操控这个单位（含夺舍产生的控制权转移）。 */
   readonly controlledByViewer: boolean;
@@ -218,6 +220,22 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
   const canSeePartyStats = viewer.canSeePartyStats === true;
   const identifiedIds = new Set<string>();
 
+  // 弹幕对决分屏：给客户端一个相对侧别（不泄露真实阵营名）。
+  // 玩家以自己角色的阵营为 A 侧；KP 以第一个玩家角色的阵营为 A 侧。
+  const viewerControlledIds = new Set<string>();
+  if (viewer.characterId !== null) viewerControlledIds.add(viewer.characterId);
+  for (const id of viewer.characterIds ?? []) viewerControlledIds.add(id);
+  const selfParticipant = state.participants.find(
+    (participant) => participant.characterId !== null && viewerControlledIds.has(participant.characterId)
+  );
+  const anchorFaction = isKP
+    ? (state.participants.find((participant) => participant.kind === "PLAYER")?.faction ??
+        state.participants[0]?.faction ??
+        "ALLY")
+    : selfParticipant?.faction ?? null;
+  const duelSideOf = (participant: (typeof state.participants)[number]): "A" | "B" | null =>
+    anchorFaction === null ? null : (participant.faction ?? "ALLY") === anchorFaction ? "A" : "B";
+
   const participants: ParticipantView[] = state.participants.map((participant) => {
     const controlledIds = new Set<string>();
     if (viewer.characterId !== null) controlledIds.add(viewer.characterId);
@@ -239,6 +257,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       name: identityKnown ? participant.name : "???",
       kind: participant.kind,
       faction: isKP ? participant.faction : null,
+      duelSide: duelSideOf(participant),
       isSelf,
       controlledByViewer: false,
       isReady: participant.isReady,
