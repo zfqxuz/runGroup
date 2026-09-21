@@ -88,6 +88,7 @@ export {
   dpTurnOrder,
   endDpTurn,
   resolveDpTurn,
+  skipDefeatedDpActors,
   grantDpWaitBonus,
   markDpActed
 } from "./dp";

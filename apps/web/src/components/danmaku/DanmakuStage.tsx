@@ -18,15 +18,23 @@ interface OneShot {
   readonly pattern: DanmakuPattern;
 }
 
-function declarationIdentity(participant: CombatView["participants"][number]): string {
+type Participant = CombatView["participants"][number];
+
+function declarationIdentity(participant: Participant): string {
   return participant.declarationCardId ?? participant.declarationName ?? participant.id;
 }
 
+function barPercent(value: number | null, max: number | null): number {
+  if (value === null || max === null || max <= 0) return 0;
+  return Math.max(0, Math.min(100, (value / max) * 100));
+}
+
 /**
- * 战斗弹幕演出层。
+ * 战斗弹幕演出层 —— 东方花映冢式「一人一边」对决布局。
  *
- * 数据来源：CombatView（当前展开符卡、declaration HP）+ 战斗日志（消费型符卡触发）。
- * 所有动画都是本地模拟；不参与伤害、ATB、检定和任何战斗判定。
+ * 左侧固定为我方（自己的角色 / 玩家阵营），右侧为敌方，
+ * 各占半个大舞台；有符卡展开的一方播放卡面弹幕，另一方播放待机弹幕。
+ * 所有动画都是本地模拟，不参与伤害、ATB、检定和任何战斗判定。
  */
 export default function DanmakuStage(props: Props) {
   const [oneShot, setOneShot] = useState<OneShot | null>(null);
@@ -42,21 +50,52 @@ export default function DanmakuStage(props: Props) {
   const activeParticipant = props.view?.participants.find((participant) => participant.hasDeclaration) ?? null;
   const identity = activeParticipant === null ? null : declarationIdentity(activeParticipant);
 
-  const activeCard = useMemo(() => {
-    if (activeParticipant === null) return null;
-    const cardId = activeParticipant.declarationCardId;
-    if (cardId !== null) return cardList.find((card) => card.cardId === cardId) ?? null;
-    const name = activeParticipant.declarationName;
-    return name === null ? null : (cardList.find((card) => card.name === name) ?? null);
-  }, [activeParticipant, cardList]);
+  // ---------- 花映冢式分边 ----------
+  const sides = useMemo(() => {
+    const participants = props.view?.participants ?? [];
+    const living = participants.filter((participant) => participant.defeated === false);
+    const pool = living.length > 0 ? living : participants;
+    const usPool = pool.filter(
+      (participant) =>
+        participant.isSelf ||
+        (participant.faction !== null && participant.faction === "PC") ||
+        (participant.faction === null && participant.kind === "PLAYER")
+    );
+    let us = usPool;
+    let them = pool.filter((participant) => usPool.includes(participant) === false);
+    if (us.length === 0 || them.length === 0) {
+      // KP 视角或纯 NPC 对局：按当前展开符卡的一方分边，保证舞台始终有左右两边。
+      const anchor = activeParticipant ?? pool[0] ?? null;
+      if (anchor !== null) {
+        us = pool.filter((participant) => participant.id === anchor.id);
+        them = pool.filter((participant) => participant.id !== anchor.id);
+      }
+    }
+    const featured = (list: readonly Participant[]): Participant | null =>
+      list.find((participant) => participant.hasDeclaration) ??
+      list.find((participant) => participant.defeated === false) ??
+      list[0] ??
+      null;
+    return { us: featured(us), them: featured(them) };
+  }, [props.view, activeParticipant]);
 
-  const activePattern = useMemo<DanmakuPattern | null>(() => {
-    if (identity === null) return null;
-    const cardPattern = activeCard?.pattern;
-    if (cardPattern !== null && cardPattern !== undefined) return cardPattern;
-    return fallbackDanmakuPattern(identity);
-  }, [activeCard, identity]);
+  function patternFor(participant: Participant | null): DanmakuPattern {
+    if (participant === null) return fallbackDanmakuPattern("idle");
+    if (participant.hasDeclaration) {
+      const cardId = participant.declarationCardId;
+      const card = cardId === null ? null : cardList.find((item) => item.cardId === cardId) ?? null;
+      const cardPattern = card?.pattern;
+      if (cardPattern !== null && cardPattern !== undefined) return cardPattern;
+      return fallbackDanmakuPattern(participant.declarationName ?? participant.id);
+    }
+    const key = participant.name === "???" ? participant.id : participant.name;
+    return fallbackDanmakuPattern(key);
+  }
 
+  const usPattern = useMemo(() => patternFor(sides.us), [sides.us, cardList]);
+  const themPattern = useMemo(() => patternFor(sides.them), [sides.them, cardList]);
+
+  // 消费型符卡：日志里出现 CONSUME 时在整个舞台播一次。
   useEffect(() => {
     const view = props.view;
     if (view === null) return;
@@ -92,45 +131,140 @@ export default function DanmakuStage(props: Props) {
 
   const label =
     activeParticipant === null
-      ? "战斗演出 · 待机"
+      ? "弹幕对决 · 待机"
       : activeParticipant.declarationName === null
         ? "符卡展开中"
         : "符卡 · " + activeParticipant.declarationName;
 
   return (
-    <div className="relative h-[230px] w-full overflow-hidden rounded-xl border border-white/10 bg-ink-900 sm:h-[300px]">
-      {oneShot === null ? (
-        <DanmakuCanvas
-          key={activeParticipant === null ? "idle" : "declare-" + activeParticipant.id + "-" + (identity ?? "")}
-          pattern={activePattern}
-          mode="loop"
-          className="block h-full w-full"
-        />
-      ) : (
-        <DanmakuCanvas
-          key={"consume-" + oneShot.key}
-          pattern={oneShot.pattern}
-          mode="once"
-          className="block h-full w-full"
-          onDone={() => setOneShot(null)}
-        />
-      )}
-
-      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-3 p-3">
-        <div className="rounded-lg border border-white/15 bg-ink-900/75 px-2.5 py-1.5">
-          <p className={"text-xs font-medium " + (oneShot === null ? "text-white/70" : "text-sakura-300")}>
-            {oneShot === null ? label : oneShot.name + " · 发动"}
-          </p>
-          <p className="mt-0.5 text-[10px] text-white/35">纯视觉演出</p>
-        </div>
-        {activeParticipant?.declarationHp !== null && activeParticipant?.declarationHp !== undefined ? (
-          <span className="rounded-lg border border-sakura-500/40 bg-ink-900/75 px-2.5 py-1.5 font-mono text-[11px] text-sakura-200">
-            符卡 HP {activeParticipant.declarationHp}
+    <section
+      data-testid="danmaku-duel"
+      className="relative overflow-hidden rounded-2xl border border-sakura-500/25 bg-gradient-to-b from-ink-800 to-ink-950 shadow-[0_0_40px_rgba(236,72,153,0.08)]">
+      {/* 舞台标题 */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 bg-ink-900/70 px-4 py-2">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-white/85">弹幕对决</span>
+          <span className="rounded-full border border-sakura-500/40 bg-sakura-500/10 px-2 py-0.5 text-[10px] text-sakura-200">
+            {label}
           </span>
-        ) : null}
+        </div>
+        <div className="flex items-center gap-2 text-[10px] text-white/35">
+          <span>纯视觉演出</span>
+          {oneShot === null ? null : <span className="text-sakura-300">{oneShot.name} · 发动</span>}
+        </div>
       </div>
 
-      {breakFlash ? <div className="pointer-events-none absolute inset-0 bg-white/20" /> : null}
+      {/* 左右两半的舞台 */}
+      <div className="relative grid h-[52vh] min-h-[380px] w-full grid-cols-1 md:grid-cols-2">
+        <DuelSide
+          side="us"
+          participant={sides.us}
+          pattern={usPattern}
+          activeDeclaration={activeParticipant !== null && sides.us !== null && activeParticipant.id === sides.us.id}
+          declarationHp={activeParticipant !== null && sides.us !== null && activeParticipant.id === sides.us.id ? activeParticipant.declarationHp : null}
+        />
+        <DuelSide
+          side="them"
+          participant={sides.them}
+          pattern={themPattern}
+          activeDeclaration={activeParticipant !== null && sides.them !== null && activeParticipant.id === sides.them.id}
+          declarationHp={activeParticipant !== null && sides.them !== null && activeParticipant.id === sides.them.id ? activeParticipant.declarationHp : null}
+        />
+
+        {/* 中央 VS 分隔 */}
+        <div className="pointer-events-none absolute inset-y-0 left-1/2 hidden w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-sakura-500/60 to-transparent md:block" />
+        <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 rounded-full border border-sakura-500/50 bg-ink-950/90 px-2.5 py-1 text-[11px] font-semibold tracking-widest text-sakura-200 md:block">
+          VS
+        </div>
+      </div>
+
+      {/* 消费型符卡：全舞台覆盖播放一次 */}
+      {oneShot === null ? null : (
+        <div className="pointer-events-none absolute inset-0 z-20 bg-ink-950/70">
+          <DanmakuCanvas
+            key={"consume-" + oneShot.key}
+            pattern={oneShot.pattern}
+            mode="once"
+            className="block h-full w-full"
+            onDone={() => setOneShot(null)}
+          />
+          <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+            <span className="rounded-lg border border-sakura-400/60 bg-ink-900/85 px-3 py-1 text-xs font-medium text-sakura-200">
+              {oneShot.name} · 发动
+            </span>
+          </div>
+        </div>
+      )}
+
+      {breakFlash ? <div className="pointer-events-none absolute inset-0 z-30 bg-white/20" /> : null}
+    </section>
+  );
+}
+
+interface DuelSideProps {
+  readonly side: "us" | "them";
+  readonly participant: Participant | null;
+  readonly pattern: DanmakuPattern;
+  readonly activeDeclaration: boolean;
+  readonly declarationHp: number | null;
+}
+
+function DuelSide(props: DuelSideProps) {
+  const { participant } = props;
+  const isUs = props.side === "us";
+  const accent = isUs ? "text-sky-200" : "text-red-200";
+  const border = isUs ? "border-sky-400/25" : "border-red-400/25";
+  const ring = props.activeDeclaration ? "ring-1 ring-sakura-400/50" : "";
+
+  return (
+    <div
+      data-testid={"danmaku-side-" + props.side}
+      className={"relative overflow-hidden border-b md:border-b-0 " + border + " " + ring + (isUs ? " md:border-r" : "")}
+    >
+      <DanmakuCanvas
+        key={(participant?.id ?? props.side) + "-" + (props.activeDeclaration ? "declare" : "idle")}
+        pattern={participant === null ? null : props.pattern}
+        mode="loop"
+        className="block h-full w-full"
+      />
+
+      <div className="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-2 p-3">
+        <div className="min-w-0 rounded-lg border border-white/15 bg-ink-950/75 px-2.5 py-1.5">
+          <p className={"truncate text-xs font-medium " + accent}>
+            {isUs ? "我方" : "敌方"} · {participant?.name ?? "待机"}
+          </p>
+          <div className="mt-1 flex items-center gap-2">
+            <span className="font-mono text-[10px] text-white/55">
+              HP {participant?.hp ?? "?"}
+              {participant?.maxHp === null || participant?.maxHp === undefined ? "" : "/" + participant.maxHp}
+            </span>
+            <span className="font-mono text-[10px] text-sakura-200">DP {participant?.dp ?? "?"}</span>
+          </div>
+        </div>
+        {props.declarationHp === null ? null : (
+          <span className="shrink-0 rounded-lg border border-sakura-500/40 bg-ink-950/80 px-2.5 py-1.5 font-mono text-[10px] text-sakura-200">
+            符卡 HP {props.declarationHp}
+          </span>
+        )}
+      </div>
+
+      {/* 底部状态条 */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 flex flex-col gap-1 bg-gradient-to-t from-ink-950/85 to-transparent px-3 pb-2 pt-6">
+        <div className="h-1 overflow-hidden rounded-full bg-white/10">
+          <div
+            className={"h-full rounded-full " + (isUs ? "bg-sky-400" : "bg-red-400")}
+            style={{ width: barPercent(participant?.hp ?? null, participant?.maxHp ?? null) + "%" }}
+          />
+        </div>
+        <div className="flex items-center justify-between text-[10px] text-white/45">
+          <span>{participant?.hasDeclaration === true ? "符卡展开中" : "待机弹幕"}</span>
+          <span>{participant?.isReady === true ? "就绪" : ""}</span>
+        </div>
+      </div>
+
+      {props.activeDeclaration ? (
+        <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-sakura-400 to-transparent" />
+      ) : null}
     </div>
   );
 }

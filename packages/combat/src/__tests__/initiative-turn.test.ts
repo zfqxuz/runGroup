@@ -115,3 +115,19 @@ describe('INITIATIVE 按顺序结算', () => {
     expect(endTurn(coc, state).nextActorId).toBe('p2');
   });
 });
+
+describe('INITIATIVE 倒地跳过', () => {
+  it('当前行动者中途倒地时，下一棒是原本的下一人而不是被跳过', () => {
+    const state = setup();
+    beginInitiativeRound(coc, state);
+    expect(currentActorId(state)).toBe('p1');
+
+    const first = state.participants.find((item) => item.id === 'p1');
+    if (first !== undefined) first.defeated = true;
+
+    const step = endTurn(coc, state);
+    expect(step.nextActorId).toBe('p2');
+    expect(state.participants.find((item) => item.id === 'p2')?.isReady).toBe(true);
+    expect(state.participants.find((item) => item.id === 'p3')?.isReady).toBe(false);
+  });
+});

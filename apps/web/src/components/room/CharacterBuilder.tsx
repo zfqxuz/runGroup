@@ -1711,6 +1711,10 @@ export default function CharacterBuilder(props: Props) {
                   const level = abilityLevels[instance.id] ?? 0;
                   const maxLevel = instance.maxLevel;
                   const nextCost = abilityCostForLevel(category, level + 1, instance.variantId);
+                  const instanceDescription =
+                    instance.variantId === null
+                      ? category.description
+                      : category.variants[instance.variantId]?.description ?? category.description;
                   const mapping = coc7AbilityMapping(props.pack.abilities, instance.id);
                   const mappedSkill =
                     mapping !== null && mapping.usage === "SKILL" && mapping.skillId !== null
@@ -1732,6 +1736,9 @@ export default function CharacterBuilder(props: Props) {
                         <p className="text-[10px] text-white/35">
                           累计 {abilityTotalCost(category, level, instance.variantId)} 点 · 下一级 {nextCost} 点
                         </p>
+                        {instanceDescription === undefined || instanceDescription.trim().length === 0 ? null : (
+                          <p className="mt-0.5 text-[10px] leading-relaxed text-white/30">{instanceDescription}</p>
+                        )}
                         {mapping === null ? null : (
                           <p className="mt-0.5 text-[10px] text-sky-200/70">
                             CoC7：

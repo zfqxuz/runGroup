@@ -808,6 +808,10 @@ export const CombatEventSchema = z.object({
 export const DpActionCostsSchema = z.object({
   /** 弹幕：固定 DP 消耗，无判定、打全体。 */
   danmaku: z.number().int().nonnegative().default(3),
+  /** 弹幕：目标选择回避时需要支付的 DP；由规则包固定，玩家不填写。 */
+  danmakuDodgeDp: z.number().int().nonnegative().default(1),
+  /** 弹幕：未回避时受到的固定伤害；由规则包固定，玩家不填写。 */
+  danmakuFlatDamage: z.number().int().nonnegative().default(3),
   /** 射击：每颗判定骰的 DP 消耗。 */
   rangedPerDie: z.number().int().nonnegative().default(1),
   /** 追击：每个目标的 DP 消耗。 */

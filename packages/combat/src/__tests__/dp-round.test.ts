@@ -18,6 +18,7 @@ import {
   dpTurnOrder,
   endDpTurn,
   grantDpWaitBonus,
+  skipDefeatedDpActors,
   type CombatParticipantState,
   type CombatState
 } from "../index";
@@ -117,5 +118,55 @@ describe("DP 回合与宣言", () => {
     expect(state.phase).toBe("DP_DECLARATION");
     // 基础 39 + 待机 2 = 41
     expect(a.dp).toBe(Math.min(a.maxDp, 41));
+  });
+});
+
+
+describe("倒地的行动者不会再卡住 DP 回合", () => {
+  it("skipDefeatedDpActors 会把指针推到下一个存活单位", () => {
+    const state = dpCombat("skip-dead");
+    const pc = addUnit(state, "pc", "PLAYER", "PC");
+    const npc = addUnit(state, "npc", "NPC", "BOSS");
+    pc.dp = 10;
+    npc.dp = 30;
+    beginDpRound(touhou, state);
+    declareDp(state, "pc", 10);
+    declareDp(state, "npc", 30);
+    expect(currentDpActorId(state)).toBe("npc");
+
+    npc.defeated = true;
+    npc.isReady = false;
+    expect(skipDefeatedDpActors(state)).toBe(true);
+    expect(currentDpActorId(state)).toBe("pc");
+  });
+
+  it("当前行动者在本轮中途死亡并走完顺序后，只剩一个阵营会直接结束战斗", () => {
+    const state = dpCombat("dead-round-end");
+    const pc = addUnit(state, "pc", "PLAYER", "PC");
+    const npc = addUnit(state, "npc", "NPC", "BOSS");
+    pc.dp = 10;
+    npc.dp = 20;
+    beginDpRound(touhou, state);
+    declareDp(state, "pc", 10);
+    declareDp(state, "npc", 20);
+    expect(currentDpActorId(state)).toBe("npc");
+
+    // NPC 还没行动就被打死了：跳过它，轮到 PC；PC 行动结束后本轮走完。
+    npc.defeated = true;
+    npc.isReady = false;
+    expect(skipDefeatedDpActors(state)).toBe(true);
+    expect(currentDpActorId(state)).toBe("pc");
+    const result = endDpTurn(touhou, state);
+    expect(result.roundAdvanced).toBe(true);
+    expect(state.phase).toBe("ENDED");
+  });
+
+  it("只剩一个阵营时 beginDpRound 不再开新轮，直接结束", () => {
+    const state = dpCombat("one-faction");
+    addUnit(state, "pc", "PLAYER", "PC");
+    const npc = addUnit(state, "npc", "NPC", "BOSS");
+    npc.defeated = true;
+    beginDpRound(touhou, state);
+    expect(state.phase).toBe("ENDED");
   });
 });

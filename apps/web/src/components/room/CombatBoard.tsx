@@ -66,6 +66,26 @@ interface Props {
   readonly spellIdsByParticipant: Readonly<Record<string, readonly string[]>>;
   readonly spellCardsByParticipant: Readonly<Record<string, readonly CombatSpellCardOption[]>>;
   readonly itemOptionsByParticipant: Readonly<Record<string, readonly CombatItemOption[]>>;
+  /** 能力实例 id → 名称 / 效果说明；用于在能力选择旁直接提示规则。 */
+  readonly abilityHints: Readonly<
+    Record<string, { readonly name: string; readonly description: string; readonly kind?: string; readonly costText?: string }>
+  >;
+  /** 千幻抄 DP 行动消耗；由服务端规则包下发，避免玩家手填。 */
+  readonly dpCosts: {
+    readonly danmaku: number;
+    readonly danmakuDodgeDp: number;
+    readonly danmakuFlatDamage: number;
+    readonly rangedPerDie: number;
+    readonly chasePerTarget: number;
+    readonly meleeApproachPerDie: number;
+    readonly meleeHitPerDie: number;
+    readonly dodgePerDie: number;
+    readonly defendPerDie: number;
+    readonly abilityPerDie: number;
+    readonly resistPerDie: number;
+    readonly coverPerDie: number;
+    readonly resistMaxDice: number;
+  } | null;
   readonly portraits: Readonly<Record<string, string>>;
 }
 
@@ -140,8 +160,6 @@ export default function CombatBoard(props: Props) {
   const [dpEscalation, setDpEscalation] = useState(0);
   const [dpAbilityId, setDpAbilityId] = useState("");
   const [dpTrainingId, setDpTrainingId] = useState("FEAT");
-  const [dpDanmakuReduction, setDpDanmakuReduction] = useState(1);
-  const [dpDanmakuDamage, setDpDanmakuDamage] = useState(3);
   const router = useRouter();
   const socketRef = useRef<Socket | null>(null);
 
@@ -225,6 +243,9 @@ export default function CombatBoard(props: Props) {
 
   const participants = view?.participants ?? [];
   const alive = participants.filter((item) => item.defeated === false);
+  const defeated = participants.filter((item) => item.defeated === true);
+  // 倒地的单位排到最后，避免它们占据战斗操作区的视线。
+  const orderedParticipants = [...alive, ...defeated];
   const chase = view?.chase ?? null;
   const chaseActive = chase !== null && chase.status === "ACTIVE";
 
@@ -363,6 +384,28 @@ export default function CombatBoard(props: Props) {
   const dpAbilityOptions = Object.entries(selectedActor?.abilityLevels ?? {})
     .filter((entry): entry is [string, number] => typeof entry[1] === "number")
     .sort((a, b) => b[1] - a[1]);
+  const dpAbilityHintId = dpAction === "MELEE" ? dpTrainingId : dpAbilityId;
+  const dpAbilityHint = props.abilityHints[dpAbilityHintId] ?? null;
+  const dpCosts = props.dpCosts;
+  // 千幻抄的消耗由规则包写死 / 由骰数算出，不再让玩家手填。
+  const dpEstimatedCost =
+    dpCosts === null
+      ? null
+      : dpAction === "DANMAKU"
+        ? dpCosts.danmaku
+        : dpAction === "RANGED"
+          ? Math.max(1, Math.floor(dpDice)) * dpCosts.rangedPerDie
+          : dpAction === "CHASE"
+            ? dpCosts.chasePerTarget + Math.max(0, Math.floor(dpEscalation)) * 2
+            : dpAction === "MELEE"
+              ? Math.max(1, Math.floor(dpDice)) * dpCosts.meleeApproachPerDie +
+                Math.max(1, Math.floor(dpSecondaryDice)) * dpCosts.meleeHitPerDie
+              : Math.max(1, Math.floor(dpDice)) * dpCosts.abilityPerDie;
+  const dpSkillBase =
+    selectedActor === null
+      ? 0
+      : Math.floor(selectedActor.attributes?.[dpAttribute] ?? 0) +
+        Math.floor(selectedActor.skills?.[dpSkillId] ?? 0);
   const dpCurrentActorId = view?.dp?.currentActorId ?? null;
   const dpCurrentActor = participants.find((item) => item.id === dpCurrentActorId) ?? null;
   const activeTargetId = targetOptions.some((item) => item.id === targetId) ? targetId : (targetOptions[0]?.id ?? "");
@@ -647,8 +690,6 @@ export default function CombatBoard(props: Props) {
       emitAction({
         kind: "DANMAKU",
         dpAction: "DANMAKU",
-        danmakuDpReduction: dpDanmakuReduction,
-        danmakuBaseDamage: dpDanmakuDamage,
         attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
       });
       return;
@@ -870,7 +911,7 @@ export default function CombatBoard(props: Props) {
   }
 
   function cardClass(item: ParticipantView): string {
-    if (item.defeated) return "border-white/10 bg-ink-900/40 opacity-60";
+    if (item.defeated) return "border-white/10 bg-ink-900/30 opacity-40 grayscale";
     const controlled = isControlled(item);
     if (pendingTargetIds.has(item.id) && controlled) {
       return "border-amber-400/70 bg-amber-400/10 ring-2 ring-amber-400/25";
@@ -1184,11 +1225,11 @@ export default function CombatBoard(props: Props) {
         <section className="rounded-xl border border-white/10 bg-ink-800/50 p-4">
           <h3 className="text-sm font-medium text-white/80">参战单位</h3>
           <div className="mt-3 flex gap-3 overflow-x-auto pb-2">
-            {participants.map((item) => {
+            {orderedParticipants.map((item) => {
               const controlled = isControlled(item);
-              const awaiting = pendingTargetIds.has(item.id);
-              const canActNow = chaseActive === false && controlled && item.isReady;
-              const current = chaseActive === false && (activeActorId === item.id || (view?.mode === "ATB" && item.isReady));
+              const awaiting = item.defeated === false && pendingTargetIds.has(item.id);
+              const canActNow = item.defeated === false && chaseActive === false && controlled && item.isReady;
+              const current = item.defeated === false && chaseActive === false && (activeActorId === item.id || (view?.mode === "ATB" && item.isReady));
               const hiddenStats = item.kind === "PLAYER" && item.isSelf === false && item.hp === null;
               const portrait = props.portraits[item.id];
               return (
@@ -1219,7 +1260,9 @@ export default function CombatBoard(props: Props) {
                         <span className="rounded border border-amber-400/50 bg-amber-400/10 px-1.5 py-0.5 text-[10px] text-amber-200">等待应对</span>
                       ) : null}
                       {item.defeated ? (
-                        <span className="rounded border border-red-400/40 px-1.5 py-0.5 text-[10px] text-red-300">已退场</span>
+                        <span className="rounded border border-red-400/60 bg-red-500/10 px-1.5 py-0.5 text-[10px] font-medium text-red-300">
+                          已退场
+                        </span>
                       ) : null}
                       {controlled === false && item.defeated === false ? (
                         <span className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] text-white/35">旁观</span>
@@ -1686,7 +1729,18 @@ export default function CombatBoard(props: Props) {
                           </select>
                         </label>
                         <label className="flex flex-col gap-1.5">
-                          <span className="text-[11px] text-white/40">目标达成值</span>
+                          <span className="text-[11px] text-white/40">
+                            基础达成值（{dpAttribute === "int" ? "知性" : dpAttribute === "dex" ? "感觉" : dpAttribute === "pow" ? "意志" : "身体"} + 技能，自动）
+                          </span>
+                          <input
+                            value={dpSkillBase}
+                            readOnly
+                            title="由角色属性与技能自动计算"
+                            className={inputClass + " cursor-not-allowed font-mono opacity-70"}
+                          />
+                        </label>
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">难度目标值（KP 设定，常规 12 / 困难 15 / 极难 18）</span>
                           <input
                             type="number"
                             min={0}
@@ -1708,28 +1762,11 @@ export default function CombatBoard(props: Props) {
                         </label>
                       </>
                     ) : dpAction === "DANMAKU" ? (
-                      <>
-                        <label className="flex flex-col gap-1.5">
-                          <span className="text-[11px] text-white/40">回避消耗 DP</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={dpDanmakuReduction}
-                            onChange={(event) => setDpDanmakuReduction(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
-                            className={inputClass}
-                          />
-                        </label>
-                        <label className="flex flex-col gap-1.5">
-                          <span className="text-[11px] text-white/40">未回避固定伤害</span>
-                          <input
-                            type="number"
-                            min={0}
-                            value={dpDanmakuDamage}
-                            onChange={(event) => setDpDanmakuDamage(Math.max(0, Math.floor(Number(event.target.value) || 0)))}
-                            className={inputClass}
-                          />
-                        </label>
-                      </>
+                      <div className="flex flex-col justify-center gap-1 rounded-lg border border-white/10 bg-ink-900/40 px-3 py-2 text-[11px] text-white/55">
+                        <span>固定消耗：{props.dpCosts?.danmaku ?? "-"} DP</span>
+                        <span>回避消耗：{props.dpCosts?.danmakuDodgeDp ?? "-"} DP（规则包固定）</span>
+                        <span>未回避伤害：{props.dpCosts?.danmakuFlatDamage ?? "-"} 点（规则包固定）</span>
+                      </div>
                     ) : (
                       <label className="flex flex-col gap-1.5">
                         <span className="text-[11px] text-white/40">目标</span>
@@ -1790,9 +1827,14 @@ export default function CombatBoard(props: Props) {
                         <select value={dpAbilityId} onChange={(event) => setDpAbilityId(event.target.value)} className={inputClass}>
                           <option value="">使用卡面伤害</option>
                           {dpAbilityOptions.map(([id, level]) => (
-                            <option key={id} value={id}>{id} Lv{level}</option>
+                            <option key={id} value={id}>{props.abilityHints[id]?.name ?? id} Lv{level}</option>
                           ))}
                         </select>
+                        {dpAbilityHint === null ? null : (
+                          <span className="text-[10px] leading-relaxed text-sky-200/70">
+                            {dpAbilityHint.description.length === 0 ? "规则包未登记效果说明。" : dpAbilityHint.description}
+                          </span>
+                        )}
                       </label>
                     ) : null}
                     {dpAction === "MELEE" ? (
@@ -1803,9 +1845,14 @@ export default function CombatBoard(props: Props) {
                           {dpAbilityOptions
                             .filter(([id]) => id !== "FEAT")
                             .map(([id, level]) => (
-                              <option key={id} value={id}>{id} Lv{level}</option>
+                              <option key={id} value={id}>{props.abilityHints[id]?.name ?? id} Lv{level}</option>
                             ))}
                         </select>
+                        {dpAbilityHint === null ? null : (
+                          <span className="text-[10px] leading-relaxed text-sky-200/70">
+                            {dpAbilityHint.description.length === 0 ? "规则包未登记效果说明。" : dpAbilityHint.description}
+                          </span>
+                        )}
                       </label>
                     ) : null}
                   </div>
@@ -1819,6 +1866,9 @@ export default function CombatBoard(props: Props) {
                     </button>
                     <span className="text-[11px] text-white/40">
                       弹幕无判定打全体；射击 / 追击 / 近战由目标选择回避或防御。
+                    </span>
+                    <span className="rounded-full border border-sakura-500/40 bg-sakura-500/10 px-2 py-0.5 text-[11px] text-sakura-200">
+                      本次消耗 {dpEstimatedCost ?? "-"} DP
                     </span>
                   </div>
                 </div>

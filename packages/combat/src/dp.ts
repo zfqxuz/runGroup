@@ -1,6 +1,6 @@
 import { compile as compileExpr, evaluate } from "@touhou/formula";
 import type { CompiledRulePack } from "@touhou/rules";
-import { expireAttackBuffs, expireBarriers, expireCovers, expireElementalWeapons, expireTemporaryBuffs, findParticipant, pushLog, recoverTouhouLscLimits, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
+import { checkEnd, endCombat, expireAttackBuffs, expireBarriers, expireCovers, expireElementalWeapons, expireTemporaryBuffs, findParticipant, pushLog, recoverTouhouLscLimits, resolveDpActionForActor, resolveRoundRaceAbilities, type DefenseReaction, type ResolveResult } from "./combat";
 import type { CombatParticipantState, CombatState } from "./types";
 
 function evalDpExpr(
@@ -43,6 +43,11 @@ export function dpRegenFor(
  */
 export function beginDpRound(pack: CompiledRulePack, state: CombatState): void {
   if (state.mode !== "DP") return;
+  // 上一轮结束时可能已经只剩一个阵营；此时不再开新轮，直接结束战斗。
+  if (checkEnd(state)) {
+    endCombat(state, "战斗结束：仅剩一个阵营");
+    return;
+  }
   if (state.dp === null || state.dp === undefined) {
     state.dp = { declared: {}, regenBonus: {}, acted: [] };
   }
@@ -141,6 +146,28 @@ export function currentDpActorId(state: CombatState): string | null {
   return state.initiativeOrder[state.activeIndex] ?? null;
 }
 
+/**
+ * 跳过行动顺序里已经退场的单位，把指针推到下一个存活行动者。
+ *
+ * 返还 false 表示本轮顺序已经走完（或剩下的全是死人），调用方应
+ * 通过 endDpTurn 进入下一轮 / 结束战斗；返还 true 表示当前指针可用。
+ */
+export function skipDefeatedDpActors(state: CombatState): boolean {
+  if (state.mode !== "DP") return false;
+  while (state.activeIndex < state.initiativeOrder.length) {
+    const id = state.initiativeOrder[state.activeIndex];
+    if (id === undefined) break;
+    const participant = findParticipant(state, id);
+    if (participant !== undefined && participant.defeated === false) {
+      state.phase = "AWAITING_ACTION";
+      return true;
+    }
+    if (participant !== undefined) participant.isReady = false;
+    state.activeIndex += 1;
+  }
+  return false;
+}
+
 export function markDpActed(state: CombatState, participantId: string): void {
   if (state.dp === null || state.dp === undefined) return;
   if (state.dp.acted.includes(participantId) === false) {
@@ -167,13 +194,15 @@ export function endDpTurn(
     if (actor !== undefined) actor.isReady = false;
   }
   state.activeIndex += 1;
-  if (state.activeIndex >= state.initiativeOrder.length) {
+  // 本回合中途倒地的单位不再轮到行动，直接跳过，避免整场卡死。
+  const hasNext = skipDefeatedDpActors(state);
+  if (hasNext === false) {
     state.round += 1;
     beginDpRound(pack, state);
-    return { roundAdvanced: true, nextActorId: null };
+    return { roundAdvanced: true, nextActorId: state.phase === "ENDED" ? null : currentDpActorId(state) };
   }
   state.phase = "AWAITING_ACTION";
-  const next = state.initiativeOrder[state.activeIndex] ?? null;
+  const next = currentDpActorId(state);
   const nextActor = next === null ? undefined : findParticipant(state, next);
   if (nextActor !== undefined) nextActor.isReady = true;
   return { roundAdvanced: false, nextActorId: next };
@@ -196,6 +225,10 @@ export function resolveDpTurn(
     return { acted: [], defeated: [], cleared: [] };
   }
   const result = resolveDpActionForActor(pack, state, reactions, actorId);
+  if (checkEnd(state)) {
+    endCombat(state, "战斗结束：仅剩一个阵营");
+    return result;
+  }
   endDpTurn(pack, state);
   return result;
 }

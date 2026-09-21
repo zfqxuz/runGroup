@@ -6135,14 +6135,15 @@ function resolveDpDanmaku(
   if (spendDp(ctx, actor, cost, "弹幕") === false) return;
   const reduction = Math.max(
     0,
-    Math.floor(submission.danmakuDpReduction ?? 1) + (battleMods?.danmakuDpReduction ?? 0)
+    Math.floor(submission.danmakuDpReduction ?? Math.max(0, Math.floor(ctx.pack.pack.dp.actionCosts.danmakuDodgeDp))) +
+      (battleMods?.danmakuDpReduction ?? 0)
   );
   const danmakuEnhance = spellcardEnhanceForAttack(ctx.pack, actor, "DANMAKU");
   const danmakuBuffBonus = attackBuffDanmakuBonus(state, actor);
   const baseDamage = Math.max(
     0,
     Math.round(
-      (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? 1)) +
+      (Math.max(0, Math.floor(submission.danmakuBaseDamage ?? ctx.pack.pack.dp.actionCosts.danmakuFlatDamage)) +
         (danmakuEnhance?.flatDamage ?? 0) +
         passiveBonus(actor, "danmakuDamageBonus") +
         danmakuBuffBonus +
@@ -6736,9 +6737,17 @@ export function endTurn(
   const alive = new Set(
     state.participants.filter((item) => item.defeated === false).map((item) => item.id)
   );
-  // 本轮中途倒地的人从顺序里剔除
-  state.initiativeOrder = state.initiativeOrder.filter((id) => alive.has(id));
-  state.activeIndex += 1;
+  // 本轮中途倒地的人从顺序里剔除。
+  // 注意：如果倒地的是当前行动者，filter 会把它后面的单位整体前移，
+  // 不能简单 activeIndex += 1，否则会跳过下一个本该行动的单位。
+  const previousOrder = state.initiativeOrder;
+  const currentId = previousOrder[state.activeIndex];
+  const currentIndexBefore = currentId === undefined ? state.activeIndex : previousOrder.indexOf(currentId);
+  state.initiativeOrder = previousOrder.filter((id) => alive.has(id));
+  const nextIndex = state.initiativeOrder.findIndex(
+    (id) => previousOrder.indexOf(id) > currentIndexBefore
+  );
+  state.activeIndex = nextIndex < 0 ? state.initiativeOrder.length : nextIndex;
   if (state.activeIndex >= state.initiativeOrder.length) {
     state.initiativeOrder = buildInitiativeOrder(pack, state);
     state.activeIndex = 0;

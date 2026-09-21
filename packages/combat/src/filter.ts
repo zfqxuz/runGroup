@@ -76,6 +76,8 @@ export interface ParticipantView {
   readonly atbMax: number;
   readonly speed: number;
   readonly skills: Readonly<Record<string, number>> | null;
+  /** 属性值（str/con/...）；仅对可见单位下发，用于展示 DP 判定的基础达成值。 */
+  readonly attributes: Readonly<Record<string, number>> | null;
   /** 千幻抄能力等级（类别 id -> Lv）；仅对可见单位下发，DP 伤害公式需要。 */
   readonly abilityLevels: Readonly<Record<string, number>> | null;
   /** 千幻抄具体能力条目（妖力 / 特技，id -> Lv）；用于判断集中力等。 */
@@ -294,6 +296,7 @@ export function filterCombatForViewer(state: CombatState, viewer: Viewer): Comba
       atbMax: participant.atbMax,
       speed: participant.speed,
       skills: showNumbers ? participant.skills : null,
+      attributes: showNumbers ? { ...participant.attributes } : null,
       abilityLevels: showNumbers ? { ...(participant.abilityLevels ?? {}) } : null,
       abilityDefinitions: showNumbers ? { ...(participant.abilityDefinitions ?? {}) } : null,
       barrierHp: showNumbers ? (participant.barrier?.hp ?? null) : null,

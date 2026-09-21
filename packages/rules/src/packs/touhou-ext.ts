@@ -904,6 +904,8 @@ TOUHOU_EXT.dp = {
   // 千幻抄行动消耗；模组 / 房间可覆盖。
   actionCosts: {
     danmaku: 3,
+    danmakuDodgeDp: 1,
+    danmakuFlatDamage: 3,
     rangedPerDie: 1,
     chasePerTarget: 2,
     meleeApproachPerDie: 1,

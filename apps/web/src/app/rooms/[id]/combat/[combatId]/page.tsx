@@ -17,6 +17,7 @@ import { prisma } from "@/server/db/prisma";
 import { loadEffectivePack } from "@/server/rules/loader";
 import { readRoomBgm } from "@/shared/bgm";
 import { magicSpellEffectLabels } from "@/shared/magic";
+import { buildAbilityHints } from "@/shared/ability-hints";
 
 export const dynamic = "force-dynamic";
 
@@ -184,6 +185,8 @@ export default async function CombatDetailPage({
 
   const combatFeatures = combatFeatureFlags(effective.compiled);
   const isKP = membership.role === "KP";
+  const abilityHints = buildAbilityHints(effective.compiled.pack);
+  const dpCosts = effective.compiled.pack.dp?.actionCosts ?? null;
 
   return (
     <main className="mx-auto flex min-h-screen w-full max-w-[1500px] flex-col gap-5 px-6 py-10">
@@ -268,6 +271,8 @@ export default async function CombatDetailPage({
         itemOptionsByParticipant={itemOptionsByParticipant}
         spellIdsByParticipant={spellIdsByParticipant}
         spellCardsByParticipant={spellCardsByParticipant}
+        abilityHints={abilityHints}
+        dpCosts={dpCosts}
         portraits={portraits}
       />
     </main>

@@ -21,6 +21,8 @@ describe("DP 行动消耗配置", () => {
   it("千幻抄默认值：弹幕 3、判定 1/骰、追击 2/目标、近战 1+1/骰、抵抗最多 3D", () => {
     expect(costs).toEqual({
       danmaku: 3,
+      danmakuDodgeDp: 1,
+      danmakuFlatDamage: 3,
       rangedPerDie: 1,
       chasePerTarget: 2,
       meleeApproachPerDie: 1,

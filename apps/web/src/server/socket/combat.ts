@@ -4,8 +4,11 @@ import {
   applyForcedSkips,
   beginDpRound,
   buildInitiativeOrder,
+  checkEnd,
   currentDpActorId,
   declareDp,
+  endDpTurn,
+  skipDefeatedDpActors,
   findParticipant,
   chaseAttackIssue,
   chaseCurrentActorId,
@@ -228,6 +231,18 @@ export async function tryResolveCombat(
   if (runtime.pack.combat.mode === "DP") {
     // DP：宣言阶段等待所有单位声明；行动阶段每次只结算当前行动者的一项行动。
     if (runtime.state.phase !== "AWAITING_ACTION") return false;
+    if (checkEnd(runtime.state)) {
+      endCombat(runtime.state, "战斗结束：仅剩一个阵营");
+      await persistAndBroadcast(io, runtime);
+      return true;
+    }
+    // 当前行动者可能已经在本轮中途退场：跳过所有倒地单位，避免卡死。
+    const hasActor = skipDefeatedDpActors(runtime.state);
+    if (hasActor === false) {
+      endDpTurn(runtime.pack, runtime.state);
+      await persistAndBroadcast(io, runtime);
+      return true;
+    }
     const dpActorId = currentDpActorId(runtime.state);
     if (dpActorId === null) return false;
     if (runtime.state.pending[dpActorId] === undefined) return false;
