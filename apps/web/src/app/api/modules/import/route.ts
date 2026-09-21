@@ -225,6 +225,21 @@ export async function POST(request: Request): Promise<NextResponse> {
     ...(templateParseWarning === null ? [] : ["模板解析：" + templateParseWarning])
   ];
 
+  // 导入到房间时，有结构化预设的团本自动设为当前选择；KP 可稍后改为“不选择团本”。
+  if (roomId.length > 0) {
+    const totalTemplates =
+      templateCounts.chapters +
+      templateCounts.npcs +
+      templateCounts.items +
+      templateCounts.clues +
+      templateCounts.scenes +
+      templateCounts.encounters +
+      templateCounts.magic;
+    if (totalTemplates > 0) {
+      await prisma.room.update({ where: { id: roomId }, data: { selectedModuleId: moduleRecord.id } });
+    }
+  }
+
   return NextResponse.json({
     ok: true,
     moduleId: moduleRecord.id,

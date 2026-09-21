@@ -142,8 +142,8 @@ export default async function RoomPage({ params, searchParams }: { params: { id:
     : roomModules.find((item) => item.id === activeGame.moduleId) ?? null;
   const selectedModule = resuming
     ? activeModule
-    : roomModules.find((item) => item.id === room.selectedModuleId) ?? roomModules[0] ?? null;
-  const defaultModule = selectedModule ?? activeModule ?? roomModules[0] ?? null;
+    : roomModules.find((item) => item.id === room.selectedModuleId) ?? null;
+  const defaultModule = selectedModule ?? activeModule ?? null;
   const selectedModuleMagic = selectedModule === null ? null : await loadModuleMagicInfo(selectedModule.id);
   const activePreset = await prisma.roomPresetApplication.findFirst({
     where: { roomId: room.id, status: "ACTIVE" },

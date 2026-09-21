@@ -311,7 +311,11 @@ export async function createBlankModuleAction(formData: FormData): Promise<void>
   const era = system === "TOUHOU" ? "FANTASY" : room?.era ?? (String(formData.get("era") ?? "MODERN") === "CLASSIC" ? "CLASSIC" : "MODERN");
   const count = await prisma.module.count({ where: roomId.length > 0 ? { roomId } : { ownerId: session.user.id } });
   const title = count === 0 ? "未命名团本" : "未命名团本 " + String(count + 1);
-  const text = REQUIRED_MODULE_SECTIONS.map((section) => "## " + section + "\n\n待补充。\n").join("\n");
+  const template = String(formData.get("template") ?? "standard");
+  const fromScratch = template === "empty";
+  const text = fromScratch
+    ? ""
+    : REQUIRED_MODULE_SECTIONS.map((section) => "## " + section + "\n\n待补充。\n").join("\n");
 
   const created = await prisma.module.create({
     data: {
@@ -326,7 +330,7 @@ export async function createBlankModuleAction(formData: FormData): Promise<void>
       content: {
         format: "markdown",
         text,
-        sections: [...REQUIRED_MODULE_SECTIONS],
+        sections: fromScratch ? [] : [...REQUIRED_MODULE_SECTIONS],
         structured: parseStructuredBlocks(text)
       } as never,
       metadata: {
@@ -336,7 +340,7 @@ export async function createBlankModuleAction(formData: FormData): Promise<void>
         era,
         author,
         version: "1.0.0",
-        summary: "空白团本，请补充简介与正文。"
+        summary: fromScratch ? "从 0 新建的空白团本，尚未填写正文。" : "空白团本，请补充简介与正文。"
       } as never,
       importReport: {
         warnings: [],
@@ -347,6 +351,11 @@ export async function createBlankModuleAction(formData: FormData): Promise<void>
     },
     select: { id: true }
   });
+
+  if (roomId.length > 0) {
+    // 在房间里新建团本时默认选中它；KP 之后仍可在准备页选择“不选择团本”。
+    await prisma.room.update({ where: { id: roomId }, data: { selectedModuleId: created.id } });
+  }
 
   revalidatePath("/modules");
   revalidatePath("/modules/mine");

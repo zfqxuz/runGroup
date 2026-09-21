@@ -390,13 +390,6 @@ export async function startRoomAction(formData: FormData): Promise<void> {
         break;
       }
     }
-    if (roomModule === null) {
-      roomModule = await prisma.module.findFirst({
-        where: { roomId },
-        orderBy: { id: "asc" },
-        select: { id: true, title: true, version: true }
-      });
-    }
     if (roomModule !== null) {
       const activePreset = await prisma.roomPresetApplication.findFirst({
         where: { roomId, status: "ACTIVE" },

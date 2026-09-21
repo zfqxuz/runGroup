@@ -52,16 +52,26 @@ export default async function ModuleListPage({
             <div>
               <h2 className="text-sm font-medium text-white/80">新建团本</h2>
               <p className="mt-1 text-[11px] text-white/35">
-                可新建标准 14 章节空白团本，或导入 .md / .zip 标准包。
+                可新建标准 14 章节空白团本、从 0 新建空白团本，或导入 .md / .zip 标准包。
               </p>
             </div>
-            <form action={createBlankModuleAction}>
+            <form action={createBlankModuleAction} className="flex flex-wrap items-center gap-2">
               <input type="hidden" name="roomId" value={params.id} />
               <button
                 type="submit"
+                name="template"
+                value="standard"
                 className="rounded-lg bg-sakura-500 px-4 py-2 text-sm font-medium text-white transition hover:bg-sakura-400"
               >
-                新建空白团本
+                新建标准模板
+              </button>
+              <button
+                type="submit"
+                name="template"
+                value="empty"
+                className="rounded-lg border border-spirit-400/40 px-4 py-2 text-sm text-spirit-300 transition hover:bg-spirit-400/10"
+              >
+                从 0 新建空白
               </button>
             </form>
           </div>
