@@ -408,6 +408,10 @@ export interface ActionSubmission {
   readonly spellcardMode?: "DECLARATION" | "CONSUMPTION";
   /** Touhou-COC7：符卡战斗档案模式；由服务端解析卡面后注入，客户端不可伪造。 */
   readonly spellcardCombatMode?: "WEAPON" | "ARMOR" | "SPELL";
+  /** Touhou-COC7 SPELL 模式：原千幻抄目标值映射难度；null 表示常规检定。 */
+  readonly spellcardDifficulty?: number | null;
+  /** Touhou-COC7 SPELL 模式：目标抵抗属性（通常 pow）；null / undefined 表示不抵抗。 */
+  readonly spellcardResistAttribute?: string | null;
   /** 展开型符卡的独立 HP（由调用方按 RulePack 的 hpRatio 算好）。 */
   readonly declarationHp?: number;
   readonly declarationDurationTicks?: number;

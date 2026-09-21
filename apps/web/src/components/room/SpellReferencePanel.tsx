@@ -10,11 +10,18 @@ interface Props {
 const inputClass =
   "rounded-lg border border-white/15 bg-ink-900 px-2 py-1.5 text-xs text-white/80 outline-none focus:border-sakura-500";
 
+const MODE_LABELS: Record<"DP_ONLY" | "COC7_OK" | "BOTH", string> = {
+  DP_ONLY: "千幻抄 DP",
+  COC7_OK: "标准 CoC7",
+  BOTH: "双模式"
+};
+
 /** 千幻抄 wiki 法术 / 能力速查表：只做展示，具体结算由 KP / 规则包 effects 处理。 */
 export default function SpellReferencePanel({ references }: Props) {
   const [open, setOpen] = useState(false);
   const [category, setCategory] = useState<string>("全部");
   const [school, setSchool] = useState<string>("全部");
+  const [mode, setMode] = useState<string>("全部");
   const [query, setQuery] = useState("");
 
   const categories = useMemo(
@@ -43,6 +50,7 @@ export default function SpellReferencePanel({ references }: Props) {
     return references.filter((entry) => {
       if (category !== "全部" && entry.category !== category) return false;
       if (school !== "全部" && entry.school !== school) return false;
+      if (mode !== "全部" && entry.mode !== mode) return false;
       if (keyword.length > 0 && entry.name.toLowerCase().includes(keyword) === false) return false;
       return true;
     });
@@ -75,6 +83,12 @@ export default function SpellReferencePanel({ references }: Props) {
                 <option key={item} value={item}>{item}</option>
               ))}
             </select>
+            <select value={mode} onChange={(event) => setMode(event.target.value)} className={inputClass}>
+              <option value="全部">全部模式</option>
+              <option value="BOTH">双模式</option>
+              <option value="COC7_OK">标准 CoC7</option>
+              <option value="DP_ONLY">千幻抄 DP</option>
+            </select>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -101,6 +115,9 @@ export default function SpellReferencePanel({ references }: Props) {
                       }
                     >
                       {entry.automation === "BUILTIN" ? "已自动化" : entry.automation === "PARTIAL" ? "部分" : "KP"}
+                    </span>
+                    <span className="mr-1 rounded bg-sky-400/15 px-1 py-0.5 text-sky-200">
+                      {MODE_LABELS[entry.mode]}
                     </span>
                     {entry.category}
                     {entry.school === undefined ? "" : " · " + entry.school}

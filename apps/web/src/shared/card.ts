@@ -174,7 +174,11 @@ export const SpellCardCombatProfileSchema = z.object({
   accuracyMod: z.number().int().min(-50).max(50).default(0),
   element: z.string().max(40).nullable().default(null),
   /** ARMOR 模式：护甲值 = maxHp × armorRatio；不填时回退 hpRatio。 */
-  armorRatio: z.number().min(0).max(10).nullable().default(null)
+  armorRatio: z.number().min(0).max(10).nullable().default(null),
+  /** SPELL 模式：原千幻抄目标值（16/20/25…），标准 CoC7 映射为常规 / 困难 / 极难。 */
+  activationTarget: z.number().int().min(0).max(50).nullable().default(null),
+  /** SPELL 模式：目标抵抗属性（标准 CoC7 用 d100）；null = 不抵抗。 */
+  resistAttribute: z.string().max(20).nullable().default(null)
 });
 
 const SpellCardStatsCoreSchema = z.object({

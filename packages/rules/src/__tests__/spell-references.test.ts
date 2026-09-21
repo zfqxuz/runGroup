@@ -47,6 +47,14 @@ describe("wiki 法术 / 能力速查表", () => {
     expect(pack.spellReferences.find((entry) => entry.name === "禁域结界")?.automation).toBe("KP");
   });
 
+  it("按适用模式标注：结界系为 DP 专用，其余默认双模式", () => {
+    expect(pack.spellReferences.length).toBeGreaterThan(0);
+    for (const entry of pack.spellReferences) {
+      if (entry.school === "结界系") expect(entry.mode).toBe("DP_ONLY");
+      else expect(entry.mode).toBe("BOTH");
+    }
+  });
+
   it("COC7 基线没有东方速查表", () => {
     const coc7 = resolveRulePack("coc7-baseline", builtinRegistry());
     expect(coc7.spellReferences).toEqual([]);

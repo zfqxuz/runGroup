@@ -71,6 +71,58 @@ describe("Touhou-COC7（非 DP）符卡映射", () => {
     expect(state.log.some((entry) => entry.data?.event === "WEAPON")).toBe(true);
   });
 
+  it("符卡效果视为魔法：先掷 d100 技能，再结算卡面效果", () => {
+    const state = createCombat({ id: "coc7-sc-spell", seed: "coc7-sc-spell", tickMs: 250, mode: "INITIATIVE" });
+    const actor = build(state, "actor", "PC", "PLAYER", { MAGIC: 100 });
+    const enemy = build(state, "enemy", "BOSS", "NPC", { DODGE: 0 });
+    enemy.attributes.pow = 0;
+    actor.isReady = true;
+    expect(
+      submitAction(state, {
+        actorId: "actor",
+        kind: "SPELLCARD",
+        targetId: "enemy",
+        spellCardId: "sc-spell",
+        name: "测试符卡·魔法",
+        spellcardCombatMode: "SPELL",
+        skill: "MAGIC",
+        spellcardDifficulty: 15,
+        spellcardResistAttribute: "pow",
+        mpCost: 0,
+        effects: [{ type: "DAMAGE", amount: "10" }]
+      })
+    ).toBe(true);
+    resolvePending(pack, state, { enemy: { type: "PASS" } });
+    expect(enemy.hp).toBe(enemy.maxHp - 10);
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_SPELL_CHECK")).toBe(true);
+  });
+
+  it("符卡魔法允许 POW 抵抗：抵抗成功则效果不结算", () => {
+    const state = createCombat({ id: "coc7-sc-spell-resist", seed: "coc7-sc-spell-resist", tickMs: 250, mode: "INITIATIVE" });
+    const actor = build(state, "actor", "PC", "PLAYER", { MAGIC: 100 });
+    const enemy = build(state, "enemy", "BOSS", "NPC", { DODGE: 0 });
+    enemy.attributes.pow = 999;
+    actor.isReady = true;
+    expect(
+      submitAction(state, {
+        actorId: "actor",
+        kind: "SPELLCARD",
+        targetId: "enemy",
+        spellCardId: "sc-spell-resist",
+        name: "测试符卡·可抵抗魔法",
+        spellcardCombatMode: "SPELL",
+        skill: "MAGIC",
+        spellcardDifficulty: 15,
+        spellcardResistAttribute: "pow",
+        mpCost: 0,
+        effects: [{ type: "DAMAGE", amount: "10" }]
+      })
+    ).toBe(true);
+    resolvePending(pack, state, { enemy: { type: "PASS" } });
+    expect(enemy.hp).toBe(enemy.maxHp);
+    expect(state.log.some((entry) => entry.data?.rollType === "SPELLCARD_SPELL_RESIST" && entry.data.success === true)).toBe(true);
+  });
+
   it("持续型符卡作为护甲：先扣护甲，耗尽后视为武器损毁", () => {
     const state = createCombat({ id: "coc7-sc-armor", seed: "coc7-sc-armor", tickMs: 250 });
     const actor = build(state, "actor", "PC", "PLAYER", { FIREARMS_HANDGUN: 100 });

@@ -11,6 +11,10 @@ import {
   abilitySpellCountIssue,
   abilitySpendTotal,
   abilityTotalCost,
+  coc7AbilityMapping,
+  coc7RequiredSkillForAbilityLevel,
+  coc7SkillCheckTarget,
+  coc7SkillForAbility,
   collectAbilityPassiveMods,
   effectiveAbilityLevels,
   resolveAbilityCategory,
@@ -364,5 +368,30 @@ describe("妖力 / 特技列表定义与消费（wiki）", () => {
     const qigong = touhouPack.abilities.definitions.FEAT_QIGONG;
     expect(qigong?.passives[0]?.damageDice).toBe("abilityLv");
     expect(qigong?.passives[0]?.danmakuDamageBonus).toBe("abilityLv");
+  });
+});
+
+describe("Touhou-COC7 能力映射（已确认决策 A）", () => {
+  it("四个可发动能力类别映射到对应 CoC7 技能", () => {
+    expect(coc7SkillForAbility(touhouPack.abilities, "SPIRIT_ARTS")).toBe("SPIRIT_ARTS");
+    expect(coc7SkillForAbility(touhouPack.abilities, "MAGIC")).toBe("MAGIC");
+    expect(coc7SkillForAbility(touhouPack.abilities, "ELEMENTALIST:FIRE")).toBe("ELEMENTAL_MAGIC");
+    expect(coc7SkillForAbility(touhouPack.abilities, "YOUJUTSU")).toBe("YOUJUTSU");
+  });
+
+  it("妖力 / 特技为被动映射，不参与发动", () => {
+    expect(coc7SkillForAbility(touhouPack.abilities, "YOURIKI")).toBeNull();
+    expect(coc7SkillForAbility(touhouPack.abilities, "FEAT")).toBeNull();
+    expect(coc7AbilityMapping(touhouPack.abilities, "YOURIKI")?.usage).toBe("PASSIVE");
+    expect(coc7AbilityMapping(touhouPack.abilities, "FEAT")?.usage).toBe("PASSIVE");
+  });
+
+  it("requiredLevel 映射为技能门槛；目标值映射为常规 / 困难 / 极难", () => {
+    expect(coc7RequiredSkillForAbilityLevel(1)).toBe(0);
+    expect(coc7RequiredSkillForAbilityLevel(2)).toBe(20);
+    expect(coc7RequiredSkillForAbilityLevel(3)).toBe(40);
+    expect(coc7SkillCheckTarget(60, 15)).toBe(60);
+    expect(coc7SkillCheckTarget(60, 16)).toBe(30);
+    expect(coc7SkillCheckTarget(60, 21)).toBe(12);
   });
 });

@@ -37,7 +37,7 @@ async function createFixture(username: string, mode: "INITIATIVE" | "DP"): Promi
       userId: user.id, system: "TOUHOU", name: "E2E 东方角色",
       str: 50, con: 50, siz: 50, dex: 70, app: 50, int: 60, pow: 50, edu: 60, luck: 50,
       hp: 20, maxHp: 20, mp: 20, maxMp: 20, san: 50, maxSan: 50, dp: 20, maxDp: 20,
-      skills: { FIREARMS_HANDGUN: 90, DANMAKU: 90, DODGE: 50, MELEE: 50 }
+      skills: { FIREARMS_HANDGUN: 90, DANMAKU: 90, DODGE: 50, MELEE: 50, MAGIC: 100 }
     }
   });
   await prisma.roomCharacterEntry.create({ data: { roomId: room.id, characterId: character.id, status: "APPROVED" } });
@@ -64,12 +64,24 @@ async function createFixture(username: string, mode: "INITIATIVE" | "DP"): Promi
       } as never
     }
   });
+  await prisma.card.create({
+    data: {
+      characterId: character.id, ownerId: user.id, scope: "COMPENDIUM", type: "SPELLCARD", system: "TOUHOU",
+      name: "测试符卡·魔法", isEquipped: true,
+      stats: {
+        mode: "CONSUMPTION", danmaku: "e2e spell", mpCost: 0, hpRatio: null, durationTicks: null,
+        clearTargets: null, enhanceType: "SPELL", enhanceValue: 1,
+        effects: [{ type: "DAMAGE", amount: "10" }],
+        combat: { mode: "SPELL", skillId: "MAGIC", activationTarget: 15, resistAttribute: "pow" }
+      } as never
+    }
+  });
 
   const npc = await prisma.card.create({
     data: {
       scope: "ROOM", roomId: room.id, ownerId: user.id, type: "NPC", name: "E2E 东方木桩", system: "TOUHOU",
       stats: NpcStatsSchema.parse({
-        attributes: { str: 10, con: 10, siz: 10, dex: 5, app: 10, int: 10, pow: 10, edu: 10, luck: 10 },
+        attributes: { str: 10, con: 10, siz: 10, dex: 5, app: 10, int: 10, pow: 0, edu: 10, luck: 10 },
         skills: { FIREARMS_HANDGUN: 90 },
         weapons: [{ name: "测试木桩武器", damage: "40", range: "NEAR", skillId: "FIREARMS_HANDGUN" }],
         maxHp: 60, maxMp: 0, maxSan: 30, maxDp: 0
@@ -94,12 +106,16 @@ async function cleanup(fixture: Fixture): Promise<void> {
   await prisma.user.delete({ where: { id: fixture.userId } }).catch(() => undefined);
 }
 
-async function loginAndOpenCombat(page: import("@playwright/test").Page, username: string, fixture: Fixture): Promise<void> {
+async function loginOnly(page: import("@playwright/test").Page, username: string): Promise<void> {
   await page.goto("/login");
   await page.getByLabel("用户名").fill(username);
   await page.getByLabel("密码").fill(PASSWORD);
   await page.getByRole("button", { name: "登录" }).click();
   await page.waitForURL("**/");
+}
+
+async function loginAndOpenCombat(page: import("@playwright/test").Page, username: string, fixture: Fixture): Promise<void> {
+  await loginOnly(page, username);
   await page.goto("/rooms/" + fixture.roomId + "/combat/" + fixture.combatId);
   await expect(page.getByText("参战单位").first()).toBeVisible({ timeout: 30_000 });
 }
@@ -132,6 +148,111 @@ test("标准 CoC7 模式：持续型符卡通过页面点击展开为护甲", as
     await armorCardSelect.selectOption({ index: 1 });
     await page.getByRole("button", { name: "释放符卡" }).click();
     await expect(page.getByText(/符卡展开/).first()).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("标准 CoC7 模式：符卡魔法通过页面点击做 d100 检定并结算效果", async ({ page }) => {
+  const username = "e2etdmspell";
+  const fixture = await createFixture(username, "INITIATIVE");
+  try {
+    await loginAndOpenCombat(page, username, fixture);
+    const spellSelect = page.locator("select").filter({ hasText: "测试符卡·魔法" });
+    await expect(spellSelect).toBeVisible({ timeout: 20_000 });
+    await spellSelect.selectOption({ index: 2 });
+    await page.getByRole("button", { name: "释放符卡" }).click();
+    await expect(page.getByText(/施放符卡「测试符卡·魔法」/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/伤害结算/).first()).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("DP 模式：通过页面点击完成 DP 宣言并发起弹幕行动", async ({ page }) => {
+  const username = "e2etdpflow";
+  const fixture = await createFixture(username, "DP");
+  try {
+    await loginAndOpenCombat(page, username, fixture);
+    await expect(page.getByText(/DP 宣言 · 第 1 轮/).first()).toBeVisible({ timeout: 20_000 });
+
+    const declareButtons = page.getByRole("button", { name: "声明" });
+    await expect(declareButtons).toHaveCount(2);
+    await declareButtons.nth(0).click();
+    await expect(page.getByRole("button", { name: "声明" })).toHaveCount(1, { timeout: 15_000 });
+    await page.getByRole("button", { name: "声明" }).click();
+
+    await expect(page.getByText("DP 行动（1 骰 = 1 DP × 规则包单价）")).toBeVisible({ timeout: 20_000 });
+    await page.getByRole("button", { name: "发动 DP 行动" }).click();
+
+    const reaction = page.getByText(/你需要应对/).first();
+    if (await reaction.isVisible().catch(() => false)) {
+      await page.getByRole("button", { name: "提交应对" }).first().click();
+    }
+    await expect(page.getByText(/弹幕|DP 行动/).first()).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("标准 CoC7 车卡页展示能力类别→技能映射", async ({ page }) => {
+  const username = "e2etdmchargen";
+  const fixture = await createFixture(username, "INITIATIVE");
+  try {
+    await loginOnly(page, username);
+    await page.goto("/rooms/" + fixture.roomId + "/characters/new");
+    await expect(page.getByText("能力体系（标准 CoC7 映射）").first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/CoC7：技能 神术\/阴阳术/).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByText(/CoC7：技能 魔法/).first()).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("房间速查表标注适用模式：双模式与千幻抄 DP", async ({ page }) => {
+  const username = "e2etdmreference";
+  const fixture = await createFixture(username, "INITIATIVE");
+  try {
+    await loginOnly(page, username);
+    await page.goto("/rooms/" + fixture.roomId);
+    await expect(page.getByText("法术·能力速查表").first()).toBeVisible({ timeout: 30_000 });
+    await page.getByText("法术·能力速查表").first().click();
+    await expect(page.locator("article").filter({ hasText: "双模式" }).first()).toBeVisible({ timeout: 30_000 });
+    await expect(page.locator("article").filter({ hasText: "千幻抄 DP" }).first()).toBeVisible({ timeout: 30_000 });
+  } finally {
+    await cleanup(fixture);
+  }
+});
+
+test("浏览器卡牌编辑器可保存符卡的标准 CoC7 魔法档案", async ({ page }) => {
+  const username = "e2etdmcardbuilder";
+  const fixture = await createFixture(username, "INITIATIVE");
+  try {
+    await loginOnly(page, username);
+    await page.goto("/cards/new?system=TOUHOU");
+    await page.getByLabel("卡名").fill("E2E 浏览器符卡");
+    await page.getByLabel("符卡说明").fill("E2E 浏览器施法符卡");
+    const combatSelect = page.locator("select").filter({ hasText: "魔法（走 CoC7 魔法效果）" }).first();
+    await combatSelect.selectOption({ label: "魔法（走 CoC7 魔法效果）" });
+    await page.getByLabel("施法技能 id").fill("MAGIC");
+    await page.getByLabel("原目标值（≤15 常规 / 16–20 困难 / 21+ 极难）").fill("15");
+    await page.getByLabel("目标抵抗属性（留空 = 不抵抗）").fill("pow");
+    await page.getByRole("button", { name: "保存卡牌" }).click();
+    await page.waitForURL("**/cards");
+    await expect(page.getByText("E2E 浏览器符卡").first()).toBeVisible({ timeout: 20_000 });
+
+    const saved = await prisma.card.findFirst({
+      where: { ownerId: fixture.userId, name: "E2E 浏览器符卡" },
+      select: { stats: true }
+    });
+    expect(saved?.stats).toMatchObject({
+      combat: {
+        mode: "SPELL",
+        skillId: "MAGIC",
+        activationTarget: 15,
+        resistAttribute: "pow"
+      }
+    });
   } finally {
     await cleanup(fixture);
   }

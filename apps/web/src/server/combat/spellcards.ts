@@ -77,6 +77,20 @@ export async function loadSpellcardsByParticipant(
   return result;
 }
 
+/**
+ * Touhou-COC7 SPELL 模式的兜底技能：
+ * 旧符卡没写 combat.skillId 时按 enhanceType 映射；新卡优先用显式 skillId。
+ */
+function fallbackSpellSkillForCard(card: CombatSpellCardOption): string | null {
+  if (card.combat !== null && card.combat.skillId !== null && card.combat.skillId.length > 0) {
+    return card.combat.skillId;
+  }
+  if (card.enhanceType === "SPELL") return "MAGIC";
+  if (card.enhanceType === "DANMAKU") return "DANMAKU";
+  if (card.enhanceType === "MELEE") return "MELEE";
+  return null;
+}
+
 export type PrepareSpellCardResult =
   | { readonly ok: true; readonly action: ActionSubmission }
   | { readonly ok: false; readonly error: string };
@@ -177,6 +191,38 @@ export function prepareSpellcardAction(
         shots: combat.shots?.[0],
         element: combat.element ?? undefined,
         accuracyMod: combat.accuracyMod
+      }
+    };
+  }
+
+  // Touhou-COC7：符卡效果视为魔法，走 d100 技能检定与可选 POW 抵抗。
+  if (isStandardMode && combat !== null && combat.mode === "SPELL") {
+    const skillId = fallbackSpellSkillForCard(card);
+    if (skillId === null || skillId.length === 0) {
+      return { ok: false, error: "「" + card.name + "」缺少施法技能，无法作为魔法使用" };
+    }
+    if (card.effects.length === 0) {
+      return { ok: false, error: "「" + card.name + "」没有可结算效果" };
+    }
+    return {
+      ok: true,
+      action: {
+        ...action,
+        kind: "SPELLCARD",
+        name: card.name,
+        spellCardId: card.cardId,
+        targetId: targetScope === "SELF" ? actor.id : targetId,
+        mpCost: card.mpCost,
+        spellcardMode: card.mode,
+        spellcardCombatMode: "SPELL",
+        skill: skillId,
+        spellcardDifficulty: combat.activationTarget ?? null,
+        spellcardResistAttribute: combat.resistAttribute ?? null,
+        effects: card.effects,
+        targeting: card.targeting,
+        targetScope,
+        spellcardEnhanceType: card.enhanceType,
+        spellcardEnhanceValue: card.enhanceValue
       }
     };
   }

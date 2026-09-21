@@ -1,6 +1,7 @@
 import { compile, evaluate } from "@touhou/formula";
 import type {
   AbilityCategory,
+  AbilityCoc7Mapping,
   AbilityDefinition,
   AbilityPassive,
   AbilityRules,
@@ -46,6 +47,82 @@ export function resolveAbilityVariant(rules: AbilityRules, id: string): AbilityV
   const { variantId } = splitAbilityVariantId(id);
   if (variantId === null) return undefined;
   return category.variants[variantId];
+}
+
+/**
+ * Touhou-COC7 默认能力映射。
+ *
+ * 车卡 / 战斗服务端在标准 CoC7 模式下读取；规则包也可在 `ability.coc7` 覆盖。
+ * - 神术·阴阳术 / 魔法 / 属性使 / 妖术：发动时走对应技能 d100；
+ * - 妖力 / 特技：常时被动，不参与发动；无法数值化的部分由 KP 裁定。
+ */
+const DEFAULT_COC7_ABILITY_MAPPING: Readonly<Record<string, AbilityCoc7Mapping>> = {
+  SPIRIT_ARTS: {
+    usage: "SKILL",
+    skillId: "SPIRIT_ARTS",
+    note: "神术·阴阳术发动 → 对应技能 d100"
+  },
+  MAGIC: {
+    usage: "SKILL",
+    skillId: "MAGIC",
+    note: "魔法发动 → 对应技能 d100"
+  },
+  ELEMENTALIST: {
+    usage: "SKILL",
+    skillId: "ELEMENTAL_MAGIC",
+    note: "属性使发动 → 元素魔法 d100"
+  },
+  YOUJUTSU: {
+    usage: "SKILL",
+    skillId: "YOUJUTSU",
+    note: "妖术发动 → 妖术 d100"
+  },
+  YOURIKI: {
+    usage: "PASSIVE",
+    skillId: null,
+    note: "妖力为常时被动，不参与发动"
+  },
+  FEAT: {
+    usage: "PASSIVE",
+    skillId: null,
+    note: "特技多为常时被动；锻炼映射为伤害加值"
+  }
+};
+
+/** 解析能力实例 / 类别的 Touhou-COC7 映射；无映射时为 null。 */
+export function coc7AbilityMapping(rules: AbilityRules, id: string): AbilityCoc7Mapping | null {
+  const category = resolveAbilityCategory(rules, id);
+  if (category === undefined) return null;
+  if (category.coc7 !== undefined) return category.coc7;
+  return DEFAULT_COC7_ABILITY_MAPPING[category.id] ?? null;
+}
+
+/** 标准 CoC7 模式下的发动技能 id；被动 / KP 条目返回 null。 */
+export function coc7SkillForAbility(rules: AbilityRules, id: string): string | null {
+  const mapping = coc7AbilityMapping(rules, id);
+  if (mapping === null || mapping.usage !== "SKILL") return null;
+  return mapping.skillId ?? null;
+}
+
+/** 把千幻抄 requiredLevel 映射为 CoC7 技能门槛：Lv1 无门槛，Lv2 需 20%，Lv3 需 40%… */
+export function coc7RequiredSkillForAbilityLevel(requiredLevel: number): number {
+  const level = Number.isFinite(requiredLevel) ? Math.max(1, Math.floor(requiredLevel)) : 1;
+  return (level - 1) * 20;
+}
+
+/**
+ * 把千幻抄法术目标值（16/20/25…）映射为 CoC7 检定难度：
+ * ≤15 常规；16–20 困难（技能减半）；21+ 极难（技能五分之一）。
+ */
+export function coc7SkillCheckTarget(skillValue: number, difficultyTarget: number | null | undefined): number {
+  const skill = Number.isFinite(skillValue) ? Math.max(0, Math.floor(skillValue)) : 0;
+  if (difficultyTarget === null || difficultyTarget === undefined || Number.isFinite(difficultyTarget) === false) {
+    return skill;
+  }
+  const target = Math.max(0, Math.floor(difficultyTarget));
+  if (target <= 15) return skill;
+  if (target <= 20) return Math.floor(skill / 2);
+  return Math.floor(skill / 5);
 }
 
 /** 取某实例使用的消费表（有变体用变体表，否则用类别基础表）。 */

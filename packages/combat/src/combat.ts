@@ -30,6 +30,9 @@ import {
   spellTargeting,
   barrierRestackOutcome,
   clampTouhouDpDice,
+  coc7RequiredSkillForAbilityLevel,
+  coc7SkillCheckTarget,
+  coc7SkillForAbility,
   resolveAbilityCategory,
   resolveBarrierStats,
   splitAbilityInstanceId,
@@ -1817,6 +1820,57 @@ function skillValueOf(
   return fallback;
 }
 
+/** Touhou-COC7：当前战斗是否为标准 CoC7 规则（INITIATIVE）。 */
+function isTouhouCoc7(pack: CompiledRulePack, state: CombatState): boolean {
+  return pack.system === "TOUHOU" && state.mode === "INITIATIVE";
+}
+
+/**
+ * 标准 CoC7 法术 / 能力发动：技能 d100，难度按千幻抄目标值换算。
+ * 返回实际使用的技能 id、检定目标值与掷骰结果。
+ */
+function rollCoc7SpellSkill(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  skillId: string,
+  difficulty: number | null | undefined,
+  salt: string
+): { readonly skillId: string; readonly skillValue: number; readonly target: number; readonly roll: number; readonly result: CheckOutcome["result"]; readonly success: boolean } {
+  const skillValue = skillValueOf(ctx.pack, actor, skillId, 0);
+  const target = Math.max(0, coc7SkillCheckTarget(skillValue, difficulty));
+  const rolled = rollCombatCheck(ctx.pack, nextRollRng(ctx.state, salt), target);
+  return {
+    skillId,
+    skillValue,
+    target,
+    roll: rolled.roll,
+    result: rolled.check.result,
+    success: isSuccess(rolled.check.result)
+  };
+}
+
+/**
+ * 标准 CoC7 的 POW / 属性抵抗：目标掷 1d100 ≤ 属性值即抵抗成功。
+ * 属性优先取角色属性，缺省回退到 vars。
+ */
+function rollCoc7Resist(
+  ctx: ResolveContext,
+  target: CombatParticipantState,
+  attribute: string,
+  salt: string
+): { readonly roll: number; readonly targetValue: number; readonly result: CheckOutcome["result"]; readonly success: boolean } {
+  const key = attribute as keyof AttributeSet;
+  const raw = target.attributes[key] ?? target.vars[attribute] ?? 0;
+  const targetValue = Number.isFinite(raw) ? Math.max(0, Math.floor(raw)) : 0;
+  const rolled = rollCombatCheck(ctx.pack, nextRollRng(ctx.state, salt), targetValue);
+  return {
+    roll: rolled.roll,
+    targetValue,
+    result: rolled.check.result,
+    success: isSuccess(rolled.check.result)
+  };
+}
+
 function rollCombatCheck(
   pack: CompiledRulePack,
   rng: Rng,
@@ -2892,6 +2946,167 @@ function resolveSpellcardAsWeapon(
     data: { event: "WEAPON", name, cardId, mpCost, skill: submission.skill ?? null }
   });
   resolveAttack(ctx, actor, { ...submission, kind: "DANMAKU" }, defender);
+}
+
+/**
+ * Touhou-COC7：符卡效果视为魔法。
+ *
+ * 与武器 / 护甲不同，SPELL 模式先掷技能 d100，再按卡面 effects 结算；
+ * 敌对效果默认允许目标以 POW（或卡面指定属性）做一次 1d100 抵抗。
+ */
+function resolveSpellcardAsSpell(
+  ctx: ResolveContext,
+  actor: CombatParticipantState,
+  submission: ActionSubmission
+): void {
+  const state = ctx.state;
+  const name = submission.name ?? "符卡";
+  const cardId = submission.spellCardId ?? null;
+  if (cardId !== null && (actor.brokenSpellCards ?? []).includes(cardId)) {
+    pushLog(state, {
+      kind: "SYSTEM",
+      actorId: actor.id,
+      targetId: null,
+      text: `${actor.name} 的符卡「${name}」已被击破，本场无法再使用`
+    });
+    return;
+  }
+
+  const mpCost = Math.max(0, submission.mpCost ?? 0);
+  if (spendCombatMagicPoints(ctx, actor, mpCost, "符卡魔法「" + name + "」") === false) return;
+  const usedKey = cardId ?? name;
+  actor.usedSpellCards = [...actor.usedSpellCards, usedKey];
+
+  const skillId = submission.skill ?? "MAGIC";
+  const check = rollCoc7SpellSkill(
+    ctx,
+    actor,
+    skillId,
+    submission.spellcardDifficulty ?? null,
+    `spellcard-spell:${actor.id}:${cardId ?? name}`
+  );
+  pushLog(state, {
+    kind: "CHECK",
+    actorId: actor.id,
+    targetId: submission.targetId ?? null,
+    text:
+      actor.name +
+      " 施放符卡「" +
+      name +
+      "」：" +
+      "1d100=" +
+      check.roll +
+      " / 技能「" +
+      skillId +
+      "」" +
+      check.skillValue +
+      "（难度目标 " +
+      check.target +
+      "） → " +
+      (check.success ? "成功" : "失败"),
+    data: {
+      rollType: "SPELLCARD_SPELL_CHECK",
+      cardId,
+      skillId,
+      roll: check.roll,
+      skillValue: check.skillValue,
+      target: check.target,
+      success: check.success,
+      mpCost
+    }
+  });
+
+  if (check.success === false) {
+    pushLog(state, {
+      kind: "SPELLCARD",
+      actorId: actor.id,
+      targetId: submission.targetId ?? null,
+      text: actor.name + " 施放符卡魔法「" + name + "」失败，灵力仍被消耗",
+      data: { event: "SPELL_FAIL", name, cardId, mpCost, skillId }
+    });
+    return;
+  }
+
+  const targetScope: "SELF" | "ONE" | "ALL" =
+    submission.targetScope === "SELF" || submission.targeting === "SELF"
+      ? "SELF"
+      : submission.targetScope === "ALL"
+        ? "ALL"
+        : "ONE";
+  const targeting = submission.targeting ?? (targetScope === "SELF" ? "SELF" : "ENEMY");
+  const spell: MagicSpell = {
+    id: cardId ?? ("spellcard:" + name),
+    name,
+    skill: skillId,
+    mpCost: "0",
+    sanCost: "0",
+    target: targetScope,
+    targeting,
+    effects: [...(submission.effects ?? [])]
+  };
+
+  const resisted = new Set<string>();
+  const hostile = isHostileSpell(spell);
+  const resistAttribute =
+    typeof submission.spellcardResistAttribute === "string"
+      ? submission.spellcardResistAttribute.trim()
+      : "";
+  if (hostile && resistAttribute.length > 0 && resistAttribute.toLowerCase() !== "none") {
+    const targets = resolveMagicTargets(state, actor, spell, submission.targetId ?? null);
+    for (const target of targets) {
+      if (target.id === actor.id || target.defeated) continue;
+      const resist = rollCoc7Resist(
+        ctx,
+        target,
+        resistAttribute,
+        `spellcard-spell-resist:${actor.id}:${target.id}:${cardId ?? name}`
+      );
+      pushLog(state, {
+        kind: "CHECK",
+        actorId: target.id,
+        targetId: actor.id,
+        text:
+          target.name +
+          " 抵抗「" +
+          name +
+          "」：1d100=" +
+          resist.roll +
+          " / " +
+          resistAttribute.toUpperCase() +
+          " " +
+          resist.targetValue +
+          " → " +
+          (resist.success ? "抵抗成功" : "抵抗失败"),
+        data: {
+          rollType: "SPELLCARD_SPELL_RESIST",
+          cardId,
+          resistAttribute,
+          roll: resist.roll,
+          target: resist.targetValue,
+          success: resist.success
+        }
+      });
+      if (resist.success) resisted.add(target.id);
+    }
+  }
+
+  pushLog(state, {
+    kind: "SPELLCARD",
+    actorId: actor.id,
+    targetId: submission.targetId ?? null,
+    text: `${actor.name} 发动符卡魔法「${name}」`,
+    data: { event: "SPELL", name, cardId, mpCost, skillId, resisted: resisted.size }
+  });
+
+  resolveTargetedEffects(
+    ctx,
+    actor,
+    submission,
+    spell,
+    { mpCost: 0, sanCost: 0 },
+    { logKind: "SPELLCARD", verb: "发动" },
+    resisted
+  );
 }
 
 function resolveSpellcard(
@@ -4139,6 +4354,15 @@ function executeSpellEffects(
   });
 }
 
+/** 标准 CoC7：按法术 skill 偏好选择施法技能；找不到则返回 null（用 POW）。 */
+function pickCoc7SpellSkill(pack: CompiledRulePack, requested: string): string | null {
+  const known = new Set(pack.skills.map((skill) => skill.id));
+  for (const candidate of [requested, "MAGIC", "OCCULT"]) {
+    if (candidate.length > 0 && known.has(candidate)) return candidate;
+  }
+  return null;
+}
+
 function resolveMagic(
   ctx: ResolveContext,
   actor: CombatParticipantState,
@@ -4159,6 +4383,64 @@ function resolveMagic(
   const cost = spellCostFor(ctx, actor, spell, "magic-san:" + actor.id);
   if (spendCombatMagicPoints(ctx, actor, cost.mpCost, "法术「" + spell.name + "」") === false) return;
   actor.san = Math.max(0, actor.san - cost.sanCost);
+
+  // Touhou-COC7：非能力法术也走 d100 施法检定（千幻抄 DP 仍保持自动成功）。
+  if (isTouhouCoc7(ctx.pack, state)) {
+    const skillId = pickCoc7SpellSkill(ctx.pack, spell.skill);
+    let difficulty: number | null = null;
+    try {
+      difficulty = Math.floor(evaluateSource(ctx.pack, spell.activation?.target ?? "12", actor.vars));
+    } catch {
+      difficulty = 12;
+    }
+    let roll = 0;
+    let target = 0;
+    let success = false;
+    let diceText = "";
+    if (skillId !== null) {
+      const check = rollCoc7SpellSkill(
+        ctx,
+        actor,
+        skillId,
+        difficulty,
+        `magic-coc7:${actor.id}:${spell.id}`
+      );
+      roll = check.roll;
+      target = check.target;
+      success = check.success;
+      diceText = "1d100=" + roll + " / 技能「" + skillId + "」" + check.skillValue + "（难度目标 " + target + "）";
+    } else {
+      const check = rollCoc7Resist(ctx, actor, "pow", `magic-coc7-pow:${actor.id}:${spell.id}`);
+      roll = check.roll;
+      target = check.targetValue;
+      success = check.success;
+      diceText = "1d100=" + roll + " / POW " + target;
+    }
+    pushLog(state, {
+      kind: "CHECK",
+      actorId: actor.id,
+      targetId: submission.targetId ?? null,
+      text: actor.name + " 施放「" + spell.name + "」：" + diceText + " → " + (success ? "成功" : "失败"),
+      data: {
+        rollType: "SPELL_CHECK",
+        spellId: spell.id,
+        skillId,
+        roll,
+        target,
+        success
+      }
+    });
+    if (success === false) {
+      pushLog(state, {
+        kind: "SPELLCARD",
+        actorId: actor.id,
+        targetId: submission.targetId ?? null,
+        text: actor.name + " 施放「" + spell.name + "」失败，灵力仍被消耗",
+        data: { rollType: "SPELL_FAIL", spellId: spell.id, mpCost: cost.mpCost, sanCost: cost.sanCost }
+      });
+      return;
+    }
+  }
 
   executeSpellEffects(ctx, actor, submission, spell, cost, { logKind: "SPELLCARD", verb: "施放" });
 }
@@ -4297,7 +4579,36 @@ function resolveAbility(
 
   const level = dpAbilityLevel(actor, abilityId);
   const requiredLevel = Math.max(1, Math.floor(spell.requiredLevel ?? 1));
-  if (level < requiredLevel) {
+  const isStandardCoc7 = isTouhouCoc7(ctx.pack, state);
+  const mappedSkillId = isStandardCoc7 ? coc7SkillForAbility(rules, abilityId) : null;
+  const mappedRequiredSkill = coc7RequiredSkillForAbilityLevel(requiredLevel);
+  if (isStandardCoc7 && mappedSkillId !== null) {
+    const learnedSkill = skillValueOf(ctx.pack, actor, mappedSkillId, 0);
+    if (learnedSkill < mappedRequiredSkill) {
+      pushLog(state, {
+        kind: "SYSTEM",
+        actorId: actor.id,
+        targetId: null,
+        text:
+          actor.name +
+          " 的「" +
+          mappedSkillId +
+          "」为 " +
+          learnedSkill +
+          "%，未达到「" +
+          category.name +
+          "」Lv" +
+          requiredLevel +
+          " 所需 " +
+          mappedRequiredSkill +
+          "%，无法发动「" +
+          spell.name +
+          "」",
+        data: { rollType: "ABILITY_LEARN", abilityId, level, requiredLevel, mappedSkillId, learnedSkill, mappedRequiredSkill }
+      });
+      return;
+    }
+  } else if (level < requiredLevel) {
     pushLog(state, {
       kind: "SYSTEM",
       actorId: actor.id,
@@ -4309,7 +4620,8 @@ function resolveAbility(
   }
 
   const activation = spell.activation;
-  const usePercentile = activation?.dice === "1D100";
+  const useStandardSkill = isStandardCoc7 && mappedSkillId !== null;
+  const usePercentile = useStandardSkill || activation?.dice === "1D100";
   const instanceAttribute = dpAbilityAttribute(actor, abilityId);
   const fallbackActivationAttribute = category.activationAttribute;
 
@@ -4344,7 +4656,7 @@ function resolveAbility(
   } catch {
     modifier = 0;
   }
-  const base = attributeValue + level + modifier;
+  let base = attributeValue + level + modifier;
   const accuracyBonus = passiveBonus(actor, "accuracyBonus") - barrierPenalty(ctx.state, actor);
   const rng = nextRollRng(state, `ability:${actor.id}:${spell.id}`);
   let roll = 0;
@@ -4352,7 +4664,27 @@ function resolveAbility(
   let achievement = base;
   let success = false;
   let diceText = "";
-  if (usePercentile) {
+  if (useStandardSkill && mappedSkillId !== null) {
+    let difficulty: number | null = null;
+    try {
+      difficulty = Math.floor(evaluateSource(ctx.pack, activation?.target ?? "12", actor.vars));
+    } catch {
+      difficulty = 12;
+    }
+    const check = rollCoc7SpellSkill(
+      ctx,
+      actor,
+      mappedSkillId,
+      difficulty,
+      `ability-coc7:${actor.id}:${spell.id}`
+    );
+    base = check.skillValue;
+    target = check.target;
+    achievement = check.target;
+    roll = check.roll;
+    success = check.success;
+    diceText = "1d100=" + roll + " / 技能「" + mappedSkillId + "」" + base + "（难度目标 " + target + "）";
+  } else if (usePercentile) {
     roll = rollDie(rng, 100);
     success = roll <= base + accuracyBonus;
     diceText = "1d100=" + roll + " / 目标 " + (base + accuracyBonus);
@@ -4414,7 +4746,14 @@ function resolveAbility(
   const targetId = submission.targetId ?? null;
   const targetParticipant = targetId === null ? undefined : findParticipant(state, targetId);
   if (targetParticipant !== undefined && targetParticipant.id !== actor.id && spell.resist !== undefined) {
-    const resisted = rollAbilityResist(ctx, actor, targetParticipant, spell, level, achievement);
+    const resisted = isStandardCoc7
+      ? rollCoc7Resist(
+          ctx,
+          targetParticipant,
+          spell.resist.attribute,
+          `ability-coc7-resist:${actor.id}:${targetParticipant.id}:${spell.id}`
+        ).success
+      : rollAbilityResist(ctx, actor, targetParticipant, spell, level, achievement);
     if (resisted) {
       pushLog(state, {
         kind: "SPELLCARD",
@@ -4502,7 +4841,9 @@ function resolveTargetedEffects(
   submission: ActionSubmission,
   spell: MagicSpell,
   costs: { readonly mpCost: number; readonly sanCost: number },
-  options: { readonly logKind: LogEntry["kind"]; readonly verb: string }
+  options: { readonly logKind: LogEntry["kind"]; readonly verb: string },
+  /** 已被抵抗 / 无效化的目标 id；这些目标不再结算任何效果。 */
+  resisted?: ReadonlySet<string>
 ): void {
   const state = ctx.state;
   const mpCost = costs.mpCost;
@@ -4529,6 +4870,7 @@ function resolveTargetedEffects(
   const effects = spellEffectsOf(spell);
   const targeting = spellTargeting(spell);
   for (const target of targets) {
+    if (resisted?.has(target.id) === true) continue;
     let defense: { type: DefenseType; success: boolean } = { type: "PASS", success: false };
     const reaction = reactionFor(ctx, target.id);
     const blocked = disabledReactionFor(ctx.pack, reaction.type);
@@ -6026,6 +6368,12 @@ function resolveOne(
         submission.spellcardCombatMode === "WEAPON"
       ) {
         resolveSpellcardAsWeapon(ctx, actor, submission);
+      } else if (
+        ctx.pack.system === "TOUHOU" &&
+        ctx.state.mode !== "DP" &&
+        submission.spellcardCombatMode === "SPELL"
+      ) {
+        resolveSpellcardAsSpell(ctx, actor, submission);
       } else {
         resolveSpellcard(ctx, actor, submission);
       }

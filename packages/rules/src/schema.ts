@@ -457,6 +457,17 @@ export const ElementRulesSchema = z.object({
   sameElementResistMod: ExprSchema.default("3")
 });
 
+/** Touhou-COC7 能力映射：能力类别在标准 CoC7 模式下如何转为技能 / 被动 / KP 裁定。 */
+export const ABILITY_COC7_USAGES = ["SKILL", "PASSIVE", "KP"] as const;
+export const AbilityCoc7MappingSchema = z.object({
+  /** SKILL：发动时掷对应技能 d100；PASSIVE：只作为被动特性；KP：由 KP 裁定。 */
+  usage: z.enum(ABILITY_COC7_USAGES).default("PASSIVE"),
+  /** 映射到的 CoC7 / 东方技能 id；usage=SKILL 时必填。 */
+  skillId: z.string().nullable().default(null),
+  /** 展示说明；例如「妖力 / 特技不参与发动」。 */
+  note: z.string().optional()
+});
+
 /** 能力变体：同一能力类别的替代习得路径（如神术的术式版、妖术的妖弹化）。 */
 export const AbilityVariantSchema = z.object({
   id: z.string(),
@@ -480,7 +491,9 @@ export const AbilityCategorySchema = z.object({
   /** 每级可习得法术数；0 表示不限。 */
   spellsPerLevel: z.number().int().nonnegative().default(0),
   /** 替代习得路径；key 为 variant id（如 UTSUSHI / YOUJUTSU_DANMAKU）。 */
-  variants: z.record(z.string(), AbilityVariantSchema).default({})
+  variants: z.record(z.string(), AbilityVariantSchema).default({}),
+  /** Touhou-COC7 能力映射；未填写时按类别 id 的默认映射解析。 */
+  coc7: AbilityCoc7MappingSchema.optional()
 });
 
 /**
@@ -616,6 +629,9 @@ export const BarrierRulesSchema = z.object({
   dispelNeedsContest: z.boolean().default(true)
 });
 
+/** 速查条目适用模式：仅千幻抄 DP / 标准 CoC7 可用 / 双模式均可用。 */
+export const SPELL_REFERENCE_MODES = ["DP_ONLY", "COC7_OK", "BOTH"] as const;
+
 /**
  * 法术 / 能力速查条目（wiki 法术列表）。
  *
@@ -647,7 +663,9 @@ export const SpellReferenceSchema = z.object({
    * - PARTIAL：部分数值 / 子效果已自动化，其余由 KP 裁定；
    * - KP：纯正文描述，按 KP 行为 / 自由掷骰处理。
    */
-  automation: z.enum(["BUILTIN", "PARTIAL", "KP"]).default("KP")
+  automation: z.enum(["BUILTIN", "PARTIAL", "KP"]).default("KP"),
+  /** 适用模式；默认双模式可用。7.5 结界等千幻抄专属内容标 DP_ONLY。 */
+  mode: z.enum(SPELL_REFERENCE_MODES).default("BOTH")
 });
 
 /** 14.10 / 14.11 重量与财产规则；数值表由规则包 / 模组提供。 */
@@ -950,6 +968,9 @@ export type Element = z.output<typeof ElementSchema>;
 export type ElementRules = z.output<typeof ElementRulesSchema>;
 export type AbilityVariant = z.output<typeof AbilityVariantSchema>;
 export type AbilityCategory = z.output<typeof AbilityCategorySchema>;
+export type AbilityCoc7Mapping = z.output<typeof AbilityCoc7MappingSchema>;
+export type AbilityCoc7Usage = (typeof ABILITY_COC7_USAGES)[number];
+export type SpellReferenceMode = (typeof SPELL_REFERENCE_MODES)[number];
 export type AbilityPassive = z.output<typeof AbilityPassiveSchema>;
 export type AbilityDefinition = z.output<typeof AbilityDefinitionSchema>;
 export type AbilityRules = z.output<typeof AbilityRulesSchema>;

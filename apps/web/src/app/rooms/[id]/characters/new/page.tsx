@@ -9,6 +9,16 @@ import { specialtyCandidatesOf } from "@/shared/specialty";
 
 export const dynamic = "force-dynamic";
 
+function combatModeOf(ruleOverride: unknown): "INITIATIVE" | "ATB" | "DP" {
+  if (ruleOverride === null || typeof ruleOverride !== "object" || Array.isArray(ruleOverride)) {
+    return "INITIATIVE";
+  }
+  const combat = (ruleOverride as Record<string, unknown>).combat;
+  if (combat === null || typeof combat !== "object" || Array.isArray(combat)) return "INITIATIVE";
+  const mode = (combat as Record<string, unknown>).mode;
+  return mode === "DP" || mode === "ATB" ? mode : "INITIATIVE";
+}
+
 export default async function NewCharacterPage({ params }: { params: { id: string } }) {
   const session = await auth();
   if (session === null) redirect("/login");
@@ -59,6 +69,7 @@ export default async function NewCharacterPage({ params }: { params: { id: strin
         specialtyCandidates={specialtyCandidatesOf(room.ruleOverride)}
         occupations={occupations.map(toOccupationView)}
         mode="CREATE"
+        combatMode={room.system === "TOUHOU" ? combatModeOf(room.ruleOverride) : undefined}
         returnTo={"/rooms/" + room.id + "/characters/new"}
         availableCards={availableCards
           .filter((card) => card.type === "WEAPON" || card.type === "ITEM" || card.type === "SPELLCARD")

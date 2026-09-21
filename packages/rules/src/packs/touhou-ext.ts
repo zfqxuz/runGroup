@@ -16,7 +16,11 @@ export const TOUHOU_EXT: RulePackOverlay = {
   version: "1.1.0",
   extends: ["coc7-baseline@1.1.0"],
   // wiki 法术 / 能力速查表（结构化存档，automation 另见 magic.spells）。
-  spellReferences: TOUHOU_SPELL_REFERENCES,
+  // 结界系属于千幻抄 7.5 专属内容；其余条目双模式可用（标准 CoC7 用 d100 检定）。
+  spellReferences: TOUHOU_SPELL_REFERENCES.map((entry) => ({
+    ...entry,
+    mode: entry.mode ?? (entry.school === "结界系" ? "DP_ONLY" : "BOTH")
+  })),
   const: {
     MP_PER_POW: 4,
     DP_BASE: 10,
@@ -346,6 +350,11 @@ TOUHOU_EXT.abilities = {
       activationAttribute: "int",
       costTable: [5, 10, 15, 20, 25, 25],
       spellsPerLevel: 2,
+      coc7: {
+        usage: "SKILL",
+        skillId: "SPIRIT_ARTS",
+        note: "标准 CoC7：神术·阴阳术发动投对应技能 d100"
+      },
       // 7.1 术式版：消费更低（3/6/9/12/15/15），但不能用于射击 / 追击 / 弹幕。
       variants: {
         UTSUSHI: {
@@ -363,7 +372,12 @@ TOUHOU_EXT.abilities = {
       description: "以魔导书习得；有抵抗与仪式魔法规则。",
       activationAttribute: "int",
       costTable: [5, 10, 15, 20, 25, 25],
-      spellsPerLevel: 4
+      spellsPerLevel: 4,
+      coc7: {
+        usage: "SKILL",
+        skillId: "MAGIC",
+        note: "标准 CoC7：魔法发动投 MAGIC d100"
+      }
     },
     ELEMENTALIST: {
       id: "ELEMENTALIST",
@@ -371,7 +385,12 @@ TOUHOU_EXT.abilities = {
       description: "每种属性独立习得；可选 {知性} 或 {感觉} 作为发动特性。",
       activationAttribute: "int",
       costTable: [4, 8, 12, 16, 20, 20],
-      spellsPerLevel: 0
+      spellsPerLevel: 0,
+      coc7: {
+        usage: "SKILL",
+        skillId: "ELEMENTAL_MAGIC",
+        note: "标准 CoC7：属性使发动投元素魔法 d100"
+      }
     },
     YOUJUTSU: {
       id: "YOUJUTSU",
@@ -380,6 +399,11 @@ TOUHOU_EXT.abilities = {
       activationAttribute: "pow",
       costTable: [1, 2, 4, 6, 8, 10, 12, 12],
       spellsPerLevel: 0,
+      coc7: {
+        usage: "SKILL",
+        skillId: "YOUJUTSU",
+        note: "标准 CoC7：妖术发动投妖术 d100"
+      },
       // 10.2 妖弹化：消费 2/3/5…（已知前缀；更高等级待 wiki 法术表补齐）。
       variants: {
         DANMAKU: {
@@ -396,7 +420,12 @@ TOUHOU_EXT.abilities = {
       description: "支付消费习得后常时生效；各种族可免费获得特定妖力（10.1）。",
       activationAttribute: "pow",
       costTable: [1, 2, 4, 6, 8, 10, 12, 12],
-      spellsPerLevel: 0
+      spellsPerLevel: 0,
+      coc7: {
+        usage: "PASSIVE",
+        skillId: null,
+        note: "标准 CoC7：妖力为常时被动，不参与发动"
+      }
     },
     FEAT: {
       id: "FEAT",
@@ -404,7 +433,12 @@ TOUHOU_EXT.abilities = {
       description: "多数常时有效；含【锻炼】，用于近战/武器伤害。",
       activationAttribute: "pow",
       costTable: [1, 2, 4, 6, 8, 10, 12, 12],
-      spellsPerLevel: 0
+      spellsPerLevel: 0,
+      coc7: {
+        usage: "PASSIVE",
+        skillId: null,
+        note: "标准 CoC7：特技多为常时被动；无法数值化的效果由 KP 裁定"
+      }
     }
   },
   // 妖力 / 特技列表（wiki）；具体效果多数需 KP 手动结算，可自动化的常时效果见 passives。

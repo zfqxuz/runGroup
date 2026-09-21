@@ -17,10 +17,13 @@ import {
   ENHANCE_LABELS,
   ENHANCE_TYPES,
   RANGE_LABELS,
+  SPELLCARD_COMBAT_MODES,
+  SPELLCARD_COMBAT_MODE_LABELS,
   WEAPON_TYPES,
   weaponTypeDefinition,
   type CardKind,
-  type EnhanceType
+  type EnhanceType,
+  type SpellCardCombatProfile
 } from "@/shared/card";
 import { createDefaultDanmakuPattern } from "@/shared/danmaku/presets";
 import type { DanmakuPattern } from "@/shared/danmaku/schema";
@@ -76,6 +79,7 @@ export default function CardBuilder(props: Props) {
   const initial = props.initial ?? null;
   const stats0 = recordOf(initial?.stats);
   const cost0 = recordOf(stats0.cost);
+  const combat0 = recordOf(stats0.combat);
 
   const [kind, setKind] = useState<CardKind>(initial?.kind ?? (props.isTouhou ? "SPELLCARD" : "WEAPON"));
   const [name, setName] = useState(initial?.name ?? "");
@@ -103,6 +107,36 @@ export default function CardBuilder(props: Props) {
     const raw = stats0.pattern;
     if (raw !== null && typeof raw === "object" && Array.isArray(raw) === false) return raw as DanmakuPattern;
     return createDefaultDanmakuPattern();
+  });
+  type SpellCombatMode = "NONE" | "WEAPON" | "ARMOR" | "SPELL";
+  const initialCombatMode = stringOr(combat0.mode, "NONE");
+  const [spellCombatMode, setSpellCombatMode] = useState<SpellCombatMode>(
+    (SPELLCARD_COMBAT_MODES as readonly string[]).includes(initialCombatMode)
+      ? (initialCombatMode as SpellCombatMode)
+      : "NONE"
+  );
+  const [combatSkillId, setCombatSkillId] = useState(stringOr(combat0.skillId, ""));
+  const [combatDamage, setCombatDamage] = useState(stringOr(combat0.damage, "2d6+db"));
+  const [combatDamageType, setCombatDamageType] = useState<"BLUNT" | "IMPALING" | "NONE">(
+    stringOr(combat0.damageType, "BLUNT") === "IMPALING"
+      ? "IMPALING"
+      : stringOr(combat0.damageType, "BLUNT") === "NONE"
+        ? "NONE"
+        : "BLUNT"
+  );
+  const [combatRange, setCombatRange] = useState<"MELEE" | "NEAR" | "FAR">(
+    stringOr(combat0.range, "NEAR") === "MELEE" ? "MELEE" : stringOr(combat0.range, "NEAR") === "FAR" ? "FAR" : "NEAR"
+  );
+  const [combatArmorRatio, setCombatArmorRatio] = useState(numberOr(combat0.armorRatio, hpRatio));
+  const [combatActivationTarget, setCombatActivationTarget] = useState(
+    combat0.activationTarget === null || combat0.activationTarget === undefined ? "" : String(combat0.activationTarget)
+  );
+  const [combatResistAttribute, setCombatResistAttribute] = useState(stringOr(combat0.resistAttribute, "pow"));
+  const [combatElement, setCombatElement] = useState(stringOr(combat0.element, ""));
+  const [combatAccuracyMod, setCombatAccuracyMod] = useState(numberOr(combat0.accuracyMod, 0));
+  const [combatShots, setCombatShots] = useState(() => {
+    const raw = combat0.shots;
+    return Array.isArray(raw) ? raw.filter((item): item is number => typeof item === "number").join(",") : "";
   });
 
   const [weaponType, setWeaponType] = useState(stringOr(stats0.weaponType, "BRAWL"));
@@ -167,6 +201,63 @@ export default function CardBuilder(props: Props) {
     };
   }
 
+  function spellCombatProfile(): SpellCardCombatProfile | null {
+    if (spellCombatMode === "NONE") return null;
+    if (spellCombatMode === "WEAPON") {
+      const damage = combatDamage.trim();
+      if (damage.length === 0) return null;
+      const shots = combatShots
+        .split(",")
+        .map((item) => Math.floor(Number(item.trim())))
+        .filter((item) => Number.isInteger(item) && item > 0);
+      return {
+        mode: "WEAPON",
+        skillId: combatSkillId.trim().length === 0 ? null : combatSkillId.trim(),
+        damage,
+        damageType: combatDamageType,
+        range: combatRange,
+        damageBands: null,
+        shots: shots.length === 0 ? null : shots,
+        accuracyMod: combatAccuracyMod,
+        element: combatElement.trim().length === 0 ? null : combatElement.trim(),
+        armorRatio: null,
+        activationTarget: null,
+        resistAttribute: null
+      };
+    }
+    if (spellCombatMode === "ARMOR") {
+      return {
+        mode: "ARMOR",
+        skillId: null,
+        damage: null,
+        damageType: null,
+        range: null,
+        damageBands: null,
+        shots: null,
+        accuracyMod: 0,
+        element: null,
+        armorRatio: combatArmorRatio,
+        activationTarget: null,
+        resistAttribute: null
+      };
+    }
+    const activationTarget = combatActivationTarget.trim().length === 0 ? null : Math.floor(Number(combatActivationTarget));
+    return {
+      mode: "SPELL",
+      skillId: combatSkillId.trim().length === 0 ? null : combatSkillId.trim(),
+      damage: null,
+      damageType: null,
+      range: null,
+      damageBands: null,
+      shots: null,
+      accuracyMod: combatAccuracyMod,
+      element: combatElement.trim().length === 0 ? null : combatElement.trim(),
+      armorRatio: null,
+      activationTarget: Number.isFinite(activationTarget as number) ? (activationTarget as number) : null,
+      resistAttribute: combatResistAttribute.trim().length === 0 ? null : combatResistAttribute.trim()
+    };
+  }
+
   function buildStats(): unknown {
     const generic = genericStats();
     if (kind === "SPELLCARD") {
@@ -180,7 +271,8 @@ export default function CardBuilder(props: Props) {
         clearTargets: mode === "DECLARATION" ? clearTargets : null,
         enhanceType,
         enhanceValue,
-        pattern
+        pattern,
+        combat: spellCombatProfile()
       };
     }
     if (kind === "WEAPON") {
@@ -388,6 +480,97 @@ export default function CardBuilder(props: Props) {
 
           <div className="mt-4">
             <DanmakuPatternEditor value={pattern} onChange={setPattern} />
+          </div>
+
+          <div className="mt-4 rounded-lg border border-sky-400/20 bg-ink-900/40 p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-medium text-sky-200">标准 CoC7 战斗档案（DP 模式忽略）</p>
+                <p className="mt-0.5 text-[10px] text-white/40">
+                  武器 / 护甲 / 魔法三选一，数值由服务端读取，客户端不可伪造。
+                </p>
+              </div>
+              <select
+                value={spellCombatMode}
+                onChange={(event) => setSpellCombatMode(event.target.value as SpellCombatMode)}
+                className={inputClass + " w-48"}
+              >
+                <option value="NONE">未设置（仅 DP）</option>
+                {SPELLCARD_COMBAT_MODES.map((item) => (
+                  <option key={item} value={item}>
+                    {SPELLCARD_COMBAT_MODE_LABELS[item]}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {spellCombatMode === "WEAPON" ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">攻击技能 id</span>
+                  <input value={combatSkillId} onChange={(event) => setCombatSkillId(event.target.value)} placeholder="FIREARMS_HANDGUN" className={inputClass + " font-mono"} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">伤害表达式</span>
+                  <input value={combatDamage} onChange={(event) => setCombatDamage(event.target.value)} placeholder="2d6+db" className={inputClass + " font-mono"} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">伤害类型</span>
+                  <select value={combatDamageType} onChange={(event) => setCombatDamageType(event.target.value as "BLUNT" | "IMPALING" | "NONE")} className={inputClass}>
+                    <option value="BLUNT">钝击</option>
+                    <option value="IMPALING">贯穿</option>
+                    <option value="NONE">不可贯穿</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">射程</span>
+                  <select value={combatRange} onChange={(event) => setCombatRange(event.target.value as "MELEE" | "NEAR" | "FAR")} className={inputClass}>
+                    <option value="MELEE">近身</option>
+                    <option value="NEAR">中距</option>
+                    <option value="FAR">远距</option>
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">命中修正</span>
+                  <input type="number" value={combatAccuracyMod} onChange={(event) => setCombatAccuracyMod(Math.floor(Number(event.target.value) || 0))} className={inputClass} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">连射次数（逗号分隔）</span>
+                  <input value={combatShots} onChange={(event) => setCombatShots(event.target.value)} placeholder="1,2,3" className={inputClass + " font-mono"} />
+                </label>
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-[10px] text-white/40">元素属性 id（可空）</span>
+                  <input value={combatElement} onChange={(event) => setCombatElement(event.target.value)} placeholder="FIRE" className={inputClass + " font-mono"} />
+                </label>
+              </div>
+            ) : null}
+
+            {spellCombatMode === "ARMOR" ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">护甲系数（max HP × N）</span>
+                  <input type="number" step="0.1" value={combatArmorRatio} onChange={(event) => setCombatArmorRatio(Number(event.target.value) || 0)} className={inputClass} />
+                </label>
+                <p className="self-end text-[10px] text-white/40">耗尽即视为符卡损毁，本场不可再用。</p>
+              </div>
+            ) : null}
+
+            {spellCombatMode === "SPELL" ? (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">施法技能 id</span>
+                  <input value={combatSkillId} onChange={(event) => setCombatSkillId(event.target.value)} placeholder="MAGIC" className={inputClass + " font-mono"} />
+                </label>
+                <label className="flex flex-col gap-1.5">
+                  <span className="text-[10px] text-white/40">原目标值（≤15 常规 / 16–20 困难 / 21+ 极难）</span>
+                  <input value={combatActivationTarget} onChange={(event) => setCombatActivationTarget(event.target.value)} placeholder="15" className={inputClass + " font-mono"} />
+                </label>
+                <label className="flex flex-col gap-1.5 sm:col-span-2">
+                  <span className="text-[10px] text-white/40">目标抵抗属性（留空 = 不抵抗）</span>
+                  <input value={combatResistAttribute} onChange={(event) => setCombatResistAttribute(event.target.value)} placeholder="pow" className={inputClass + " font-mono"} />
+                </label>
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}

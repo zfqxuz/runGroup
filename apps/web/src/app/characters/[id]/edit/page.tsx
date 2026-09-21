@@ -31,6 +31,16 @@ function slotsOf(value: unknown): Record<string, string[]> {
   return output;
 }
 
+function combatModeOf(ruleOverride: unknown): "INITIATIVE" | "ATB" | "DP" {
+  if (ruleOverride === null || typeof ruleOverride !== "object" || Array.isArray(ruleOverride)) {
+    return "INITIATIVE";
+  }
+  const combat = (ruleOverride as Record<string, unknown>).combat;
+  if (combat === null || typeof combat !== "object" || Array.isArray(combat)) return "INITIATIVE";
+  const mode = (combat as Record<string, unknown>).mode;
+  return mode === "DP" || mode === "ATB" ? mode : "INITIATIVE";
+}
+
 function attributesOf(base: Record<string, unknown>): AttributeSet {
   return {
     str: Math.floor(Number(base.str ?? 0)),
@@ -157,6 +167,7 @@ export default async function EditCharacterPage({
         era={room?.era ?? character.era ?? null}
         occupations={occupations.map(toOccupationView)}
         mode="EDIT"
+        combatMode={system === "TOUHOU" ? (room === null ? undefined : combatModeOf(room.ruleOverride)) : undefined}
         characterId={character.id}
         initial={initial}
         applyAgeAdjustment={applyAgeAdjustment}

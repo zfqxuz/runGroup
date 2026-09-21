@@ -18,6 +18,7 @@ import {
   rollAttributeSets,
   abilityCategoryLevelFromLevels,
   abilityCostForLevel,
+  coc7AbilityMapping,
   abilityDefinitionSpendTotal,
   abilityDefinitionStepCost,
   abilityDefinitionTotalCost,
@@ -106,6 +107,8 @@ interface Props {
   returnTo?: string;
   /** D-5：房间维护的专精候选（作为专精名称下拉候选，仍可自由输入）。 */
   specialtyCandidates?: readonly { readonly baseId: string; readonly name: string }[];
+  /** 当前房间战斗模式；TOUHOU + 非 DP 时车卡页展示 CoC7 能力映射。 */
+  combatMode?: "INITIATIVE" | "ATB" | "DP";
 }
 
 const ATTRIBUTE_LABELS: Record<string, string> = {
@@ -421,6 +424,8 @@ export default function CharacterBuilder(props: Props) {
   );
 
   const abilitiesEnabled = props.system === "TOUHOU" && props.pack.abilities.enabled === true;
+  const abilityCombatMode = props.combatMode ?? "DP";
+  const abilityCoc7Mode = abilitiesEnabled && abilityCombatMode !== "DP";
   const abilityCategoryList = abilitiesEnabled ? Object.values(props.pack.abilities.categories) : [];
   const abilityTierOptions = Object.keys(props.pack.abilities.pointBudgets);
   const abilityBudget = abilitiesEnabled ? abilityPointBudget(props.pack.abilities, abilityTier) : null;
@@ -1636,9 +1641,13 @@ export default function CharacterBuilder(props: Props) {
         <section className="rounded-xl border border-spirit-400/25 bg-spirit-400/5 p-5">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-[240px] flex-1">
-              <h2 className="text-base font-semibold text-white/90">千幻抄能力</h2>
+              <h2 className="text-base font-semibold text-white/90">
+                {abilityCoc7Mode ? "能力体系（标准 CoC7 映射）" : "千幻抄能力"}
+              </h2>
               <p className="mt-1 text-[11px] text-white/45">
-                能力等级 A/B/C/D 决定能力点预算；逐级消费表在规则包里，超支会阻止保存。
+                {abilityCoc7Mode
+                  ? "标准 CoC7：能力类别映射为对应技能，法术 / 能力发动投 d100；妖力 / 特技为被动特性。"
+                  : "能力等级 A/B/C/D 决定能力点预算；逐级消费表在规则包里，超支会阻止保存。"}
               </p>
             </div>
             <label className="flex flex-col gap-1">
@@ -1702,6 +1711,17 @@ export default function CharacterBuilder(props: Props) {
                   const level = abilityLevels[instance.id] ?? 0;
                   const maxLevel = instance.maxLevel;
                   const nextCost = abilityCostForLevel(category, level + 1, instance.variantId);
+                  const mapping = coc7AbilityMapping(props.pack.abilities, instance.id);
+                  const mappedSkill =
+                    mapping !== null && mapping.usage === "SKILL" && mapping.skillId !== null
+                      ? allSkills.find((skill) => skill.id === mapping.skillId) ?? null
+                      : null;
+                  const mappedSkillValue =
+                    mappedSkill === null
+                      ? null
+                      : skillBaseOf(mappedSkill.id) +
+                        (occupationAdded[mappedSkill.id] ?? 0) +
+                        (interestAdded[mappedSkill.id] ?? 0);
                   return (
                     <div
                       key={instance.id}
@@ -1712,6 +1732,19 @@ export default function CharacterBuilder(props: Props) {
                         <p className="text-[10px] text-white/35">
                           累计 {abilityTotalCost(category, level, instance.variantId)} 点 · 下一级 {nextCost} 点
                         </p>
+                        {mapping === null ? null : (
+                          <p className="mt-0.5 text-[10px] text-sky-200/70">
+                            CoC7：
+                            {mapping.usage === "SKILL"
+                              ? "技能 " +
+                                (mappedSkill?.name ?? mapping.skillId ?? "未映射") +
+                                (mappedSkillValue === null ? "" : "（当前 " + mappedSkillValue + "%）")
+                              : mapping.usage === "PASSIVE"
+                                ? "被动特性，不参与发动"
+                                : "KP 裁定"}
+                            {mapping.note === undefined ? "" : " · " + mapping.note}
+                          </p>
+                        )}
                       </div>
                       {instance.attributeChoice ? (
                         <select
