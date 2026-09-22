@@ -61,3 +61,11 @@ DSH_E2E=1 E2E_NO_WEBSERVER=1 bash apps/web/scripts/run-e2e-web.sh e2e/dsh-assist
 ```
 
 覆盖：悬浮球 → 对话框 → dsh 修改 → 小版本 +1；以及管理员白名单配置。
+
+## 后续：从「团本助手」到「dsh 技能平台」
+
+当前这条链路只是 dsh 的第一个技能 `module.edit`。后续会把 dsh 能力拆成可组合、
+可授权、可审计的 Skill，覆盖团本调整、页面导航、准备阶段、跑团中助手与战斗解释，
+其中 KP 可以自然语言调属性（`kp.adjustStats`）。
+
+完整设计见 [`DSH-SKILLS.md`](DSH-SKILLS.md)。
