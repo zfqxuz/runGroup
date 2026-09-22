@@ -216,23 +216,31 @@ model DshSkillRun {
 
 ## 7. 落地路线
 
-### Phase 0（基础设施，1–2 天）
-- 抽出 `DshSkill` 接口 + 注册表；现有 `module.edit` 迁移为 skill。
-- `access.ts` 支持按 skill id 的白名单。
-- 新增 `POST /api/dsh/run`，旧 module 路由保留兼容。
-- `DshSkillRun` 迁移与审计。
+> 实现状态（2026-09-22）：Phase 0 已落地，Phase 1 的只读技能已落地 4 个；
+> Phase 2 / 3 未开始。已实现部分见下。
 
-### Phase 1（低风险高价值）
-- `nav.guide` / `page.explain` / `nav.goto`（只读，覆盖「新 KP 找不到入口」）。
-- `kp.rule`（只读，规则速查 + 骰式，复用 RulePack / `SpellReferencePanel` 数据）。
-- `combat.explain` / `combat.suggest`（只读）。
+### Phase 0（基础设施）✅ 已实现
+- `DshSkill` 接口 + 注册表：`server/dsh/skills/{types,registry,prompts}.ts`。
+- 统一入口 `POST /api/dsh/run`（NDJSON）+ `GET /api/dsh/context`；旧 module 路由保留兼容。
+- 路由 → 上下文推导：`shared/dsh-context.ts`；有界上下文包：`server/dsh/context.ts`。
+- 编排：`server/dsh/turn.ts`；`module.edit` 委托既有 `runModuleDshTurn`。
+- 全局悬浮球：`components/dsh/DshAssistantBall.tsx`，挂在 `app/layout.tsx`，可拖动 + localStorage 记忆位置。
+- 白名单沿用 `ai.moduleDsh.whitelist`（按 skill 域细分待做）。
+- ⏳ 待做：`DshSkillRun` 审计表（当前写入技能仍走 `AdminAuditLog`）。
 
-### Phase 2（KP 调属性）
+### Phase 1（低风险高价值）部分已实现
+- ✅ `nav.guide`（页面导航 + 深链接）。
+- ✅ `kp.rule`（规则速查）。
+- ✅ `module.explain`（团本解读）。
+- ✅ `combat.explain`（战斗解读）。
+- ⏳ 待做：`page.explain`、`nav.goto`、`combat.suggest`。
+
+### Phase 2（KP 调属性，未开始）
 - `kp.adjustStats`：Context Pack + Patch Schema + diff UI + 确认应用 + 撤销。
 - 先覆盖局内 HP/MP/SAN/DP/属性/技能；卡面值单独一步确认。
 - E2E：两个浏览器，KP 用自然语言改属性 → diff → 确认 → 战斗页数值与日志更新。
 
-### Phase 3（准备与跑团扩展）
+### Phase 3（准备与跑团扩展，未开始）
 - `prep.audit` / `prep.npcFromText` / `prep.batchEquip`。
 - `kp.recap` / `kp.npcVoice` / `kp.sceneOps` / `kp.growth`。
 - `module.review`。
@@ -242,9 +250,12 @@ model DshSkillRun {
 | 现有 | 复用/改造 |
 |---|---|
 | `server/dsh/runner.ts` | 保持为传输层，不感知 skill |
-| `server/dsh/module-assistant.ts` | 迁移为 `skills/module-edit.ts` |
-| `server/dsh/access.ts` | 扩展为按 skill 域白名单 |
-| `api/modules/[moduleId]/dsh/route.ts` | 保留兼容，内部转发注册表 |
-| `components/module/DshAssistantBall.tsx` | 扩展 stage / patch diff / navigate action |
+| `server/dsh/module-assistant.ts` | 保留为 `module.edit` 的执行体（`turn.ts` 调用，未物理搬迁） |
+| `server/dsh/access.ts` | 当前白名单已生效；按 skill 域细分待做 |
+| `api/modules/[moduleId]/dsh/route.ts` | 保留兼容 |
+| `api/dsh/run` + `api/dsh/context` | 新增统一入口与技能发现 |
+| `server/dsh/context.ts` + `shared/dsh-context.ts` | 新增：路由 → 有界上下文包 |
+| `server/dsh/skills/registry.ts` | 新增：技能注册表 |
+| `components/dsh/DshAssistantBall.tsx` | 新增：全局可拖动悬浮球（替换 `components/module/DshAssistantBall.tsx`） |
 | `KpValueEditor` / `KpToolsPanel` / `CombatBoard` | 挂载 KP 技能入口 |
 | `SystemSetting` | 存技能白名单与开关 |

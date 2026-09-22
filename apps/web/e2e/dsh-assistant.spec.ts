@@ -63,12 +63,13 @@ test("ai团本助手：悬浮球 → 对话框 → 修改团本并小版本 +1",
     await page.waitForURL("**/");
 
     await page.goto("/rooms/" + room.id + "/modules/" + module.id);
-    const ball = page.getByRole("button", { name: "打开 ai团本助手" });
+    const ball = page.getByRole("button", { name: "打开 ai 助手" });
     await expect(ball).toBeVisible();
     await ball.click();
 
-    await expect(page.getByText("ai团本助手", { exact: true })).toBeVisible();
-    await page.getByPlaceholder(/描述你想修改的内容/).fill("把标题改成「E2E dsh 团本（已改）」，并给老周补一句背景描述。");
+    await expect(page.getByText("ai 助手", { exact: true })).toBeVisible();
+    await page.locator('[data-skill-id="module.edit"]').click();
+    await page.getByPlaceholder(/描述你想怎么改这个团本/).fill("把标题改成「E2E dsh 团本（已改）」，并给老周补一句背景描述。");
     await page.getByRole("button", { name: "发送", exact: true }).click();
 
     // 思考过程气泡应在最终回复前出现，让用户看到 ai 在推进。

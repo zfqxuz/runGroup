@@ -5,11 +5,9 @@ import { ensureModuleRevision } from "@/server/modules/revision";
 import { prisma } from "@/server/db/prisma";
 import { runDshTask, type DshStreamEvent } from "@/server/dsh/runner";
 import { syncNpcStatsFromText } from "@/server/dsh/npc-text-sync";
+import type { DshHistoryMessage } from "@/server/dsh/types";
 
-export interface DshHistoryMessage {
-  readonly role: "user" | "assistant";
-  readonly content: string;
-}
+export type { DshHistoryMessage };
 
 export interface ModuleDshTurnInput {
   readonly moduleId: string;

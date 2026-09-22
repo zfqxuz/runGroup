@@ -92,12 +92,17 @@ DSH_TASK_TIMEOUT_MS="300000"
 - 房间实时刷新、Socket 多端同步、重连恢复。
 
 ### AI / dsh
-- 团本编辑悬浮球：自然语言修改团本，小版本 +1 + 版本快照。
-- dsh 技能化（设计中）：把能力拆成 `module.*` / `nav.*` / `prep.*` / `kp.*` / `combat.*` 技能，
-  覆盖团本调整、页面导航、准备阶段、跑团中助手、战斗解释。
-- 重点方向 `kp.adjustStats`：KP 用自然语言调属性 / 技能 / HP/MP/SAN/DP，
-  先 diff 预览、确认后由服务端应用，带审计与撤销。
-- 详见 [`docs/DSH-SKILLS.md`](docs/DSH-SKILLS.md)。
+- **全局 ai 悬浮球**：常驻所有页面，可拖动、位置本地记忆；自动带上当前场景上下文
+  （团本 id / 房间 id / 角色 id / 战斗 id / 卡牌 id / 历史局 id），不选技能时就是通用助手。
+- 已实现技能：
+  - 只读：`assistant.chat` 通用助手、`nav.guide` 页面导航、`kp.rule` 规则速查、
+    `module.explain` 团本解读、`combat.explain` 战斗解读；
+  - 写入：`module.edit` 修改团本（仅团本作者 / 房间 KP，写入后小版本 +1 + 版本快照）。
+- 统一入口：`GET /api/dsh/context` 返回当前页面上下文与可用技能；`POST /api/dsh/run` 返回 NDJSON 流。
+- 只读技能把**有界上下文包**（不是整库）交给 dsh，只产出回答、不写数据库；
+  写入技能沿用既有 Zod 校验、落库与审计。
+- 规划中：`prep.*`、`kp.adjustStats`（diff 预览 + 确认 + 撤销）、`module.review` 等，
+  详见 [`docs/DSH-SKILLS.md`](docs/DSH-SKILLS.md)。
 
 ## 目录结构
 
@@ -123,13 +128,13 @@ docs/                          设计、规则校对、部署、E2E 报告
 
 ```bash
 npm run typecheck                  # 全量类型检查
-npm test                           # Vitest：529 条
+npm test                           # Vitest：545 条
 npm run test:e2e --workspace @touhou/web   # Playwright 真实浏览器 E2E
 ```
 
 当前 E2E 覆盖：双模式符卡（武器 / 护甲 / 魔法）、DP 宣言与弹幕、Demo 团本、
 倒地跳过与自动结束、能力提示、花映冢分屏、双人弹幕战（不同攻击 / 应对 / 弹幕类型）、
-双人武器 + 道具 + 魔法局。
+双人武器 + 道具 + 魔法局、全局悬浮球（常驻 / 拖动持久化 / 各场景上下文与技能联动）。
 
 ## 部署与 CI
 
