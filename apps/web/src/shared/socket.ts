@@ -150,6 +150,9 @@ export interface CombatActionPayload {
   readonly damageAbilityId?: string;
   readonly damageTrainingId?: string;
   readonly damageWeaponSkill?: string;
+  readonly damageType?: "BLUNT" | "IMPALING" | "NONE";
+  /** 展示用：本次 DP 攻击实际使用的武器名。 */
+  readonly weaponName?: string;
   /** 魔法战斗系法术 id：强化本次 DP 攻击。 */
   readonly attackSpellId?: string;
 }

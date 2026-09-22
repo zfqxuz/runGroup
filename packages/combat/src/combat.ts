@@ -5609,7 +5609,8 @@ function resolveDpRangedAttack(
     actorId: actor.id,
     targetId: defender.id,
     text:
-      actor.name + " 射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attackAchievement +
+      actor.name + (submission.weaponName === undefined ? "" : " 使用「" + submission.weaponName + "」") +
+      "射击（DP）：" + dice + "d6=" + attack.roll + " + " + attack.base + " = " + attackAchievement +
       (enhance === null ? "" : "（符卡强化）"),
     data: { rollType: "DP_RANGED_ATTACK", dice, roll: attack.roll, base: attack.base, achievement: attackAchievement, skill: skillId, attribute: attributeKey, enhanceAccuracy: enhance?.accuracyMod ?? 0 }
   });
@@ -6011,7 +6012,8 @@ function resolveDpMelee(
     actorId: actor.id,
     targetId: defender.id,
     text:
-      actor.name + " 接近判定：" + approachDice + "d6=" + approach.roll + " + " + approach.base + " = " + approachAchievement +
+      actor.name + (submission.weaponName === undefined ? "" : " 使用「" + submission.weaponName + "」") +
+      " 接近判定：" + approachDice + "d6=" + approach.roll + " + " + approach.base + " = " + approachAchievement +
       (meleeEnhance === null ? "" : "（符卡强化）") +
       " / 目标 " + approachTarget + " → " + (approachAchievement >= approachTarget ? "接近成功" : "接近失败"),
     data: { rollType: "DP_MELEE_APPROACH", dice: approachDice, roll: approach.roll, base: approach.base, achievement: approachAchievement, target: approachTarget, enhanceAccuracy: meleeEnhance?.accuracyMod ?? 0, success: approachAchievement >= approachTarget }
@@ -6024,7 +6026,8 @@ function resolveDpMelee(
     kind: "CHECK",
     actorId: actor.id,
     targetId: defender.id,
-    text: actor.name + " 近战命中：" + hitDice + "d6=" + hit.roll + " + " + hit.base + " = " + hitAchievement,
+    text: actor.name + (submission.weaponName === undefined ? "" : " 使用「" + submission.weaponName + "」") +
+      " 近战命中：" + hitDice + "d6=" + hit.roll + " + " + hit.base + " = " + hitAchievement,
     data: { rollType: "DP_MELEE_HIT", dice: hitDice, roll: hit.roll, base: hit.base, achievement: hitAchievement }
   });
   const cover = resolveDpCover(ctx, actor, defender, hitAchievement, "dp-melee-cover:" + actor.id + ":" + defender.id);

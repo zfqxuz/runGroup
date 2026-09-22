@@ -412,6 +412,7 @@ async function handleAction(
     // 伤害不由客户端决定：服务端按角色实际装备 / 规则包覆盖客户端传来的表达式。
     damage: selectedDamageBand?.expression ?? actualAttack?.damage ?? asString(raw.damage),
     damageType: actualAttack?.damageType,
+    weaponName: actualAttack?.weaponName ?? asString(raw.weaponName),
     element: actualAttack?.element,
     shots,
     maneuver:

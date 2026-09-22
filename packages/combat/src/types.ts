@@ -344,6 +344,8 @@ export interface ActionSubmission {
   readonly routine?: readonly RoutineAttackStep[];
   /** 攻击技能名，用于查表得到目标值。 */
   readonly skill?: string;
+  /** 展示用：本次攻击实际使用的武器 / 攻击方式名。 */
+  readonly weaponName?: string;
   /** 伤害骰，如 "2d6+3"。 */
   readonly damage?: string;
   /** COC7 武器伤害类型：极限成功时决定是否额外掷武器骰。 */

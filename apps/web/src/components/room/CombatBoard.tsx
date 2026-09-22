@@ -160,6 +160,8 @@ export default function CombatBoard(props: Props) {
   const [dpEscalation, setDpEscalation] = useState(0);
   const [dpAbilityId, setDpAbilityId] = useState("");
   const [dpTrainingId, setDpTrainingId] = useState("FEAT");
+  /** DP 模式下选中的实际武器 / 攻击方式（来自角色已装备的武器卡）。 */
+  const [dpWeaponSkill, setDpWeaponSkill] = useState("");
   const router = useRouter();
   const socketRef = useRef<Socket | null>(null);
 
@@ -386,6 +388,12 @@ export default function CombatBoard(props: Props) {
     .sort((a, b) => b[1] - a[1]);
   const dpAbilityHintId = dpAction === "MELEE" ? dpTrainingId : dpAbilityId;
   const dpAbilityHint = props.abilityHints[dpAbilityHintId] ?? null;
+  const dpWeaponOptions = selectedActor === null ? [] : props.attackOptionsByParticipant[selectedActor.id] ?? [];
+  const activeDpWeaponSkill = dpWeaponOptions.some((option) => option.skillId === dpWeaponSkill)
+    ? dpWeaponSkill
+    : (dpWeaponOptions[0]?.skillId ?? "");
+  const activeDpWeaponOption =
+    dpWeaponOptions.find((option) => option.skillId === activeDpWeaponSkill) ?? null;
   const dpCosts = props.dpCosts;
   // 千幻抄的消耗由规则包写死 / 由骰数算出，不再让玩家手填。
   const dpEstimatedCost =
@@ -487,12 +495,8 @@ export default function CombatBoard(props: Props) {
         : selectedItem.targetScope === "ALL"
           ? []
           : alive.filter((participant) => {
-              if (selectedItem.targeting === "ENEMY") {
-                return participant.id !== selectedActor.id && participant.kind !== selectedActor.kind;
-              }
-              if (selectedItem.targeting === "ALLY") {
-                return participant.id === selectedActor.id || participant.kind === selectedActor.kind;
-              }
+              if (selectedItem.targeting === "ENEMY") return enemyOfActor(participant);
+              if (selectedItem.targeting === "ALLY") return sameSideAsActor(participant);
               return true;
             });
   const activeItemTargetId = itemTargetOptions.some((participant) => participant.id === itemTargetId)
@@ -712,8 +716,11 @@ export default function CombatBoard(props: Props) {
         kind: "DANMAKU",
         dpAction: "RANGED",
         targetId: activeTargetId,
-        skill: "DANMAKU",
+        skill: activeDpWeaponOption?.skillId ?? "DANMAKU",
         dpDice,
+        damage: activeDpWeaponOption?.damage,
+        damageType: activeDpWeaponOption?.damageType,
+        weaponName: activeDpWeaponOption?.weaponName ?? undefined,
         damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined,
         attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
       });
@@ -725,8 +732,11 @@ export default function CombatBoard(props: Props) {
         dpAction: "CHASE",
         targetId: activeTargetId,
         dpTargetIds: activeTargetId.length > 0 ? [activeTargetId] : [],
-        skill: "DANMAKU",
+        skill: activeDpWeaponOption?.skillId ?? "DANMAKU",
         dpEscalation,
+        damage: activeDpWeaponOption?.damage,
+        damageType: activeDpWeaponOption?.damageType,
+        weaponName: activeDpWeaponOption?.weaponName ?? undefined,
         damageAbilityId: dpAbilityId.length > 0 ? dpAbilityId : undefined,
         attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
       });
@@ -736,10 +746,12 @@ export default function CombatBoard(props: Props) {
       kind: "DANMAKU",
       dpAction: "MELEE",
       targetId: activeTargetId,
-      skill: "MELEE",
+      skill: activeDpWeaponOption?.skillId ?? "MELEE",
       dpDice,
       dpSecondaryDice,
+      damageWeaponSkill: activeDpWeaponOption?.skillId,
       damageTrainingId: dpTrainingId.length > 0 ? dpTrainingId : "FEAT",
+      weaponName: activeDpWeaponOption?.weaponName ?? undefined,
       attackSpellId: activeAttackSpellId.length > 0 ? activeAttackSpellId : undefined
     });
   }
@@ -1677,6 +1689,29 @@ export default function CombatBoard(props: Props) {
                         <option value="SKILL">其他判定（调查 / 感知等）</option>
                       </select>
                     </label>
+                    {dpAction === "RANGED" || dpAction === "CHASE" || dpAction === "MELEE" ? (
+                      dpWeaponOptions.length === 0 ? null : (
+                        <label className="flex flex-col gap-1.5">
+                          <span className="text-[11px] text-white/40">武器 / 攻击方式（由已装备武器决定）</span>
+                          <select
+                            value={activeDpWeaponSkill}
+                            onChange={(event) => setDpWeaponSkill(event.target.value)}
+                            className={inputClass}
+                          >
+                            {dpWeaponOptions.map((option) => (
+                              <option key={option.skillId} value={option.skillId}>
+                                {(option.weaponName ?? option.skillId) + "（" + option.damage + "）"}
+                              </option>
+                            ))}
+                          </select>
+                          {activeDpWeaponOption === null ? null : (
+                            <span className="text-[10px] leading-relaxed text-white/35">
+                              {activeDpWeaponOption.source === "WEAPON" ? "已装备武器" : "默认攻击"} · 技能 {activeDpWeaponOption.skillId}
+                            </span>
+                          )}
+                        </label>
+                      )
+                    ) : null}
                     {actorBattleSpells.length === 0 || dpAction === "SKILL" ? null : (
                       <label className="flex flex-col gap-1.5">
                         <span className="text-[11px] text-white/40">战斗法术（可选）</span>
